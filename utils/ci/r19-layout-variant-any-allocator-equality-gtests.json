@@ -109,7 +109,7 @@
     "TranslateTest.CoreV2VariantEqualityRenamedConversionPolicyRejected",
     "TranslateTest.CoreV2VariantEqualityFloatingAlternativeRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a",
   "maintained_original_sha256": "bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e",
@@ -121,5 +121,10 @@
   "current_registry_count": 8234,
   "current_python_registry_tests": 142,
   "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "variant-equality": "334ee7f0c947e95b85726f55ae47aeda3caa5c97e157eb1047582ea0aeb778a1"
+  },
+  "native_reference_authentication_sha256": "4fe35865b873b190fff942a84b0f18c284084a80b8a777c7b1fb2053a61db0d3",
+  "source_proof_sha256": "07497082e79fae2a6f0e1384151e3e0bd2cf0071d543e923d6aef108f5a8cd73"
 }
