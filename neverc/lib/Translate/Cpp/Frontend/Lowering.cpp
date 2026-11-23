@@ -1216,7 +1216,7 @@ class FunctionLowering {
 
   Expression unorderedNodeKey(Expression Node, const UtilityUnorderedTableRecord &Info,
                                SourceLocation L) {
-    return unorderedNodeField(std::move(Node), A.Context.IntTy, Info.ValueOffsetBytes, L);
+    return unorderedNodeField(std::move(Node), Info.KeyType, Info.ValueOffsetBytes, L);
   }
   Expression unorderedNodeValue(Expression Node, const UtilityUnorderedTableRecord &Info,
                                  SourceLocation L) {
@@ -29620,9 +29620,9 @@ class FunctionLowering {
         auto Position = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
         Hint = snapshot(unorderedIteratorNode(dereference(Position, L), Info->Iterator, L), L);
       }
-      auto Key = Info->ValueInitialized ? A.zero(A.Context.IntTy, L)
-          : dereference(snapshot(argument(Call->getArg(KeyIndex), Method->getParamDecl(KeyIndex)->getType()), L), L);
       const auto &Table = Info->Table;
+      auto Key = Info->ValueInitialized ? A.zero(Table.KeyType, L)
+          : dereference(snapshot(argument(Call->getArg(KeyIndex), Method->getParamDecl(KeyIndex)->getType()), L), L);
       std::optional<Expression> Prepared;
       if (Info->ValueInitialized && !unorderedAllowsEquivalentKeys(Table)) {
         // The pinned no-argument unique emplacement constructs a node before duplicate lookup.

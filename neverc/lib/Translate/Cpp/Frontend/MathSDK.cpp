@@ -136025,13 +136025,15 @@ bool approvedAssociativeContainerMetadataRecord(
                      Container->getSpecializationKind() != TSK_Undeclared))
     return false;
   const auto &Args = Container->getTemplateArgs();
-  if (!Context.hasSameType(Args.get(0).getAsType(), Context.IntTy) ||
+  const auto Key = Args.get(0).getAsType();
+  if ((!Context.hasSameType(Key, Context.IntTy) &&
+       !(HashTable && Context.hasSameType(Key, Context.UnsignedIntTy))) ||
       (Map && !Context.hasSameType(Args.get(1).getAsType(), Context.IntTy)))
     return false;
   auto PolicyFor = [&](unsigned I, llvm::StringRef Policy, llvm::StringRef Header) {
     const auto *Spec = associativeTypeIdentity(S, SM, Args.get(I).getAsType()->getAsCXXRecordDecl(),
                                                Policy, Header, "__fwd/functional.h", 1);
-    return Spec && Context.hasSameType(Spec->getTemplateArgs().get(0).getAsType(), Context.IntTy);
+    return Spec && Context.hasSameType(Spec->getTemplateArgs().get(0).getAsType(), Key);
   };
   if (HashTable) {
     if (!PolicyFor(1, "hash", "__functional/hash.h") ||
@@ -136047,7 +136049,7 @@ bool approvedAssociativeContainerMetadataRecord(
     return false;
   const auto Value = Allocator->getTemplateArgs().get(0).getAsType();
   if (!Map)
-    return Context.hasSameType(Value, Context.IntTy);
+    return Context.hasSameType(Value, Key);
   const auto *Pair = associativeTypeIdentity(S, SM, Value->getAsCXXRecordDecl(),
       "pair", "__utility/pair.h", "__fwd/pair.h", 2);
   return Pair && Context.hasSameType(Pair->getTemplateArgs().get(0).getAsType(), Context.IntTy.withConst()) &&
@@ -137088,7 +137090,10 @@ std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State 
   const auto Type = associativeMemberReceiverType(Member);
   const auto Size = Context.getSizeType();
   const auto Result = Observe ? Size : Context.VoidTy;
-  const auto Parameter = Lookup ? Context.getLValueReferenceType(Context.IntTy.withConst()) : Size;
+  if (!approvedEmptyHashSetRecord(S, SM, Owner, Context))
+    return std::nullopt;
+  const auto Key = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs().get(0).getAsType();
+  const auto Parameter = Lookup ? Context.getLValueReferenceType(Key.withConst()) : Size;
   if (Type.isNull() || (!Observe && Type.isConstQualified()) || !S.owns(SM, Member->getMemberLoc()) ||
       Outer->isConst() != Observe || Outer->isStatic() || Outer->isVirtual() || Outer->isVolatile() ||
       Outer->getPrimaryTemplate() || Outer->getNumParams() != 1 || Call->getNumArgs() != 1 ||
@@ -137096,7 +137101,6 @@ std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State 
       !Context.hasSameType(Outer->getParamDecl(0)->getType(), Parameter) ||
       !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Parameter.getNonReferenceType()) ||
       Call->getArg(0)->getType().isVolatileQualified() ||
-      !approvedEmptyHashSetRecord(S, SM, Owner, Context) ||
       !Context.hasSameUnqualifiedType(Type, Context.getRecordType(Owner)) ||
       !orderedPinnedFunction(S, SM, Outer, "unordered_set"))
     return std::nullopt;
@@ -137279,6 +137283,7 @@ static std::optional<UtilityUnorderedTableRecord> approvedUnorderedStorage(
   if (!Map || !Admitted(Map) ||
       Map->isInvalidDecl() || Map->isDynamicClass() || Map->getNumBases())
     return std::nullopt;
+  const auto Key = cast<ClassTemplateSpecializationDecl>(Map)->getTemplateArgs().get(0).getAsType();
   auto Pinned = [&](const Decl *D) { return associativeStorageDeclaration(S, SM, D, false); };
   if (!approvedAssociativeStorageGraph(S, SM, Context.getRecordType(Map), Context, false))
     return std::nullopt;
@@ -137362,12 +137367,12 @@ static std::optional<UtilityUnorderedTableRecord> approvedUnorderedStorage(
       Offset(PayloadRecord, Value) ||
       !Context.hasSameType(Hash->getType(), Context.getSizeType()) ||
       (Mapped ? Context.getTypeSize(Value->getType()) != 2 * Context.getTypeSize(Context.IntTy)
-              : !Context.hasSameType(Value->getType(), Context.IntTy)) ||
-      Context.getTypeSize(NodeType) != 2 * P + 2 * Context.getTypeSize(Context.IntTy) ||
+              : !Context.hasSameType(Value->getType(), Key)) ||
+      Context.getTypeSize(NodeType) != 2 * P + 2 * Context.getTypeSize(Key) ||
       Context.getTypeAlign(NodeType) != Context.getTypeAlign(Context.VoidPtrTy))
     return std::nullopt;
   return UtilityUnorderedTableRecord{Map, Context.getPointerType(Context.VoidPtrTy),
-      Context.VoidPtrTy, NodeType, uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()),
+      Context.VoidPtrTy, NodeType, Key, uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()),
       uint64_t(Offset(Node, Payload) / Context.getCharWidth()), Mapped};
 }
 
@@ -137440,10 +137445,9 @@ std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetLi
   if (!Context.hasSameType(Construction->getArg(0)->getType(), Carrier))
     return std::nullopt;
   const auto List = approvedUtilityInitializerListRecord(S, SM, Carrier->getAsCXXRecordDecl(), Context);
-  if (!List || !Context.hasSameType(List->ElementType, Context.IntTy))
-    return std::nullopt;
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
-  if (!Table || !approvedUnorderedSetInputConstructorOptions(S, SM, Construction, *Table, 1, Context))
+  if (!Table || !List || !Context.hasSameType(List->ElementType, Table->KeyType) ||
+      !approvedUnorderedSetInputConstructorOptions(S, SM, Construction, *Table, 1, Context))
     return std::nullopt;
   const auto *Init = *Ctor->init_begin();
   if (Construction->getNumArgs() != 1) {
@@ -137482,12 +137486,12 @@ std::optional<UtilityUnorderedSetListConstruction> approvedUtilityUnorderedSetLi
   return UtilityUnorderedSetListConstruction{*Table, *List, false};
 }
 
-static bool unorderedIntegerPointer(QualType Type, const ASTContext &Context) {
+static bool unorderedSetInputPointer(QualType Type, QualType Key, const ASTContext &Context) {
   const auto *Pointer = Type->getAs<PointerType>();
   if (!Pointer || Type.hasQualifiers()) return false;
   const auto Element = Pointer->getPointeeType();
   return !Element.isVolatileQualified() && Element.getAddressSpace() == LangAS::Default &&
-         Context.hasSameUnqualifiedType(Element, Context.IntTy);
+         Context.hasSameUnqualifiedType(Element, Key);
 }
 
 static bool unorderedSetRangeIterator(const State &S, const SourceManager &SM,
@@ -137520,7 +137524,7 @@ std::optional<UtilityUnorderedSetStorageConstruction> approvedUtilityUnorderedSe
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
   if (!Table || !approvedUnorderedSetInputConstructorOptions(S, SM, Construction, *Table, 2, Context))
     return std::nullopt;
-  const bool Pointer = unorderedIntegerPointer(Iterator, Context);
+  const bool Pointer = unorderedSetInputPointer(Iterator, Table->KeyType, Context);
   if (!Pointer && !unorderedSetRangeIterator(S, SM, Iterator, *Table, Context))
     return std::nullopt;
   const auto *Init = *Ctor->init_begin();
@@ -137599,8 +137603,8 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
   if (!Table) return std::nullopt;
   if (KeyOperation && (!Context.hasSameType(Method->getParamDecl(0)->getType(),
-                                    Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-                !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
+                                    Context.getLValueReferenceType(Table->KeyType.withConst())) ||
+                !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Table->KeyType)))
     return std::nullopt;
   if (Range) {
     const auto *Arguments = Method->getTemplateSpecializationArgs();
@@ -137608,7 +137612,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
         !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type)
       return std::nullopt;
     const auto Iterator = Arguments->get(0).getAsType();
-    if (!unorderedIntegerPointer(Iterator, Context) &&
+    if (!unorderedSetInputPointer(Iterator, Table->KeyType, Context) &&
         !unorderedSetRangeIterator(S, SM, Iterator, *Table, Context))
       return std::nullopt;
     for (unsigned Index : {0u, 1u})
@@ -137619,7 +137623,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
     if (Parameter->isReferenceType() || Parameter.hasQualifiers() || !List ||
-        !Context.hasSameType(List->ElementType, Context.IntTy) ||
+        !Context.hasSameType(List->ElementType, Table->KeyType) ||
         !Context.hasSameType(Call->getArg(0)->getType(), Parameter))
       return std::nullopt;
   }
@@ -137844,7 +137848,7 @@ static std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnordered
   const auto *Count = Local ? Field(2, "__bucket_count_", Context.getSizeType()) : nullptr;
   if (!Storage || (Local && (!Bucket || !Count))) return std::nullopt;
   return UtilityUnorderedMapIteratorRecord{Definition, Definition, nullptr, Storage, *Owner,
-      Context.IntTy, true, Local, Bucket, Count};
+      Owner->KeyType, true, Local, Bucket, Count};
 }
 
 std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedIteratorRecord(
@@ -137879,8 +137883,8 @@ static std::optional<UtilityOperation> approvedUnorderedSetEndpoint(
       !Context.hasSameType(Call->getType(), Method->getReturnType()))
     return std::nullopt;
   if (Find && (!Context.hasSameType(Method->getParamDecl(0)->getType(),
-                   Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-               !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
+                   Context.getLValueReferenceType(Table->KeyType.withConst())) ||
+               !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Table->KeyType)))
     return std::nullopt;
   if (Local && (!Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getSizeType()) ||
                 !Context.hasSameType(Call->getArg(0)->getType(), Context.getSizeType())))
@@ -137913,6 +137917,15 @@ std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion
   const bool HasKey = Method->getNumParams() == KeyIndex + 1;
   if (!HasKey && (Insert || Method->getNumParams() != KeyIndex))
     return std::nullopt;
+  const auto *Owner = Method->getParent();
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  const auto Receiver = associativeMemberReceiverType(Member);
+  if (!Table || Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
+      !S.owns(SM, Member->getMemberLoc()) ||
+      !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
+      !orderedPinnedFunction(S, SM, Method, "unordered_set"))
+    return std::nullopt;
   if (Primary) {
     const auto *Arguments = Method->getTemplateSpecializationArgs();
     if (!orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), "unordered_set") ||
@@ -137923,29 +137936,20 @@ std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion
       return std::nullopt;
     if (HasKey && (Pack.pack_begin()->getKind() != TemplateArgument::Type ||
                    !Context.hasSameUnqualifiedType(
-                       Pack.pack_begin()->getAsType().getNonReferenceType(), Context.IntTy)))
+                       Pack.pack_begin()->getAsType().getNonReferenceType(), Table->KeyType)))
       return std::nullopt;
   }
   if (HasKey) {
     const auto Param = Method->getParamDecl(KeyIndex)->getType();
     const auto Value = Param.getNonReferenceType();
-    if (!Context.hasSameUnqualifiedType(Call->getArg(KeyIndex)->getType(), Context.IntTy) ||
+    if (!Context.hasSameUnqualifiedType(Call->getArg(KeyIndex)->getType(), Table->KeyType) ||
         !Param->isReferenceType() || Value.isVolatileQualified() ||
-        !Context.hasSameUnqualifiedType(Value, Context.IntTy))
+        !Context.hasSameUnqualifiedType(Value, Table->KeyType))
       return std::nullopt;
-    if (Insert && !Context.hasSameType(Param, Context.getLValueReferenceType(Context.IntTy.withConst())) &&
-        !Context.hasSameType(Param, Context.getRValueReferenceType(Context.IntTy)))
+    if (Insert && !Context.hasSameType(Param, Context.getLValueReferenceType(Table->KeyType.withConst())) &&
+        !Context.hasSameType(Param, Context.getRValueReferenceType(Table->KeyType)))
       return std::nullopt;
   }
-  const auto *Owner = Method->getParent();
-  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
-  const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
-  const auto Receiver = associativeMemberReceiverType(Member);
-  if (!Table || Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
-      !S.owns(SM, Member->getMemberLoc()) ||
-      !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
-      !orderedPinnedFunction(S, SM, Method, "unordered_set"))
-    return std::nullopt;
   auto IteratorType = Call->getType();
   std::optional<UtilityPairRecord> Pair;
   if (!Hinted && Owner->getName() == "unordered_set") {
@@ -138009,10 +138013,7 @@ std::optional<UtilityUnorderedSetEqualRange> approvedUtilityUnorderedSetEqualRan
   if (!Method || !Method->getIdentifier() || Method->getName() != "equal_range" ||
       Method->isVolatile() || Method->isStatic() || Method->isVirtual() ||
       Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
-      !Call->isPRValue() || !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
-      !Context.hasSameType(Method->getParamDecl(0)->getType(),
-                           Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))
+      !Call->isPRValue() || !Context.hasSameType(Call->getType(), Method->getReturnType()))
     return std::nullopt;
   const auto *Owner = Method->getParent();
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
@@ -138021,7 +138022,10 @@ std::optional<UtilityUnorderedSetEqualRange> approvedUtilityUnorderedSetEqualRan
   if (!Table || Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
       !S.owns(SM, Member->getMemberLoc()) ||
       !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
-      !orderedPinnedFunction(S, SM, Method, "unordered_set"))
+      !orderedPinnedFunction(S, SM, Method, "unordered_set") ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(Table->KeyType.withConst())) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Table->KeyType))
     return std::nullopt;
   const auto Pair = approvedUtilityPairRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
   if (!Pair || !Pair->Record->hasTrivialDestructor() ||
@@ -138945,14 +138949,14 @@ bool approvedUtilityUnorderedTableDefaultArgument(
     } else if (List) {
       const auto Input = approvedUtilityInitializerListRecord(S, SM, Record, Context);
       if (!Input || Primary || First.hasQualifiers() || First->isReferenceType() ||
-          !Context.hasSameType(Input->ElementType, Context.IntTy))
+          !Context.hasSameType(Input->ElementType, Table->KeyType))
         return false;
     } else {
       const auto *Inputs = Constructor->getTemplateSpecializationArgs();
       if (!Primary || !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), Header) ||
           !Inputs || Inputs->size() != 1 || Inputs->get(0).getKind() != TemplateArgument::Type ||
           !Context.hasSameType(Inputs->get(0).getAsType(), First) ||
-          (!unorderedIntegerPointer(First, Context) &&
+          (!unorderedSetInputPointer(First, Table->KeyType, Context) &&
            !unorderedSetRangeIterator(S, SM, First, *Table, Context)))
         return false;
     }
@@ -139367,8 +139371,9 @@ std::optional<UnorderedNodeCall> unorderedNodeCall(
     if (const auto *Conversion=dyn_cast<CXXConversionDecl>(Method);
         Conversion&&Context.hasSameType(Conversion->getConversionType(),Context.BoolTy)&&Call->isPRValue())return Return(UnorderedNodeOperation::Boolean);
     const bool ValueAccess = Info->Map.HasMappedValue ? Name == "key" || Name == "mapped" : Name == "value";
+    const auto Value = Name == "mapped" ? Context.IntTy : Info->Map.KeyType;
     if (ValueAccess && Parent == Info->Specifics->getCanonicalDecl() && Call->isLValue() &&
-        Context.hasSameType(Result, Context.getLValueReferenceType(Context.IntTy)))
+        Context.hasSameType(Result, Context.getLValueReferenceType(Value)))
       return Return(Name == "mapped" ? UnorderedNodeOperation::Mapped : UnorderedNodeOperation::Key);
     if (Name=="get_allocator"&&Context.hasSameType(Result,Info->AllocatorType)&&Call->isPRValue()&&
         approvedUtilityAllocatorRecord(S,SM,Result->getAsCXXRecordDecl(),Context))return Return(UnorderedNodeOperation::Allocator);
@@ -139481,7 +139486,10 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
     const auto Node=unorderedNodeRecord(S,SM,Call->getType()->getAsCXXRecordDecl(),Context);
     if (!Node || !Compatible(Node->Map)) return std::nullopt;
     const auto P=M->getParamDecl(0)->getType();
-    if(Context.hasSameType(P,Context.getLValueReferenceType(Context.IntTy.withConst()))&&Context.hasSameUnqualifiedType(Call->getArg(0)->getType(),Context.IntTy))return UnorderedNodeTransfer{*Map,*Node,std::nullopt,std::nullopt,UnorderedNodeTransferKind::ExtractKey,0};
+    if (Context.hasSameType(P, Context.getLValueReferenceType(Map->KeyType.withConst())) &&
+        Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Map->KeyType))
+      return UnorderedNodeTransfer{*Map, *Node, std::nullopt, std::nullopt,
+          UnorderedNodeTransferKind::ExtractKey, 0};
     const auto I = approvedUtilityUnorderedIteratorRecord(S, SM, P->getAsCXXRecordDecl(), Context);
     if (I && I->Const && !I->Local && Compatible(I->Owner) && Context.hasSameType(Call->getArg(0)->getType(), P))
       return UnorderedNodeTransfer{*Map, *Node, I, std::nullopt, UnorderedNodeTransferKind::ExtractIterator, 0};
@@ -139643,7 +139651,7 @@ std::optional<UnorderedTableListAssignment> unorderedTableListAssignment(
   }
 
   const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
-  if (!List || !Context.hasSameType(List->ElementType, Context.IntTy) ||
+  if (!List || !Context.hasSameType(List->ElementType, Table->KeyType) ||
       !approvedHashSetBucketSource(S, SM, Method, Table->Record, Context))
     return std::nullopt;
   return UnorderedTableListAssignment{*Table, *List, std::nullopt, Object, Offset, bool(Operator)};
