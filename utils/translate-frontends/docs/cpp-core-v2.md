@@ -18239,3 +18239,11 @@ Default integer unordered sets and multisets support bucket-local
 `begin`, `end`, `cbegin` and `cend`. The iterators yield const element
 references, advance through colliding groups in the selected bucket, and
 compare equal at that bucket's end.
+
+## Integer unordered set emplacement and hints
+
+Default integer unordered sets and multisets support no-argument and
+single-integer `emplace` and `emplace_hint`, plus the hinted integer
+`insert` overloads. Single-integer arguments may be lvalues or rvalues.
+Equivalent-key multiset hints place the new node before the hinted node,
+including when insertion grows the bucket table.

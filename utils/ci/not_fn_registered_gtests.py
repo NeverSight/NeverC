@@ -1768,6 +1768,32 @@ def restore_unordered_set_local_iterators_history(source):
     return restored
 
 
+R19_UNORDERED_SET_EMPLACEMENT_REGISTERED_SHA256 = '83641ab21afe299e1102dbfcb7aa665e4bacb76903a037642188a6d31ba3c089'
+R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256 = '5755793b0747f53c69ae511749f7e732123906f01e4b86cf93288415cb2fa7a9'
+R19_UNORDERED_SET_EMPLACEMENT_PREVIOUS_REGISTERED_SHA256 = '0ef88a0571d525b7d64559b6af9a40ca1b7c8753b94cf130f6ec3397ed438b62'
+R19_UNORDERED_SET_EMPLACEMENT_PREVIOUS_MAINTAINED_SHA256 = '7103b1330261f496dad389a54d80f8d6be1864a02ae967b62c2fb4e32b06340a'
+R19_UNORDERED_SET_EMPLACEMENT_ADDITIONS_SHA256 = '9ccb1a700fe19a05ef2b6db31666173b49a518ddb177fd66a18fc761757c5881'
+R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SIZE = 20142498
+R19_UNORDERED_SET_EMPLACEMENT_ADDITIONS_SIZE = 8521
+
+
+def restore_unordered_set_emplacement_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_EMPLACEMENT_REGISTERED_SHA256, R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_EMPLACEMENT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_EMPLACEMENT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalHintedInsertRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-insert-with-hint.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-scalar-insertion-insert-with-hint.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-scalar-insertion-insert-with-hint" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalHintedInsertRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-insert-with-hint.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-scalar-insertion-insert-with-hint.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-scalar-insertion-insert-with-hint" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionInsertWithHintRejected) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-insert-with-hint.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_EMPLACEMENT_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_EMPLACEMENT_REGISTERED_SHA256
+             else R19_UNORDERED_SET_EMPLACEMENT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2131,6 +2157,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_EMPLACEMENT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

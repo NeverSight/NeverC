@@ -1574,16 +1574,41 @@ class FunctionLowering {
     label(Done, L);
   }
 
+  Expression unorderedPredecessorInBucket(Expression BeforeBucket,
+      const UtilityUnorderedTableRecord &Info, Expression Node, SourceLocation L) {
+    auto Previous = snapshot(std::move(BeforeBucket), L);
+    const auto Check = labelName(), Step = labelName(), Found = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", unorderedNodeNext(Previous, Info, L), Node, "bool", L), Step, Found, L);
+    label(Step, L);
+    assign(Previous, unorderedNodeNext(Previous, Info, L), L);
+    jump(Check, L);
+    label(Found, L);
+    return Previous;
+  }
+
   Expression unorderedMultiInsertionPredecessor(Expression BeforeBucket,
       const UtilityUnorderedTableRecord &Info, Expression Node,
-      Expression Bucket, Expression BucketCount, SourceLocation L) {
+      Expression Bucket, Expression BucketCount, SourceLocation L,
+      const std::optional<Expression> &Hint) {
     auto Previous = snapshot(BeforeBucket, L);
     auto Next = snapshot(unorderedNodeNext(Previous, Info, L), L);
     auto Key = snapshot(unorderedNodeKey(std::move(Node), Info, L), L);
     auto Found = snapshot(boolean(false, L), L);
     const auto Check = labelName(), CheckBucket = labelName(), Compare = labelName();
     const auto Match = labelName(), Distinct = labelName(), Advance = labelName(), Done = labelName();
-    jump(Check, L);
+    if (Hint) {
+      const auto CompareHint = labelName(), UseHint = labelName();
+      branch(cast(*Hint, "bool", L), CompareHint, Check, L);
+      label(CompareHint, L);
+      branch(binary("==", unorderedNodeKey(*Hint, Info, L), Key, "bool", L), UseHint, Check, L);
+      label(UseHint, L);
+      assign(Previous, unorderedPredecessorInBucket(BeforeBucket, Info, *Hint, L), L);
+      jump(Done, L);
+    } else {
+      jump(Check, L);
+    }
     label(Check, L);
     branch(cast(Next, "bool", L), CheckBucket, Done, L);
     label(CheckBucket, L);
@@ -1610,7 +1635,8 @@ class FunctionLowering {
       const UtilityUnorderedTableRecord &Info, Expression Key,
       std::optional<Expression> Mapped, bool AssignExisting, SourceLocation L,
       std::optional<Expression> PreparedNode = std::nullopt, bool DestroyDuplicate = true,
-      std::optional<UnorderedMergeTransfer> MergeTransfer = std::nullopt) {
+      std::optional<UnorderedMergeTransfer> MergeTransfer = std::nullopt,
+      std::optional<Expression> Hint = std::nullopt) {
     // Key is a captured reference. The selected new hook runs after hashing and
     // before pair construction, so reread the referent when constructing the key.
     const auto Size = type(A.Context.getSizeType(), L);
@@ -1694,7 +1720,7 @@ class FunctionLowering {
     jump(Increment, L);
     label(OccupiedBucket, L);
     if (Multi)
-      assign(Previous, unorderedMultiInsertionPredecessor(Previous, Info, Node, BucketIndex, Count, L), L);
+      assign(Previous, unorderedMultiInsertionPredecessor(Previous, Info, Node, BucketIndex, Count, L, Hint), L);
     assign(unorderedNodeNext(Node, Info, L), unorderedNodeNext(Previous, Info, L), L);
     assign(unorderedNodeNext(Previous, Info, L), Node, L);
     if (Multi) {
@@ -1932,22 +1958,15 @@ class FunctionLowering {
                            Expression Node, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Pointer = type(Info.NodePointerType, L);
-    const auto PreviousCheck = labelName(), PreviousStep = labelName();
-    const auto FixHead = labelName(), PreviousHash = labelName(), NextHeadCheck = labelName();
+    const auto PreviousHash = labelName(), NextHeadCheck = labelName();
     const auto NextHeadHash = labelName(), NullHead = labelName(), FixNext = labelName();
     const auto NextHash = labelName(), UpdateNext = labelName(), Unlink = labelName();
     auto Count = snapshot(unorderedTableMember(Place, Info, "nct_unordered_bucket_count", L), L);
     auto BucketIndex = snapshot(unorderedConstrainHash(unorderedNodeHash(Node, L), Count, L), L);
     auto Buckets = snapshot(unorderedTableMember(Place, Info, "nct_unordered_buckets", L), L);
-    auto Previous = snapshot(index(Buckets, BucketIndex, Pointer, L), L);
     auto Next = snapshot(unorderedNodeNext(Node, Info, L), L);
-    jump(PreviousCheck, L);
-    label(PreviousCheck, L);
-    branch(binary("!=", unorderedNodeNext(Previous, Info, L), Node, "bool", L), PreviousStep, FixHead, L);
-    label(PreviousStep, L);
-    assign(Previous, unorderedNodeNext(Previous, Info, L), L);
-    jump(PreviousCheck, L);
-    label(FixHead, L);
+    auto Previous = unorderedPredecessorInBucket(
+        index(Buckets, BucketIndex, Pointer, L), Info, Node, L);
     branch(binary("==", Previous, unorderedSentinel(Place, Info, L), "bool", L), NextHeadCheck, PreviousHash, L);
     label(PreviousHash, L);
     branch(binary("!=", unorderedConstrainHash(unorderedNodeHash(Previous, L), Count, L), BucketIndex, "bool", L),
@@ -29423,8 +29442,27 @@ class FunctionLowering {
       const auto *Method = Member->getMethodDecl();
       const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
       auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
-      auto Key = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
-      auto Result = unorderedInsertNode(std::move(Place), Info->Table, std::move(Key), std::nullopt, false, L);
+      std::optional<Expression> Hint;
+      const unsigned KeyIndex = Info->Hinted ? 1 : 0;
+      if (Info->Hinted) {
+        auto Position = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        Hint = snapshot(unorderedIteratorNode(dereference(Position, L), Info->Iterator, L), L);
+      }
+      auto Key = Info->ValueInitialized ? A.zero(A.Context.IntTy, L)
+          : dereference(snapshot(argument(Call->getArg(KeyIndex), Method->getParamDecl(KeyIndex)->getType()), L), L);
+      const auto &Table = Info->Table;
+      std::optional<Expression> Prepared;
+      if (Info->ValueInitialized && !unorderedMultiSet(Table)) {
+        // The pinned no-argument unique emplacement constructs a node before duplicate lookup.
+        const auto Size = type(A.Context.getSizeType(), L);
+        auto Node = snapshot(cast(unorderedHeapAllocate(Table.NodeType,
+            quantity(Table.NodeBytes, Size, L), L), type(Table.NodePointerType, L), L), L);
+        assign(unorderedNodeKey(Node, Table, L), Key, L);
+        assign(unorderedNodeNext(Node, Table, L), A.zero(Table.NodePointerType, L), L);
+        Prepared = std::move(Node);
+      }
+      auto Result = unorderedInsertNode(std::move(Place), Table, std::move(Key), std::nullopt, false, L,
+          std::move(Prepared), true, std::nullopt, std::move(Hint));
       if (!Info->ResultPair)
         return unorderedMakeIterator(std::move(Result.Node), Info->Iterator, std::move(Destination), L);
       auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);

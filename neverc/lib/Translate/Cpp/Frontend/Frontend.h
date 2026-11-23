@@ -4481,6 +4481,8 @@ struct UtilityUnorderedSetInsertion {
   UtilityUnorderedTableRecord Table;
   UtilityUnorderedMapIteratorRecord Iterator;
   std::optional<UtilityPairRecord> ResultPair;
+  bool Hinted;
+  bool ValueInitialized;
 };
 std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,

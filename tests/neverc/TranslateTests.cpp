@@ -391263,15 +391263,22 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionInsertWithHintRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalHintedInsertRunsAtBothOptimizations) {
   const auto Source = tmpFile("unordered-set-scalar-insertion-insert-with-hint.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-set-scalar-insertion-insert-with-hint.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-scalar-insertion-insert-with-hint" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionCustomHashRejected) {
@@ -391773,6 +391780,168 @@ int main() {
   const auto bucket = values.bucket(1);
   return values.cbegin(bucket) == values.cend(bucket);
 }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementUniqueEmplacementReturnsResultRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-emplacement-unique-emplacement-returns-result.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values;
+  int key = -4;
+  auto added = values.emplace(key);
+  if (!added.second || *added.first != -4) return 1;
+  const int equal = -4;
+  auto existing = values.emplace(equal);
+  if (existing.second || existing.first != added.first) return 2;
+  auto zero = values.emplace();
+  const auto* original = &*zero.first;
+  auto again = values.emplace();
+  return !zero.second || again.second || *again.first != 0 || &*again.first != original || values.size() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-emplacement-unique-emplacement-returns-result.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-emplacement-unique-emplacement-returns-result" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementEquivalentHintBeforeExistingAfterGrowthRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-emplacement-equivalent-hint-before-existing-after-growth.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{3, 4};
+  values.rehash(2);
+  const auto hint = values.find(3);
+  const int* existing = &*hint;
+  auto added = values.emplace_hint(hint, 3);
+  if (&*added == existing || values.count(3) != 2) return 1;
+  auto successor = added;
+  ++successor;
+  if (successor == values.end() || &*successor != existing) return 2;
+  const int key = 3;
+  auto inserted = values.insert(successor, key);
+  ++inserted;
+  return inserted == values.end() || &*inserted != existing || values.count(3) != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-emplacement-equivalent-hint-before-existing-after-growth.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-emplacement-equivalent-hint-before-existing-after-growth" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementHintedValueInitializationAndUnrelatedHintRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-emplacement-hinted-value-initialization-and-unrelated-hint.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> set{6};
+  auto zero = set.emplace_hint(set.cend());
+  if (*zero != 0 || set.size() != 2) return 1;
+  std::unordered_multiset<int> values{1, 2};
+  const int value = 2;
+  auto other = values.emplace_hint(values.find(1), value);
+  if (*other != 2 || values.count(2) != 2) return 2;
+  auto default_value = values.emplace();
+  return *default_value != 0 || values.count(0) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-emplacement-hinted-value-initialization-and-unrelated-hint.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-emplacement-hinted-value-initialization-and-unrelated-hint" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementReceiverHintAndArgumentEvaluatedOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-emplacement-receiver-hint-and-argument-evaluated-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+int accesses, hints, keys;
+Set& receiver(Set& values) { ++accesses; return values; }
+Set::const_iterator hint(const Set& values) { hints += accesses; return values.cend(); }
+int key() { keys += accesses; return 9; }
+int main() {
+  Set values{9};
+  auto position = receiver(values).emplace_hint(hint(values), key());
+  return accesses != 1 || hints != 1 || keys != 1 || *position != 9 || values.size() != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-emplacement-receiver-hint-and-argument-evaluated-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-emplacement-receiver-hint-and-argument-evaluated-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementDifferentConstructorTypeRejected) {
+  const auto Source = tmpFile("unordered-set-emplacement-different-constructor-type.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values; short key=3; return *values.emplace(key).first != 3; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementDifferentKeyTypeRejected) {
+  const auto Source = tmpFile("unordered-set-emplacement-different-key-type.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_multiset<long> values; return *values.emplace(3L) != 3L; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementCustomHashRejected) {
+  const auto Source = tmpFile("unordered-set-emplacement-custom-hash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int value) const { return static_cast<unsigned long>(value); } };
+int main() { std::unordered_multiset<int, Hash> values; return *values.emplace_hint(values.cend(), 3) != 3; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementPointerReceiverRejected) {
+  const auto Source = tmpFile("unordered-set-emplacement-pointer-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values; auto* p=&values; return !p->emplace(3).second; }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
