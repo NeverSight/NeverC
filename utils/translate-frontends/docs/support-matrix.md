@@ -787,3 +787,10 @@ The combined compiler passes 3,624 source requests across six 64-bit targets
 and 708 formal tests on Linux x86-64. All 387 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer unordered set equality and swap
+
+The combined compiler passes 3,672 source requests across six 64-bit targets
+and 716 formal tests on Linux x86-64. All 391 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

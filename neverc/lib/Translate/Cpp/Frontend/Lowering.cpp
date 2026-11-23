@@ -2161,40 +2161,71 @@ class FunctionLowering {
             "nct_unordered_iterator_count", L)) : std::nullopt);
   }
 
-  Expression unorderedMapNonmemberOperation(const CallExpr *Call,
-      const UnorderedMapNonmemberCall &Info) {
+  struct UnorderedGroup { Expression After, Size; };
+  UnorderedGroup unorderedCountGroup(Expression First, const UtilityUnorderedTableRecord &Table,
+      Expression Key, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Node = snapshot(std::move(First), L);
+    auto Result = snapshot(quantity(0, Size, L), L);
+    const auto Check = labelName(), Match = labelName(), Increment = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(cast(Node, "bool", L), Match, Done, L);
+    label(Match, L);
+    branch(binary("==", unorderedNodeKey(Node, Table, L), Key, "bool", L), Increment, Done, L);
+    label(Increment, L);
+    assign(Result, binary("+", Result, one(Size, L), Size, L), L);
+    assign(Node, unorderedNodeNext(Node, Table, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return {std::move(Node), std::move(Result)};
+  }
+
+  Expression unorderedTableNonmemberOperation(const CallExpr *Call,
+      const UnorderedTableNonmemberCall &Info) {
     const auto L = Call->getExprLoc();
     const auto *Function = Call->getDirectCallee();
-    // Evaluate both references once before observing either map's state.
+    // Capture both references before observing either table.
     auto Left = dereference(snapshot(argument(Call->getArg(0),
         Function->getParamDecl(0)->getType()), L), L);
     auto Right = dereference(snapshot(argument(Call->getArg(1),
         Function->getParamDecl(1)->getType()), L), L);
     if (Info.Swap) {
-      unorderedSwap(Left, Right, Info.Map, L);
+      unorderedSwap(Left, Right, Info.Table, L);
       return {};
     }
     auto Equal = snapshot(A.zero(A.Context.BoolTy, L), L);
     const auto Start = labelName(), Check = labelName(), Find = labelName();
     const auto Compare = labelName(), Advance = labelName(), Matched = labelName(), Done = labelName();
-    branch(binary("==", unorderedTableMember(Left, Info.Map, "nct_unordered_size", L),
-        unorderedTableMember(Right, Info.Map, "nct_unordered_size", L), "bool", L), Start, Done, L);
+    branch(binary("==", unorderedTableMember(Left, Info.Table, "nct_unordered_size", L),
+        unorderedTableMember(Right, Info.Table, "nct_unordered_size", L), "bool", L), Start, Done, L);
     label(Start, L);
-    auto Node = snapshot(unorderedTableMember(Left, Info.Map, "nct_unordered_first", L), L);
+    auto Node = snapshot(unorderedTableMember(Left, Info.Table, "nct_unordered_first", L), L);
     jump(Check, L);
     label(Check, L);
     branch(cast(Node, "bool", L), Find, Matched, L);
     label(Find, L);
-    auto Key = snapshot(unorderedNodeKey(Node, Info.Map, L), L);
-    auto Other = unorderedFindNode(Right, Info.Map, Key,
+    auto Key = snapshot(unorderedNodeKey(Node, Info.Table, L), L);
+    auto Other = unorderedFindNode(Right, Info.Table, Key,
         cast(Key, type(A.Context.getSizeType(), L), L), L);
-    branch(cast(Other, "bool", L), Compare, Done, L);
-    label(Compare, L);
-    branch(binary("==", unorderedNodeValue(Node, Info.Map, L),
-        unorderedNodeValue(Other, Info.Map, L), "bool", L), Advance, Done, L);
-    label(Advance, L);
-    assign(Node, unorderedNodeNext(Node, Info.Map, L), L);
-    jump(Check, L);
+    if (unorderedMultiSet(Info.Table)) {
+      branch(cast(Other, "bool", L), Compare, Done, L);
+      label(Compare, L);
+      auto LeftGroup = unorderedCountGroup(Node, Info.Table, Key, L);
+      auto RightGroup = unorderedCountGroup(Other, Info.Table, Key, L);
+      assign(Node, std::move(LeftGroup.After), L);
+      branch(binary("==", std::move(LeftGroup.Size), std::move(RightGroup.Size), "bool", L), Check, Done, L);
+    } else {
+      branch(cast(Other, "bool", L), Info.Table.HasMappedValue ? Compare : Advance, Done, L);
+      if (Info.Table.HasMappedValue) {
+        label(Compare, L);
+        branch(binary("==", unorderedNodeValue(Node, Info.Table, L),
+            unorderedNodeValue(Other, Info.Table, L), "bool", L), Advance, Done, L);
+      }
+      label(Advance, L);
+      assign(Node, unorderedNodeNext(Node, Info.Table, L), L);
+      jump(Check, L);
+    }
     label(Matched, L);
     assign(Equal, cast(quantity(1, "int", L), "bool", L), L);
     jump(Done, L);
@@ -29498,7 +29529,8 @@ class FunctionLowering {
     }
     if (Operation == UtilityOperation::UnorderedSetCount ||
         Operation == UtilityOperation::UnorderedSetClear || Operation == UtilityOperation::UnorderedSetEraseKey ||
-        Operation == UtilityOperation::UnorderedSetInsertList) {
+        Operation == UtilityOperation::UnorderedSetInsertList ||
+        Operation == UtilityOperation::UnorderedSetSwap) {
       if (approvedUtilityUnorderedSetValueOperation(A.S, A.Sources, Call, A.Context) != Operation)
         reject(L, "unordered set value operation", "The exact selected SDK operation is required.");
       const auto *Method = clang::cast<CXXMethodDecl>(Call->getDirectCallee());
@@ -29513,6 +29545,10 @@ class FunctionLowering {
       }
       const auto Parameter = Method->getParamDecl(0)->getType();
       auto Operand = dereference(snapshot(argument(Call->getArg(0), Parameter), L), L);
+      if (Operation == UtilityOperation::UnorderedSetSwap) {
+        unorderedSwap(std::move(Place), std::move(Operand), *Table, L);
+        return {};
+      }
       if (Operation == UtilityOperation::UnorderedSetInsertList) {
         const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources, Parameter->getAsCXXRecordDecl(), A.Context);
         if (!List)
@@ -29530,20 +29566,7 @@ class FunctionLowering {
       auto First = unorderedFindNode(Place, *Table, Key, Hash, L);
       if (!unorderedMultiSet(*Table))
         return cast(cast(std::move(First), "bool", L), Size, L);
-      auto Node = snapshot(std::move(First), L);
-      auto Result = snapshot(quantity(0, Size, L), L);
-      const auto Check = labelName(), Match = labelName(), Increment = labelName(), Done = labelName();
-      jump(Check, L);
-      label(Check, L);
-      branch(cast(Node, "bool", L), Match, Done, L);
-      label(Match, L);
-      branch(binary("==", unorderedNodeKey(Node, *Table, L), Key, "bool", L), Increment, Done, L);
-      label(Increment, L);
-      assign(Result, binary("+", Result, one(Size, L), Size, L), L);
-      assign(Node, unorderedNodeNext(Node, *Table, L), L);
-      jump(Check, L);
-      label(Done, L);
-      return Result;
+      return unorderedCountGroup(std::move(First), *Table, std::move(Key), L).Size;
     }
     if (Operation == UtilityOperation::EmptyHashSetResizeBuckets ||
         Operation == UtilityOperation::EmptyHashSetBucketObserver) {
@@ -33433,8 +33456,8 @@ class FunctionLowering {
         return unorderedGenericSwapOperation(Call, *Info);
       if (auto Info = unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context))
         return unorderedIteratorTraversalOperation(Call, *Info, std::move(Destination));
-      if (auto Info = unorderedMapNonmemberCall(A.S, A.Sources, Call, A.Context))
-        return unorderedMapNonmemberOperation(Call, *Info);
+      if (auto Info = unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context))
+        return unorderedTableNonmemberOperation(Call, *Info);
       if (auto Info = unorderedResultCall(A.S, A.Sources, Call, A.Context))
         return unorderedResultOperation(Call, *Info);
       if (auto Info = unorderedMapListAssignment(A.S, A.Sources, Call, A.Context))

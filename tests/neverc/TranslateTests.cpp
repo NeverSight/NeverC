@@ -391949,6 +391949,163 @@ int main() { std::unordered_set<int> values; auto* p=&values; return !p->emplace
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapUniqueEqualityIgnoresBucketsAndOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-equality-swap-unique-equality-ignores-buckets-and-order.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> a{1, -1, 0, 13}, b{13, 0, -1, 1};
+  a.rehash(31);
+  if (!(a == b) || a != b) return 1;
+  b.erase(13);
+  b.insert(14);
+  return a == b || !(a != b);
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-equality-swap-unique-equality-ignores-buckets-and-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-equality-swap-unique-equality-ignores-buckets-and-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapMultisetEqualityChecksEachMultiplicityRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-equality-swap-multiset-equality-checks-each-multiplicity.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_multiset<int> a{1, 1, 9, 9, 9, 17};
+  std::unordered_multiset<int> b{9, 1, 9, 17, 9, 1};
+  b.rehash(8);
+  if (a != b || !(a == b)) return 1;
+  b.erase(b.find(9));
+  b.insert(17);
+  if (a == b || !(a != b) || a.size() != b.size()) return 2;
+  b.erase(b.find(17));
+  b.insert(9);
+  return a != b;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-equality-swap-multiset-equality-checks-each-multiplicity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-equality-swap-multiset-equality-checks-each-multiplicity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapMemberSwapPreservesStorageAndElementAddressesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-equality-swap-member-swap-preserves-storage-and-element-addresses.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> left{4, 5}, right;
+  left.rehash(31);
+  left.max_load_factor(.5f);
+  const auto buckets = left.bucket_count();
+  const int* saved = &*left.find(5);
+  left.swap(right);
+  if (!left.empty() || right.count(4) != 1 || &*right.find(5) != saved) return 1;
+  if (right.bucket_count() != buckets || right.max_load_factor() != .5f) return 2;
+  right.swap(right);
+  return right.count(4) != 1 || &*right.find(5) != saved;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-equality-swap-member-swap-preserves-storage-and-element-addresses.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-equality-swap-member-swap-preserves-storage-and-element-addresses" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapQualifiedAndAdlMultisetSwapRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-equality-swap-qualified-and-adl-multiset-swap.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Bag = std::unordered_multiset<int>;
+int seen;
+Bag& pick(Bag& bag) { ++seen; return bag; }
+int main() {
+  Bag a{7, 7, 8}, b{2, 2};
+  const int* saved = &*a.find(8);
+  std::swap(pick(a), pick(b));
+  if (seen != 2 || a.count(2) != 2 || b.count(7) != 2 || &*b.find(8) != saved) return 1;
+  swap(a, b);
+  return a.count(7) != 2 || &*a.find(8) != saved || b.count(2) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-equality-swap-qualified-and-adl-multiset-swap.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-equality-swap-qualified-and-adl-multiset-swap" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapOtherKeyEqualityRejected) {
+  const auto Source = tmpFile("unordered-set-equality-swap-other-key-equality.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<long> a{1L}, b{2L}; return a == b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapCustomPolicyEqualityRejected) {
+  const auto Source = tmpFile("unordered-set-equality-swap-custom-policy-equality.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int a, int b) const { return a == b; } };
+int main() { std::unordered_multiset<int, std::hash<int>, Equal> a{1, 1}, b{2}; return a != b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapPointerMemberSwapRejected) {
+  const auto Source = tmpFile("unordered-set-equality-swap-pointer-member-swap.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> a{1}, b{2}; auto* p = &a; p->swap(b); return 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapCustomPolicyFreeSwapRejected) {
+  const auto Source = tmpFile("unordered-set-equality-swap-custom-policy-free-swap.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int a) const { return static_cast<unsigned long>(a); } };
+int main() { std::unordered_multiset<int, Hash> a{1, 1}, b{2}; std::swap(a, b); return 0; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

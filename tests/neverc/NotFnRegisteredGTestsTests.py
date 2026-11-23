@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_equality_swap_registered = cls.registered
+        cls.unordered_set_equality_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_equality_swap_original = cls.adapter.restore_original_gtests(cls.unordered_set_equality_swap_registered,
+                                                                        cls.unordered_set_equality_swap_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_equality_swap_history(cls.unordered_set_equality_swap_registered)
         cls.unordered_set_emplacement_registered = cls.registered
         cls.unordered_set_emplacement_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_emplacement_original = cls.adapter.restore_original_gtests(cls.unordered_set_emplacement_registered,
@@ -2854,6 +2859,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_emplacement_history(self.unordered_set_emplacement_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_emplacement_registered, self.unordered_set_emplacement_suffix + b' ')
+
+
+    def test_unordered_set_equality_swap_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_equality_swap_original + self.unordered_set_equality_swap_suffix, self.unordered_set_equality_swap_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_equality_swap_history(self.unordered_set_equality_swap_original),
+                         self.unordered_set_emplacement_original)
+        output, evidence = self.extractor.extract(self.unordered_set_equality_swap_original, ['TranslateTest.CoreV2UnorderedSetEqualitySwapUniqueEqualityIgnoresBucketsAndOrderRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualitySwapMultisetEqualityChecksEachMultiplicityRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualitySwapMemberSwapPreservesStorageAndElementAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualitySwapQualifiedAndAdlMultisetSwapRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualitySwapOtherKeyEqualityRejected', 'TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyEqualityRejected', 'TranslateTest.CoreV2UnorderedSetEqualitySwapPointerMemberSwapRejected', 'TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyFreeSwapRejected'])
+        self.assertEqual(evidence['original_test_names'], 8504)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-equality-swap-unique-equality-ignores-buckets-and-order', output)
+        self.assertIn(b'unordered-set-equality-swap-multiset-equality-checks-each-multiplicity', output)
+
+    def test_unordered_set_equality_swap_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_equality_swap_history(self.unordered_set_equality_swap_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_equality_swap_registered, self.unordered_set_equality_swap_suffix + b' ')
 
 
 if __name__ == '__main__':

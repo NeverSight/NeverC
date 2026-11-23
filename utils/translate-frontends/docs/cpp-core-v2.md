@@ -18247,3 +18247,10 @@ single-integer `emplace` and `emplace_hint`, plus the hinted integer
 `insert` overloads. Single-integer arguments may be lvalues or rvalues.
 Equivalent-key multiset hints place the new node before the hinted node,
 including when insertion grows the bucket table.
+
+## Integer unordered set equality and swap
+
+Default integer unordered sets compare by key and multisets compare by key
+multiplicity. Both support equality and inequality in C++17. Member and
+nonmember swap exchange the bucket storage and load limits while preserving
+element addresses. The first bucket's predecessor is updated for each owner.

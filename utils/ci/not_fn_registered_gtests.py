@@ -1794,6 +1794,30 @@ def restore_unordered_set_emplacement_history(source):
     return restored
 
 
+R19_UNORDERED_SET_EQUALITY_SWAP_REGISTERED_SHA256 = '2614bbc404b932230aeb5f74db66e01f5b8cda8797e86e17b714d84395165ea3'
+R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256 = 'a57a30b29ed03d9a47ce06015d225f01c1b486230d130ab63fc8ec3d3b1116a0'
+R19_UNORDERED_SET_EQUALITY_SWAP_PREVIOUS_REGISTERED_SHA256 = '83641ab21afe299e1102dbfcb7aa665e4bacb76903a037642188a6d31ba3c089'
+R19_UNORDERED_SET_EQUALITY_SWAP_PREVIOUS_MAINTAINED_SHA256 = '5755793b0747f53c69ae511749f7e732123906f01e4b86cf93288415cb2fa7a9'
+R19_UNORDERED_SET_EQUALITY_SWAP_ADDITIONS_SHA256 = 'b776e2103715c8f8b9f4dd615d86e2788a60ea9324ce168d969ce72c5a3a332d'
+R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SIZE = 20150555
+R19_UNORDERED_SET_EQUALITY_SWAP_ADDITIONS_SIZE = 8057
+
+
+def restore_unordered_set_equality_swap_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_EQUALITY_SWAP_REGISTERED_SHA256, R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_EQUALITY_SWAP_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_EQUALITY_SWAP_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_EQUALITY_SWAP_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_EQUALITY_SWAP_REGISTERED_SHA256
+             else R19_UNORDERED_SET_EQUALITY_SWAP_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2164,6 +2188,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_EQUALITY_SWAP_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
