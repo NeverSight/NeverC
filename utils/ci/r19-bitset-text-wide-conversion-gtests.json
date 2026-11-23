@@ -228,7 +228,7 @@
       "kind": "source-body-guard"
     }
   ],
-  "source_proof_sha256": "401177e1c1b2da747364e995f1b24dbd880182e1dd721328c363d9e9f9dda5a3",
+  "source_proof_sha256": "54b15a6912c631ca57c72e15f7f35d4528dc541606dd32b564cfb33458c89769",
   "native_reference_proofs": {
     "text-wide-conversion": "44f23391326ed8f590012cef9d9ee34f500e77a484b944a82a42717b4c0ffa84"
   },

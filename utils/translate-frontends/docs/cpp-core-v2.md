@@ -18218,3 +18218,10 @@ for the checked scalar overloads. Default integer unordered multisets
 return the iterator to the newly inserted node, including when an
 equivalent key already exists. The original scalar insertion fixtures
 run at both optimization levels.
+
+## Integer unordered set iterator erase
+
+Default integer unordered sets and multisets erase the selected node or
+each node in the half-open range. Position erasure returns the next
+iterator and preserves other equivalent keys. Range erasure returns
+the original end of the range and handles an empty range.

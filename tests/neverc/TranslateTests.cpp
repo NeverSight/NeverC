@@ -391301,6 +391301,160 @@ int main() { std::unordered_set<int> values; auto* p = &values; return !p->inser
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorErasePositionReturnsSuccessorRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-erase-position-returns-successor.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{2, 5, 13};
+  const auto position = values.find(5);
+  auto successor = position;
+  ++successor;
+  const auto returned = values.erase(position);
+  return returned != successor || values.size() != 2 || values.count(5) || values.count(13) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-erase-position-returns-successor.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-erase-position-returns-successor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorEraseMultisetErasesOnlyTheSelectedDuplicateRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-erase-multiset-erases-only-the-selected-duplicate.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{4, 4, 5, 4};
+  auto position = values.find(4);
+  auto successor = position;
+  ++successor;
+  if (values.erase(position) != successor || values.count(4) != 2) return 1;
+  return values.size() != 3 || values.count(5) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-erase-multiset-erases-only-the-selected-duplicate.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-erase-multiset-erases-only-the-selected-duplicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorEraseHalfOpenRangeReturnsLastRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-erase-half-open-range-returns-last.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{0, 8, 1, 16};
+  values.rehash(8);
+  auto first = values.begin();
+  auto last = first;
+  const int removed = *last;
+  ++last;
+  const int kept = *last;
+  auto next = values.erase(first, last);
+  if (next != last || *next != kept || values.count(removed)) return 1;
+  return values.count(kept) != 1 || values.size() != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-erase-half-open-range-returns-last.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-erase-half-open-range-returns-last" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorEraseEmptyAndEntireMultisetRangesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-iterator-erase-empty-and-entire-multiset-ranges.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{1, -2, 1, -2};
+  const auto end = values.end();
+  if (values.erase(end, end) != end || values.size() != 4) return 1;
+  if (values.erase(values.cbegin(), end) != end || !values.empty()) return 2;
+  values.insert(7);
+  return values.count(7) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-iterator-erase-empty-and-entire-multiset-ranges.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-iterator-erase-empty-and-entire-multiset-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorErasePointerReceiverRejected) {
+  const auto Source = tmpFile("unordered-set-iterator-erase-pointer-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values{5}; auto* p=&values; return p->erase(values.cbegin()) != values.end(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorEraseDifferentKeyIteratorRejected) {
+  const auto Source = tmpFile("unordered-set-iterator-erase-different-key-iterator.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_multiset<long> values{6L}; return values.erase(values.cbegin()) != values.end(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorEraseCustomHashRangeRejected) {
+  const auto Source = tmpFile("unordered-set-iterator-erase-custom-hash-range.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int k) const { return static_cast<unsigned long>(k); } };
+int main() { std::unordered_set<int, Hash> values{1, 2}; return values.erase(values.cbegin(), values.cend()) != values.end(); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetIteratorEraseCustomEqualityPositionRejected) {
+  const auto Source = tmpFile("unordered-set-iterator-erase-custom-equality-position.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int a, int b) const { return a == b; } };
+int main() {
+  std::unordered_multiset<int, std::hash<int>, Equal> values{3, 3};
+  const auto selected = values.cbegin();
+  return values.erase(selected) == values.cend();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
