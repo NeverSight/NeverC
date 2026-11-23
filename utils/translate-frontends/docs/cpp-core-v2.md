@@ -18327,3 +18327,10 @@ explicit instances of the pinned hash, equality and allocator types.
 An allocator may also be supplied for an empty, copied or moved table.
 A copy owns independent nodes. A move with the default allocator
 transfers node ownership and preserves element addresses.
+
+## Integer unordered node handles
+
+Default integer unordered sets and multisets can extract nodes by key
+or iterator, access the detached value and reinsert a node. Unique
+insertion returns any uninserted node with its result. Multiset
+insertion retains equivalent keys and supports a position hint.

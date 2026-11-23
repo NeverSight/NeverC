@@ -393897,6 +393897,356 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesUniqueExtractsKeyAndMutatesDetachedValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-unique-extracts-key-and-mutates-detached-value.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{3, 11};
+  auto node = values.extract(11);
+  if (!node || node.empty() || values.count(11)) return 1;
+  node.value() = -5;
+  const auto& observed = node;
+  return observed.value() != -5 || values.count(3) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-unique-extracts-key-and-mutates-detached-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-unique-extracts-key-and-mutates-detached-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesMultisetExtractsOneNodeFromConstIteratorRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-multiset-extracts-one-node-from-const-iterator.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{5, 5, 19};
+  const auto& source = values;
+  auto* receiver = &values;
+  auto node = receiver->extract(source.find(5));
+  return !node || node.value() != 5 || values.count(5) != 1 || values.count(19) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-multiset-extracts-one-node-from-const-iterator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-multiset-extracts-one-node-from-const-iterator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesDefaultAndMissingKeyHandlesStayEmptyRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-default-and-missing-key-handles-stay-empty.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  using Set = std::unordered_set<int>;
+  Set values{7};
+  Set::node_type initial;
+  const auto absent = values.extract(-9);
+  return !initial.empty() || bool(initial) || !absent.empty() || bool(absent) || values.count(7) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-default-and-missing-key-handles-stay-empty.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-default-and-missing-key-handles-stay-empty" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesSetAndMultisetHandleMovesReleaseThePreviousNodeRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-set-and-multiset-handle-moves-release-the-previous-node.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_set<int> unique{17};
+  std::unordered_multiset<int> multi{31, 31};
+  auto one = unique.extract(17);
+  auto two = multi.extract(31);
+  auto moved = std::move(one);
+  if (one || !moved || moved.value() != 17) return 1;
+  moved = std::move(two);
+  return !two.empty() || !moved || moved.value() != 31 || multi.count(31) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-set-and-multiset-handle-moves-release-the-previous-node.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-set-and-multiset-handle-moves-release-the-previous-node" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesSwappedNodeRetainsAllocatorAndValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-swapped-node-retains-allocator-and-value.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  using Set = std::unordered_multiset<int>;
+  Set values{21};
+  auto extracted = values.extract(21);
+  Set::node_type other;
+  extracted.swap(other);
+  if (!extracted.empty() || !other || other.value() != 21) return 1;
+  auto allocator = other.get_allocator();
+  auto* storage = allocator.allocate(1);
+  const bool allocated = storage != nullptr;
+  allocator.deallocate(storage, 1);
+  return !allocated;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-swapped-node-retains-allocator-and-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-swapped-node-retains-allocator-and-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesOtherKeySetNodeExtractionRejected) {
+  const auto Source = tmpFile("unordered-set-node-handles-other-key-set-node-extraction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<long> values{5};
+  auto node = values.extract(5);
+  return node.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesCustomPolicyMultisetNodeExtractionRejected) {
+  const auto Source = tmpFile("unordered-set-node-handles-custom-policy-multiset-node-extraction.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int left, int right) const { return left == right; } };
+int main() {
+  std::unordered_multiset<int, std::hash<int>, Equal> values{5, 5};
+  auto node = values.extract(values.find(5));
+  return node.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesOtherKeyDefaultNodeHandleRejected) {
+  const auto Source = tmpFile("unordered-set-node-handles-other-key-default-node-handle.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<unsigned>::node_type empty;
+  return empty.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesUniqueDuplicateReturnsOwningNodeForRetryRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-unique-duplicate-returns-owning-node-for-retry.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_set<int> source{3, 5};
+  std::unordered_set<int> target{3};
+  auto node = source.extract(3);
+  auto failed = target.insert(std::move(node));
+  if (failed.inserted || node || !failed.node || failed.node.value() != 3 || *failed.position != 3) return 1;
+  failed.node.value() = 29;
+  auto added = target.insert(std::move(failed.node));
+  return !added.inserted || added.node || failed.node || *added.position != 29 || target.count(29) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-unique-duplicate-returns-owning-node-for-retry.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-unique-duplicate-returns-owning-node-for-retry" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesUniqueHintedDuplicateRetainsTheSuppliedHandleRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-unique-hinted-duplicate-retains-the-supplied-handle.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_set<int> source{5};
+  std::unordered_set<int> target{5};
+  auto node = source.extract(5);
+  auto where = target.insert(target.end(), std::move(node));
+  return !node || node.value() != 5 || where == target.end() || *where != 5 || target.size() != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-unique-hinted-duplicate-retains-the-supplied-handle.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-unique-hinted-duplicate-retains-the-supplied-handle" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesMultisetInsertNodePreservesStorageAndRehashesMutatedKeyRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-multiset-insert-node-preserves-storage-and-rehashes-mutated-key.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_set<int> source{7};
+  std::unordered_multiset<int> target{17, 17};
+  target.rehash(8);
+  const int* address = &*source.find(7);
+  auto node = source.extract(7);
+  node.value() = 17;
+  auto inserted = target.insert(std::move(node));
+  return node || inserted == target.end() || &*inserted != address || *inserted != 17 ||
+         target.count(17) != 3 || !source.empty();
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-multiset-insert-node-preserves-storage-and-rehashes-mutated-key.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-multiset-insert-node-preserves-storage-and-rehashes-mutated-key" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesMultisetHintInsertsTheTransferredNodeWithItsEquivalentsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-multiset-hint-inserts-the-transferred-node-with-its-equivalents.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_multiset<int> source{5, 5};
+  std::unordered_multiset<int> target{5, 5, 13};
+  target.rehash(16);
+  auto it = source.find(5);
+  const int* address = &*it;
+  auto node = source.extract(it);
+  auto added = target.insert(target.find(5), std::move(node));
+  return node || &*added != address || target.count(5) != 3 || target.count(13) != 1 || source.count(5) != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-multiset-hint-inserts-the-transferred-node-with-its-equivalents.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-multiset-hint-inserts-the-transferred-node-with-its-equivalents" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesInsertingEmptyHandleReturnsEndInBothContainersRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-node-handles-inserting-empty-handle-returns-end-in-both-containers.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  using Set = std::unordered_set<int>;
+  Set unique{9};
+  std::unordered_multiset<int> multi{9, 9};
+  Set::node_type empty;
+  auto result = unique.insert(std::move(empty));
+  auto no_node = multi.insert(multi.end(), std::move(empty));
+  return result.inserted || result.node || result.position != unique.end() || no_node != multi.end() ||
+         unique.count(9) != 1 || multi.count(9) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-node-handles-inserting-empty-handle-returns-end-in-both-containers.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-node-handles-inserting-empty-handle-returns-end-in-both-containers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesCustomHashUniqueHandleInsertRejected) {
+  const auto Source = tmpFile("unordered-set-node-handles-custom-hash-unique-handle-insert.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+struct Hash { unsigned long operator()(int value) const { return static_cast<unsigned>(value); } };
+int main() {
+  std::unordered_set<int> source{7};
+  std::unordered_set<int, Hash> target;
+  auto node = source.extract(7);
+  return !target.insert(std::move(node)).inserted;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesCustomEqualityMultisetHandleInsertRejected) {
+  const auto Source = tmpFile("unordered-set-node-handles-custom-equality-multiset-handle-insert.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+struct Equal { bool operator()(int left, int right) const { return left == right; } };
+int main() {
+  std::unordered_set<int> source{7};
+  std::unordered_multiset<int, std::hash<int>, Equal> target;
+  auto node = source.extract(7);
+  return target.insert(std::move(node)) == target.end();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

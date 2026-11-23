@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_node_handles_registered = cls.registered
+        cls.unordered_set_node_handles_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_node_handles_original = cls.adapter.restore_original_gtests(cls.unordered_set_node_handles_registered,
+                                                                        cls.unordered_set_node_handles_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_node_handles_history(cls.unordered_set_node_handles_registered)
         cls.unordered_set_storage_construction_registered = cls.registered
         cls.unordered_set_storage_construction_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_storage_construction_original = cls.adapter.restore_original_gtests(cls.unordered_set_storage_construction_registered,
@@ -3107,6 +3112,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_storage_construction_history(self.unordered_set_storage_construction_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_storage_construction_registered, self.unordered_set_storage_construction_suffix + b' ')
+
+
+    def test_unordered_set_node_handles_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_node_handles_original + self.unordered_set_node_handles_suffix, self.unordered_set_node_handles_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_node_handles_history(self.unordered_set_node_handles_original),
+                         self.unordered_set_storage_construction_original)
+        output, evidence = self.extractor.extract(self.unordered_set_node_handles_original, ['TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueExtractsKeyAndMutatesDetachedValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetExtractsOneNodeFromConstIteratorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesDefaultAndMissingKeyHandlesStayEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesSetAndMultisetHandleMovesReleaseThePreviousNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesSwappedNodeRetainsAllocatorAndValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueDuplicateReturnsOwningNodeForRetryRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueHintedDuplicateRetainsTheSuppliedHandleRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetInsertNodePreservesStorageAndRehashesMutatedKeyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetHintInsertsTheTransferredNodeWithItsEquivalentsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesInsertingEmptyHandleReturnsEndInBothContainersRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesOtherKeySetNodeExtractionRejected', 'TranslateTest.CoreV2UnorderedSetNodeHandlesCustomPolicyMultisetNodeExtractionRejected', 'TranslateTest.CoreV2UnorderedSetNodeHandlesOtherKeyDefaultNodeHandleRejected', 'TranslateTest.CoreV2UnorderedSetNodeHandlesCustomHashUniqueHandleInsertRejected', 'TranslateTest.CoreV2UnorderedSetNodeHandlesCustomEqualityMultisetHandleInsertRejected'])
+        self.assertEqual(evidence['original_test_names'], 8603)
+        self.assertEqual(evidence['selected_count'], 15)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-node-handles-unique-extracts-key-and-mutates-detached-value', output)
+        self.assertIn(b'unordered-set-node-handles-multiset-insert-node-preserves-storage-and-rehashes-mutated-key', output)
+
+    def test_unordered_set_node_handles_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_node_handles_history(self.unordered_set_node_handles_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_node_handles_registered, self.unordered_set_node_handles_suffix + b' ')
 
 
 if __name__ == '__main__':

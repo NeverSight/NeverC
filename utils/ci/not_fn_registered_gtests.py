@@ -2070,6 +2070,30 @@ def restore_unordered_set_storage_construction_history(source):
     return restored
 
 
+R19_UNORDERED_SET_NODE_HANDLES_REGISTERED_SHA256 = 'b0308b64ace4efb64a2604478a35fe72ff13fa010ae2441d52038ecf5cca67c0'
+R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SHA256 = '40a07a2f7ba2b85c8d134ae3d3d3a2ae1a52479182df85070c11a53307d580bc'
+R19_UNORDERED_SET_NODE_HANDLES_PREVIOUS_REGISTERED_SHA256 = 'f5e26a202434cdb9bd8355501131c4a429f332a1562877587e07556f9f6a48d4'
+R19_UNORDERED_SET_NODE_HANDLES_PREVIOUS_MAINTAINED_SHA256 = '8ee172c3bf7dae6f0e65cce5d6c44e5bfda3406278f19ccffadfbdeacbc69edc'
+R19_UNORDERED_SET_NODE_HANDLES_ADDITIONS_SHA256 = 'cbe8fde1964c90033069e7da5587fe2b8e64cde9c005cc6b01af6ea20781bf09'
+R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SIZE = 20261007
+R19_UNORDERED_SET_NODE_HANDLES_ADDITIONS_SIZE = 17901
+
+
+def restore_unordered_set_node_handles_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_NODE_HANDLES_REGISTERED_SHA256, R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_NODE_HANDLES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_NODE_HANDLES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_NODE_HANDLES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_NODE_HANDLES_REGISTERED_SHA256
+             else R19_UNORDERED_SET_NODE_HANDLES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2517,6 +2541,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_STORAGE_CONSTRUCTION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_NODE_HANDLES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
