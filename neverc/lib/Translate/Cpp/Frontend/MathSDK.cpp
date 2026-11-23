@@ -137424,18 +137424,21 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
   const bool Count = Name == "count";
   const bool Erase = Name == "erase";
   const bool Insert = Name == "insert";
+  const auto *Primary = Insert ? Method->getPrimaryTemplate() : nullptr;
+  const bool Range = Primary != nullptr;
   const bool Swap = Name == "swap";
   const bool KeyOperation = Count || Erase;
   if (!KeyOperation && !Insert && !Swap && Name != "clear")
     return std::nullopt;
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto *Owner = Method->getParent();
-  const auto Arity = KeyOperation || Insert || Swap ? 1u : 0u;
+  const auto Arity = Range ? 2u : (KeyOperation || Insert || Swap ? 1u : 0u);
   const auto Result = KeyOperation ? Context.getSizeType() : Context.VoidTy;
   if (!Member || Member->isArrow() || !Member->getBase()->isLValue() ||
       Member->getBase()->getType().isVolatileQualified() || !S.owns(SM, Member->getMemberLoc()) ||
       Method->isConst() != Count || Method->isStatic() || Method->isVolatile() || Method->isVirtual() ||
-      Method->getPrimaryTemplate() || Method->getNumParams() != Arity || Call->getNumArgs() != Arity ||
+      (!Range && Method->getPrimaryTemplate()) || Method->getNumParams() != Arity ||
+      Call->getNumArgs() != Arity ||
       !Context.hasSameType(Method->getReturnType(), Result) || !Context.hasSameType(Call->getType(), Result) ||
       !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
       !approvedUtilityUnorderedSetStorage(S, SM, Owner, Context) ||
@@ -137445,7 +137448,23 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
                                     Context.getLValueReferenceType(Context.IntTy.withConst())) ||
                 !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
     return std::nullopt;
-  if (Insert) {
+  if (Range) {
+    const auto *Arguments = Method->getTemplateSpecializationArgs();
+    if (!orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), "unordered_set") ||
+        !Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type)
+      return std::nullopt;
+    const auto Iterator = Arguments->get(0).getAsType();
+    const auto *Pointer = Iterator->getAs<PointerType>();
+    if (!Pointer || Iterator.hasQualifiers() ||
+        !Context.hasSameUnqualifiedType(Pointer->getPointeeType(), Context.IntTy) ||
+        Pointer->getPointeeType().isVolatileQualified() ||
+        Pointer->getPointeeType().getAddressSpace() != LangAS::Default)
+      return std::nullopt;
+    for (unsigned Index : {0u, 1u})
+      if (!Context.hasSameType(Method->getParamDecl(Index)->getType(), Iterator) ||
+          !Context.hasSameType(Call->getArg(Index)->getType(), Iterator))
+        return std::nullopt;
+  } else if (Insert) {
     const auto Parameter = Method->getParamDecl(0)->getType();
     const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
     if (Parameter->isReferenceType() || Parameter.hasQualifiers() || !List ||
@@ -137466,6 +137485,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
   if (Count) return UtilityOperation::UnorderedSetCount;
   if (Erase) return UtilityOperation::UnorderedSetEraseKey;
   if (Swap) return UtilityOperation::UnorderedSetSwap;
+  if (Range) return UtilityOperation::UnorderedSetInsertRange;
   return Insert ? UtilityOperation::UnorderedSetInsertList : UtilityOperation::UnorderedSetClear;
 }
 

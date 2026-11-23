@@ -1318,6 +1318,7 @@ enum class UtilityOperation {
   UnorderedSetClear,
   UnorderedSetEraseKey,
   UnorderedSetInsertList,
+  UnorderedSetInsertRange,
   UnorderedSetBegin,
   UnorderedSetEnd,
   UnorderedSetFind,
