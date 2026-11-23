@@ -1753,8 +1753,12 @@ class FunctionLowering {
     return {Result, InsertedValue};
   }
 
-  void unorderedAppendCopiedNode(Expression Place, const UtilityUnorderedTableRecord &Info,
+  void unorderedInsertCopiedNode(Expression Place, const UtilityUnorderedTableRecord &Info,
       Expression Node, SourceLocation L) {
+    if (unorderedMultiSet(Info)) {
+      unorderedInsertNode(std::move(Place), Info, unorderedNodeKey(Node, Info, L), std::nullopt, false, L, Node);
+      return;
+    }
     const auto Size = type(A.Context.getSizeType(), L);
     const auto NodePointer = type(Info.NodePointerType, L);
     auto Hash = snapshot(cast(unorderedNodeKey(Node, Info, L), Size, L), L);
@@ -1861,9 +1865,10 @@ class FunctionLowering {
       branch(cast(Current, "bool", L), Reuse, ReleaseCheck, L);
       label(Reuse, L);
       assign(unorderedNodeKey(Cache, Info, L), unorderedNodeKey(Current, Info, L), L);
-      assign(unorderedNodeValue(Cache, Info, L), unorderedNodeValue(Current, Info, L), L);
+      if (Info.HasMappedValue)
+        assign(unorderedNodeValue(Cache, Info, L), unorderedNodeValue(Current, Info, L), L);
       auto Next = snapshot(unorderedNodeNext(Cache, Info, L), L);
-      unorderedAppendCopiedNode(Place, Info, Cache, L);
+      unorderedInsertCopiedNode(Place, Info, Cache, L);
       assign(Cache, Next, L);
       assign(Current, unorderedNodeNext(Current, Info, L), L);
       jump(Check, L);
@@ -1886,9 +1891,10 @@ class FunctionLowering {
       auto Node = snapshot(cast(unorderedHeapAllocate(Info.NodeType,
           quantity(Info.NodeBytes, Size, L), L), NodePointer, L), L);
       assign(unorderedNodeKey(Node, Info, L), unorderedNodeKey(Current, Info, L), L);
-      assign(unorderedNodeValue(Node, Info, L), unorderedNodeValue(Current, Info, L), L);
+      if (Info.HasMappedValue)
+        assign(unorderedNodeValue(Node, Info, L), unorderedNodeValue(Current, Info, L), L);
       assign(unorderedNodeNext(Node, Info, L), A.zero(Info.NodePointerType, L), L);
-      unorderedAppendCopiedNode(Place, Info, Node, L);
+      unorderedInsertCopiedNode(Place, Info, Node, L);
     } else {
       std::optional<Expression> Mapped;
       if (Info.HasMappedValue) Mapped = unorderedNodeValue(Current, Info, L);
@@ -29744,7 +29750,7 @@ class FunctionLowering {
       assign(Result, A.zero(Call->getType(), L), L);
       return Result;
     }
-    if (Operation == UtilityOperation::UnorderedMapCopyAssign ||
+    if (Operation == UtilityOperation::UnorderedTableCopyAssign ||
         Operation == UtilityOperation::UnorderedTableMoveAssign) {
       const auto *Method = llvm::cast<CXXMethodDecl>(Call->getDirectCallee());
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
@@ -29752,7 +29758,7 @@ class FunctionLowering {
       const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
       const unsigned Offset = Operator ? 1 : 0;
       auto Info = approvedUtilityUnorderedMapRecord(A.S, A.Sources, Method->getParent(), A.Context);
-      if (!Info && Operation == UtilityOperation::UnorderedTableMoveAssign)
+      if (!Info)
         Info = approvedUtilityUnorderedSetStorage(A.S, A.Sources, Method->getParent(), A.Context);
       if (!Info) reject(L, "unordered table assignment", "The authenticated storage layout is unavailable.");
       std::optional<Expression> SourceAddress;
