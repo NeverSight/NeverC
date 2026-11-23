@@ -2435,7 +2435,15 @@ class FunctionLowering {
       jump(Done, L); label(Done, L);
       return Output;
     }
-    if (Info.Offset) expression(Call->getArg(0)); // The SDK hint is evaluated, then ignored.
+    std::optional<Expression> Hint;
+    if (Info.Offset) {
+      if (unorderedMultiSet(Info.Map)) {
+        auto Argument = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        Hint = snapshot(unorderedIteratorNode(dereference(Argument, L), *Info.Iterator, L), L);
+      } else {
+        expression(Call->getArg(0));
+      }
+    }
     auto Source = dereference(snapshot(argument(Call->getArg(Info.Offset),
         Method->getParamDecl(Info.Offset)->getType()), L), L);
     auto Node = snapshot(unorderedHandlePointer(Source, Info.Node, L), L);
@@ -2446,7 +2454,7 @@ class FunctionLowering {
     branch(cast(Node, "bool", L), Insert, Done, L);
     label(Insert, L);
     auto Result = unorderedInsertNode(Place, Info.Map, unorderedNodeKey(Node, Info.Map, L),
-        std::nullopt, false, L, Node, false);
+        std::nullopt, false, L, Node, false, std::nullopt, std::move(Hint));
     assign(ResultNode, Result.Node, L);
     assign(Inserted, Result.Inserted, L);
     branch(Inserted, Success, Duplicate, L);
