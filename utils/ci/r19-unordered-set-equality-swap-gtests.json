@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetEqualitySwapPointerMemberSwapRejected",
     "TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyFreeSwapRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "2614bbc404b932230aeb5f74db66e01f5b8cda8797e86e17b714d84395165ea3",
   "maintained_original_sha256": "a57a30b29ed03d9a47ce06015d225f01c1b486230d130ab63fc8ec3d3b1116a0",
@@ -155,5 +155,10 @@
   "current_registry_count": 8504,
   "current_python_registry_tests": 212,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-equality-swap": "a5aa9169d2fc09a774c4e11ff407a1f8533e624a020d445b4a98c098db6a064d"
+  },
+  "native_reference_authentication_sha256": "6acec25b106c7c8e5a72540d3a5400fc5fafd55fca6ecdbc9a699d0c78588cd8",
+  "source_proof_sha256": "2406197ffe04c1d327fd6fc247004f5045d54a23ec81118d27a50f430c02b7de"
 }
