@@ -31,17 +31,17 @@
       "source_sha256": "cb614a9661c73863faffe1e36f29439b62fd1b61def11a45e60043cbfb7fef07",
       "original_case_source_sha256": "cb614a9661c73863faffe1e36f29439b62fd1b61def11a45e60043cbfb7fef07",
       "gtest_body_sha256": "ca3fb932494299e0ae24653eedfb6400d4f170f88cee8a17ab6d66c57f5ee54c"
+    },
+    {
+      "name": "unordered-set-pointer-construction-explicit-bucket-count-and-policies",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalBucketedPointerRangeConstructionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
+      "original_case_source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
+      "gtest_body_sha256": "46ccb9c6f0674b9ed0cff7faccf23e45d484293a460e8c319fdb7d882c3dd796"
     }
   ],
   "negative_cases": [
-    {
-      "name": "unordered-set-pointer-construction-explicit-bucket-count-and-policies",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionExplicitBucketCountAndPoliciesRejected",
-      "expected": "reject",
-      "source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
-      "original_case_source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
-      "gtest_body_sha256": "93f665f4e7652cab8d765c672d823d3f8256ea5e7cf2f56bb84eb8456743545e"
-    },
     {
       "name": "unordered-set-pointer-construction-converted-short-range",
       "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionConvertedShortRangeRejected",
@@ -102,11 +102,11 @@
     },
     {
       "name": "unordered-set-pointer-construction-explicit-bucket-count-and-policies",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "unordered_set",
       "source": "#include <unordered_set>\nint main() {\n  int data[] = {1, 2};\n  std::unordered_set<int> set(data, data + 2, 31, std::hash<int>{}, std::equal_to<int>{});\n  return set.empty();\n}\n",
       "source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "unordered-set-pointer-construction-converted-short-range",
@@ -138,7 +138,7 @@
     "TranslateTest.CoreV2UnorderedSetPointerConstructionMultisetConstructionRetainsDuplicatesRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionEmptyRangeUsesEmptyDefaultStateRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionRangeArgumentsAreEvaluatedOnceRunAtBothOptimizations",
-    "TranslateTest.CoreV2UnorderedSetPointerConstructionExplicitBucketCountAndPoliciesRejected",
+    "TranslateTest.CoreV2UnorderedSetOriginalBucketedPointerRangeConstructionRunsAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionConvertedShortRangeRejected",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionCustomHashRangeRejected",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionClassIteratorRangeRejected"
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8520,
   "current_python_registry_tests": 216,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
     "unordered-set-pointer-construction": "2e9180690029cb6d6117a8018ed9fcfe78668647ece9486f2bea6b464f33a74e"
   },
-  "native_reference_authentication_sha256": "898d8bd3fd44281d588e4ac941989bf123c479246730720a714bea3cca324143",
-  "source_proof_sha256": "334ee0dafd8ed3cfca299b31ad68a1401564d6e963cd06bcb0a402b1d82b697d"
+  "native_reference_authentication_sha256": "fcf8f4de3aab9f04025c8d9d83eff9c8da882ccf3863b4d580c41358a743f666",
+  "source_proof_sha256": "01b0ff628d8e4f8cc91578b8f8fe9f41a0df20b81c3282087b40bef3b37e8f64"
 }

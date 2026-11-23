@@ -31,6 +31,14 @@
       "source_sha256": "ec2ddf134e43591cf38dc166e689b760053feb54a8d43aa53eafe30c48aa0d28",
       "original_case_source_sha256": "ec2ddf134e43591cf38dc166e689b760053feb54a8d43aa53eafe30c48aa0d28",
       "gtest_body_sha256": "9acbfe0bbd20cc48f37253ef57839c350802d961d05d243a16ebee38359954b2"
+    },
+    {
+      "name": "unordered-set-equality-swap-pointer-member-swap",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerSwapRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c64f66c538c0af7a2f9b6297d3563707bfdc3a8b616c75375e88dd57576c994f",
+      "original_case_source_sha256": "c64f66c538c0af7a2f9b6297d3563707bfdc3a8b616c75375e88dd57576c994f",
+      "gtest_body_sha256": "1a5adbda2f6f532a7084d2ca4948d773b496f515214adf7fdf11e7cb12416dc2"
     }
   ],
   "negative_cases": [
@@ -49,14 +57,6 @@
       "source_sha256": "41bbaf71f2a7a6817ebeed79ce9f65f52b61e53bdfe5307a1530a431bd32d4ad",
       "original_case_source_sha256": "41bbaf71f2a7a6817ebeed79ce9f65f52b61e53bdfe5307a1530a431bd32d4ad",
       "gtest_body_sha256": "b332e997254a720e69a8d13dfed7fa02dc4d604d459282b7ddf9641f159650c0"
-    },
-    {
-      "name": "unordered-set-equality-swap-pointer-member-swap",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualitySwapPointerMemberSwapRejected",
-      "expected": "reject",
-      "source_sha256": "c64f66c538c0af7a2f9b6297d3563707bfdc3a8b616c75375e88dd57576c994f",
-      "original_case_source_sha256": "c64f66c538c0af7a2f9b6297d3563707bfdc3a8b616c75375e88dd57576c994f",
-      "gtest_body_sha256": "f34d06ec8ae975b576f6b320ecb87b2d35ef4e9ae6f2fb302923523facd761b3"
     },
     {
       "name": "unordered-set-equality-swap-custom-policy-free-swap",
@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-set-equality-swap-pointer-member-swap",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> a{1}, b{2}; auto* p = &a; p->swap(b); return 0; }\n",
+      "source_sha256": "c64f66c538c0af7a2f9b6297d3563707bfdc3a8b616c75375e88dd57576c994f",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-set-equality-swap-other-key-equality",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -117,14 +125,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "unordered-set-equality-swap-pointer-member-swap",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> a{1}, b{2}; auto* p = &a; p->swap(b); return 0; }\n",
-      "source_sha256": "c64f66c538c0af7a2f9b6297d3563707bfdc3a8b616c75375e88dd57576c994f",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "unordered-set-equality-swap-custom-policy-free-swap",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -138,9 +138,9 @@
     "TranslateTest.CoreV2UnorderedSetEqualitySwapMultisetEqualityChecksEachMultiplicityRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetEqualitySwapMemberSwapPreservesStorageAndElementAddressesRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetEqualitySwapQualifiedAndAdlMultisetSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerSwapRunsAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetEqualitySwapOtherKeyEqualityRejected",
     "TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyEqualityRejected",
-    "TranslateTest.CoreV2UnorderedSetEqualitySwapPointerMemberSwapRejected",
     "TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyFreeSwapRejected"
   ],
   "source_proof_gate_pending": false,
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8504,
   "current_python_registry_tests": 212,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
-    "unordered-set-equality-swap": "a5aa9169d2fc09a774c4e11ff407a1f8533e624a020d445b4a98c098db6a064d"
+    "unordered-set-equality-swap": "a5aa9169d2fc09a774c4e11ff407a1f8533e624a020d445b4a98c098db6a064d",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
   },
-  "native_reference_authentication_sha256": "6acec25b106c7c8e5a72540d3a5400fc5fafd55fca6ecdbc9a699d0c78588cd8",
-  "source_proof_sha256": "334ee0dafd8ed3cfca299b31ad68a1401564d6e963cd06bcb0a402b1d82b697d"
+  "native_reference_authentication_sha256": "420dd28abb1d19c35c6926d796449e6a27c04d9ac0a12c63852698a95b21b369",
+  "source_proof_sha256": "01b0ff628d8e4f8cc91578b8f8fe9f41a0df20b81c3282087b40bef3b37e8f64"
 }

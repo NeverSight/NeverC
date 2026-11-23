@@ -31,17 +31,17 @@
       "source_sha256": "5fbac47ebcfbe13185b58e456145a6928d6d7f30ec62e41f9a5b615000825d0b",
       "original_case_source_sha256": "5fbac47ebcfbe13185b58e456145a6928d6d7f30ec62e41f9a5b615000825d0b",
       "gtest_body_sha256": "fcdf3e148bba439fe52653774bb23c1de30a72ae102967521662d4b661636794"
+    },
+    {
+      "name": "unordered-set-iterator-erase-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerErasePositionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c7d5814fc7926bf4d2a33bce5dceffc2e2440b8f71157ae4432fe7c620c04f51",
+      "original_case_source_sha256": "c7d5814fc7926bf4d2a33bce5dceffc2e2440b8f71157ae4432fe7c620c04f51",
+      "gtest_body_sha256": "3d61d10488b6913ab448450e860665ee4c9f5e20bd6ce9c5475539e5b9a88e97"
     }
   ],
   "negative_cases": [
-    {
-      "name": "unordered-set-iterator-erase-pointer-receiver",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorErasePointerReceiverRejected",
-      "expected": "reject",
-      "source_sha256": "c7d5814fc7926bf4d2a33bce5dceffc2e2440b8f71157ae4432fe7c620c04f51",
-      "original_case_source_sha256": "c7d5814fc7926bf4d2a33bce5dceffc2e2440b8f71157ae4432fe7c620c04f51",
-      "gtest_body_sha256": "85e1f3d89b61ad818c5b8d4d2cbe79a6ac4556ef0f3b8cd74d1bfcb6a1e9dc49"
-    },
     {
       "name": "unordered-set-iterator-erase-different-key-iterator",
       "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorEraseDifferentKeyIteratorRejected",
@@ -102,11 +102,11 @@
     },
     {
       "name": "unordered-set-iterator-erase-pointer-receiver",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "unordered_set",
       "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p=&values; return p->erase(values.cbegin()) != values.end(); }\n",
       "source_sha256": "c7d5814fc7926bf4d2a33bce5dceffc2e2440b8f71157ae4432fe7c620c04f51",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "unordered-set-iterator-erase-different-key-iterator",
@@ -138,7 +138,7 @@
     "TranslateTest.CoreV2UnorderedSetIteratorEraseMultisetErasesOnlyTheSelectedDuplicateRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetIteratorEraseHalfOpenRangeReturnsLastRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetIteratorEraseEmptyAndEntireMultisetRangesRunAtBothOptimizations",
-    "TranslateTest.CoreV2UnorderedSetIteratorErasePointerReceiverRejected",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerErasePositionRunsAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetIteratorEraseDifferentKeyIteratorRejected",
     "TranslateTest.CoreV2UnorderedSetIteratorEraseCustomHashRangeRejected",
     "TranslateTest.CoreV2UnorderedSetIteratorEraseCustomEqualityPositionRejected"
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8472,
   "current_python_registry_tests": 204,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
-    "unordered-set-iterator-erase": "e7e652bcbe34dd0b5ed551d05a91af67d4425ed3658347c90256756a7314b210"
+    "unordered-set-iterator-erase": "e7e652bcbe34dd0b5ed551d05a91af67d4425ed3658347c90256756a7314b210",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
   },
-  "native_reference_authentication_sha256": "100041503026e15fe90c32ae30fd8f489dd21b584dbbb15a6c19fe7dacd21009",
-  "source_proof_sha256": "334ee0dafd8ed3cfca299b31ad68a1401564d6e963cd06bcb0a402b1d82b697d"
+  "native_reference_authentication_sha256": "3e5b923d7e8c9018a6b6aea7bc5acf10b8d8b573e4d48a9769f32f407976e71e",
+  "source_proof_sha256": "01b0ff628d8e4f8cc91578b8f8fe9f41a0df20b81c3282087b40bef3b37e8f64"
 }

@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_member_receivers_registered = cls.registered
+        cls.unordered_set_member_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_member_receivers_original = cls.adapter.restore_original_gtests(cls.unordered_set_member_receivers_registered,
+                                                                        cls.unordered_set_member_receivers_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_member_receivers_history(cls.unordered_set_member_receivers_registered)
         cls.unordered_set_bucket_receivers_registered = cls.registered
         cls.unordered_set_bucket_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_bucket_receivers_original = cls.adapter.restore_original_gtests(cls.unordered_set_bucket_receivers_registered,
@@ -3153,6 +3158,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_bucket_receivers_history(self.unordered_set_bucket_receivers_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_bucket_receivers_registered, self.unordered_set_bucket_receivers_suffix + b' ')
+
+
+    def test_unordered_set_member_receivers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_member_receivers_original + self.unordered_set_member_receivers_suffix, self.unordered_set_member_receivers_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_member_receivers_history(self.unordered_set_member_receivers_original),
+                         self.unordered_set_bucket_receivers_original)
+        output, evidence = self.extractor.extract(self.unordered_set_member_receivers_original, ['TranslateTest.CoreV2UnorderedSetMemberReceiversPointerRangeEvaluatesBucketCountOnceBeforeInsertingRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversIteratorRangeWithPinnedPoliciesRetainsEquivalentKeysRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversListWithBucketCountAndAllocatorCoalescesDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversListWithAllPoliciesPreservesDuplicateKeyGroupRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversEmptyRangeKeepsExplicitBucketStorageRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversMemberPointerExpressionsEvaluateOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversConstPointerGlobalAndLocalIterationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversPointerRangeInsertionAndClearPreserveKeyMultiplicityRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversPointerSwapRetainsElementAddressAndLiveBucketsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversRangeWithUserHashRejected', 'TranslateTest.CoreV2UnorderedSetMemberReceiversBucketedListWithUnapprovedKeyTypeRejected', 'TranslateTest.CoreV2UnorderedSetMemberReceiversUserHashPointerMemberRejected', 'TranslateTest.CoreV2UnorderedSetMemberReceiversUnapprovedKeyPointerMemberRejected'])
+        self.assertEqual(evidence['original_test_names'], 8624)
+        self.assertEqual(evidence['selected_count'], 13)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-member-receivers-pointer-range-evaluates-bucket-count-once-before-inserting', output)
+        self.assertIn(b'unordered-set-member-receivers-member-pointer-expressions-evaluate-once', output)
+
+    def test_unordered_set_member_receivers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_member_receivers_history(self.unordered_set_member_receivers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_member_receivers_registered, self.unordered_set_member_receivers_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -878,3 +878,10 @@ The combined compiler passes 4,314 source requests across six 64-bit targets
 and 823 formal tests on Linux x86-64. All 460 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer unordered member receivers and input constructors
+
+The combined compiler passes 4,392 source requests across six 64-bit targets
+and 836 formal tests on Linux x86-64. All 482 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

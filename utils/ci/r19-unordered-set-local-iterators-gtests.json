@@ -31,17 +31,17 @@
       "source_sha256": "34713cf8d8273c56c3ce444e543fbc08d7036586ffc903ce1927a9d138aa6d88",
       "original_case_source_sha256": "34713cf8d8273c56c3ce444e543fbc08d7036586ffc903ce1927a9d138aa6d88",
       "gtest_body_sha256": "d94de34b4859124fc4d2c6c278eafc2a8da99235fc69bdb7307d9cc66a47d580"
+    },
+    {
+      "name": "unordered-set-local-iterators-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerLocalIterationRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d414f18aa9bfe4a79b96786c57df5116491efbe0d242afdaca7fc7a9e22fbada",
+      "original_case_source_sha256": "d414f18aa9bfe4a79b96786c57df5116491efbe0d242afdaca7fc7a9e22fbada",
+      "gtest_body_sha256": "cd250c6c4407631868f54e2d69353253cf9d4edd0cf93d1eba9c3ccf320a7ea6"
     }
   ],
   "negative_cases": [
-    {
-      "name": "unordered-set-local-iterators-pointer-receiver",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsPointerReceiverRejected",
-      "expected": "reject",
-      "source_sha256": "d414f18aa9bfe4a79b96786c57df5116491efbe0d242afdaca7fc7a9e22fbada",
-      "original_case_source_sha256": "d414f18aa9bfe4a79b96786c57df5116491efbe0d242afdaca7fc7a9e22fbada",
-      "gtest_body_sha256": "b05149a7bdaeb3f9fd7743f98bfad2ada24339484f98dc640cadec9aa3102b8b"
-    },
     {
       "name": "unordered-set-local-iterators-different-key",
       "formal_test_name": "TranslateTest.CoreV2UnorderedSetLocalIteratorsDifferentKeyRejected",
@@ -102,11 +102,11 @@
     },
     {
       "name": "unordered-set-local-iterators-pointer-receiver",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "unordered_set",
       "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values{3}; auto* p = &values; return p->begin(0) != p->end(0); }\n",
       "source_sha256": "d414f18aa9bfe4a79b96786c57df5116491efbe0d242afdaca7fc7a9e22fbada",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "unordered-set-local-iterators-different-key",
@@ -138,7 +138,7 @@
     "TranslateTest.CoreV2UnorderedSetLocalIteratorsConstBucketIterationSeesDuplicatesRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetLocalIteratorsEmptyBucketAndCopiedLocalEndRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetLocalIteratorsReceiverAndBucketEvaluatedOnceRunAtBothOptimizations",
-    "TranslateTest.CoreV2UnorderedSetLocalIteratorsPointerReceiverRejected",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerLocalIterationRunsAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetLocalIteratorsDifferentKeyRejected",
     "TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomHashRejected",
     "TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomEqualityRejected"
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8488,
   "current_python_registry_tests": 208,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
-    "unordered-set-local-iterators": "cbdcc10947c84bcb12d21f3bc773303f4bd31ce6e8f2e951d2f4e6ece6951e83"
+    "unordered-set-local-iterators": "cbdcc10947c84bcb12d21f3bc773303f4bd31ce6e8f2e951d2f4e6ece6951e83",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
   },
-  "native_reference_authentication_sha256": "690625b182db586cf83a95f716d5a89bf66c3ff8aa201bb9038087751c9cf618",
-  "source_proof_sha256": "334ee0dafd8ed3cfca299b31ad68a1401564d6e963cd06bcb0a402b1d82b697d"
+  "native_reference_authentication_sha256": "73e54165d07dcb3b35b80286ea39b302714813c6e81794484c67e0aec2f9400a",
+  "source_proof_sha256": "01b0ff628d8e4f8cc91578b8f8fe9f41a0df20b81c3282087b40bef3b37e8f64"
 }

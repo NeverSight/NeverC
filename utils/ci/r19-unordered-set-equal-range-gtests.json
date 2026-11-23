@@ -31,6 +31,14 @@
       "source_sha256": "6d1d86cd5fc4b3c6be3b1ee9056dcfc9a246a7e1c4dd769e9c4005234812c4a0",
       "original_case_source_sha256": "6d1d86cd5fc4b3c6be3b1ee9056dcfc9a246a7e1c4dd769e9c4005234812c4a0",
       "gtest_body_sha256": "dff3c8d49f19cbcd82f2f386123e7391269ce229c9df199368a0d2692d988f6b"
+    },
+    {
+      "name": "unordered-set-equal-range-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerEqualRangeRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
+      "original_case_source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
+      "gtest_body_sha256": "db66619d0262152c7afae3d7f77a7d22e7650d39507102dd3df1bc07b5b99178"
     }
   ],
   "negative_cases": [
@@ -57,14 +65,6 @@
       "source_sha256": "107f2b9eddeac5baf5e63e364a34ceb06243981deb238ce563f3a1fe8bfae67f",
       "original_case_source_sha256": "107f2b9eddeac5baf5e63e364a34ceb06243981deb238ce563f3a1fe8bfae67f",
       "gtest_body_sha256": "26b66939fde7e21e27d3dac6d82e2c4aef38c041c9e71f22262bc03cf1fda2c5"
-    },
-    {
-      "name": "unordered-set-equal-range-pointer-receiver",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualRangePointerReceiverRejected",
-      "expected": "reject",
-      "source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
-      "original_case_source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
-      "gtest_body_sha256": "0487948fb4570a067e0d726adc776f002eb70a424bb507682c86e8d1e4d80215"
     }
   ],
   "source_cases": [
@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-set-equal-range-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values{2, 2}; auto* p=&values; return p->equal_range(2).first == values.end(); }\n",
+      "source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-set-equal-range-different-key",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -123,14 +131,6 @@
       "source": "#include <unordered_set>\nstruct Equal { bool operator()(int a,int b) const { return a == b; } };\nint main() { std::unordered_multiset<int, std::hash<int>, Equal> values{2, 2}; return values.equal_range(2).first == values.end(); }\n",
       "source_sha256": "107f2b9eddeac5baf5e63e364a34ceb06243981deb238ce563f3a1fe8bfae67f",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-set-equal-range-pointer-receiver",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values{2, 2}; auto* p=&values; return p->equal_range(2).first == values.end(); }\n",
-      "source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -138,10 +138,10 @@
     "TranslateTest.CoreV2UnorderedSetEqualRangeAbsentKeyHasTwoEndpointsRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetEqualRangeDuplicateRangePreservesCollidingGroupsRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetEqualRangeReceiverAndKeyEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerEqualRangeRunsAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetEqualRangeDifferentKeyRejected",
     "TranslateTest.CoreV2UnorderedSetEqualRangeCustomHashRejected",
-    "TranslateTest.CoreV2UnorderedSetEqualRangeCustomEqualityRejected",
-    "TranslateTest.CoreV2UnorderedSetEqualRangePointerReceiverRejected"
+    "TranslateTest.CoreV2UnorderedSetEqualRangeCustomEqualityRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8480,
   "current_python_registry_tests": 206,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
-    "unordered-set-equal-range": "342eaf29b76136b7028c5b2aabc4bd691ce5a883be92ddea17a052fec67325bf"
+    "unordered-set-equal-range": "342eaf29b76136b7028c5b2aabc4bd691ce5a883be92ddea17a052fec67325bf",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
   },
-  "native_reference_authentication_sha256": "d69cdd6841178ed5b5537d8e2624cfe48b847ef100f77e9628f5bb1560d3108e",
-  "source_proof_sha256": "334ee0dafd8ed3cfca299b31ad68a1401564d6e963cd06bcb0a402b1d82b697d"
+  "native_reference_authentication_sha256": "7f3523566b2cb5cb99c3ee69955e708bc2b810db8915caff542254be920b92b8",
+  "source_proof_sha256": "01b0ff628d8e4f8cc91578b8f8fe9f41a0df20b81c3282087b40bef3b37e8f64"
 }

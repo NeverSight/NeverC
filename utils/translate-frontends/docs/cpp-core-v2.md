@@ -18340,3 +18340,10 @@ insertion retains equivalent keys and supports a position hint.
 The default integer set and multiset support pointer receivers for
 capacity and bucket queries, reserve, rehash and load-factor operations.
 The receiver is evaluated once and each query uses the current table.
+
+## Integer unordered member receivers and input constructors
+
+The default integer set and multiset accept pointer receivers for lookup,
+iteration, insertion, erasure, emplacement and swap. Their range and
+initializer-list constructors accept a requested bucket count and the
+pinned default hash, equality and allocator types.

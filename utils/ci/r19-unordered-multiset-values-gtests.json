@@ -39,6 +39,14 @@
       "source_sha256": "0278b5b71cbbd6dff9ec9f85d1d2fcc5014ac4106d454a04454b6e35e13a5deb",
       "original_case_source_sha256": "0278b5b71cbbd6dff9ec9f85d1d2fcc5014ac4106d454a04454b6e35e13a5deb",
       "gtest_body_sha256": "8957ac650af08c28caf658a903bee62db6bef4d928ebc6a47203e9a73afb53a9"
+    },
+    {
+      "name": "unordered-multiset-values-arrow-count",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerMultisetCountRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
+      "original_case_source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
+      "gtest_body_sha256": "e40963dcb865045d9486fcd00b064715957ac889ff36e1c4b7944d33f735545f"
     }
   ],
   "negative_cases": [
@@ -57,14 +65,6 @@
       "source_sha256": "7e3b44c2fd79ff36a3c786e2f65659996504994bf1f2b181aa5f76d833620a68",
       "original_case_source_sha256": "7e3b44c2fd79ff36a3c786e2f65659996504994bf1f2b181aa5f76d833620a68",
       "gtest_body_sha256": "f07149680923ec45d83d1424e1e7f2fa957ec30c69ff9ea98d8f84f2789a3892"
-    },
-    {
-      "name": "unordered-multiset-values-arrow-count",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetValuesArrowCountRejected",
-      "expected": "reject",
-      "source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
-      "original_case_source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
-      "gtest_body_sha256": "180e8846e6a7c297236e4d3c924d844bcfab9541e8070e43d74bb96099c173fb"
     }
   ],
   "source_cases": [
@@ -109,6 +109,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-multiset-values-arrow-count",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; auto* p = &values; return p->count(1) != 2; }\n",
+      "source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-multiset-values-different-key",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -123,14 +131,6 @@
       "source": "#include <unordered_set>\nstruct Hash { using Size = decltype(sizeof(0)); Size operator()(int key) const { return Size(key); } };\nint main() { std::unordered_multiset<int, Hash> values{1, 1}; return values.count(1) != 2; }\n",
       "source_sha256": "7e3b44c2fd79ff36a3c786e2f65659996504994bf1f2b181aa5f76d833620a68",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-multiset-values-arrow-count",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; auto* p = &values; return p->count(1) != 2; }\n",
-      "source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -139,9 +139,9 @@
     "TranslateTest.CoreV2UnorderedMultisetValuesReleaseEachDuplicateNodeRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedMultisetValuesConstCountEvaluatesReceiverOnceRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedMultisetOriginalScalarInsertRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerMultisetCountRunsAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedMultisetValuesDifferentKeyRejected",
-    "TranslateTest.CoreV2UnorderedMultisetValuesAlternateHashRejected",
-    "TranslateTest.CoreV2UnorderedMultisetValuesArrowCountRejected"
+    "TranslateTest.CoreV2UnorderedMultisetValuesAlternateHashRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -154,12 +154,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8432,
   "current_python_registry_tests": 194,
-  "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
   "native_reference_proofs": {
     "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
     "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c"
   },
-  "native_reference_authentication_sha256": "5da66a5a226ccee5d6ce5908ffa8162d95da133d9afcdc01bf7f6a2236b3cd8b",
-  "source_proof_sha256": "334ee0dafd8ed3cfca299b31ad68a1401564d6e963cd06bcb0a402b1d82b697d"
+  "native_reference_authentication_sha256": "fdc50a6da27ead9d2970ae9a9b477d3c66c4561914aa441a8074a3afd784aaa4",
+  "source_proof_sha256": "01b0ff628d8e4f8cc91578b8f8fe9f41a0df20b81c3282087b40bef3b37e8f64"
 }
