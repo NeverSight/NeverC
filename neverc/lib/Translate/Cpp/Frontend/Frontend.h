@@ -5149,7 +5149,7 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
 
 bool unorderedNodeBaseCast(const State &S, const clang::SourceManager &SM,
     const clang::CastExpr *Cast, const clang::ASTContext &Context);
-std::optional<UtilityUnorderedTableRecord> unorderedMapMerge(
+std::optional<UtilityUnorderedTableRecord> unorderedTableMerge(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UnorderedTableListAssignment {

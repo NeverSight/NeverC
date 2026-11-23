@@ -18306,3 +18306,10 @@ Default integer sets and multisets can construct from and insert an
 authenticated range of global or bucket-local iterators. Unique sets
 deduplicate keys and multisets retain every occurrence. The translator
 checks that both endpoints belong to the same live range.
+
+## Integer unordered set merge
+
+Default integer unordered sets and multisets transfer nodes between
+containers while preserving element addresses. A unique destination
+leaves duplicate keys in the source. A multiset accepts every source
+node and keeps equivalent keys together.

@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.unordered_set_merge_registered = cls.registered
+        cls.unordered_set_merge_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_merge_original = cls.adapter.restore_original_gtests(cls.unordered_set_merge_registered,
+                                                                        cls.unordered_set_merge_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_merge_history(cls.unordered_set_merge_registered)
         cls.unordered_set_iterator_range_registered = cls.registered
         cls.unordered_set_iterator_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_iterator_range_original = cls.adapter.restore_original_gtests(cls.unordered_set_iterator_range_registered,
@@ -3038,6 +3043,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_iterator_range_history(self.unordered_set_iterator_range_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_iterator_range_registered, self.unordered_set_iterator_range_suffix + b' ')
+
+
+    def test_unordered_set_merge_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_merge_original + self.unordered_set_merge_suffix, self.unordered_set_merge_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_merge_history(self.unordered_set_merge_original),
+                         self.unordered_set_iterator_range_original)
+        output, evidence = self.extractor.extract(self.unordered_set_merge_original, ['TranslateTest.CoreV2UnorderedSetMergeUniqueMergePreservesNodeAndRejectedDuplicateAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMergeUniqueMergesOneCopyFromEachNewMultisetKeyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMergeMultiMergesRvalueUniqueOwnerWithoutReallocatingNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMergeMultiMergeGroupsEquivalentKeysInCollidingBucketRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMergeCustomHashMergeSourceRejected', 'TranslateTest.CoreV2UnorderedSetMergeCustomHashMergeDestinationRejected', 'TranslateTest.CoreV2UnorderedSetMergeCustomEqualityMergeDestinationRejected', 'TranslateTest.CoreV2UnorderedSetMergeLongKeyMergeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8570)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-merge-unique-merge-preserves-node-and-rejected-duplicate-addresses', output)
+        self.assertIn(b'unordered-set-merge-multi-merge-groups-equivalent-keys-in-colliding-bucket', output)
+
+    def test_unordered_set_merge_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_merge_history(self.unordered_set_merge_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_merge_registered, self.unordered_set_merge_suffix + b' ')
 
 
 if __name__ == '__main__':

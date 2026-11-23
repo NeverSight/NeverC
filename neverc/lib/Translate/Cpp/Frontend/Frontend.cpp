@@ -19288,7 +19288,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context) ||
              unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context) ||
-             unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
+             unorderedTableMerge(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeCall(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeTransfer(A.S, A.Sources, Call, A.Context) ||
              functionalObjectCallSource(A, Call)))
@@ -21034,7 +21034,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context) ||
              unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context) ||
-             unorderedMapMerge(A.S, A.Sources, Call, A.Context) ||
+             unorderedTableMerge(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeCall(A.S, A.Sources, Call, A.Context) ||
             unorderedNodeTransfer(A.S, A.Sources, Call, A.Context) ||
             ReferenceInvoke || UserInvoke ||
@@ -30272,7 +30272,7 @@ public:
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
-             unorderedMapMerge(A.S, A.Sources, Call, A.Context).has_value() ||
+             unorderedTableMerge(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -31078,7 +31078,7 @@ public:
              unorderedTableNonmemberCall(A.S, A.Sources, C, A.Context) ||
              unorderedResultCall(A.S, A.Sources, C, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, C, A.Context) ||
-             unorderedMapMerge(A.S, A.Sources, C, A.Context) ||
+             unorderedTableMerge(A.S, A.Sources, C, A.Context) ||
            unorderedNodeCall(A.S, A.Sources, C, A.Context) ||
            unorderedNodeTransfer(A.S, A.Sources, C, A.Context))) {
         A.type(C->getType(), L, true);

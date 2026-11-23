@@ -393314,6 +393314,183 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetMergeUniqueMergePreservesNodeAndRejectedDuplicateAddressesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-merge-unique-merge-preserves-node-and-rejected-duplicate-addresses.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> target{5, 7};
+  std::unordered_set<int> source{5, 13, 19};
+  const int* moved = &*source.find(13);
+  const int* duplicate = &*source.find(5);
+  target.merge(source);
+  return target.size() != 4 || source.size() != 1 || &*target.find(13) != moved ||
+         &*source.find(5) != duplicate || target.count(19) != 1 || source.count(19) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-merge-unique-merge-preserves-node-and-rejected-duplicate-addresses.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-merge-unique-merge-preserves-node-and-rejected-duplicate-addresses" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetMergeUniqueMergesOneCopyFromEachNewMultisetKeyRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-merge-unique-merges-one-copy-from-each-new-multiset-key.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> target{3};
+  std::unordered_multiset<int> source{3, 5, 3, 5, 7, 7, 7};
+  target.merge(source);
+  return target.size() != 3 || target.count(5) != 1 || target.count(7) != 1 ||
+         source.count(3) != 2 || source.count(5) != 1 || source.count(7) != 2 || source.size() != 5;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-merge-unique-merges-one-copy-from-each-new-multiset-key.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-merge-unique-merges-one-copy-from-each-new-multiset-key" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetMergeMultiMergesRvalueUniqueOwnerWithoutReallocatingNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-merge-multi-merges-rvalue-unique-owner-without-reallocating-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+#include <utility>
+int main() {
+  std::unordered_multiset<int> target{9, 9};
+  std::unordered_set<int> source{9, 23, -1};
+  const int* moved = &*source.find(23);
+  auto* receiver = &target;
+  receiver->merge(std::move(source));
+  return !source.empty() || target.size() != 5 || target.count(9) != 3 ||
+         target.count(-1) != 1 || &*target.find(23) != moved;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-merge-multi-merges-rvalue-unique-owner-without-reallocating-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-merge-multi-merges-rvalue-unique-owner-without-reallocating-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetMergeMultiMergeGroupsEquivalentKeysInCollidingBucketRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-merge-multi-merge-groups-equivalent-keys-in-colliding-bucket.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> target;
+  target.rehash(2);
+  target.max_load_factor(4.0f);
+  target.insert({3, 7, 7});
+  std::unordered_multiset<int> source{3, 5, 3, 7};
+  target.merge(source);
+  auto group = target.equal_range(3);
+  int matches = 0;
+  for (auto it = group.first; it != group.second; ++it) {
+    if (*it != 3) return 1;
+    ++matches;
+  }
+  return !source.empty() || target.size() != 7 || matches != 3 ||
+         target.count(5) != 1 || target.count(7) != 3 || target.bucket_count() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-merge-multi-merge-groups-equivalent-keys-in-colliding-bucket.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-merge-multi-merge-groups-equivalent-keys-in-colliding-bucket" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetMergeCustomHashMergeSourceRejected) {
+  const auto Source = tmpFile("unordered-set-merge-custom-hash-merge-source.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  std::unordered_set<int, Hash> source;
+  std::unordered_set<int> target;
+  target.merge(source);
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetMergeCustomHashMergeDestinationRejected) {
+  const auto Source = tmpFile("unordered-set-merge-custom-hash-merge-destination.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };
+int main() {
+  std::unordered_set<int> source;
+  std::unordered_multiset<int, Hash> target;
+  target.merge(source);
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetMergeCustomEqualityMergeDestinationRejected) {
+  const auto Source = tmpFile("unordered-set-merge-custom-equality-merge-destination.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int left, int right) const { return left == right; } };
+int main() {
+  std::unordered_multiset<int> source;
+  std::unordered_set<int, std::hash<int>, Equal> target;
+  target.merge(source);
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetMergeLongKeyMergeRejected) {
+  const auto Source = tmpFile("unordered-set-merge-long-key-merge.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<long> source;
+  std::unordered_multiset<long> target;
+  target.merge(source);
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

@@ -139313,7 +139313,7 @@ bool unorderedNodeBaseCast(const State &S, const SourceManager &SM,
       *Cast->path_begin() == Info->Record->bases_begin();
 }
 
-std::optional<UtilityUnorderedTableRecord> unorderedMapMerge(
+std::optional<UtilityUnorderedTableRecord> unorderedTableMerge(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -139321,21 +139321,58 @@ std::optional<UtilityUnorderedTableRecord> unorderedMapMerge(
   const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
   const auto *Object = Member ? Member->getImplicitObjectArgument() : nullptr;
   if (!Method || !Method->getIdentifier() || Method->getName() != "merge" ||
-      !Object || !Reference || !S.owns(SM, Reference->getExprLoc()) ||
-      !unorderedMapPublicMethod(S, SM, Method) || Method->isConst() ||
+      !Object || !Reference || !S.owns(SM, Reference->getExprLoc()) || Method->isConst() ||
       Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
-      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType()) return std::nullopt;
-  const auto Map = approvedUtilityUnorderedMapRecord(S, SM, Method->getParent(), Context);
-  if (!Map || !approvedUnorderedMapMethodSource(S, SM, Method, Map->Record, Context)) return std::nullopt;
+      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType())
+    return std::nullopt;
+  const auto *Owner = Method->getParent();
+  if (!Owner->getIdentifier()) return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "unordered_map" && Header != "unordered_set") ||
+      !unorderedMapPublicMethod(S, SM, Method, Header))
+    return std::nullopt;
+  const auto Table = Header == "unordered_map" ? approvedUtilityUnorderedMapRecord(S, SM, Owner, Context)
+      : approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
+  if (!Table) return std::nullopt;
   auto Receiver = Object->getType();
   if (Receiver->isPointerType()) Receiver = Receiver->getPointeeType();
-  const auto Type = Context.getRecordType(Map->Record), Parameter = Method->getParamDecl(0)->getType();
-  if (Receiver.hasQualifiers() || !Context.hasSameType(Receiver, Type) ||
-      !Parameter->isReferenceType() || !Context.hasSameType(Parameter->getPointeeType(), Type) ||
-      !Context.hasSameType(Call->getArg(0)->getType(), Type)) return std::nullopt;
-  const auto Source = approvedUtilityUnorderedMapRecord(S, SM,
-      Parameter->getPointeeType()->getAsCXXRecordDecl(), Context);
-  return Source && Source->Record->getCanonicalDecl() == Map->Record->getCanonicalDecl() ? Map : std::nullopt;
+  const auto Type = Context.getRecordType(Table->Record);
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (Receiver.hasQualifiers() || !Context.hasSameType(Receiver, Type) || !Parameter->isReferenceType())
+    return std::nullopt;
+  const auto InputType = Parameter->getPointeeType();
+  if (InputType.hasQualifiers() || !Context.hasSameType(Call->getArg(0)->getType(), InputType))
+    return std::nullopt;
+  const auto *InputRecord = InputType->getAsCXXRecordDecl();
+  if (Table->HasMappedValue) {
+    const auto Source = approvedUtilityUnorderedMapRecord(S, SM, InputRecord, Context);
+    if (!Source || !Context.hasSameType(InputType, Type) ||
+        Source->Record->getCanonicalDecl() != Table->Record->getCanonicalDecl() ||
+        !approvedUnorderedMapMethodSource(S, SM, Method, Table->Record, Context))
+      return std::nullopt;
+    return Table;
+  }
+
+  const auto Source = approvedUtilityUnorderedSetStorage(S, SM, InputRecord, Context);
+  if (!Source || !Context.hasSameType(Source->NodeType, Table->NodeType) ||
+      (Parameter->isLValueReferenceType() ? !Call->getArg(0)->isLValue()
+                                         : !Call->getArg(0)->isXValue()))
+    return std::nullopt;
+  const auto *Specialization = dyn_cast<ClassTemplateSpecializationDecl>(Source->Record);
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!Specialization || Specialization->getTemplateArgs().size() != 4 ||
+      !Primary || !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), "unordered_set") ||
+      !Arguments || Arguments->size() != 2)
+    return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto &Policy = Arguments->get(I);
+    const auto &InputPolicy = Specialization->getTemplateArgs().get(I + 1);
+    if (Policy.getKind() != TemplateArgument::Type || InputPolicy.getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Policy.getAsType(), InputPolicy.getAsType()))
+      return std::nullopt;
+  }
+  return approvedHashSetBucketSource(S, SM, Method, Table->Record, Context) ? Table : std::nullopt;
 }
 
 std::optional<UnorderedTableListAssignment> unorderedTableListAssignment(
