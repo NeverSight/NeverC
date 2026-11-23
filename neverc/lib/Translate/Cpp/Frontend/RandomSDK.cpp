@@ -1,4 +1,5 @@
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/RecursiveASTVisitor.h"
@@ -41,6 +42,8 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   llvm::DenseSet<const Decl *> Declarations;
   llvm::DenseSet<const Type *> Types;
   unsigned Nodes = 0;
+  bool TraceBucket = false;
+  unsigned TraceRows = 0;
 
   bool poissonAbsoluteWrapper(const Decl *D) const {
     if (const auto *P = dyn_cast_or_null<ParmVarDecl>(D)) {
@@ -534,6 +537,12 @@ public:
         ResultType(ResultType), DistanceType(DistanceType) {}
 
   bool retainType(QualType T) {
+    const bool Passed = retainTypeImpl(T);
+    if (TraceBucket && !Passed && !T.isNull() && TraceRows++ < 60)
+      llvm::errs() << "ORDERED_DEPENDENCY type " << T.getAsString() << "\n";
+    return Passed;
+  }
+  bool retainTypeImpl(QualType T) {
     if (T.isNull() || T->isDependentType() ||
         !Types.insert(T.getTypePtr()).second)
       return true;
@@ -579,7 +588,18 @@ public:
     const auto Desugared = T.getSingleStepDesugaredType(Context);
     return Desugared == T || retainType(Desugared);
   }
+  void traceBucketProof() { TraceBucket = true; }
   bool retain(const Decl *D) {
+    const bool Passed = retainImpl(D);
+    if (TraceBucket && !Passed && D && TraceRows++ < 60) {
+      const auto *Named = dyn_cast<NamedDecl>(D);
+      llvm::errs() << "ORDERED_DEPENDENCY declaration " << D->getDeclKindName() << " "
+                   << (Named ? Named->getQualifiedNameAsString() : "") << " "
+                   << D->getLocation().printToString(SM) << "\n";
+    }
+    return Passed;
+  }
+  bool retainImpl(const Decl *D) {
     if (!D || !Declarations.insert(D).second)
       return true;
     if (WeightRecord) {
@@ -716,6 +736,15 @@ public:
     return qualifier(E->getQualifier()) && retain(E->getMemberDecl());
   }
   bool VisitCallExpr(CallExpr *E) {
+    const bool Passed = visitBucketDependencyCall(E);
+    if (TraceBucket && !Passed && TraceRows++ < 60) {
+      const auto *Callee = E->getDirectCallee();
+      llvm::errs() << "ORDERED_DEPENDENCY call " << (Callee ? Callee->getQualifiedNameAsString() : "indirect")
+                   << " " << E->getExprLoc().printToString(SM) << "\n";
+    }
+    return Passed;
+  }
+  bool visitBucketDependencyCall(CallExpr *E) {
     const auto *F = E->getDirectCallee();
     if (!F) {
       const auto *Reference = dyn_cast<DeclRefExpr>(E->getCallee()->IgnoreParenImpCasts());
@@ -2659,6 +2688,7 @@ bool approvedOrderedSetSelectedBody(const State &S, const SourceManager &SM,
   if (!Function || !approvedUtilityOrderedSetStorage(S, SM, Record, Context))
     return false;
   RandomSelection Selection(S, SM, Context, Record, Context.getSizeType(), Context.DoubleTy);
+  Selection.traceBucketProof();
   return Selection.retain(Function);
 }
 
@@ -2667,6 +2697,7 @@ bool approvedHashSetBucketSource(const State &S, const SourceManager &SM,
   if (!Function || !approvedEmptyHashSetRecord(S, SM, Owner, Context))
     return false;
   RandomSelection Selection(S, SM, Context, Owner, Context.getSizeType(), Context.DoubleTy);
+  Selection.traceBucketProof();
   return Selection.retain(Function);
 }
 
