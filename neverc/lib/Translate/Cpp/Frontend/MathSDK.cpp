@@ -136246,13 +136246,28 @@ bool approvedAssociativeContainerLayoutQuery(
          Context.getTypeSize(Type) == 5 * P;
 }
 
+static QualType associativeMemberReceiverType(const MemberExpr *Member) {
+  if (!Member) return {};
+  const auto *Base = Member->getBase();
+  auto Type = Base->getType();
+  if (Member->isArrow()) {
+    if (!Type->isPointerType()) return {};
+    Type = Type->getPointeeType();
+  } else if (!Base->isLValue()) {
+    return {};
+  }
+  if (Type.isVolatileQualified() || Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+    return {};
+  return Type;
+}
+
 QualType approvedOrderedContainerObserverQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *MemberCall = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = MemberCall ? MemberCall->getMethodDecl() : nullptr;
   const auto *Member = Method ? dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
-  if (!S.coreV2() || !Method || !Member || Member->isArrow() ||
+  if (!S.coreV2() || !Method || !Member ||
       !S.owns(SM, Member->getMemberLoc()) || Call->getNumArgs() ||
       !Method->getIdentifier() || Method->isStatic() || !Method->isConst() ||
       Method->isVolatile() || Method->isVirtual() || Method->isVariadic() ||
@@ -136267,10 +136282,10 @@ QualType approvedOrderedContainerObserverQuery(
   if (!Owner->getIdentifier())
     return {};
   const auto Header = associativeContainerHeader(Owner->getName());
-  const auto *Receiver = Member->getBase();
-  if ((Header != "map" && Header != "set") || !Receiver->isLValue() ||
-      !Context.hasSameUnqualifiedType(Receiver->getType(), Context.getRecordType(Owner)) ||
-      !approvedAssociativeContainerLayoutQuery(S, SM, Receiver->getType(), Context))
+  const auto Receiver = associativeMemberReceiverType(Member);
+  if ((Header != "map" && Header != "set") || Receiver.isNull() ||
+      !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
+      !approvedAssociativeContainerLayoutQuery(S, SM, Receiver, Context))
     return {};
   const auto Result = Name == "empty" ? Context.BoolTy : Context.getSizeType();
   const auto *Prototype = Method->getType()->getAs<FunctionProtoType>();
@@ -137058,20 +137073,6 @@ static bool emptyHashLoadFactorSource(const State &S, const SourceManager &SM,
          isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase()));
 }
 
-static QualType unorderedSetReceiverType(const MemberExpr *Member) {
-  if (!Member) return {};
-  const auto *Base = Member->getBase();
-  auto Type = Base->getType();
-  if (Member->isArrow()) {
-    if (!Type->isPointerType()) return {};
-    Type = Type->getPointeeType();
-  } else if (!Base->isLValue()) {
-    return {};
-  }
-  if (Type.isVolatileQualified() || Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
-    return {};
-  return Type;
-}
 
 std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State &S,
     const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
@@ -137084,7 +137085,7 @@ std::optional<UtilityOperation> approvedEmptyHashSetBucketOperation(const State 
     return std::nullopt;
   const auto *Owner = Outer->getParent();
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
-  const auto Type = unorderedSetReceiverType(Member);
+  const auto Type = associativeMemberReceiverType(Member);
   const auto Size = Context.getSizeType();
   const auto Result = Observe ? Size : Context.VoidTy;
   const auto Parameter = Lookup ? Context.getLValueReferenceType(Context.IntTy.withConst()) : Size;
@@ -137137,7 +137138,7 @@ const MemberExpr *approvedEmptyHashSetSetMaxLoadFactor(const State &S,
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto *Owner = Outer->getParent();
   const auto Float = Context.FloatTy;
-  const auto Type = unorderedSetReceiverType(Member);
+  const auto Type = associativeMemberReceiverType(Member);
   if (Type.isNull() || Type.isConstQualified() || !S.owns(SM, Member->getMemberLoc()) ||
       Outer->isConst() || Outer->isVolatile() || Outer->isStatic() || Outer->isVirtual() ||
       !Outer->getReturnType()->isVoidType() || !Call->getType()->isVoidType() ||
@@ -137202,7 +137203,7 @@ std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(const State
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Outer = Access ? Access->getMethodDecl() : nullptr;
   const auto *Member = Outer ? dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
-  const auto Type = unorderedSetReceiverType(Member);
+  const auto Type = associativeMemberReceiverType(Member);
   if (Type.isNull() || !S.owns(SM, Member->getMemberLoc()) ||
       !Outer->getIdentifier() || !Outer->isConst() || Outer->isVolatile() ||
       Outer->isStatic() || Outer->isVirtual() || Outer->getNumParams() || Call->getNumArgs() ||
@@ -137585,7 +137586,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedSetValueOperation(
   const auto *Owner = Method->getParent();
   const auto Arity = Range ? 2u : (KeyOperation || Insert || Swap ? 1u : 0u);
   const auto Result = KeyOperation ? Context.getSizeType() : Context.VoidTy;
-  const auto Receiver = unorderedSetReceiverType(Member);
+  const auto Receiver = associativeMemberReceiverType(Member);
   if (Receiver.isNull() || (!Count && Receiver.isConstQualified()) ||
       !S.owns(SM, Member->getMemberLoc()) ||
       Method->isConst() != Count || Method->isStatic() || Method->isVolatile() || Method->isVirtual() ||
@@ -137868,7 +137869,7 @@ static std::optional<UtilityOperation> approvedUnorderedSetEndpoint(
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
   const bool Local = !Find && Call->getNumArgs() == 1;
   const unsigned Arity = Find || Local ? 1 : 0;
-  const auto Receiver = unorderedSetReceiverType(Member);
+  const auto Receiver = associativeMemberReceiverType(Member);
   if (!Table || Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
       !S.owns(SM, Member->getMemberLoc()) ||
       !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
@@ -137939,7 +137940,7 @@ std::optional<UtilityUnorderedSetInsertion> approvedUtilityUnorderedSetInsertion
   const auto *Owner = Method->getParent();
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
-  const auto Receiver = unorderedSetReceiverType(Member);
+  const auto Receiver = associativeMemberReceiverType(Member);
   if (!Table || Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
       !S.owns(SM, Member->getMemberLoc()) ||
       !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
@@ -137980,7 +137981,7 @@ std::optional<UtilityUnorderedSetIteratorErase> approvedUtilityUnorderedSetItera
   const auto *Owner = Method->getParent();
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
-  const auto Receiver = unorderedSetReceiverType(Member);
+  const auto Receiver = associativeMemberReceiverType(Member);
   if (!Table || Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
       !S.owns(SM, Member->getMemberLoc()) ||
       !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
@@ -138016,7 +138017,7 @@ std::optional<UtilityUnorderedSetEqualRange> approvedUtilityUnorderedSetEqualRan
   const auto *Owner = Method->getParent();
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto Table = approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
-  const auto Receiver = unorderedSetReceiverType(Member);
+  const auto Receiver = associativeMemberReceiverType(Member);
   if (!Table || Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
       !S.owns(SM, Member->getMemberLoc()) ||
       !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
@@ -139041,12 +139042,12 @@ static std::optional<FunctionalObjectRecord> approvedOrderedComparatorCopy(
   const auto Header = associativeContainerHeader(Owner->getName());
   const bool Map = Header == "map";
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
-  if ((Map && Name != "key_comp") || !Member || Member->isArrow() ||
-      !Member->getBase()->isLValue() || Member->getBase()->getType().isVolatileQualified() ||
+  const auto ReceiverType = associativeMemberReceiverType(Member);
+  if ((Map && Name != "key_comp") || ReceiverType.isNull() ||
       !S.owns(SM, Member->getMemberLoc()) || !Method->isConst() || Method->isVolatile() ||
       Method->isVirtual() || Method->isStatic() || Method->getNumParams() || Call->getNumArgs() ||
       !Call->isPRValue() ||
-      !Context.hasSameUnqualifiedType(Member->getBase()->getType(), Context.getRecordType(Owner)) ||
+      !Context.hasSameUnqualifiedType(ReceiverType, Context.getRecordType(Owner)) ||
       !orderedPinnedFunction(S, SM, Method, Header))
     return std::nullopt;
 
@@ -139252,7 +139253,7 @@ std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
     return Table;
   };
   auto Table = FindOwner(Mapped ? "unordered_map" : "unordered_set");
-  if (!Mapped && !Table) Table = FindOwner("unordered_multiset");
+  if (!Table) Table = FindOwner(Mapped ? "unordered_multimap" : "unordered_multiset");
   if (!Table) return std::nullopt;
   const FieldDecl *Pointer=nullptr,*Optional=nullptr;unsigned Fields=0;
   for(const auto *F:R->fields()) {
@@ -139473,8 +139474,8 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
   if (OT.hasQualifiers() || !Context.hasSameType(OT, Context.getRecordType(Map->Record)) ||
       !approvedUnorderedNodeMethodSource(S, SM, M, *Map, Context)) return std::nullopt;
   auto Compatible = [&](const UtilityUnorderedTableRecord &Other) {
-    if (Map->HasMappedValue) return Other.Record->getCanonicalDecl() == Map->Record->getCanonicalDecl();
-    return !Other.HasMappedValue && Context.hasSameType(Other.NodeType, Map->NodeType);
+    return Other.HasMappedValue == Map->HasMappedValue &&
+        Context.hasSameType(Other.NodeType, Map->NodeType);
   };
   if(Name=="extract"&&M->getNumParams()==1){
     const auto Node=unorderedNodeRecord(S,SM,Call->getType()->getAsCXXRecordDecl(),Context);
@@ -139494,7 +139495,8 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
       !Context.hasSameType(Parameter, Context.getRValueReferenceType(Context.getRecordType(Node->Record))) ||
       !Context.hasSameType(Call->getArg(Offset)->getType(), Context.getRecordType(Node->Record)))
     return std::nullopt;
-  const bool Multi = !Map->HasMappedValue && Owner->getName() == "unordered_multiset";
+  const auto OwnerName = Owner->getName();
+  const bool Multi = OwnerName == "unordered_multiset" || OwnerName == "unordered_multimap";
   if (!Offset && !Multi) {
     const auto Result = unorderedNodeInsertResult(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
     if (!Result || !Compatible(Result->Node.Map) || !Compatible(Result->Iterator.Owner)) return std::nullopt;
