@@ -29336,6 +29336,42 @@ class FunctionLowering {
       }
       return Result;
     }
+    if (Operation == UtilityOperation::UnorderedSetErasePosition ||
+        Operation == UtilityOperation::UnorderedSetEraseRange) {
+      const auto Info = approvedUtilityUnorderedSetIteratorErase(A.S, A.Sources, Call, A.Context);
+      if (!Info)
+        reject(L, "unordered set iterator erase", "The exact integer iterator and storage layouts are required.");
+      const auto *Member = llvm::cast<CXXMemberCallExpr>(Call);
+      const auto *Method = Member->getMethodDecl();
+      const auto *Receiver = llvm::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts())->getBase();
+      auto Place = dereference(snapshot(address(lvalue(Receiver), Receiver->getType(), L), L), L);
+      auto Position = [&](unsigned Index) {
+        auto Argument = snapshot(argument(Call->getArg(Index), Method->getParamDecl(Index)->getType()), L);
+        return snapshot(unorderedIteratorNode(dereference(Argument, L), Info->Iterator, L), L);
+      };
+      auto Node = Position(0);
+      auto Remove = [&] {
+        auto Next = snapshot(unorderedNodeNext(Node, Info->Table, L), L);
+        unorderedUnlinkNode(Place, Info->Table, Node, L);
+        const auto Size = type(A.Context.getSizeType(), L);
+        unorderedHeapRelease(Node, Info->Table.NodeType, quantity(Info->Table.NodeBytes, Size, L), L);
+        assign(Node, std::move(Next), L);
+      };
+      if (Operation == UtilityOperation::UnorderedSetEraseRange) {
+        auto End = Position(1);
+        const auto Check = labelName(), Erase = labelName(), Done = labelName();
+        jump(Check, L);
+        label(Check, L);
+        branch(binary("!=", Node, End, "bool", L), Erase, Done, L);
+        label(Erase, L);
+        Remove();
+        jump(Check, L);
+        label(Done, L);
+      } else {
+        Remove();
+      }
+      return unorderedMakeIterator(std::move(Node), Info->Iterator, std::move(Destination), L);
+    }
     if (Operation == UtilityOperation::UnorderedSetInsertValue) {
       const auto Info = approvedUtilityUnorderedSetInsertion(A.S, A.Sources, Call, A.Context);
       if (!Info)
