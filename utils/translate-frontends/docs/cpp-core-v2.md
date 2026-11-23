@@ -18203,3 +18203,10 @@ Default std::unordered_multiset<int> inserts each value from the checked
 initializer list. Erasing a key removes every equivalent node, returns the
 removed count, and preserves the other keys sharing the bucket. The
 original empty erase program returns zero at both optimization levels.
+
+## Integer unordered set forward traversal
+
+Default integer unordered sets and multisets support begin, end, cbegin,
+cend and find with the checked const iterator. Traversal follows the node
+chain and keeps duplicate nodes visible. The iterator yields a const
+reference to each key. The end iterator can be compared for equality.

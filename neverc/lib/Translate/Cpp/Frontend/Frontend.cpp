@@ -2643,8 +2643,8 @@ void Adapter::checkQueryType(QualType T, SourceLocation L,
       checkQueryType(Iterator->getTemplateArgs().get(0).getAsType(), L,
                      AllowIncompleteArrays, AllowIncompleteRecords, Depth + 1);
     } else if (AllowIncompleteRecords &&
-               approvedUtilityUnorderedMapIteratorMetadata(S, Sources, T->getAsCXXRecordDecl())) {
-      const auto Info = approvedUtilityUnorderedMapIteratorRecord(S, Sources,
+               approvedUtilityUnorderedIteratorMetadata(S, Sources, T->getAsCXXRecordDecl())) {
+      const auto Info = approvedUtilityUnorderedIteratorRecord(S, Sources,
           T->getAsCXXRecordDecl(), Context, [&](QualType Element) {
             chargeExpansion(1, L);
             return CompleteSDKRecord && CompleteSDKRecord(Element, L);
@@ -3342,8 +3342,8 @@ static bool utilityUnorderedMapQueryLayout(Adapter &A, const CXXRecordDecl *Reco
   }
   if (approvedUnorderedMapMetadataRecord(A.S, A.Sources, Record, A.Context))
     return bool(approvedUtilityUnorderedMapRecord(A.S, A.Sources, Record, A.Context, Complete));
-  if (approvedUtilityUnorderedMapIteratorMetadata(A.S, A.Sources, Record))
-    return bool(approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, Record, A.Context, Complete));
+  if (approvedUtilityUnorderedIteratorMetadata(A.S, A.Sources, Record))
+    return bool(approvedUtilityUnorderedIteratorRecord(A.S, A.Sources, Record, A.Context, Complete));
   return true;
 }
 
@@ -13899,7 +13899,7 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                   unorderedNodeInsertResult(S, Sources, D, Context)) &&
                  !requireUnorderedNode(D, L, Depth + 1)) {
         return {};
-      } else if (approvedUtilityUnorderedMapIteratorMetadata(S, Sources, D) &&
+      } else if (approvedUtilityUnorderedIteratorMetadata(S, Sources, D) &&
                  !requireUtilityUnorderedMapIterator(D, L, Depth + 1)) {
         return {};
       } else if (approvedUtilityUnorderedMapRecord(S, Sources, D, Context) &&
@@ -14330,9 +14330,9 @@ bool Adapter::requireUtilityUnorderedMapIterator(const CXXRecordDecl *Record,
     reject(Location, "unordered map iterator type", "Nested types exceed the protocol limit.");
     return false;
   }
-  const auto Info = approvedUtilityUnorderedMapIteratorRecord(S, Sources, Record, Context);
+  const auto Info = approvedUtilityUnorderedIteratorRecord(S, Sources, Record, Context);
   if (!Info) {
-    reject(Location, "standard library record", "An authenticated default int/int unordered-map iterator is required.", "TR0203");
+    reject(Location, "standard library record", "An authenticated default integer unordered-container iterator is required.", "TR0203");
     return false;
   }
   if (!RequiredUtilityUnorderedMapIterators.insert(Info->Record->getCanonicalDecl()).second)
@@ -14776,7 +14776,7 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
       Args.push_back(zero(Node->Map.NodePointerType, L));
       Args.push_back(zero(Context.UnsignedCharTy, L));
       Args.push_back(zero(Context.BoolTy, L));
-    } else if (auto Iterator = approvedUtilityUnorderedMapIteratorRecord(S, Sources, R, Context)) {
+    } else if (auto Iterator = approvedUtilityUnorderedIteratorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Iterator->Owner.NodePointerType, L));
       if (Iterator->Local) {
         Args.push_back(zero(Context.getSizeType(), L));
@@ -19434,7 +19434,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Map->getTemplateArgs().get(1).getAsType(), true, Depth + 1);
           return;
         }
-        if (const auto Iterator = approvedUtilityUnorderedMapIteratorRecord(
+        if (const auto Iterator = approvedUtilityUnorderedIteratorRecord(
                 A.S, A.Sources, Declaration, A.Context)) {
           // The authenticated iterator graph supplies its private SDK storage.
           Self(Self, Iterator->ValueType, true, Depth + 1);
@@ -31727,7 +31727,7 @@ static void orderCoreV2Records(Adapter &A) {
     const auto UtilityForwardList = approvedUtilityForwardListRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityForwardIterator = approvedUtilityForwardListIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedIterator =
-        approvedUtilityUnorderedMapIteratorRecord(A.S, A.Sources, R, A.Context);
+        approvedUtilityUnorderedIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedMap =
         approvedUtilityUnorderedMapRecord(A.S, A.Sources, R, A.Context);
     const auto UnorderedNode = unorderedNodeRecord(A.S, A.Sources, R, A.Context);
@@ -32145,7 +32145,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto UtilityForwardList = approvedUtilityForwardListRecord(S, Sources, R, Context);
     const auto UtilityForwardIterator = approvedUtilityForwardListIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedIterator =
-        approvedUtilityUnorderedMapIteratorRecord(S, Sources, R, Context);
+        approvedUtilityUnorderedIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedMap =
         approvedUtilityUnorderedMapRecord(S, Sources, R, Context);
     const auto UnorderedNode = unorderedNodeRecord(S, Sources, R, Context);

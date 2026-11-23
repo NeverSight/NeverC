@@ -1317,6 +1317,9 @@ enum class UtilityOperation {
   UnorderedSetClear,
   UnorderedSetEraseKey,
   UnorderedSetInsertList,
+  UnorderedSetBegin,
+  UnorderedSetEnd,
+  UnorderedSetFind,
   PriorityQueue,
   Deque,
   ValarrayScalar,
@@ -4466,6 +4469,10 @@ std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedMapIter
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
+std::optional<UtilityUnorderedMapIteratorRecord> approvedUtilityUnorderedIteratorRecord(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context,
+    const std::function<bool(clang::QualType)> &Complete = {});
 enum class UnorderedMapInsertionKind { Pair, KeyValue, KeyOnly, Default, Piecewise };
 struct UtilityUnorderedMapInsertion {
   UtilityUnorderedTableRecord Map;
@@ -4499,7 +4506,7 @@ struct UtilityUnorderedMapRangeInsertion {
 std::optional<UtilityUnorderedMapRangeInsertion> approvedUtilityUnorderedMapRangeInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-bool approvedUtilityUnorderedMapIteratorMetadata(const State &S,
+bool approvedUtilityUnorderedIteratorMetadata(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record);
 enum class UtilityUnorderedMapIteratorConstruction { Default, CopyOrMove, Converting };
 std::optional<UtilityUnorderedMapIteratorConstruction>

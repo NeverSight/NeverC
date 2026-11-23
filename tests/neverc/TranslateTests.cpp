@@ -390995,6 +390995,151 @@ int main() { std::unordered_multiset<int> values; auto* p = &values; p->insert({
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsForwardWalkRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-global-iterators-forward-walk.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values{-3, 2, 9, -3};
+  auto it = values.begin();
+  const auto end = values.end();
+  int sum = 0, visited = 0;
+  while (it != end) { sum += *it++; ++visited; }
+  return sum != 8 || visited != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-global-iterators-forward-walk.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-global-iterators-forward-walk" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsConstFindAndMissingRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-global-iterators-const-find-and-missing.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  const std::unordered_set<int> values{7, -5, 19};
+  if (values.find(3) != values.cend()) return 1;
+  auto it = values.find(-5);
+  return it == values.end() || *it != -5;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-global-iterators-const-find-and-missing.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-global-iterators-const-find-and-missing" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsDuplicateTraversalRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-global-iterators-duplicate-traversal.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{3, 5, 3, 7, 5};
+  const auto& read = values;
+  unsigned seen = 0;
+  for (auto it = read.cbegin(); it != read.cend(); ++it) if (*it == 5) ++seen;
+  return seen != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-global-iterators-duplicate-traversal.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-global-iterators-duplicate-traversal" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsEndpointsEvaluateReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-global-iterators-endpoints-evaluate-receiver-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+int trace;
+const Set& receiver(const Set& values) { trace = trace * 10 + 1; return values; }
+int key() { trace = trace * 10 + 2; return 6; }
+int main() {
+  const Set values{6};
+  auto it = receiver(values).find(key());
+  if (trace != 12 || it == values.cend() || *it != 6) return 1;
+  trace = 0;
+  return receiver(values).begin() == values.end() || trace != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-global-iterators-endpoints-evaluate-receiver-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-global-iterators-endpoints-evaluate-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsLocalBucketIteratorRejected) {
+  const auto Source = tmpFile("unordered-set-global-iterators-local-bucket-iterator.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsDifferentKeyIteratorRejected) {
+  const auto Source = tmpFile("unordered-set-global-iterators-different-key-iterator.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<long> values{2L}; return *values.begin() != 2; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsCustomHashFindRejected) {
+  const auto Source = tmpFile("unordered-set-global-iterators-custom-hash-find.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int value) const { return static_cast<unsigned long>(value); } };
+int main() { std::unordered_set<int, Hash> values{2}; return *values.find(2) != 2; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsFindPointerReceiverRejected) {
+  const auto Source = tmpFile("unordered-set-global-iterators-find-pointer-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values{5}; auto* p = &values; return *p->find(5) != 5; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
