@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetEmplacementCustomHashRejected",
     "TranslateTest.CoreV2UnorderedSetEmplacementPointerReceiverRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "83641ab21afe299e1102dbfcb7aa665e4bacb76903a037642188a6d31ba3c089",
   "maintained_original_sha256": "5755793b0747f53c69ae511749f7e732123906f01e4b86cf93288415cb2fa7a9",
@@ -155,5 +155,10 @@
   "current_registry_count": 8496,
   "current_python_registry_tests": 210,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-emplacement": "32dd635864a3d0d64c89ec5b2d1dda20dcab38d7b75c5a6e3159ab7b10df717d"
+  },
+  "native_reference_authentication_sha256": "07008c09ebd8a99a181ce465477eee804a00b0eea810baa83d66b637cfe93e16",
+  "source_proof_sha256": "bec18414a5e55e472ae1df8fad5f44c65b033aa2685ec1d921b6ce3d0e554299"
 }
