@@ -752,3 +752,10 @@ The combined compiler passes 3,384 source requests across six 64-bit targets
 and 668 formal tests on Linux x86-64. All 363 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Integer unordered set scalar insertion
+
+The combined compiler passes 3,432 source requests across six 64-bit targets
+and 676 formal tests on Linux x86-64. All 369 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

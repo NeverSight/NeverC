@@ -388442,7 +388442,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2EmptyHashSetInsertRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedSetOriginalScalarInsertRunAtBothOptimizations) {
   const auto Source = tmpFile("empty-hash-set-insert.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() {
@@ -388451,10 +388451,17 @@ int main() {
   return values.size() != 1;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("empty-hash-set-insert.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("empty-hash-set-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2EmptyHashSetCopyRejected) {
@@ -390649,15 +390656,22 @@ int main() { std::unordered_multiset<int, Hash> values{1, 1}; return values.coun
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesScalarInsertRejected) {
+TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalScalarInsertRunAtBothOptimizations) {
   const auto Source = tmpFile("unordered-multiset-values-scalar-insert.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() { std::unordered_multiset<int> values{1, 1}; values.insert(2); return values.size() != 3; }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("unordered-multiset-values-scalar-insert.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-multiset-values-scalar-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesArrowCountRejected) {
@@ -391133,6 +391147,153 @@ TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsFindPointerReceiverReject
   const auto Source = tmpFile("unordered-set-global-iterators-find-pointer-receiver.cpp");
   writeFile(Source, R"r19containers(#include <unordered_set>
 int main() { std::unordered_set<int> values{5}; auto* p = &values; return *p->find(5) != 5; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionSetReturnsPositionAndInsertionFlagRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-scalar-insertion-set-returns-position-and-insertion-flag.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> values;
+  values.reserve(8);
+  auto first = values.insert(11);
+  if (!first.second || first.first == values.end() || *first.first != 11) return 1;
+  const int key = 11;
+  auto second = values.insert(key);
+  return second.second || second.first != first.first || second.first != values.find(key) || values.size() != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-scalar-insertion-set-returns-position-and-insertion-flag.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-scalar-insertion-set-returns-position-and-insertion-flag" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionSetInsertionEvaluatesReceiverAndArgumentOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-scalar-insertion-set-insertion-evaluates-receiver-and-argument-once.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+int trace;
+Set& receiver(Set& values) { trace = trace * 10 + 1; return values; }
+int argument() { trace = trace * 10 + 2; return -7; }
+int main() {
+  Set values;
+  if (!receiver(values).insert(argument()).second || trace != 12) return 1;
+  return values.count(-7) != 1 || values.insert(-7).second;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-scalar-insertion-set-insertion-evaluates-receiver-and-argument-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-scalar-insertion-set-insertion-evaluates-receiver-and-argument-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionMultisetReturnsTheNewNodeRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-scalar-insertion-multiset-returns-the-new-node.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values;
+  values.reserve(8);
+  const int key = -4;
+  auto first = values.insert(key);
+  auto second = values.insert(-4);
+  return first == second || first == values.end() || second == values.end() ||
+      *first != -4 || *second != -4 || values.count(-4) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-scalar-insertion-multiset-returns-the-new-node.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-scalar-insertion-multiset-returns-the-new-node" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionMixedScalarAndListInsertRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-scalar-insertion-mixed-scalar-and-list-insert.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{3, 7, 3};
+  values.insert({3, 7});
+  auto added = values.insert(3);
+  if (*added != 3 || values.count(3) != 4 || values.count(7) != 2) return 1;
+  return values.erase(3) != 4 || values.count(7) != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-scalar-insertion-mixed-scalar-and-list-insert.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-scalar-insertion-mixed-scalar-and-list-insert" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionInsertWithHintRejected) {
+  const auto Source = tmpFile("unordered-set-scalar-insertion-insert-with-hint.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionCustomHashRejected) {
+  const auto Source = tmpFile("unordered-set-scalar-insertion-custom-hash.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int value) const { return static_cast<unsigned long>(value); } };
+int main() { std::unordered_set<int, Hash> values; return !values.insert(2).second; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionDifferentKeyTypeRejected) {
+  const auto Source = tmpFile("unordered-set-scalar-insertion-different-key-type.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_multiset<long> values; return *values.insert(2L) != 2; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionPointerReceiverRejected) {
+  const auto Source = tmpFile("unordered-set-scalar-insertion-pointer-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() { std::unordered_set<int> values; auto* p = &values; return !p->insert(2).second; }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;

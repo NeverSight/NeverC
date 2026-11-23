@@ -39,6 +39,14 @@
       "source_sha256": "a3774d5b106e29c0d41fab1c4b7fc7b3f2d2fb9ff2d26f65d1a8db2f548f043a",
       "original_case_source_sha256": "a3774d5b106e29c0d41fab1c4b7fc7b3f2d2fb9ff2d26f65d1a8db2f548f043a",
       "gtest_body_sha256": "c008b59403b0deee9d89d5472a56daa8453cc6a7201481fb85db2ee791f8095f"
+    },
+    {
+      "name": "empty-hash-set-insert",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalScalarInsertRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa",
+      "original_case_source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa",
+      "gtest_body_sha256": "ff028ef15f06d73906f56ab262695fd1c79e7b4f7000f74af0e916e2de61408c"
     }
   ],
   "negative_cases": [
@@ -49,14 +57,6 @@
       "source_sha256": "f3346ace2c07a0a9d34796f271c18678af3500e261c24b82ab38bb49be828154",
       "original_case_source_sha256": "f3346ace2c07a0a9d34796f271c18678af3500e261c24b82ab38bb49be828154",
       "gtest_body_sha256": "f006dac9addb94264d01701cee1ef6f72106bc23eaeb1208dc788c8781dbfb3e"
-    },
-    {
-      "name": "empty-hash-set-insert",
-      "formal_test_name": "TranslateTest.CoreV2EmptyHashSetInsertRejected",
-      "expected": "reject",
-      "source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa",
-      "original_case_source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa",
-      "gtest_body_sha256": "b1d703abc6c8057cca78cf43e95bad43ed2a8acbd59bca08293faeab9028f34a"
     },
     {
       "name": "empty-hash-set-copy",
@@ -109,20 +109,20 @@
       "source_sha256": "a3774d5b106e29c0d41fab1c4b7fc7b3f2d2fb9ff2d26f65d1a8db2f548f043a"
     },
     {
+      "name": "empty-hash-set-insert",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.insert(1);\n  return values.size() != 1;\n}\n",
+      "source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa"
+    },
+    {
       "name": "empty-hash-set-custom-hash",
       "expected": "reject",
       "kind": "source-body-guard",
       "public_header": "unordered_set",
       "source": "#include <unordered_set>\nstruct CustomHash { unsigned long long operator()(int value) const { return value; } };\nint main() {\n  std::unordered_set<int, CustomHash> values;\n  return values.empty();\n}\n",
       "source_sha256": "f3346ace2c07a0a9d34796f271c18678af3500e261c24b82ab38bb49be828154"
-    },
-    {
-      "name": "empty-hash-set-insert",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.insert(1);\n  return values.size() != 1;\n}\n",
-      "source_sha256": "1152f62bede0d08e7d49b0c4cb9ab7fd8a4d848a45d0bcf7700f9d9ceea4c8fa"
     },
     {
       "name": "empty-hash-set-copy",
@@ -139,8 +139,8 @@
     "TranslateTest.CoreV2EmptyHashSetReceiverOnceRunAtBothOptimizations",
     "TranslateTest.CoreV2EmptyHashSetScopedMultisetRunAtBothOptimizations",
     "TranslateTest.CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalScalarInsertRunAtBothOptimizations",
     "TranslateTest.CoreV2EmptyHashSetCustomHashRejected",
-    "TranslateTest.CoreV2EmptyHashSetInsertRejected",
     "TranslateTest.CoreV2EmptyHashSetCopyRejected"
   ],
   "source_proof_gate_pending": false,
@@ -154,12 +154,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8326,
   "current_python_registry_tests": 168,
-  "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
   "native_reference_proofs": {
     "empty-hash-set": "b3fef4bdda12b49db1748acb274e7da527db10974eb3e7286a2e2ef5b3590aa3",
-    "unordered-load-limit": "cf08b856927fb069603fc071cb47b80a911713f33e0efcb864a91376445426b0"
+    "unordered-load-limit": "cf08b856927fb069603fc071cb47b80a911713f33e0efcb864a91376445426b0",
+    "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c"
   },
-  "native_reference_authentication_sha256": "821aeafae25a924869f986f7ac4602b8ba1039c973461a2d0a7f48cd8f34c6a4",
-  "source_proof_sha256": "ce0b0014ab9cf2f489007a0fa5c6d5426615ad0c9d64ea686c2a30a80e775a3c"
+  "native_reference_authentication_sha256": "9a06af1390252197cc49ea6dff0c9571e6d60c3cb9b4dfbfae79461225784547",
+  "source_proof_sha256": "401177e1c1b2da747364e995f1b24dbd880182e1dd721328c363d9e9f9dda5a3"
 }

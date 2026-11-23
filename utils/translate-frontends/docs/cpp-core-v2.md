@@ -18210,3 +18210,11 @@ Default integer unordered sets and multisets support begin, end, cbegin,
 cend and find with the checked const iterator. Traversal follows the node
 chain and keeps duplicate nodes visible. The iterator yields a const
 reference to each key. The end iterator can be compared for equality.
+
+## Integer unordered set scalar insertion
+
+Default integer unordered sets return an iterator and an insertion flag
+for the checked scalar overloads. Default integer unordered multisets
+return the iterator to the newly inserted node, including when an
+equivalent key already exists. The original scalar insertion fixtures
+run at both optimization levels.
