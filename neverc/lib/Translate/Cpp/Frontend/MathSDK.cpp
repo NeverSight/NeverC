@@ -138705,7 +138705,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedTableAssignment(
   const auto *Owner = Method->getParent();
   if (!Owner->getIdentifier()) return std::nullopt;
   const auto Header = associativeContainerHeader(Owner->getName());
-  if ((Header != "unordered_map" && (Header != "unordered_set" || !Move)) ||
+  if ((Header != "unordered_map" && Header != "unordered_set") ||
       !unorderedMapPublicMethod(S, SM, Method, Header)) return std::nullopt;
   const auto Table = Header == "unordered_map" ? approvedUtilityUnorderedMapRecord(S, SM, Owner, Context)
       : approvedUtilityUnorderedSetStorage(S, SM, Owner, Context);
@@ -138723,7 +138723,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedTableAssignment(
       !(Table->HasMappedValue ? approvedUnorderedMapMethodSource(S, SM, Method, Owner, Context)
                               : approvedHashSetBucketSource(S, SM, Method, Owner, Context)))
     return std::nullopt;
-  return Move ? UtilityOperation::UnorderedTableMoveAssign : UtilityOperation::UnorderedMapCopyAssign;
+  return Move ? UtilityOperation::UnorderedTableMoveAssign : UtilityOperation::UnorderedTableCopyAssign;
 }
 
 std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedMapAllocatorQuery(

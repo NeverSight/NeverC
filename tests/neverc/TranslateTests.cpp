@@ -392748,6 +392748,183 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentUniqueCopyAssignmentReusesDestinationBucketsRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-copy-assignment-unique-copy-assignment-reuses-destination-buckets.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<int> target{-5, -7, -11, -13};
+  target.rehash(53);
+  const auto buckets = target.bucket_count();
+  std::unordered_set<int> source{100, 18, 6};
+  source.max_load_factor(2.0f);
+  auto& result = (target = source);
+  return &result != &target || target.size() != 3 || target.count(-5) != 0 || target.count(18) != 1 ||
+         target.bucket_count() != buckets || target.max_load_factor() != source.max_load_factor() ||
+         &*target.find(18) == &*source.find(18);
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-copy-assignment-unique-copy-assignment-reuses-destination-buckets.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-copy-assignment-unique-copy-assignment-reuses-destination-buckets" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentMultisetCopyAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-copy-assignment-multiset-copy-assignment-groups-colliding-duplicates.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> target{-1, -1};
+  target.rehash(2);
+  std::unordered_multiset<int> source{3, 5, 3, 7, 3, 5};
+  source.max_load_factor(5.0f);
+  target = source;
+  auto range = target.equal_range(3);
+  int groups = 0;
+  for (auto it = range.first; it != range.second; ++it) {
+    if (*it != 3) return 1;
+    ++groups;
+  }
+  target.erase(5);
+  return groups != 3 || target.count(5) != 0 || source.count(5) != 2 || target.count(-1) != 0 ||
+         target.count(7) != 1 || target.max_load_factor() != 5.0f;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-copy-assignment-multiset-copy-assignment-groups-colliding-duplicates.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-copy-assignment-multiset-copy-assignment-groups-colliding-duplicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentExplicitCopyAssignmentEvaluatesReceiverBeforeSourceRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-copy-assignment-explicit-copy-assignment-evaluates-receiver-before-source.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+using Set = std::unordered_set<int>;
+int trace;
+Set* receiver(Set& set) { trace = trace * 10 + 2; return &set; }
+const Set& input(const Set& set) { trace = trace * 10 + 1; return set; }
+int main() {
+  Set source{19, 29};
+  Set target{23};
+  auto& result = receiver(target)->operator=(input(source));
+  return trace != 21 || &result != &target || target.count(19) != 1 || target.count(23) != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-copy-assignment-explicit-copy-assignment-evaluates-receiver-before-source.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-copy-assignment-explicit-copy-assignment-evaluates-receiver-before-source" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentSelfCopyPreservesAddressesAndEquivalentRangesRunAtBothOptimizations) {
+  const auto Source = tmpFile("unordered-set-copy-assignment-self-copy-preserves-addresses-and-equivalent-ranges.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<int> values{8, -6, 8, 9};
+  values.rehash(31);
+  const auto buckets = values.bucket_count();
+  const int* stored = &*values.find(-6);
+  const auto& alias = values;
+  values = alias;
+  return values.size() != 4 || values.count(8) != 2 || values.bucket_count() != buckets ||
+         &*values.find(-6) != stored;
+}
+)r19containers");
+  const auto Output = tmpFile("unordered-set-copy-assignment-self-copy-preserves-addresses-and-equivalent-ranges.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("unordered-set-copy-assignment-self-copy-preserves-addresses-and-equivalent-ranges" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentCustomHashCopyAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-copy-assignment-custom-hash-copy-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Hash { unsigned long operator()(int value) const { return static_cast<unsigned>(value); } };
+int main() {
+  std::unordered_set<int, Hash> source, target;
+  target = source;
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentCustomEqualityMultisetCopyAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-copy-assignment-custom-equality-multiset-copy-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+struct Equal { bool operator()(int left, int right) const { return left == right; } };
+int main() {
+  std::unordered_multiset<int, std::hash<int>, Equal> source, target;
+  target = source;
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentUnsignedKeyCopyAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_set<unsigned> source, target;
+  target = source;
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentLongKeyMultisetCopyAssignmentRejected) {
+  const auto Source = tmpFile("unordered-set-copy-assignment-long-key-multiset-copy-assignment.cpp");
+  writeFile(Source, R"r19containers(#include <unordered_set>
+int main() {
+  std::unordered_multiset<long> source, target;
+  target = source;
+  return target.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

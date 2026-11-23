@@ -1111,7 +1111,7 @@ enum class UtilityOperation {
   UnorderedMapInsertValue,
   UnorderedMapEqualRange,
   UnorderedMapInsertRange,
-  UnorderedMapCopyAssign,
+  UnorderedTableCopyAssign,
   UnorderedTableMoveAssign,
   UnorderedMapGetAllocator,
   AssociativePolicy,

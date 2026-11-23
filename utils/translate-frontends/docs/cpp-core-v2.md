@@ -18284,3 +18284,11 @@ Default integer unordered sets and multisets copy from an exact const
 owner reference. The new table preserves the source bucket count, load
 limit and key multiplicities. It owns independent nodes that survive
 changes to the source.
+
+## Integer unordered set copy assignment
+
+Default integer unordered sets and multisets copy-assign from a const
+owner reference and return the destination by reference. The operation
+reuses suitable destination storage, adopts the source load limit and
+preserves equivalent-key groups. Assignment to an alias of the same
+owner preserves its nodes.
