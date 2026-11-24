@@ -101,6 +101,14 @@
       "source_sha256": "093ef3d483f885e7639eb5ab779c3f50993ef6408d1f368124376be48622fdbf"
     },
     {
+      "name": "ordered-empty-owner-set-insert",
+      "expected": "accept",
+      "public_header": "set",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n",
+      "source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7"
+    },
+    {
       "name": "ordered-empty-owner-custom-comparator",
       "expected": "reject",
       "public_header": "set",
@@ -115,14 +123,6 @@
       "kind": "source-body-guard",
       "source": "#include <map>\nint main() {\n  std::map<long long, int> values;\n  return values.size() != 0;\n}\n",
       "source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250"
-    },
-    {
-      "name": "ordered-empty-owner-set-insert",
-      "expected": "accept",
-      "public_header": "set",
-      "kind": "cpp17-operation",
-      "source": "#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n",
-      "source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7"
     },
     {
       "name": "ordered-empty-owner-map-copy",
@@ -167,7 +167,7 @@
     "source": "#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n",
     "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9"
   },
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e",
   "maintained_original_sha256": "b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d",
@@ -179,5 +179,11 @@
   "current_registry_count": 8302,
   "current_python_registry_tests": 162,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "ordered-empty-owner": "5924748fdcb2ab437464396281f9dbebaa6383a04af842824749d3299a793fc9",
+    "ordered-set-core": "1c2f471258c24fa552d0702893167e6543b8e3a6e6be5d499e9e0f6be5786d4e"
+  },
+  "native_reference_authentication_sha256": "ce3d1d94d921149375a20b0f5e9830ab8390e1687072a2ee95747e9875e05437",
+  "source_proof_sha256": "64042bafe65497f78605a64fef4479a2ac3aaf8705140482043dc251a156d240"
 }
