@@ -136761,6 +136761,28 @@ const CXXRecordDecl *approvedOrderedSetIteratorRecord(
   return Definition;
 }
 
+bool approvedOrderedSetIteratorCopyConstruction(const State &S,
+    const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
+  if (!S.coreV2() || !Ctor || !Ctor->isImplicit() || !Ctor->isTrivial() ||
+      !Ctor->isCopyOrMoveConstructor() || Ctor->getNumParams() != 1 ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Construction->getNumArgs() != 1 || !S.owns(SM, Construction->getExprLoc()) ||
+      !approvedStandardSDKDeclaration(S, SM, Ctor))
+    return false;
+  const auto *Record = Ctor->getParent();
+  const auto Type = Context.getRecordType(Record);
+  const auto Argument = Construction->getArg(0)->getType();
+  const auto Parameter = Ctor->isMoveConstructor() ? Context.getRValueReferenceType(Type)
+                                                   : Context.getLValueReferenceType(Type.withConst());
+  return !Argument.isVolatileQualified() &&
+         Context.hasSameType(Ctor->getParamDecl(0)->getType(), Parameter) &&
+         Context.hasSameUnqualifiedType(Construction->getType(), Type) &&
+         Context.hasSameUnqualifiedType(Argument, Type) &&
+         approvedOrderedSetIteratorRecord(S, SM, Record, Context);
+}
+
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);

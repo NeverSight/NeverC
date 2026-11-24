@@ -18817,6 +18817,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedOrderedSetIteratorCopyConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedSetCopyConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedSetMoveConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
@@ -21529,6 +21530,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, Construction, A.Context) ||
+            approvedOrderedSetIteratorCopyConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedSetCopyConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedSetMoveConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -24336,6 +24338,7 @@ public:
            approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedOrderedSetIteratorCopyConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedSetCopyConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedSetMoveConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -31510,6 +31513,7 @@ public:
                    approvedUtilityUnorderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetStorageConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityUnorderedSetOwnershipConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedOrderedSetIteratorCopyConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedSetCopyConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedSetMoveConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||

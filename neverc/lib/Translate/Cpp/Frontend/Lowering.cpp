@@ -40121,6 +40121,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       return;
     }
+    if (approvedOrderedSetIteratorCopyConstruction(A.S, A.Sources, C, A.Context)) {
+      assign(Place, expression(C->getArg(0)), L);
+      return;
+    }
     if (auto Kind = approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context)) {
       const auto Info = approvedUtilityUnorderedIteratorRecord(A.S, A.Sources,
           A.Context.getBaseElementType(T)->getAsCXXRecordDecl(), A.Context);

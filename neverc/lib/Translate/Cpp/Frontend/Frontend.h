@@ -4651,6 +4651,9 @@ std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
 const clang::CXXRecordDecl *approvedOrderedSetIteratorRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context, const UtilityOrderedSetStorage *Owner = nullptr, UtilityOrderedSetStorage *Resolved = nullptr);
+bool approvedOrderedSetIteratorCopyConstruction(const State &S,
+    const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
 enum class OrderedSetIteratorOperation {
   Begin, End, Find, LowerBound, UpperBound, EqualRange, Dereference, Arrow,
   Increment, PostIncrement, Decrement, PostDecrement, Equal, NotEqual
