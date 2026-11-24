@@ -4749,7 +4749,7 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
 bool approvedOrderedContainerRuntimeRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
-bool approvedOrderedContainerDefaultConstruction(const State &S,
+bool approvedOrderedContainerEmptyConstruction(const State &S,
     const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context, llvm::StringRef *Failure = nullptr);
 bool approvedOrderedContainerDestructor(const State &S,

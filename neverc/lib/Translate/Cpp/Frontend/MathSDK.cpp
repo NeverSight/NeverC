@@ -136482,8 +136482,8 @@ bool orderedTreeEndSource(const State &S, const SourceManager &SM,
 }
 
 bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
-                            const CXXConstructExpr *Build, const ASTContext &Context,
-                            llvm::StringRef *Failure) {
+                            const CXXConstructExpr *Build, const CXXConstructorDecl *Owner,
+                            const ASTContext &Context, llvm::StringRef *Failure) {
   auto Fail = [&](llvm::StringRef Why) {
     if (Failure) *Failure = Why;
     return false;
@@ -136493,17 +136493,35 @@ bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
   // belong to the out-of-line instantiation rather than that declaration.
   const auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(
       Selected ? Selected->getDefinition() : nullptr);
-  if (!Ctor || Ctor->getNumParams() != 1 || Build->getNumArgs() != 1 ||
+  const unsigned Count = Ctor ? Ctor->getNumParams() : 0;
+  if (!Count || Count > 2 || Build->getNumArgs() != Count ||
       !orderedPinnedFunction(S, SM, Ctor, "__tree"))
     return Fail("The selected pinned tree constructor definition is required.");
-  if (!orderedPolicyInit(S, SM, Build->getArg(0), nullptr))
-    return Fail("The tree comparator requires the pinned empty initialization.");
-  const auto *Tree = Ctor->getParent();
+  const auto *Tree = dyn_cast<ClassTemplateSpecializationDecl>(Ctor->getParent());
+  if (!Tree || Tree->getTemplateArgs().size() != 3)
+    return Fail("The tree must use the authenticated comparator and allocator types.");
+  const auto &Arguments = Tree->getTemplateArgs();
+  const auto ComparatorType = Context.getLValueReferenceType(Arguments.get(1).getAsType().withConst());
+  const auto AllocatorType = Context.getLValueReferenceType(Arguments.get(2).getAsType().withConst());
+  const bool WithComparator = Context.hasSameType(Ctor->getParamDecl(0)->getType(), ComparatorType);
+  const bool WithAllocator =
+      Context.hasSameType(Ctor->getParamDecl(Count - 1)->getType(), AllocatorType);
+  if ((Count == 1 && !WithComparator && !WithAllocator) ||
+      (Count == 2 && !(WithComparator && WithAllocator)))
+    return Fail("The tree constructor must accept exactly the selected empty policies.");
+  for (const auto *Argument : Build->arguments())
+    if (!orderedPolicyInit(S, SM, Argument, Owner))
+      return Fail("The tree requires pinned empty policy initializers.");
   const auto *Size = orderedTreeField(Tree, "__size_");
   const auto *End = orderedTreeField(Tree, "__end_node_");
   const auto *Begin = orderedTreeField(Tree, "__begin_node_");
   const auto *Compare = orderedTreeField(Tree, "__value_comp_");
-  bool ZeroSize = false, NullRoot = false, CheckedCompare = false;
+  const auto *ComparatorRecord = Compare ? Compare->getType()->getAsCXXRecordDecl() : nullptr;
+  ComparatorRecord = ComparatorRecord ? ComparatorRecord->getDefinition() : nullptr;
+  bool ZeroSize = false, NullRoot = false;
+  bool CheckedCompare = !WithComparator && ComparatorRecord &&
+      ComparatorRecord->hasTrivialDefaultConstructor() &&
+      orderedTrivialPolicy(S, SM, Compare->getType());
   for (const auto *Init : Ctor->inits()) {
     if (!Init->isMemberInitializer())
       return Fail("Expected a tree member initializer.");
@@ -136524,6 +136542,10 @@ bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
       const auto *InitialValue = orderedExpression(Root->getInit());
       NullRoot = Root->isMemberInitializer() && Root->getMember() == Left &&
           InitialValue && isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(InitialValue);
+    } else if (Field == Begin) {
+      if (!Value || !Context.hasSameType(Value->getType(), Begin->getType()) ||
+          !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Value))
+        return Fail("The optional begin initializer must be a null pointer.");
     } else if (Field == Compare) {
       CheckedCompare = orderedPolicyInit(S, SM, Value, Ctor);
     } else if (!orderedPolicyInit(S, SM, Value, Ctor)) {
@@ -137848,21 +137870,39 @@ std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
   return Input;
 }
 
-bool approvedOrderedContainerDefaultConstruction(const State &S,
+bool approvedOrderedContainerEmptyConstruction(const State &S,
     const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context, llvm::StringRef *Failure) {
-  if (Failure) *Failure = "An authenticated complete default constructor is required.";
+  if (Failure) *Failure = "An authenticated complete empty constructor is required.";
   const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
   const auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(
       Selected ? Selected->getDefinition() : nullptr);
   const auto *Owner = Ctor ? Ctor->getParent() : nullptr;
   if (!approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
-      !S.owns(SM, Construction->getExprLoc()) || !Ctor->isDefaultConstructor() ||
+      !S.owns(SM, Construction->getExprLoc()) || Ctor->getPrimaryTemplate() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
-      Ctor->getNumParams() || Construction->getNumArgs() ||
+      Construction->getNumArgs() != Ctor->getNumParams() ||
       !orderedPinnedFunction(S, SM, Ctor, associativeContainerHeader(Owner->getName())) ||
       Ctor->getNumCtorInitializers() != 1)
     return false;
+  const unsigned Count = Ctor->getNumParams();
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs();
+  const auto Comparator = Arguments.get(Arguments.size() - 2).getAsType();
+  const auto Allocator = Arguments.get(Arguments.size() - 1).getAsType();
+  auto PolicyOperand = [&](unsigned Index, QualType Type) {
+    const auto Argument = Construction->getArg(Index)->getType();
+    return !Argument.isVolatileQualified() && !Argument.isRestrictQualified() &&
+           Argument.getAddressSpace() == LangAS::Default &&
+           Context.hasSameUnqualifiedType(Argument, Type) &&
+           Context.hasSameType(Ctor->getParamDecl(Index)->getType(),
+                               Context.getLValueReferenceType(Type.withConst()));
+  };
+  if (Count > 2 || (!Count && !Ctor->isDefaultConstructor()) ||
+      (Count == 1 && !PolicyOperand(0, Comparator) && !PolicyOperand(0, Allocator)) ||
+      (Count == 2 && !(PolicyOperand(0, Comparator) && PolicyOperand(1, Allocator)))) {
+    if (Failure) *Failure = "Only the owner's exact empty comparator and allocator operands are supported.";
+    return false;
+  }
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
   const auto *Init = *Ctor->init_begin();
   if (!Body || !Body->body_empty() || !Init->isMemberInitializer() ||
@@ -137870,8 +137910,9 @@ bool approvedOrderedContainerDefaultConstruction(const State &S,
     if (Failure) *Failure = "Expected a single pinned tree initializer and an empty owner constructor body.";
     return false;
   }
-  return orderedEmptyTreeSource(S, SM,
-      dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit())), Context, Failure);
+  const auto *Tree = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit()));
+  return Tree && Context.hasSameType(Tree->getType(), Init->getMember()->getType()) &&
+         orderedEmptyTreeSource(S, SM, Tree, Ctor, Context, Failure);
 }
 
 bool approvedOrderedContainerDestructor(const State &S,

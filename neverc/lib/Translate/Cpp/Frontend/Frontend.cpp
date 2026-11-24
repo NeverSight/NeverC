@@ -18822,7 +18822,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedOrderedSetMoveConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
-         approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedOrderedContainerEmptyConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
          (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
          approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
@@ -21536,7 +21536,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedOrderedSetMoveConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
-            approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
+            approvedOrderedContainerEmptyConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value()) ||
             approvedUtilityValarrayConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
@@ -24345,7 +24345,7 @@ public:
            approvedOrderedSetMoveConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
-           approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedOrderedContainerEmptyConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -31521,7 +31521,7 @@ public:
                    approvedOrderedSetMoveConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
-                   approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedOrderedContainerEmptyConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
                    (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
                    approvedUtilityValarrayConstruction(A.S, A.Sources, C, A.Context) ||
@@ -31557,7 +31557,7 @@ public:
         else if (approvedOrderedContainerRuntimeRecord(
                      A.S, A.Sources, C->getConstructor()->getParent(), A.Context)) {
           llvm::StringRef Failure;
-          approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context, &Failure);
+          approvedOrderedContainerEmptyConstruction(A.S, A.Sources, C, A.Context, &Failure);
           A.reject(L, "ordered container construction", Failure, "TR0203");
         } else
           A.reject(L, "standard library runtime object",

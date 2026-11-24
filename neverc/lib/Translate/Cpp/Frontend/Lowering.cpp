@@ -40585,7 +40585,9 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       insertOrderedSetList(Place, std::move(Begin), std::move(Length), *Info, L);
       return;
     }
-    if (approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context)) {
+    if (approvedOrderedContainerEmptyConstruction(A.S, A.Sources, C, A.Context)) {
+      for (unsigned I = 0; I != C->getNumArgs(); ++I)
+        argument(C->getArg(I), C->getConstructor()->getParamDecl(I)->getType());
       initializeOrderedContainer(std::move(Place), L);
       return;
     }
