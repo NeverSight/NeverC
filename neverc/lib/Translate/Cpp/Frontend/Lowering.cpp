@@ -2101,8 +2101,8 @@ class FunctionLowering {
     assign(unorderedHandleEngaged(Right,L),Engaged,L);
   }
 
-  void moveUnorderedResult(Expression Destination, Expression Source,
-      const UnorderedNodeInsertResult &Info, bool Assignment, SourceLocation L) {
+  void moveAssociativeNodeResult(Expression Destination, Expression Source,
+      const AssociativeNodeInsertResult &Info, bool Assignment, SourceLocation L) {
     // Memberwise SDK order: position and bool precede node destruction/move.
     assign(fieldStorage(Destination, Info.Position, L), fieldStorage(Source, Info.Position, L), L);
     assign(fieldStorage(Destination, Info.Inserted, L), fieldStorage(Source, Info.Inserted, L), L);
@@ -2311,7 +2311,7 @@ class FunctionLowering {
     return Info.NotEqual ? binary("==", Equal, A.zero(A.Context.BoolTy, L), "bool", L) : Equal;
   }
 
-  Expression unorderedResultOperation(const CallExpr *Call, const UnorderedResultCall &Info) {
+  Expression associativeNodeResultOperation(const CallExpr *Call, const AssociativeNodeResultCall &Info) {
     auto L = Call->getExprLoc();
     const auto *Function = Call->getDirectCallee();
     if (Info.Swap) {
@@ -2333,7 +2333,7 @@ class FunctionLowering {
         : address(lvalue(Info.Object), Info.Object->getType(), L), L);
     if (!Source) Source = snapshot(argument(Call->getArg(Info.Offset), Function->getParamDecl(0)->getType()), L);
     auto Place = dereference(Receiver, L);
-    moveUnorderedResult(Place, dereference(*Source, L), Info.Result, true, L);
+    moveAssociativeNodeResult(Place, dereference(*Source, L), Info.Result, true, L);
     return Place;
   }
 
@@ -27666,6 +27666,44 @@ class FunctionLowering {
     return Output;
   }
 
+  Expression insertOrderedNode(const CallExpr *Call, const OrderedNodeInsertion &Info,
+      std::optional<Expression> Destination) {
+    const auto L = Call->getExprLoc();
+    const auto *Method = Call->getDirectCallee();
+    auto Place = dereference(snapshot(unorderedSetReceiverPointer(Info.Receiver, L), L), L);
+    auto Source = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
+    auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+    auto Position = orderedIteratorCursor(Info.Result ? fieldStorage(Output, Info.Result->Position, L) : Output, L);
+    auto Node = snapshot(unorderedHandlePointer(Source, Info.Node, L), L);
+    if (Info.Result) {
+      assign(fieldStorage(Output, Info.Result->Inserted, L), boolean(false, L), L);
+      releaseUnorderedHandle(fieldStorage(Output, Info.Result->Handle, L), Info.Node, L);
+    }
+    assign(Position, orderedTreeSentinel(Place, L), L);
+    const auto Present = labelName(), Done = labelName();
+    branch(cast(Node, "bool", L), Present, Done, L);
+    label(Present, L);
+    auto Key = snapshot(orderedSetKey(Node, Info.Tree, L), L);
+    auto Search = searchOrderedSet(Place, Key, Info.Tree, L, Info.Tree.Multi);
+    if (Info.Result) {
+      const auto Duplicate = labelName(), Insert = labelName();
+      branch(cast(Search.Node, "bool", L), Duplicate, Insert, L);
+      label(Duplicate, L);
+      assign(Position, Search.Node, L);
+      moveUnorderedHandle(fieldStorage(Output, Info.Result->Handle, L), Source, Info.Node, false, L);
+      jump(Done, L);
+      label(Insert, L);
+    }
+    linkOrderedSetNode(Place, Node, std::move(Search.Parent), std::move(Search.Slot), L);
+    releaseUnorderedHandle(Source, Info.Node, L);
+    assign(Position, std::move(Node), L);
+    if (Info.Result)
+      assign(fieldStorage(Output, Info.Result->Inserted, L), boolean(true, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Output;
+  }
+
   Expression eraseOrderedSetNode(Expression Place, Expression Node,
       const UtilityOrderedSetStorage &Info, SourceLocation L) {
     auto Next = unlinkOrderedSetNode(std::move(Place), Node, L);
@@ -34712,8 +34750,8 @@ class FunctionLowering {
         return unorderedIteratorTraversalOperation(Call, *Info, std::move(Destination));
       if (auto Info = unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context))
         return unorderedTableNonmemberOperation(Call, *Info);
-      if (auto Info = unorderedResultCall(A.S, A.Sources, Call, A.Context))
-        return unorderedResultOperation(Call, *Info);
+      if (auto Info = associativeNodeResultCall(A.S, A.Sources, Call, A.Context))
+        return associativeNodeResultOperation(Call, *Info);
       if (auto Info = unorderedTableListAssignment(A.S, A.Sources, Call, A.Context))
         return unorderedTableListAssignmentOperation(Call, *Info);
       if (auto Info = unorderedTableMerge(A.S, A.Sources, Call, A.Context))
@@ -34724,6 +34762,8 @@ class FunctionLowering {
         return unorderedNodeTransferOperation(Call, *Info, std::move(Destination));
       if (auto Info = orderedNodeExtraction(A.S, A.Sources, Call, A.Context))
         return extractOrderedNode(Call, *Info, std::move(Destination));
+      if (auto Info = orderedNodeInsertion(A.S, A.Sources, Call, A.Context))
+        return insertOrderedNode(Call, *Info, std::move(Destination));
       if (auto Operation =
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context))
         return utilityOperation(Call, *Operation, std::move(Destination));
@@ -40428,17 +40468,21 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
                            std::move(Length), std::move(FillCharacter), L);
       return;
     }
-    if (auto Info = unorderedResultConstruction(A.S, A.Sources, C, A.Context)) {
+    if (auto Info = associativeNodeResultConstruction(A.S, A.Sources, C, A.Context)) {
       if (!C->getNumArgs()) {
-        unorderedMakeIterator(A.zero(Info->Node.PointerType, L), Info->Iterator,
-            fieldStorage(Place, Info->Position, L), L);
+        auto Position = fieldStorage(Place, Info->Position, L);
+        if (Info->UnorderedIterator)
+          unorderedMakeIterator(A.zero(Info->Node.PointerType, L), *Info->UnorderedIterator,
+                               std::move(Position), L);
+        else
+          initializeZero(orderedIteratorCursor(std::move(Position), L), A.Context.VoidPtrTy, L);
         if (C->requiresZeroInitialization())
           assign(fieldStorage(Place, Info->Inserted, L), A.zero(A.Context.BoolTy, L), L);
         releaseUnorderedHandle(fieldStorage(Place, Info->Handle, L), Info->Node, L);
         return;
       }
       auto Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
-      moveUnorderedResult(Place, dereference(Source, L), *Info, false, L);
+      moveAssociativeNodeResult(Place, dereference(Source, L), *Info, false, L);
       return;
     }
     if (auto Kind = associativeNodeConstruction(A.S, A.Sources, C, A.Context)) {

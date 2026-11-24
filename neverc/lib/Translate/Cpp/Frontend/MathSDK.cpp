@@ -140810,7 +140810,7 @@ bool associativeNodeDestructor(const State &S,const SourceManager &SM,
 }
 
 
-std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
+std::optional<AssociativeNodeInsertResult> associativeNodeInsertResult(
     const State &S,const SourceManager &SM,const CXXRecordDecl *Input,const ASTContext &Context,
     const std::function<bool(QualType)> &Complete) {
   auto SDK=[&](const Decl*D){const auto F=D?S.sdkFile(SM,D->getLocation()):std::nullopt;return F&&F->Root=="libcxx"&&F->Path=="__node_handle"&&!S.owns(SM,D->getLocation())&&approvedStandardSDKDeclaration(S,SM,D);};
@@ -140825,15 +140825,23 @@ std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
   for(const auto*D:R->redecls())if(!SDK(D))return std::nullopt;
   for(const auto*D:T->redecls()){if(!SDK(D))return std::nullopt;for(const auto*P:D->getTemplatedDecl()->redecls())if(!SDK(P))return std::nullopt;}
   const auto&A=R->getTemplateArgs();if(A[0].getKind()!=TemplateArgument::Type||A[1].getKind()!=TemplateArgument::Type)return std::nullopt;
-  const auto Iterator = approvedUtilityUnorderedIteratorRecord(S, SM,
-      A[0].getAsType()->getAsCXXRecordDecl(), Context, Complete);
   const auto Node = associativeNodeRecord(S, SM, A[1].getAsType()->getAsCXXRecordDecl(), Context, Complete);
-  const auto *Table = Node ? std::get_if<UtilityUnorderedTableRecord>(&Node->Owner) : nullptr;
-  if (!Iterator || Iterator->Local || !Table || Iterator->Const == Table->HasMappedValue ||
-      Iterator->Owner.HasMappedValue != Table->HasMappedValue ||
-      (Table->HasMappedValue ? Iterator->Owner.Record->getCanonicalDecl() != Table->Record->getCanonicalDecl()
-                             : !Context.hasSameType(Iterator->Owner.NodeType, Table->NodeType)))
-    return std::nullopt;
+  if (!Node) return std::nullopt;
+  const auto *Cursor = A[0].getAsType()->getAsCXXRecordDecl();
+  std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
+  if (const auto *Tree = std::get_if<UtilityOrderedSetStorage>(&Node->Owner)) {
+    const auto *OrderedIterator = approvedOrderedSetIteratorRecord(S, SM, Cursor, Context, Tree);
+    if (!OrderedIterator || (Node->HasMappedValue && OrderedIterator->getName() != "__map_iterator"))
+      return std::nullopt;
+  } else {
+    const auto &Table = std::get<UtilityUnorderedTableRecord>(Node->Owner);
+    Iterator = approvedUtilityUnorderedIteratorRecord(S, SM, Cursor, Context, Complete);
+    if (!Iterator || Iterator->Local || Iterator->Const == Table.HasMappedValue ||
+        Iterator->Owner.HasMappedValue != Table.HasMappedValue ||
+        (Table.HasMappedValue ? Iterator->Owner.Record->getCanonicalDecl() != Table.Record->getCanonicalDecl()
+                              : !Context.hasSameType(Iterator->Owner.NodeType, Table.NodeType)))
+      return std::nullopt;
+  }
   const auto P=Context.getTypeSize(Context.VoidPtrTy);const auto&L=Context.getASTRecordLayout(R);
   const FieldDecl *Position=nullptr,*Inserted=nullptr,*Handle=nullptr;unsigned Count=0;
   for(const auto*F:R->fields()){
@@ -140843,7 +140851,7 @@ std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
   if(Count!=3||!Position||!Inserted||!Handle||!Context.hasSameType(Position->getType(),A[0].getAsType())||!Context.hasSameType(Inserted->getType(),Context.BoolTy)||!Context.hasSameType(Handle->getType(),A[1].getAsType())||
      L.getFieldOffset(Position->getFieldIndex())||L.getFieldOffset(Inserted->getFieldIndex())!=P||L.getFieldOffset(Handle->getFieldIndex())!=2*P||
      Context.getTypeSize(Context.getRecordType(R))!=4*P||Context.getTypeAlign(Context.getRecordType(R))!=Context.getTypeAlign(Context.VoidPtrTy))return std::nullopt;
-  return UnorderedNodeInsertResult{R,*Iterator,*Node,Position,Inserted,Handle};
+  return AssociativeNodeInsertResult{R, Iterator, *Node, Position, Inserted, Handle};
 }
 
 
@@ -140898,9 +140906,12 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
   const auto OwnerName = Owner->getName();
   const bool Multi = OwnerName == "unordered_multiset" || OwnerName == "unordered_multimap";
   if (!Offset && !Multi) {
-    const auto Result = unorderedNodeInsertResult(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
-    if (!Result || !Compatible(std::get<UtilityUnorderedTableRecord>(Result->Node.Owner)) || !Compatible(Result->Iterator.Owner)) return std::nullopt;
-    return UnorderedNodeTransfer{*Map, *Node, Result->Iterator, Result, UnorderedNodeTransferKind::Insert, 0};
+    const auto Result = associativeNodeInsertResult(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (!Result || !Result->UnorderedIterator ||
+        !Compatible(std::get<UtilityUnorderedTableRecord>(Result->Node.Owner)) ||
+        !Compatible(Result->UnorderedIterator->Owner))
+      return std::nullopt;
+    return UnorderedNodeTransfer{*Map, *Node, Result->UnorderedIterator, Result, UnorderedNodeTransferKind::Insert, 0};
   }
   const auto Iterator = approvedUtilityUnorderedIteratorRecord(S, SM,
       Call->getType()->getAsCXXRecordDecl(), Context);
@@ -140993,6 +141004,87 @@ std::optional<OrderedNodeExtraction> orderedNodeExtraction(
   if (!Body(S, SM, Method, Owner, Context))
     return std::nullopt;
   return OrderedNodeExtraction{*Tree, *Handle, Member, ByIterator};
+}
+
+std::optional<OrderedNodeInsertion> orderedNodeInsertion(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
+      Method->isStatic() || Method->isVirtual() || Method->isConst() || Method->isVolatile() ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Call->isPRValue() || !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+  const auto Input = Method->getParamDecl(0)->getType();
+  if (!Input->isRValueReferenceType() || !Context.hasSameType(Input->getPointeeType(), Call->getArg(0)->getType()) ||
+      !Call->getArg(0)->isGLValue())
+    return std::nullopt;
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Member);
+  const auto *Owner = Method->getParent();
+  if (Receiver.isNull() || !Owner->getIdentifier() || !S.owns(SM, Member->getMemberLoc()) ||
+      !Context.hasSameType(Receiver, Context.getRecordType(Owner)))
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "set" && Header != "map") || !orderedPinnedFunction(S, SM, Method, Header))
+    return std::nullopt;
+  const bool Mapped = Header == "map";
+  const auto Tree = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
+                           : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const auto Node = associativeNodeRecord(S, SM, Input->getPointeeType()->getAsCXXRecordDecl(), Context);
+  if (!Tree || !Node || !std::holds_alternative<UtilityOrderedSetStorage>(Node->Owner) ||
+      !Context.hasSameType(Tree->NodeType, Node->NodeType))
+    return std::nullopt;
+  std::optional<AssociativeNodeInsertResult> Result;
+  const CXXRecordDecl *Iterator = nullptr;
+  if (Tree->Multi) {
+    Iterator = approvedOrderedSetIteratorRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context, &*Tree);
+    if (!Iterator || (Mapped && Iterator->getName() != "__map_iterator")) return std::nullopt;
+  } else {
+    Result = associativeNodeInsertResult(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (!Result || Result->UnorderedIterator ||
+        Result->Node.Record->getCanonicalDecl() != Node->Record->getCanonicalDecl())
+      return std::nullopt;
+  }
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  const auto *Return = Body && !Body->body_empty() && Body->size() <= 2
+      ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  const auto *Returned = Return ? orderedExpression(Return->getRetValue()) : nullptr;
+  if (const auto *Convert = dyn_cast_or_null<CXXConstructExpr>(Returned)) {
+    const auto *Ctor = Convert->getConstructor();
+    if (!Iterator || Convert->getNumArgs() != 1 ||
+        Ctor->getParent()->getCanonicalDecl() != Iterator->getCanonicalDecl() ||
+        !orderedPinnedFunction(S, SM, Ctor, Mapped ? "map" : "__tree"))
+      return std::nullopt;
+    Returned = orderedExpression(Convert->getArg(0));
+  }
+  const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(Returned);
+  const auto *Selected = orderedTreeMethod(S, SM, Insert, Tree->Tree,
+      Tree->Multi ? "__node_handle_insert_multi" : "__node_handle_insert_unique", 1);
+  const auto *Types = Selected ? Selected->getTemplateSpecializationArgs() : nullptr;
+  const auto *Storage = Selected ? dyn_cast_or_null<MemberExpr>(
+      orderedExpression(Insert->getImplicitObjectArgument())) : nullptr;
+  if (!Storage || Storage->getMemberDecl() != orderedTreeField(Owner, "__tree_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Storage->getBase())) || Selected->isConst() ||
+      !Types || Types->size() != (Tree->Multi ? 1u : 2u) || Types->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Types->get(0).getAsType(), Input->getPointeeType()) ||
+      !Context.hasSameType(Selected->getParamDecl(0)->getType(), Input))
+    return std::nullopt;
+  if (Result && (Types->get(1).getKind() != TemplateArgument::Type ||
+                 !Context.hasSameType(Types->get(1).getAsType(), Call->getType()) ||
+                 !Context.hasSameType(Selected->getReturnType(), Call->getType())))
+    return std::nullopt;
+  const auto *Move = dyn_cast_or_null<CallExpr>(orderedExpression(Insert->getArg(0)));
+  const auto *MoveFunction = Move ? Move->getDirectCallee() : nullptr;
+  if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
+      Move->getNumArgs() != 1 || !Context.hasSameType(MoveFunction->getReturnType(), Input) ||
+      !orderedPinnedFunction(S, SM, MoveFunction, "__utility/move.h") ||
+      !orderedParameter(Move->getArg(0), Method->getParamDecl(0)))
+    return std::nullopt;
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  if (!SelectedBody(S, SM, Method, Owner, Context))
+    return std::nullopt;
+  return OrderedNodeInsertion{*Tree, *Node, Member, Result};
 }
 
 bool associativeNodeBaseCast(const State &S, const SourceManager &SM,
@@ -141127,8 +141219,8 @@ std::optional<UnorderedTableListAssignment> unorderedTableListAssignment(
   return UnorderedTableListAssignment{*Table, *List, std::nullopt, Object, Offset, bool(Operator)};
 }
 
-static bool unorderedResultMethod(const State &S, const SourceManager &SM,
-    const CXXMethodDecl *Method, const UnorderedNodeInsertResult &Info,
+static bool associativeNodeResultMethod(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const AssociativeNodeInsertResult &Info,
     const ASTContext &Context) {
   if (!Method || !Method->isImplicit() || !Method->isDefaulted() ||
       Method->isInvalidDecl() || Method->isDeleted() || Method->isStatic() ||
@@ -141142,15 +141234,15 @@ static bool unorderedResultMethod(const State &S, const SourceManager &SM,
   return approvedAssociativeNodeMethodSource(S, SM, Method, Info.Node, Context);
 }
 
-std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
+std::optional<AssociativeNodeInsertResult> associativeNodeResultConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *C,
     const ASTContext &Context) {
   if (!C || C->isTypeDependent() || C->isValueDependent() || C->isInstantiationDependent() ||
       C->getConstructionKind() != CXXConstructionKind::Complete || C->getNumArgs() > 1) return std::nullopt;
-  const auto Info = unorderedNodeInsertResult(
+  const auto Info = associativeNodeInsertResult(
       S, SM, Context.getBaseElementType(C->getType())->getAsCXXRecordDecl(), Context);
   const auto *Method = C->getConstructor();
-  if (!Info || !Method || !unorderedResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
+  if (!Info || !Method || !associativeNodeResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
   if (!C->getNumArgs())
     return Method->isDefaultConstructor() && !Method->getNumParams() ? Info : std::nullopt;
   if (!Method->isMoveConstructor() || Method->getNumParams() != 1) return std::nullopt;
@@ -141159,7 +141251,7 @@ std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
       Context.hasSameType(C->getArg(0)->getType(), Type) ? Info : std::nullopt;
 }
 
-std::optional<UnorderedResultCall> unorderedResultCall(
+std::optional<AssociativeNodeResultCall> associativeNodeResultCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -141174,7 +141266,7 @@ std::optional<UnorderedResultCall> unorderedResultCall(
         Function->isVariadic() || !Function->hasBody() ||
         Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         !S.owns(SM, Call->getExprLoc())) return std::nullopt;
-    const auto Info = unorderedNodeInsertResult(S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Info = associativeNodeInsertResult(S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
     if (!Info) return std::nullopt;
     const auto Type = Context.getRecordType(Info->Record), Reference = Context.getLValueReferenceType(Type);
     const auto *Arguments = Function->getTemplateSpecializationArgs();
@@ -141199,7 +141291,7 @@ std::optional<UnorderedResultCall> unorderedResultCall(
       for (const auto *Pattern : D->getTemplatedDecl()->redecls()) if (!Pinned(Pattern)) return std::nullopt;
     }
     if (!approvedAssociativeNodeMethodSource(S, SM, Function, Info->Node, Context)) return std::nullopt;
-    return UnorderedResultCall{*Info,Call->getArg(0),1,true,false};
+    return AssociativeNodeResultCall{*Info,Call->getArg(0),1,true,false};
   }
   const unsigned Offset = Operator ? 1 : 0;
   const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
@@ -141209,13 +141301,13 @@ std::optional<UnorderedResultCall> unorderedResultCall(
       Call->getNumArgs() != Offset + 1 || !Call->isLValue() ||
       !S.owns(SM, Reference ? Reference->getExprLoc() : Operator ? Operator->getOperatorLoc() : SourceLocation())) return std::nullopt;
   auto Receiver = Object->getType();if (Receiver->isPointerType()) Receiver = Receiver->getPointeeType();
-  const auto Info = unorderedNodeInsertResult(S, SM, Receiver->getAsCXXRecordDecl(), Context);
-  if (!Info || Receiver.hasQualifiers() || !unorderedResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
+  const auto Info = associativeNodeInsertResult(S, SM, Receiver->getAsCXXRecordDecl(), Context);
+  if (!Info || Receiver.hasQualifiers() || !associativeNodeResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
   const auto Type = Context.getRecordType(Info->Record);
   if (!Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)) ||
       !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getRValueReferenceType(Type)) ||
       !Context.hasSameType(Call->getArg(Offset)->getType(), Type) || !Context.hasSameType(Call->getType(), Type)) return std::nullopt;
-  return UnorderedResultCall{*Info,Object,Offset,false,bool(Operator)};
+  return AssociativeNodeResultCall{*Info,Object,Offset,false,bool(Operator)};
 }
 
 std::optional<UnorderedTableNonmemberCall> unorderedTableNonmemberCall(
