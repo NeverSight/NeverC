@@ -34894,10 +34894,13 @@ class FunctionLowering {
         for (unsigned I = 0; I < Visit->Variants.size(); ++I)
           Indices.push_back(snapshot(fieldStorage(Places[I], Visit->Variants[I].Index, L), L));
         const bool HasResult = !Visit->Result->isVoidType();
-        auto Result = HasResult ? temporary(type(Visit->Result, L), L) : Expression();
+        const bool Reference = Visit->Result->isReferenceType();
+        const auto Value = Visit->Result.getNonReferenceType();
+        const auto Storage = Reference ? A.Context.getPointerType(Value) : Value;
+        auto Result = HasResult ? temporary(type(Storage, L), L) : Expression();
         // Variants with these trivial alternatives cannot become valueless.
         if (HasResult)
-          assign(Result, A.zero(Visit->Result, L), L);
+          assign(Result, A.zero(Storage, L), L);
         const auto End = labelName();
         unsigned Entry = 0;
         auto Select = [&](auto &&Self, unsigned Dimension) -> void {
@@ -34935,7 +34938,9 @@ class FunctionLowering {
               Body.push_back(std::move(Instruction));
             } else {
               auto Visited = emitIndirectCall(Callable, std::move(Arguments), Visit->Result, L);
-              if (HasResult)
+              if (Reference)
+                assign(Result, address(std::move(Visited), Value, L), L);
+              else if (HasResult)
                 assign(Result, std::move(Visited), L);
             }
             return;
@@ -34957,6 +34962,8 @@ class FunctionLowering {
         Select(Select, 0);
         jump(End, L);
         label(End, L);
+        if (Reference)
+          return dereference(std::move(Result), L);
         return Result;
       }
       if (const auto Visit = approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context)) {

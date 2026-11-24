@@ -10566,7 +10566,9 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
     QualType Object, QualType Result, const CXXMethodDecl *&SelectedMethod,
     const ASTContext &Context) {
   const auto *Target = variantVisitDispatchTarget(S, SM, Entry, Capture, Variants, Indices, Context);
-  if (!Target || !Context.hasSameType(Target->getType(), Result))
+  if (!Target || !Context.hasSameType(Target->getType(), Result.getNonReferenceType()) ||
+      Target->isLValue() != Result->isLValueReferenceType() ||
+      Target->isXValue() != Result->isRValueReferenceType())
     return false;
   const unsigned Count = Variants.size();
   const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
@@ -10777,7 +10779,15 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     return std::nullopt;
   const auto Type = Parameter.getNonReferenceType();
   const auto Result = Visit->getReturnType();
-  if (Type.isVolatileQualified() || !(Result->isIntegerType() || Result->isVoidType()))
+  const auto Referent = Result.getNonReferenceType();
+  const bool BorrowedResult = Result->isReferenceType() &&
+      !Referent.isVolatileQualified() && !Referent.isRestrictQualified() &&
+      Referent.getAddressSpace() == LangAS::Default && utilityScalar(Context, Referent) &&
+      llvm::all_of(Visit->parameters().drop_front(), [](const ParmVarDecl *Operand) {
+        return Operand->getType()->isLValueReferenceType();
+      });
+  if (Type.isVolatileQualified() ||
+      !(Result->isIntegerType() || Result->isVoidType() || BorrowedResult))
     return std::nullopt;
   const auto *Object = Type->getAsCXXRecordDecl();
   std::vector<QualType> Inputs;
