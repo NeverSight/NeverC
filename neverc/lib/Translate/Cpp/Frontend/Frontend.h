@@ -4653,7 +4653,7 @@ struct UtilityOrderedSetStorage {
   clang::QualType NodeType, LinkType, SentinelType;
   uint64_t NodeBytes, ValueOffsetBytes, MappedOffsetBytes;
   bool Multi;
-  clang::QualType MappedPairType;
+  clang::QualType MappedPairType, MappedValueType;
 };
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,

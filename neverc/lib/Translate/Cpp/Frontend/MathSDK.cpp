@@ -136069,6 +136069,11 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
   });
 }
 
+static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
+  return Context.hasSameType(Type, Context.IntTy) ||
+         Context.hasSameType(Type, Context.LongLongTy);
+}
+
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {
@@ -136088,9 +136093,10 @@ bool approvedAssociativeContainerMetadataRecord(
     return false;
   const auto &Args = Container->getTemplateArgs();
   const auto Key = Args.get(0).getAsType();
+  const auto Mapped = Map ? Args.get(1).getAsType() : QualType();
   if ((!Context.hasSameType(Key, Context.IntTy) &&
        !(HashTable && Context.hasSameType(Key, Context.UnsignedIntTy))) ||
-      (Map && !Context.hasSameType(Args.get(1).getAsType(), Context.IntTy)))
+      (Map && !orderedMappedValueType(Context, Mapped)))
     return false;
   auto PolicyFor = [&](unsigned I, llvm::StringRef Policy, llvm::StringRef Header) {
     const auto *Spec = associativeTypeIdentity(S, SM, Args.get(I).getAsType()->getAsCXXRecordDecl(),
@@ -136114,8 +136120,8 @@ bool approvedAssociativeContainerMetadataRecord(
     return Context.hasSameType(Value, Key);
   const auto *Pair = associativeTypeIdentity(S, SM, Value->getAsCXXRecordDecl(),
       "pair", "__utility/pair.h", "__fwd/pair.h", 2);
-  return Pair && Context.hasSameType(Pair->getTemplateArgs().get(0).getAsType(), Context.IntTy.withConst()) &&
-         Context.hasSameType(Pair->getTemplateArgs().get(1).getAsType(), Context.IntTy);
+  return Pair && Context.hasSameType(Pair->getTemplateArgs().get(0).getAsType(), Key.withConst()) &&
+         Context.hasSameType(Pair->getTemplateArgs().get(1).getAsType(), Mapped);
 }
 
 static bool associativeStorageDeclaration(const State &S, const SourceManager &SM,
@@ -136784,7 +136790,7 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
 
   auto KeyOffset = ValueOffset;
   uint64_t MappedOffset = 0;
-  QualType MappedPairType;
+  QualType MappedPairType, MappedValueType;
   if (Mapped) {
     const auto *Wrapper = Element->getAsCXXRecordDecl();
     Wrapper = Wrapper ? Wrapper->getDefinition() : nullptr;
@@ -136793,8 +136799,9 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
                             : std::nullopt;
     if (!Wrapper || Wrapper->getNumBases() || !Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->First->getType(), Context.IntTy.withConst()) ||
-        !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
+        !orderedMappedValueType(Context, Pair->Second->getType()))
       return std::nullopt;
+    MappedValueType = Pair->Second->getType();
     const auto &WrapperLayout = Context.getASTRecordLayout(Wrapper);
     const auto &PairLayout = Context.getASTRecordLayout(Pair->Record);
     if (WrapperLayout.getFieldCount() != 1 || PairLayout.getFieldCount() != 2 ||
@@ -136805,16 +136812,16 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
       return std::nullopt;
     MappedPairType = Field->getType();
     MappedOffset = ValueOffset + PairLayout.getFieldOffset(Pair->Second->getFieldIndex());
-    const auto Width = Context.getTypeSize(Context.IntTy);
-    if (KeyOffset + Width > MappedOffset || MappedOffset + Width > Context.getTypeSize(NodeType) ||
-        KeyOffset % Context.getTypeAlign(Context.IntTy) || MappedOffset % Context.getTypeAlign(Context.IntTy))
+    if (KeyOffset + Context.getTypeSize(Context.IntTy) > MappedOffset ||
+        MappedOffset + Context.getTypeSize(MappedValueType) > Context.getTypeSize(NodeType) ||
+        KeyOffset % Context.getTypeAlign(Context.IntTy) || MappedOffset % Context.getTypeAlign(MappedValueType))
       return std::nullopt;
   } else if (!Context.hasSameType(Element, Context.IntTy)) {
     return std::nullopt;
   }
   return UtilityOrderedSetStorage{Record, Tree, NodeType, LinkType, SentinelType,
       uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()), KeyOffset / Byte, MappedOffset / Byte,
-      Record->getName() == "multiset" || Record->getName() == "multimap", MappedPairType};
+      Record->getName() == "multiset" || Record->getName() == "multimap", MappedPairType, MappedValueType};
 }
 
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
@@ -136992,20 +136999,20 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
          approvedOrderedSetIteratorRecord(S, SM, Record, Context);
 }
 
-static bool orderedIntegerEmplacementArgument(const ASTContext &Context, QualType Type) {
+static bool orderedIntegerEmplacementArgument(const ASTContext &Context, QualType Type, QualType Target) {
   return !Type.isNull() && !Type.isVolatileQualified() && Type->isIntegerType() &&
-      utilityScalarDirectConversion(Context, Type, Context.IntTy);
+      utilityScalarDirectConversion(Context, Type, Target);
 }
 
 static std::optional<UtilityMapPiecewiseArguments> approvedMappedPiecewiseArguments(
     const State &S, const SourceManager &SM, const CallExpr *Call, const CXXMethodDecl *Method,
-    unsigned Offset, const ASTContext &Context) {
+    unsigned Offset, QualType MappedType, const ASTContext &Context) {
   if (!Method->getParamDecl(Offset)->getType()->isReferenceType() ||
       !approvedUtilityPiecewiseConstructType(S, SM,
           Method->getParamDecl(Offset)->getType().getNonReferenceType(), Context) ||
       !approvedUtilityPiecewiseConstructExpression(S, SM, Call->getArg(Offset), Context))
     return std::nullopt;
-  auto TupleArgument = [&](unsigned Index) -> std::optional<UtilityTupleRecord> {
+  auto TupleArgument = [&](unsigned Index, QualType ElementType) -> std::optional<UtilityTupleRecord> {
     const auto Parameter = Method->getParamDecl(Index)->getType();
     const auto Value = Parameter.getNonReferenceType();
     if (!Parameter->isReferenceType() || Value.isVolatileQualified() ||
@@ -137020,12 +137027,12 @@ static std::optional<UtilityMapPiecewiseArguments> approvedMappedPiecewiseArgume
       const auto Element = Tuple->Elements.front().getType().getNonReferenceType();
       if (Element.isVolatileQualified() || Element.isRestrictQualified() ||
           Element.getAddressSpace() != LangAS::Default ||
-          !Context.hasSameUnqualifiedType(Element, Context.IntTy)) return std::nullopt;
+          !Context.hasSameUnqualifiedType(Element, ElementType)) return std::nullopt;
     }
     return Tuple;
   };
-  auto Key = TupleArgument(Offset + 1);
-  auto Value = TupleArgument(Offset + 2);
+  auto Key = TupleArgument(Offset + 1, Context.IntTy);
+  auto Value = TupleArgument(Offset + 2, MappedType);
   if (!Key || !Value) return std::nullopt;
   return UtilityMapPiecewiseArguments{std::move(*Key), std::move(*Value)};
 }
@@ -137080,16 +137087,16 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
-  auto MatchesInteger = [&](QualType Type) {
-    return Hinted ? (Context.hasSameType(Type, Context.IntTy) ||
-                     Context.hasSameType(Type, Context.IntTy.withConst()))
-                  : orderedIntegerEmplacementArgument(Context, Type);
+  auto MatchesInteger = [&](QualType Type, QualType Target) {
+    return Hinted ? (Context.hasSameType(Type, Target) ||
+                     Context.hasSameType(Type, Target.withConst()))
+                  : orderedIntegerEmplacementArgument(Context, Type, Target);
   };
   std::optional<UtilityPairRecord> Input;
   std::optional<UtilityMapPiecewiseArguments> Piecewise;
   if (Insertion == Kind::Emplace) {
     if (Mapped && Values == 3) {
-      Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Context);
+      Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Table->MappedValueType, Context);
       if (!Piecewise) return std::nullopt;
     }
     if (Mapped && Values == 1) {
@@ -137098,7 +137105,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       if (!Input || PairType.isVolatileQualified() || !Input->Record->hasTrivialDestructor() ||
           (!Context.hasSameType(Input->First->getType(), Context.IntTy) &&
            !Context.hasSameType(Input->First->getType(), Context.IntTy.withConst())) ||
-          !Context.hasSameType(Input->Second->getType(), Context.IntTy))
+          !Context.hasSameType(Input->Second->getType(), Table->MappedValueType))
         return std::nullopt;
     }
     const auto *Deduced = Method->getTemplateSpecializationArgs();
@@ -137117,7 +137124,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          (!Input && !Piecewise && !MatchesInteger(Referred)))
+          (!Input && !Piecewise && !MatchesInteger(Referred, I ? Table->MappedValueType : Context.IntTy)))
         return std::nullopt;
     }
   } else {
@@ -137150,7 +137157,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const auto MappedType = Argument->getPointeeType();
     if (!Argument->isReferenceType() ||
         !Context.hasSameUnqualifiedType(MappedType, Call->getArg(Offset + 1)->getType()) ||
-        !MatchesInteger(MappedType))
+        !MatchesInteger(MappedType, Table->MappedValueType))
       return std::nullopt;
   }
   if (Mapped && Insertion == Kind::Insert) {
@@ -137593,8 +137600,7 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State 
   if (!Method || !Method->isOverloadedOperator() || Method->getOverloadedOperator() != OO_Subscript ||
       Method->isConst() || Method->isVolatile() || Method->isStatic() || Method->isVirtual() ||
       Method->getPrimaryTemplate() || Method->getNumParams() != 1 ||
-      !Call->isLValue() || !Context.hasSameType(Call->getType(), Context.IntTy) ||
-      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Context.IntTy)) ||
+      !Call->isLValue() ||
       !orderedPinnedFunction(S, SM, Method, "map"))
     return std::nullopt;
   const auto *Owner = Method->getParent();
@@ -137619,7 +137625,9 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State 
     return std::nullopt;
 
   const auto Tree = approvedUtilityOrderedMapStorage(S, SM, Owner, Context);
-  if (!Tree || !approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) ||
+  if (!Tree || !Context.hasSameType(Call->getType(), Tree->MappedValueType) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Tree->MappedValueType)) ||
+      !approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) ||
       !approvedOrderedMapSelectedBody(S, SM, Owner->getDestructor(), Owner, Context) ||
       !approvedOrderedMapSelectedBody(S, SM, Method, Owner, Context))
     return std::nullopt;
@@ -137838,9 +137846,9 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListConstruction(
   std::optional<UtilityPairRecord> Pair;
   if (Mapped) {
     Pair = approvedUtilityPairRecord(S, SM, List->ElementType->getAsCXXRecordDecl(), Context);
-    if (!Pair || !Pair->Record->hasTrivialDestructor() ||
+    if (!Table || !Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->First->getType(), Context.IntTy.withConst()) ||
-        !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
+        !Context.hasSameType(Pair->Second->getType(), Table->MappedValueType))
       return std::nullopt;
   }
   const auto *Init = *Ctor->init_begin();
@@ -138021,7 +138029,7 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
       if (!Mapped) return std::nullopt;
       Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
       if (!Pair || !Context.hasSameType(Pair->First->getType(), Context.IntTy) ||
-          !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
+          !Context.hasSameType(Pair->Second->getType(), Storage->MappedValueType))
         return std::nullopt;
       const auto Input = Context.getRecordType(Pair->Record);
       if (!Context.hasSameType(Element, Input) && !Context.hasSameType(Element, Input.withConst()))
@@ -140338,7 +140346,7 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   if ((Name == "emplace" || Name == "emplace_hint") && Count == 0) {
     Kind = UnorderedMapInsertionKind::Default;
   } else if ((Name == "emplace" || Name == "emplace_hint") && Count == 3) {
-    const auto Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Context);
+    const auto Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Context.IntTy, Context);
     if (!Piecewise) return std::nullopt;
     KeyTuple = Piecewise->Key;
     ValueTuple = Piecewise->Value;
@@ -141178,7 +141186,9 @@ std::optional<AssociativeNodeCall> associativeNodeCall(
     if (const auto *Conversion=dyn_cast<CXXConversionDecl>(Method);
         Conversion&&Context.hasSameType(Conversion->getConversionType(),Context.BoolTy)&&Call->isPRValue())return Return(AssociativeNodeOperation::Boolean);
     const bool ValueAccess = Info->HasMappedValue ? Name == "key" || Name == "mapped" : Name == "value";
-    const auto Value = Name == "mapped" ? Context.IntTy : Info->KeyType;
+    const auto *Tree = std::get_if<UtilityOrderedSetStorage>(&Info->Owner);
+    const auto MappedType = Tree ? Tree->MappedValueType : Context.IntTy;
+    const auto Value = Name == "mapped" ? MappedType : Info->KeyType;
     if (ValueAccess && Parent == Info->Specifics->getCanonicalDecl() && Call->isLValue() &&
         Context.hasSameType(Result, Context.getLValueReferenceType(Value)))
       return Return(Name == "mapped" ? AssociativeNodeOperation::Mapped : AssociativeNodeOperation::Key);
