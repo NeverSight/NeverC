@@ -13543,6 +13543,39 @@ class UtilityTupleQueryGraph
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     return !Primary || S.owns(SM, Primary->getLocation());
   }
+  bool pairNumericLimitsResultType(QualType Type) const {
+    const auto *Alias = dyn_cast<TypedefType>(Type.getTypePtr());
+    if (!Alias) return false;
+    const auto Scalar = Type.getCanonicalType().getUnqualifiedType();
+    if ((!Context.hasSameType(Scalar, Context.FloatTy) &&
+         !Context.hasSameType(Scalar, Context.DoubleTy)) ||
+        !PairInputTypes.count(Scalar.getTypePtr())) return false;
+    auto Pinned = [&](const Decl *D) {
+      return approvedStandardSDKDeclaration(S, SM, D) &&
+             cstddefOrigin(S, SM, D->getLocation(), "libcxx", "limits");
+    };
+    auto Matches = [&](const TypedefType *Result, llvm::StringRef Name, unsigned Arity) {
+      const auto *Member = Result ? Result->getDecl() : nullptr;
+      const auto *Owner = Member
+          ? dyn_cast<ClassTemplateSpecializationDecl>(Member->getDeclContext()) : nullptr;
+      const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
+      if (!Primary || Member->getName() != "type" || Owner->getName() != Name ||
+          Primary->getName() != Name || !Pinned(Member) || !Pinned(Owner) ||
+          !Pinned(Primary->getCanonicalDecl())) return false;
+      const auto Args = Owner->getTemplateArgs().asArray();
+      return Args.size() == Arity && Args[0].getKind() == TemplateArgument::Type &&
+             Context.hasSameType(Args[0].getAsType(), Scalar) &&
+             (Arity == 1 || (Args[1].getKind() == TemplateArgument::Integral &&
+                             Args[1].getAsIntegral() == 1));
+    };
+    if (!Matches(Alias, "numeric_limits", 1)) return false;
+    auto Underlying = Alias->desugar();
+    if (const auto *Written = dyn_cast<ElaboratedType>(Underlying.getTypePtr()))
+      Underlying = Written->getNamedType();
+    const auto *Base = dyn_cast<TypedefType>(Underlying.getTypePtr());
+    return Matches(Base, "__libcpp_numeric_limits", 2) && Base->desugar() == Scalar;
+  }
+
   bool pairSourceTypeSpelling(QualType Type) {
     if (!PairInputTypes.count(Type.getCanonicalType().getTypePtr())) return false;
     const auto *Raw = Type.getTypePtr();
@@ -20961,8 +20994,11 @@ public:
           Failed = true;
           return false;
         }
-    if (Mode == UtilityTupleQueryMode::PairConstruction && pairSourceTypeSpelling(T))
-      return true;
+    if (Mode == UtilityTupleQueryMode::PairConstruction) {
+      if (pairSourceTypeSpelling(T)) return true;
+      // Deduced arguments retain the two pinned typedefs in the SDK result.
+      if (pairNumericLimitsResultType(T)) return TraverseType(T.getCanonicalType());
+    }
     if (Mode == UtilityTupleQueryMode::CatSignature && CatInputFunction)
       if (const auto *Leaf = dyn_cast<RecordType>(T.getTypePtr())) {
         const auto *Record = dyn_cast<CXXRecordDecl>(Leaf->getDecl());
@@ -136100,6 +136136,8 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
 }
 
 static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
+  if (Context.hasSameType(Type, Context.FloatTy) || Context.hasSameType(Type, Context.DoubleTy))
+    return true;
   return Context.hasSameType(Type, Context.IntTy) ||
          Context.hasSameType(Type, Context.LongTy) ||
          Context.hasSameType(Type, Context.LongLongTy) ||
@@ -137119,10 +137157,10 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
-  auto MatchesInteger = [&](QualType Type, QualType Target) {
-    return Hinted ? (Context.hasSameType(Type, Target) ||
-                     Context.hasSameType(Type, Target.withConst()))
-                  : orderedIntegerEmplacementArgument(Context, Type, Target);
+  auto MatchesScalar = [&](QualType Type, QualType Target) {
+    if (Hinted || Target->isRealFloatingType())
+      return Context.hasSameType(Type, Target) || Context.hasSameType(Type, Target.withConst());
+    return orderedIntegerEmplacementArgument(Context, Type, Target);
   };
   std::optional<UtilityPairRecord> Input;
   std::optional<UtilityMapPiecewiseArguments> Piecewise;
@@ -137156,7 +137194,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          (!Input && !Piecewise && !MatchesInteger(Referred, I ? Table->MappedValueType : Context.IntTy)))
+          (!Input && !Piecewise && !MatchesScalar(Referred, I ? Table->MappedValueType : Context.IntTy)))
         return std::nullopt;
     }
   } else {
@@ -137189,7 +137227,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const auto MappedType = Argument->getPointeeType();
     if (!Argument->isReferenceType() ||
         !Context.hasSameUnqualifiedType(MappedType, Call->getArg(Offset + 1)->getType()) ||
-        !MatchesInteger(MappedType, Table->MappedValueType))
+        !MatchesScalar(MappedType, Table->MappedValueType))
       return std::nullopt;
   }
   if (Mapped && Insertion == Kind::Insert) {
