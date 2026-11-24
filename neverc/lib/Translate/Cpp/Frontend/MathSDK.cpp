@@ -137505,13 +137505,31 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State 
   return Tree;
 }
 
+static bool orderedOwnerAllocator(const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, bool Mapped, const ASTContext &Context) {
+  const auto *Ctor = Construction->getConstructor();
+  const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Ctor->getParent());
+  if (!Owner || Ctor->isVariadic() || Ctor->getPrimaryTemplate())
+    return false;
+  const auto Type = Owner->getTemplateArgs().get(Mapped ? 3 : 2).getAsType();
+  const auto Value = Construction->getArg(1)->getType();
+  // These ordered layouts use the pinned stateless allocator. Its instances
+  // compare equal, so allocator-extended moves transfer the tree.
+  return approvedUtilityAllocatorRecord(S, SM, Type->getAsCXXRecordDecl(), Context) &&
+      Context.hasSameType(Ctor->getParamDecl(1)->getType(), Context.getLValueReferenceType(Type.withConst())) &&
+      Context.hasSameUnqualifiedType(Value, Type) && !Value.isVolatileQualified() &&
+      !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default;
+}
+
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
   const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
-  if (!Ctor || !Ctor->isCopyConstructor() || Ctor->getNumParams() != 1 ||
+  const unsigned Count = Ctor ? Ctor->getNumParams() : 0;
+  if (!Ctor || Count < 1 || Count > 2 || Count != Construction->getNumArgs() ||
+      (Count == 1 && !Ctor->isCopyConstructor()) ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
-      Construction->getNumArgs() != 1 || !S.owns(SM, Construction->getExprLoc()))
+      !S.owns(SM, Construction->getExprLoc()))
     return std::nullopt;
   const auto *Owner = Ctor->getParent();
   if (!Owner->getIdentifier()) return std::nullopt;
@@ -137528,7 +137546,8 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
     return std::nullopt;
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
-  if (!Storage || !approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) ||
+  if (!Storage || (Count == 2 && !orderedOwnerAllocator(S, SM, Construction, Mapped, Context)) ||
+      !approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) ||
       !SelectedBody(S, SM, Owner->getDestructor(), Owner, Context) ||
       !SelectedBody(S, SM, Ctor, Owner, Context))
     return std::nullopt;
@@ -137538,8 +137557,11 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
 bool approvedOrderedSetMoveConstruction(const State &S, const SourceManager &SM,
     const CXXConstructExpr *Construction, const ASTContext &Context) {
   const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
-  if (!Ctor || !Ctor->isMoveConstructor() || Ctor->getNumParams() != 1 ||
-      Construction->getNumArgs() != 1 || !S.owns(SM, Construction->getExprLoc()))
+  const unsigned Count = Ctor ? Ctor->getNumParams() : 0;
+  if (!Ctor || Count < 1 || Count > 2 || Count != Construction->getNumArgs() ||
+      (Count == 1 && !Ctor->isMoveConstructor()) ||
+      (Count == 2 && Construction->getConstructionKind() != CXXConstructionKind::Complete) ||
+      !S.owns(SM, Construction->getExprLoc()))
     return false;
   const auto *Owner = Ctor->getParent();
   if (!Owner->getIdentifier()) return false;
@@ -137553,7 +137575,8 @@ bool approvedOrderedSetMoveConstruction(const State &S, const SourceManager &SM,
       !Context.hasSameType(Ctor->getParamDecl(0)->getType(), Context.getRValueReferenceType(Type)) ||
       !Context.hasSameType(Construction->getArg(0)->getType(), Type) ||
       !(Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
-               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context)))
+               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context)) ||
+      (Count == 2 && !orderedOwnerAllocator(S, SM, Construction, Mapped, Context)))
     return false;
   return approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) &&
          SelectedBody(S, SM, Owner->getDestructor(), Owner, Context) &&

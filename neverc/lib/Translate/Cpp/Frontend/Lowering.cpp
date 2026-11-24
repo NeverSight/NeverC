@@ -40686,12 +40686,16 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     if (const auto Copy = approvedOrderedSetCopyConstruction(A.S, A.Sources, C, A.Context)) {
       const auto *Ctor = C->getConstructor();
       auto Source = snapshot(argument(C->getArg(0), Ctor->getParamDecl(0)->getType()), L);
+      if (C->getNumArgs() == 2)
+        argument(C->getArg(1), Ctor->getParamDecl(1)->getType());
       copyOrderedSet(std::move(Place), dereference(std::move(Source), L), *Copy, L);
       return;
     }
     if (approvedOrderedSetMoveConstruction(A.S, A.Sources, C, A.Context)) {
       const auto *Ctor = C->getConstructor();
       auto From = snapshot(argument(C->getArg(0), Ctor->getParamDecl(0)->getType()), L);
+      if (C->getNumArgs() == 2)
+        argument(C->getArg(1), Ctor->getParamDecl(1)->getType());
       moveOrderedOwner(std::move(Place), dereference(std::move(From), L), L);
       return;
     }
