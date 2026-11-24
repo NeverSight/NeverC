@@ -421,22 +421,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-emplacement-pair-with-different-mapped-leaf-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  return values.emplace(std::make_pair(2, 7L)).first->second == 7 ? 0 : 1;\n}\n",
-      "source_sha256": "20f99799e32c10286064b1bd9219ba4718481b90705206b33b0a8c62b04c2faa",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-pair-emplacement-custom-order-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <functional>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace(std::make_pair(2, 7)).second ? 0 : 1;\n}\n",
-      "source_sha256": "e02365a48bc77e4a339d6dde7bee0d1aa9f83a28c7ce65e0749b9f005529ef15",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-piecewise-emplacement-reads-live-reference-elements",
       "expected": "accept",
       "public_header": "map",
@@ -467,22 +451,6 @@
       "source": "#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int> map{{3, 30}};\n  int key = 3;\n  int value = 31;\n  auto result = map.emplace(std::piecewise_construct, std::forward_as_tuple(key),\n                            std::forward_as_tuple(value));\n  return !result.second && result.first->second == 30 && map.size() == 1 ? 0 : 1;\n}\n",
       "source_sha256": "1ada12500a79f74ba024b379363481d9e36b9a6338c13d5cd3680f20a0d27e85",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-piecewise-narrow-tuple-leaf-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1},\n                     std::tuple<short>{2}).second ? 0 : 1;\n}\n",
-      "source_sha256": "38d849e2d2192edddbdffb90596f793e222da055150fc3d8ac108ba3346be69d",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-piecewise-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1}, std::tuple<int>{2}).second ? 0 : 1;\n}\n",
-      "source_sha256": "f332c184b46ef26d42c65bbf272d4833fbce12f0624a287a08b2bbabb2fc14e3",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-iterator-advance-walks-in-both-directions",
@@ -517,22 +485,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-iterator-navigation-custom-comparator-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{2, 3};\n  return *std::next(values.begin()) == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "4e5465e3264005c5a8372adef333d6453d73d10f52605a59d188ab3fa665f77d",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-iterator-navigation-different-mapped-layout-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> values{{2, 20}, {3, 30}};\n  return std::distance(values.begin(), values.end()) == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "01fe23b5bb6ffd68f19c37cffffc693a23042f597ac4306056cb25eb77dea593",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-free-begin-end-and-empty-follow-owner",
       "expected": "accept",
       "public_header": "set",
@@ -563,22 +515,6 @@
       "source": "#include <map>\n#include <iterator>\nint main() {\n  std::multimap<int, int> map{{1, 10}, {2, 20}, {2, 21}};\n  auto r = std::crbegin(map);\n  auto e = std::crend(map);\n  return r.base() == std::cend(map) && r->second == 21 && (++r)->second == 20 &&\n         (++r)->second == 10 && ++r == e && e.base() == std::cbegin(map) ? 0 : 1;\n}\n",
       "source_sha256": "282660055eeb05b842504ea922e4ba6797201b98f87aca08d59ea4cfac8928e4",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-free-access-custom-comparator-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 2};\n  return *std::begin(values) == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "39cd8a6323a11fbce253a92b475a16144bae0707483b920cc3cd8d45d3d61c7d",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-free-access-other-mapped-storage-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> map{{1, 10}};\n  return std::size(map) == 1 ? 0 : 1;\n}\n",
-      "source_sha256": "f153485f179a9efcd73d7ca5ebab47f01e04b63354a196111e8ef57b17d3b4d9",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-reverse-advance-mutates-only-the-selected-cursor",
@@ -613,22 +549,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-reverse-navigation-custom-comparator-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3};\n  return *std::next(values.rbegin()) == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-reverse-navigation-different-mapped-layout-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <iterator>\n#include <map>\nint main() {\n  std::map<int, long> values{{1, 10}, {2, 20}};\n  return std::distance(values.rbegin(), values.rend()) == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "5f0fbcc059d77937dcde02ded79d5b02e1beee1c42c4e7c83ae30c4abeb04185",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-hinted-default-emplacement-preserves-duplicate-value",
       "expected": "accept",
       "public_header": "map",
@@ -659,22 +579,6 @@
       "source": "#include <map>\n#include <tuple>\nint main() {\n  std::multimap<int, int> values{{2, 20}, {2, 21}, {5, 50}};\n  auto hint = values.cbegin();\n  ++hint;\n  auto inserted = values.emplace_hint(hint, std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(19));\n  auto before = inserted;\n  auto after = inserted;\n  return inserted->second == 19 && (--before)->second == 20 &&\n         ++after == hint && after->second == 21 && values.size() == 4 ? 0 : 1;\n}\n",
       "source_sha256": "f59178d868faa75a9c446ea2a2a88ae2b1b8352d428043daf8f0bb09a6c1df5f",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-hinted-pair-different-mapped-leaf-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  return values.emplace_hint(values.cend(), std::make_pair(2, 7L))->second == 7 ? 0 : 1;\n}\n",
-      "source_sha256": "ae19eda2f86e7af41502727baee9a2eb40d5f669bf63c9142b54c7205803bea4",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-hinted-piecewise-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace_hint(values.cend(), std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(7))->second == 7 ? 0 : 1;\n}\n",
-      "source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-wide-map-subscript-keeps-existing-value-and-zero-initializes",
@@ -709,22 +613,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-wide-mapped-floating-storage-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, double> values{{1, 2.0}};\n  return values[1] == 2.0 ? 0 : 1;\n}\n",
-      "source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-wide-map-other-pair-leaf-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, long long> values;\n  return values.emplace(std::make_pair(1, 2.0)).second ? 0 : 1;\n}\n",
-      "source_sha256": "539e18fa07d717f5d9698bf088ecb2f46350b3ba7962cbcc2eaf0a7027688d8e",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-at-reads-existing-const-mapped-reference",
       "expected": "accept",
       "public_header": "map",
@@ -755,6 +643,118 @@
       "source": "#include <map>\nint main() {\n  const std::map<int, int> values{{4, 41}, {4, 16}, {5, 19}};\n  return values.size() == 2 && values.at(4) == 41 ? 0 : 1;\n}\n",
       "source_sha256": "54717bbea90571a42e4770bff5e4991eca6c26c15c2c833ef9d93d649f83db76",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-emplacement-pair-with-different-mapped-leaf-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  return values.emplace(std::make_pair(2, 7L)).first->second == 7 ? 0 : 1;\n}\n",
+      "source_sha256": "20f99799e32c10286064b1bd9219ba4718481b90705206b33b0a8c62b04c2faa",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-pair-emplacement-custom-order-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace(std::make_pair(2, 7)).second ? 0 : 1;\n}\n",
+      "source_sha256": "e02365a48bc77e4a339d6dde7bee0d1aa9f83a28c7ce65e0749b9f005529ef15",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-piecewise-narrow-tuple-leaf-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1},\n                     std::tuple<short>{2}).second ? 0 : 1;\n}\n",
+      "source_sha256": "38d849e2d2192edddbdffb90596f793e222da055150fc3d8ac108ba3346be69d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-piecewise-custom-policy-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1}, std::tuple<int>{2}).second ? 0 : 1;\n}\n",
+      "source_sha256": "f332c184b46ef26d42c65bbf272d4833fbce12f0624a287a08b2bbabb2fc14e3",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-iterator-navigation-custom-comparator-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{2, 3};\n  return *std::next(values.begin()) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "4e5465e3264005c5a8372adef333d6453d73d10f52605a59d188ab3fa665f77d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-iterator-navigation-different-mapped-layout-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> values{{2, 20}, {3, 30}};\n  return std::distance(values.begin(), values.end()) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "01fe23b5bb6ffd68f19c37cffffc693a23042f597ac4306056cb25eb77dea593",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-free-access-custom-comparator-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 2};\n  return *std::begin(values) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "39cd8a6323a11fbce253a92b475a16144bae0707483b920cc3cd8d45d3d61c7d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-free-access-other-mapped-storage-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> map{{1, 10}};\n  return std::size(map) == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "f153485f179a9efcd73d7ca5ebab47f01e04b63354a196111e8ef57b17d3b4d9",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-reverse-navigation-custom-comparator-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3};\n  return *std::next(values.rbegin()) == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-reverse-navigation-different-mapped-layout-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <iterator>\n#include <map>\nint main() {\n  std::map<int, long> values{{1, 10}, {2, 20}};\n  return std::distance(values.rbegin(), values.rend()) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "5f0fbcc059d77937dcde02ded79d5b02e1beee1c42c4e7c83ae30c4abeb04185",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-hinted-pair-different-mapped-leaf-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  return values.emplace_hint(values.cend(), std::make_pair(2, 7L))->second == 7 ? 0 : 1;\n}\n",
+      "source_sha256": "ae19eda2f86e7af41502727baee9a2eb40d5f669bf63c9142b54c7205803bea4",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-hinted-piecewise-custom-policy-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace_hint(values.cend(), std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(7))->second == 7 ? 0 : 1;\n}\n",
+      "source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-wide-mapped-floating-storage-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, double> values{{1, 2.0}};\n  return values[1] == 2.0 ? 0 : 1;\n}\n",
+      "source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-wide-map-other-pair-leaf-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, long long> values;\n  return values.emplace(std::make_pair(1, 2.0)).second ? 0 : 1;\n}\n",
+      "source_sha256": "539e18fa07d717f5d9698bf088ecb2f46350b3ba7962cbcc2eaf0a7027688d8e",
+      "kind": "source-body-guard"
     },
     {
       "name": "ordered-map-at-missing-static-key-remains-throwing",
@@ -823,7 +823,7 @@
     "TranslateTest.CoreV2OrderedMapAtMissingStaticKeyRemainsThrowingRejected",
     "TranslateTest.CoreV2OrderedMapAtReferenceReceiverDoesNotProvePresenceRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "c56b904bdc2f1b794604a1ef4e32ab755dae67fffd60dabc2c5e581a559ea4e4",
   "maintained_original_sha256": "139a357bf63dab6ffce3c8565795ace71921a79fb4d0acafe8fad37cd3765127",
@@ -835,5 +835,15 @@
   "current_registry_count": 8893,
   "current_python_registry_tests": 270,
   "native_reference_selected_executions": 64,
-  "planned_generated_c23_executions": 64
+  "planned_generated_c23_executions": 64,
+  "native_reference_proofs": {
+    "ordered-iteration": "59a2504b946826cc4b34792d15ae0238e10fcb281cac66cca926dd5c6e588b20",
+    "ordered-map-bounded-at": "439d237fe6cf85f90da2a2fadb910c8ddd2cc8947f73007af17e8a79add3c5da",
+    "ordered-map-emplacement": "cccc14838e98f52a2b79c0f226ee454b2cd47eabea72db5016f1d08c61429bc3",
+    "ordered-map-hinted-emplacement": "15278aadc657f313b748c956731116b58554096db0aca8a8094f159e75e1f771",
+    "ordered-map-wide-mapped-layout": "24042ea64d327921492261ab30679cc0869d72af780d53fccc8232834f86f3cc",
+    "ordered-reverse-navigation": "c18de00ca65af2241e91aa06dfd970b8e099bd4df40757bfa6778aba9030dc03"
+  },
+  "native_reference_authentication_sha256": "abfda5ddbcb8c51d738b981f438f7387f39794abb8396bff4b539c660e4cbca2",
+  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
 }

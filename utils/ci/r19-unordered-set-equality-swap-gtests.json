@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-set-equality-swap-pointer-member-swap",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> a{1}, b{2}; auto* p = &a; p->swap(b); return 0; }\n",
+      "source_sha256": "c64f66c538c0af7a2f9b6297d3563707bfdc3a8b616c75375e88dd57576c994f",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-set-equality-swap-other-key-equality",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -115,14 +123,6 @@
       "source": "#include <unordered_set>\nstruct Equal { bool operator()(int a, int b) const { return a == b; } };\nint main() { std::unordered_multiset<int, std::hash<int>, Equal> a{1, 1}, b{2}; return a != b; }\n",
       "source_sha256": "41bbaf71f2a7a6817ebeed79ce9f65f52b61e53bdfe5307a1530a431bd32d4ad",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-set-equality-swap-pointer-member-swap",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> a{1}, b{2}; auto* p = &a; p->swap(b); return 0; }\n",
-      "source_sha256": "c64f66c538c0af7a2f9b6297d3563707bfdc3a8b616c75375e88dd57576c994f",
-      "kind": "cpp17-operation"
     },
     {
       "name": "unordered-set-equality-swap-custom-policy-free-swap",
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyEqualityRejected",
     "TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyFreeSwapRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "2614bbc404b932230aeb5f74db66e01f5b8cda8797e86e17b714d84395165ea3",
   "maintained_original_sha256": "a57a30b29ed03d9a47ce06015d225f01c1b486230d130ab63fc8ec3d3b1116a0",
@@ -155,5 +155,11 @@
   "current_registry_count": 8504,
   "current_python_registry_tests": 212,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-equality-swap": "a5aa9169d2fc09a774c4e11ff407a1f8533e624a020d445b4a98c098db6a064d",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "420dd28abb1d19c35c6926d796449e6a27c04d9ac0a12c63852698a95b21b369",
+  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
 }
