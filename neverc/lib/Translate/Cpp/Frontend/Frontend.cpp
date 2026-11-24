@@ -1490,7 +1490,7 @@ bool Adapter::registerDecomposition(const DecompositionDecl *D) {
   } else {
     const auto *Record = Object->getAsCXXRecordDecl();
     Record = Record ? Record->getDefinition() : nullptr;
-    const auto NodeResult = unorderedNodeInsertResult(S, Sources, Record, Context);
+    const auto NodeResult = associativeNodeInsertResult(S, Sources, Record, Context);
     if (!Record || (!NodeResult && !S.owns(Sources, Record->getLocation())) || Record->isInvalidDecl() ||
         Record->isDependentContext() || Record->isUnion() || Record->getNumBases() ||
         !Record->isAggregate() || (!NodeResult && !Record->isTrivial()) ||
@@ -2450,7 +2450,7 @@ static bool unorderedNodeTypeQueryMetadata(Adapter &A,
     return A.CompleteSDKRecord && A.CompleteSDKRecord(Type, Location);
   };
   return associativeNodeRecord(A.S, A.Sources, Record, A.Context, Complete).has_value() ||
-         unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete).has_value();
+         associativeNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete).has_value();
 }
 
 // Identity/source admission does not consume a runtime value, selected
@@ -3331,7 +3331,7 @@ static bool utilityUnorderedMapQueryLayout(Adapter &A, const CXXRecordDecl *Reco
     if (Record->getName() == "__basic_node_handle")
       return bool(associativeNodeRecord(A.S, A.Sources, Record, A.Context, Complete));
     if (Record->getName() == "__insert_return_type")
-      return bool(unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete));
+      return bool(associativeNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete));
   }
   if (approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context)) {
     A.chargeExpansion(1, Location);
@@ -5238,7 +5238,7 @@ static bool utilityPairMemberSource(Adapter &A, const MemberExpr *Reference) {
   const auto *Field = dyn_cast<FieldDecl>(Reference->getMemberDecl());
   const auto *Record = Field ? dyn_cast<CXXRecordDecl>(Field->getParent())
                              : nullptr;
-  if (const auto Result = unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context))
+  if (const auto Result = associativeNodeInsertResult(A.S, A.Sources, Record, A.Context))
     return Field == Result->Position || Field == Result->Inserted || Field == Result->Handle;
   if (!approvedUtilityPairMetadata(A.S, A.Sources, Record))
     return false;
@@ -10668,7 +10668,7 @@ static bool utilityStringDestructionSource(Adapter &A,
 static bool utilityAssociativeNodeDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
   if (const auto Node = associativeNodeRecord(A.S, A.Sources, Record, A.Context))
     return associativeNodeDestructor(A.S, A.Sources, Node->Record->getDestructor(), A.Context);
-  const auto Result = unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context);
+  const auto Result = associativeNodeInsertResult(A.S, A.Sources, Record, A.Context);
   if (!Result) return false;
   const auto *D = Result->Record->getDestructor();
   return D && D->isImplicit() && approvedStandardSDKDeclaration(A.S, A.Sources, D) &&
@@ -13903,7 +13903,7 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
                  !requireUtilityString(D, L, Depth + 1)) {
         return {};
       } else if ((associativeNodeRecord(S, Sources, D, Context) ||
-                  unorderedNodeInsertResult(S, Sources, D, Context)) &&
+                  associativeNodeInsertResult(S, Sources, D, Context)) &&
                  !requireAssociativeNode(D, L, Depth + 1)) {
         return {};
       } else if (approvedUtilityUnorderedIteratorMetadata(S, Sources, D) &&
@@ -14319,7 +14319,7 @@ bool Adapter::requireAssociativeNode(const CXXRecordDecl *Record,
     return false;
   }
   const auto Node = associativeNodeRecord(S, Sources, Record, Context);
-  const auto Result = unorderedNodeInsertResult(S, Sources, Record, Context);
+  const auto Result = associativeNodeInsertResult(S, Sources, Record, Context);
   if (!Node && !Result) return false;
   const auto *R = Node ? Node->Record : Result->Record;
   if (!RequiredAssociativeNodes.insert(R->getCanonicalDecl()).second) return true;
@@ -18807,7 +18807,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityStringConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context) ||
-         unorderedResultConstruction(A.S, A.Sources, C, A.Context) ||
+         associativeNodeResultConstruction(A.S, A.Sources, C, A.Context) ||
          associativeNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
@@ -19303,12 +19303,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             (unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context) ||
-             unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
+             associativeNodeResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context) ||
              unorderedTableMerge(A.S, A.Sources, Call, A.Context) ||
              associativeNodeCall(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeTransfer(A.S, A.Sources, Call, A.Context) ||
              orderedNodeExtraction(A.S, A.Sources, Call, A.Context) ||
+             orderedNodeInsertion(A.S, A.Sources, Call, A.Context) ||
              functionalObjectCallSource(A, Call)))
           // The exact operation proves this scalar result and SDK signature.
           // Retain caller operands rather than private trailing-return sugar.
@@ -19464,8 +19465,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, A.Context.IntTy, true, Depth + 1);
           return;
         }
-        if (const auto Result = unorderedNodeInsertResult(A.S, A.Sources, Declaration, A.Context)) {
-          Self(Self, A.Context.getRecordType(Result->Iterator.Record), true, Depth + 1);
+        if (const auto Result = associativeNodeInsertResult(A.S, A.Sources, Declaration, A.Context)) {
+          Self(Self, Result->Position->getType(), true, Depth + 1);
           Self(Self, A.Context.getRecordType(Result->Node.Record), true, Depth + 1);
           return;
         }
@@ -21050,12 +21051,13 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
         if (unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context) ||
-             unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
+             associativeNodeResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context) ||
              unorderedTableMerge(A.S, A.Sources, Call, A.Context) ||
              associativeNodeCall(A.S, A.Sources, Call, A.Context) ||
             unorderedNodeTransfer(A.S, A.Sources, Call, A.Context) ||
              orderedNodeExtraction(A.S, A.Sources, Call, A.Context) ||
+             orderedNodeInsertion(A.S, A.Sources, Call, A.Context) ||
             ReferenceInvoke || UserInvoke ||
             A.S.UnevaluatedFunctionalCalls.count(Call) ||
             A.S.UnevaluatedMemoryCalls.count(Call) ||
@@ -21331,7 +21333,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             const auto *Owner = cast<DecompositionDecl>(Binding->getDecomposedDecl());
             operationTypeDependency(Owner->getTypeSourceInfo());
             if (const auto *Field = A.recordBindingField(Binding)) {
-              if (unorderedNodeInsertResult(A.S, A.Sources, dyn_cast<CXXRecordDecl>(Field->getParent()), A.Context))
+              if (associativeNodeInsertResult(A.S, A.Sources, dyn_cast<CXXRecordDecl>(Field->getParent()), A.Context))
                 collectOperationTypeSource(Field->getType(), Binding->getLocation(), true);
               else
                 operationTypeDependency(Field->getTypeSourceInfo());
@@ -21499,7 +21501,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             IndexedUnevaluatedSources.count(TupleQuery->second) && approvedUtilityTupleConstructionSignature(A.S, A.Sources, Construction, A.Context, A.SpecialMembers, A.OperationTraits);
         bool SDKConstruction =
             DefaultViewQuery || CarrierViewCopyQuery || TupleSignatureQuery ||
-            unorderedResultConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            associativeNodeResultConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             associativeNodeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
             (functionalObjectStorageSource(
@@ -24332,7 +24334,7 @@ public:
            approvedUtilityStringConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, Construction, A.Context) ||
-         unorderedResultConstruction(A.S, A.Sources, Construction, A.Context) ||
+         associativeNodeResultConstruction(A.S, A.Sources, Construction, A.Context) ||
          associativeNodeConstruction(A.S, A.Sources, Construction, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -30301,12 +30303,13 @@ public:
               unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context).has_value() ||
-             unorderedResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
+             associativeNodeResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedTableMerge(A.S, A.Sources, Call, A.Context).has_value() ||
               associativeNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
               orderedNodeExtraction(A.S, A.Sources, Call, A.Context).has_value() ||
+              orderedNodeInsertion(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -31108,12 +31111,13 @@ public:
           (unorderedGenericSwapCall(A.S, A.Sources, C, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, C, A.Context) ||
              unorderedTableNonmemberCall(A.S, A.Sources, C, A.Context) ||
-             unorderedResultCall(A.S, A.Sources, C, A.Context) ||
+             associativeNodeResultCall(A.S, A.Sources, C, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, C, A.Context) ||
              unorderedTableMerge(A.S, A.Sources, C, A.Context) ||
            associativeNodeCall(A.S, A.Sources, C, A.Context) ||
            unorderedNodeTransfer(A.S, A.Sources, C, A.Context) ||
-           orderedNodeExtraction(A.S, A.Sources, C, A.Context))) {
+           orderedNodeExtraction(A.S, A.Sources, C, A.Context) ||
+           orderedNodeInsertion(A.S, A.Sources, C, A.Context))) {
         A.type(C->getType(), L, true);
         A.S.Module["memory_lifetimes"] = true;
         return true;
@@ -31510,7 +31514,7 @@ public:
                    approvedUtilityStringConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
                    approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context) ||
-         unorderedResultConstruction(A.S, A.Sources, C, A.Context) ||
+         associativeNodeResultConstruction(A.S, A.Sources, C, A.Context) ||
          associativeNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
@@ -31779,7 +31783,7 @@ static void orderCoreV2Records(Adapter &A) {
     const auto UtilityUnorderedMap =
         approvedUtilityUnorderedMapRecord(A.S, A.Sources, R, A.Context);
     const auto UnorderedNode = associativeNodeRecord(A.S, A.Sources, R, A.Context);
-    const auto UnorderedResult = unorderedNodeInsertResult(A.S, A.Sources, R, A.Context);
+    const auto UnorderedResult = associativeNodeInsertResult(A.S, A.Sources, R, A.Context);
     const auto UtilityDefaultDelete =
         approvedUtilityDefaultDeleteRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityAllocator =
@@ -32200,7 +32204,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto UtilityUnorderedMap =
         approvedUtilityUnorderedMapRecord(S, Sources, R, Context);
     const auto UnorderedNode = associativeNodeRecord(S, Sources, R, Context);
-    const auto UnorderedResult = unorderedNodeInsertResult(S, Sources, R, Context);
+    const auto UnorderedResult = associativeNodeInsertResult(S, Sources, R, Context);
     const auto UtilityDefaultDelete =
         S.coreV2() ? approvedUtilityDefaultDeleteRecord(S, Sources, R, Context)
                    : std::optional<UtilityDefaultDeleteRecord>();

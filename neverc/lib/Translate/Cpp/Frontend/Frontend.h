@@ -5261,13 +5261,13 @@ std::optional<AssociativeNodeConstruction> associativeNodeConstruction(
     const clang::ASTContext &Context);
 bool associativeNodeDestructor(const State &S,const clang::SourceManager &SM,
     const clang::CXXDestructorDecl *Destructor,const clang::ASTContext &Context);
-struct UnorderedNodeInsertResult {
+struct AssociativeNodeInsertResult {
   const clang::CXXRecordDecl *Record;
-  UtilityUnorderedMapIteratorRecord Iterator;
+  std::optional<UtilityUnorderedMapIteratorRecord> UnorderedIterator;
   UtilityAssociativeNodeRecord Node;
   const clang::FieldDecl *Position,*Inserted,*Handle;
 };
-std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
+std::optional<AssociativeNodeInsertResult> associativeNodeInsertResult(
     const State &S,const clang::SourceManager &SM,const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
@@ -5276,7 +5276,7 @@ struct UnorderedNodeTransfer {
   UtilityUnorderedTableRecord Map;
   UtilityAssociativeNodeRecord Node;
   std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
-  std::optional<UnorderedNodeInsertResult> Result;
+  std::optional<AssociativeNodeInsertResult> Result;
   UnorderedNodeTransferKind Kind;
   unsigned Offset;
 };
@@ -5291,6 +5291,16 @@ struct OrderedNodeExtraction {
   bool ByIterator;
 };
 std::optional<OrderedNodeExtraction> orderedNodeExtraction(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+struct OrderedNodeInsertion {
+  UtilityOrderedSetStorage Tree;
+  UtilityAssociativeNodeRecord Node;
+  const clang::MemberExpr *Receiver;
+  std::optional<AssociativeNodeInsertResult> Result;
+};
+std::optional<OrderedNodeInsertion> orderedNodeInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
@@ -5310,16 +5320,16 @@ struct UnorderedTableListAssignment {
 std::optional<UnorderedTableListAssignment> unorderedTableListAssignment(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-struct UnorderedResultCall {
-  UnorderedNodeInsertResult Result;
+struct AssociativeNodeResultCall {
+  AssociativeNodeInsertResult Result;
   const clang::Expr *Object;
   unsigned Offset;
   bool Swap, RightBeforeLeft;
 };
-std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
+std::optional<AssociativeNodeInsertResult> associativeNodeResultConstruction(
     const State &S,const clang::SourceManager &SM,const clang::CXXConstructExpr *C,
     const clang::ASTContext &Context);
-std::optional<UnorderedResultCall> unorderedResultCall(
+std::optional<AssociativeNodeResultCall> associativeNodeResultCall(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UnorderedTableNonmemberCall {
