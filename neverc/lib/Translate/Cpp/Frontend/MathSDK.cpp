@@ -7469,13 +7469,18 @@ static bool variantStoredAlternative(const State &S, const SourceManager &SM,
   if (const auto *Empty = Alt->getType()->getAsCXXRecordDecl()) {
     const auto *Build = variantConstruct(Initialization);
     const auto *Selected = Build ? Build->getConstructor() : nullptr;
-    if (Arity || !Selected || Build->getNumArgs() || !Build->requiresZeroInitialization() ||
+    if (!approvedUtilityMonostateConstruction(S, SM, Build, Context) ||
         !Context.hasSameType(Build->getType(), Alt->getType()) ||
         Selected->getParent()->getCanonicalDecl() != Empty->getCanonicalDecl() ||
-        !Selected->isDefaultConstructor() || !Selected->isImplicit() || !Selected->isDefaulted() ||
-        !Selected->isTrivial() || Selected->isDeleted() || Selected->getNumCtorInitializers() ||
         !variantDeclaration(S, SM, Selected, "__variant/monostate.h"))
       return false;
+    if (Arity) {
+      if (Arity != 1 || !Selected->isCopyOrMoveConstructor() ||
+          !variantForward(S, SM, Build->getArg(0), Item->getParamDecl(1), Context))
+        return false;
+    } else if (!Selected->isDefaultConstructor() || !Build->requiresZeroInitialization()) {
+      return false;
+    }
   } else if (Arity ? !variantForward(S, SM, Initialization, Item->getParamDecl(1), Context)
                    : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())) {
     return false;
@@ -9853,7 +9858,7 @@ std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
   const auto *Input = Arity ? Call->getArg(0) : nullptr;
   if ((ByType && !Context.hasSameType(Selected, Args->get(0).getAsType())) ||
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Selected)) ||
-      (Input && (Selected->isRecordType() || Input->getType().isVolatileQualified() ||
+      (Input && (Input->getType().isVolatileQualified() ||
                  !Context.hasSameUnqualifiedType(Selected, Input->getType()))) ||
       !variantEmplaceBody(S, SM, Method, *V, unsigned(Index), Arity, Context))
     return std::nullopt;

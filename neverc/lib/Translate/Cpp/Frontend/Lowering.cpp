@@ -994,10 +994,14 @@ class FunctionLowering {
                                          unsigned Index, const Expr *Input, SourceLocation L) {
     const auto *Field = V.Alternatives[Index];
     auto Item = fieldStorage(variantStorage(json::Object(Place), V, L), Field, L);
-    if (Input)
+    if (Input && !Field->getType()->isRecordType()) {
       assign(Item, cast(expression(Input), type(Field->getType(), L), L), L);
-    else
+    } else {
+      // A checked monostate has no payload. Its initializer can have effects.
+      if (Input)
+        discard(Input);
       initializeZero(Item, Field->getType(), L);
+    }
     assign(fieldStorage(std::move(Place), V.Index, L),
            quantity(Index, type(V.Index->getType(), L), L), L);
     return Item;
