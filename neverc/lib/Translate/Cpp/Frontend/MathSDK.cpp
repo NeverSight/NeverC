@@ -7469,13 +7469,18 @@ static bool variantStoredAlternative(const State &S, const SourceManager &SM,
   if (const auto *Empty = Alt->getType()->getAsCXXRecordDecl()) {
     const auto *Build = variantConstruct(Initialization);
     const auto *Selected = Build ? Build->getConstructor() : nullptr;
-    if (Arity || !Selected || Build->getNumArgs() || !Build->requiresZeroInitialization() ||
+    if (!approvedUtilityMonostateConstruction(S, SM, Build, Context) ||
         !Context.hasSameType(Build->getType(), Alt->getType()) ||
         Selected->getParent()->getCanonicalDecl() != Empty->getCanonicalDecl() ||
-        !Selected->isDefaultConstructor() || !Selected->isImplicit() || !Selected->isDefaulted() ||
-        !Selected->isTrivial() || Selected->isDeleted() || Selected->getNumCtorInitializers() ||
         !variantDeclaration(S, SM, Selected, "__variant/monostate.h"))
       return false;
+    if (Arity) {
+      if (Arity != 1 || !Selected->isCopyOrMoveConstructor() ||
+          !variantForward(S, SM, Build->getArg(0), Item->getParamDecl(1), Context))
+        return false;
+    } else if (!Selected->isDefaultConstructor() || !Build->requiresZeroInitialization()) {
+      return false;
+    }
   } else if (Arity ? !variantForward(S, SM, Initialization, Item->getParamDecl(1), Context)
                    : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())) {
     return false;
@@ -9853,7 +9858,7 @@ std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
   const auto *Input = Arity ? Call->getArg(0) : nullptr;
   if ((ByType && !Context.hasSameType(Selected, Args->get(0).getAsType())) ||
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Selected)) ||
-      (Input && (Selected->isRecordType() || Input->getType().isVolatileQualified() ||
+      (Input && (Input->getType().isVolatileQualified() ||
                  !Context.hasSameUnqualifiedType(Selected, Input->getType()))) ||
       !variantEmplaceBody(S, SM, Method, *V, unsigned(Index), Arity, Context))
     return std::nullopt;
@@ -10042,12 +10047,36 @@ static bool variantAssignmentBody(const State &S, const SourceManager &SM,
       TestIndex.Val.getInt().getLimitedValue(64) != Index)
     return false;
   const auto *Then = dyn_cast_or_null<CompoundStmt>(Branch->getThen());
-  const auto *Write = Then && Then->size() == 1 ? dyn_cast<BinaryOperator>(Then->body_front()) : nullptr;
-  const auto *Field = Write ? dyn_cast<MemberExpr>(Write->getLHS()->IgnoreParenImpCasts()) : nullptr;
-  return Write && Write->getOpcode() == BO_Assign && Field && !Field->isArrow() &&
+  const auto *Write = Then && Then->size() == 1 ? Then->body_front() : nullptr;
+  const auto Type = V.Alternatives[Index]->getType();
+  const Expr *Destination, *Input;
+  if (const auto *Scalar = dyn_cast_or_null<BinaryOperator>(Write);
+      Scalar && Scalar->getOpcode() == BO_Assign && Type->isScalarType()) {
+    Destination = Scalar->getLHS();
+    Input = Scalar->getRHS();
+  } else {
+    const auto *Store = dyn_cast_or_null<CXXOperatorCallExpr>(Write);
+    const auto *SpecialMember = Store ? dyn_cast_or_null<CXXMethodDecl>(Store->getDirectCallee()) : nullptr;
+    const auto *Monostate = Type->getAsCXXRecordDecl();
+    if (!SpecialMember || Store->getOperator() != OO_Equal || Store->getNumArgs() != 2 ||
+        !approvedUtilityMonostateMetadata(S, SM, Monostate, Context) ||
+        SpecialMember->getParent()->getCanonicalDecl() != Monostate->getCanonicalDecl() ||
+        !SpecialMember->isImplicit() || !SpecialMember->isDefaulted() || !SpecialMember->isTrivial() ||
+        SpecialMember->isDeleted() || SpecialMember->isInvalidDecl() ||
+        SpecialMember->getNumParams() != 1 ||
+        !(SpecialMember->isCopyAssignmentOperator() || SpecialMember->isMoveAssignmentOperator()))
+      return false;
+    for (const auto *Decl : SpecialMember->redecls())
+      if (!variantDeclaration(S, SM, Decl, "__variant/monostate.h"))
+        return false;
+    Destination = Store->getArg(0);
+    Input = Store->getArg(1);
+  }
+  const auto *Field = dyn_cast<MemberExpr>(Destination->IgnoreParenImpCasts());
+  return Field && !Field->isArrow() &&
          Field->getMemberDecl()->getCanonicalDecl() == V.Alternatives[Index]->getCanonicalDecl() &&
          variantParameter(Field->getBase(), Inner->getParamDecl(0)) &&
-         variantForward(S, SM, Write->getRHS(), Inner->getParamDecl(1), Context) &&
+         variantForward(S, SM, Input, Inner->getParamDecl(1), Context) &&
          variantAssignmentReplacement(S, SM, Branch->getElse(), Inner, V, Index, Context);
 }
 
@@ -10099,7 +10128,9 @@ std::optional<UtilityVariantValueAssignment> approvedUtilityVariantValueAssignme
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Owner)))
     return std::nullopt;
   const auto Type = V->Alternatives[Index]->getType();
-  if (!Type->isScalarType() || !Context.hasSameType(Type, Args->get(2).getAsType()) ||
+  if ((!Type->isScalarType() &&
+       !approvedUtilityMonostateMetadata(S, SM, Type->getAsCXXRecordDecl(), Context)) ||
+      !Context.hasSameType(Type, Args->get(2).getAsType()) ||
       !Context.hasSameUnqualifiedType(Type, Param.getNonReferenceType()) ||
       !Context.hasSameUnqualifiedType(Type, Input->getType()) ||
       !variantAssignmentBody(S, SM, Method, *V, unsigned(Index), Context))
