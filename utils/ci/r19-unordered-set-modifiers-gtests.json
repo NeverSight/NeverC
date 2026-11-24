@@ -102,22 +102,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "unordered-set-modifiers-different-key",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { std::unordered_set<long> values; values.insert({1, 2}); return values.erase(2); }\n",
-      "source_sha256": "a580ae37d4c60d9ada6eec2418fbdcf86f31171c274785eb8c5c76bc30b57467",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-set-modifiers-alternate-hash",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nstruct Hash { using Size = decltype(sizeof(0)); Size operator()(int value) const { return Size(value); } };\nint main() { std::unordered_set<int, Hash> values; values.insert({1, 2}); return values.erase(2); }\n",
-      "source_sha256": "9c4f74de3efccd319e2decba3d43fe7088732cdf4f7b0859d944aec7d2a951e3",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "unordered-set-modifiers-multi-key-erase",
       "expected": "accept",
       "public_header": "unordered_set",
@@ -132,6 +116,22 @@
       "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->insert({1, 2}); return ptr->erase(2); }\n",
       "source_sha256": "01085bcc977bf72e8dc2eb29370e187b6ce9b8253ee9c751b4d12026e67adedc",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-modifiers-different-key",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<long> values; values.insert({1, 2}); return values.erase(2); }\n",
+      "source_sha256": "a580ae37d4c60d9ada6eec2418fbdcf86f31171c274785eb8c5c76bc30b57467",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-modifiers-alternate-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { using Size = decltype(sizeof(0)); Size operator()(int value) const { return Size(value); } };\nint main() { std::unordered_set<int, Hash> values; values.insert({1, 2}); return values.erase(2); }\n",
+      "source_sha256": "9c4f74de3efccd319e2decba3d43fe7088732cdf4f7b0859d944aec7d2a951e3",
+      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -144,7 +144,7 @@
     "TranslateTest.CoreV2UnorderedSetModifiersDifferentKeyRejected",
     "TranslateTest.CoreV2UnorderedSetModifiersAlternateHashRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "8fca807d05848ed6283028b3d950abab65aef92ca1275e35c6a8a62d0e59dbff",
   "maintained_original_sha256": "cd98c424f8e06373e80d1dc167574d4a61c2e2a23934bdd4e8987316cc6bf647",
@@ -156,5 +156,12 @@
   "current_registry_count": 8408,
   "current_python_registry_tests": 188,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-multiset-modifiers": "87f5a2245acb0d951864f9f620aff7b28a13afd5df682e759791b30e75b19fc5",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
+    "unordered-set-modifiers": "b89c96549b850abe840ee118aa25f35ccb2fc963833469caebf4a1e34d10cf63"
+  },
+  "native_reference_authentication_sha256": "a745bf58c6a62f9980124d27f55fb37da78153483b0d6aa096aa16f86cdff3ef",
+  "source_proof_sha256": "846480328fcaedaf1396be81ed7db0a522a0c6f42ef19cd0af7f2ef5d7518ef5"
 }

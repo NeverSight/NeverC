@@ -101,22 +101,6 @@
       "source_sha256": "6290ae7fdabee8be22e4212b7d9b1f2ce8a9e2d268dc21ec7e73768d338a557d"
     },
     {
-      "name": "unordered-empty-load-factor-custom-hash",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "kind": "source-body-guard",
-      "source": "#include <unordered_set>\nstruct AlternateHash { unsigned long long operator()(int value) const { return value; } };\nint main() {\n  const std::unordered_set<int, AlternateHash> value;\n  return value.load_factor() != 0.0f;\n}\n",
-      "source_sha256": "324d3b8ca743535cc9593bafe84668def8ec262692069b2a5abf3d81001385c1"
-    },
-    {
-      "name": "unordered-empty-load-factor-different-key",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "kind": "cpp17-operation",
-      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<unsigned int> value;\n  return value.load_factor() != 0.0f;\n}\n",
-      "source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b"
-    },
-    {
       "name": "unordered-empty-load-factor-rehash",
       "expected": "accept",
       "public_header": "unordered_set",
@@ -131,6 +115,22 @@
       "kind": "cpp17-operation",
       "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> value;\n  const auto* pointer = &value;\n  return pointer->load_factor() != 0.0f;\n}\n",
       "source_sha256": "0fdde5039e70dab229aaeadf9d93a2adc0d810d1ae77a39bcfb7efb9de06fcf6"
+    },
+    {
+      "name": "unordered-empty-load-factor-different-key",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<unsigned int> value;\n  return value.load_factor() != 0.0f;\n}\n",
+      "source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b"
+    },
+    {
+      "name": "unordered-empty-load-factor-custom-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "kind": "source-body-guard",
+      "source": "#include <unordered_set>\nstruct AlternateHash { unsigned long long operator()(int value) const { return value; } };\nint main() {\n  const std::unordered_set<int, AlternateHash> value;\n  return value.load_factor() != 0.0f;\n}\n",
+      "source_sha256": "324d3b8ca743535cc9593bafe84668def8ec262692069b2a5abf3d81001385c1"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetOriginalUnsignedLoadFactor",
     "TranslateTest.CoreV2UnorderedEmptyLoadFactorCustomHashRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931",
   "maintained_original_sha256": "b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5",
@@ -155,5 +155,13 @@
   "current_registry_count": 8342,
   "current_python_registry_tests": 172,
   "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "unordered-bucket-storage": "2eba369d4578e9e03c506e68fc1b71004f3614f6d7fbf879a0fdcf3b8acaef76",
+    "unordered-empty-load-factor": "f69568b5562b19312bee40cfd8fb3134b5bf56aae1ab760b9c696fbae531892e",
+    "unordered-set-bucket-receivers": "1a0de477baf71caf287cb98e07a1017a3c2a3df8497717c62c00fa1dfc95ed03",
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "4bfd2cfc7430b0d4a6bbc658aa085ac34a941024d28a72884f3bf7a4118deff6",
+  "source_proof_sha256": "846480328fcaedaf1396be81ed7db0a522a0c6f42ef19cd0af7f2ef5d7518ef5"
 }

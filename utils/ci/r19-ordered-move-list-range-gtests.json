@@ -141,14 +141,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-move-assignment-custom-comparator-remains-unsupported",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nusing Table = std::map<int, int, Reverse>;\nvoid transfer(Table *output, Table *input) { *output = static_cast<Table&&>(*input); }\n",
-      "source_sha256": "30738d62ff5996026c1cde0cf79c7ccff5fcfa5be043942ac906eccd451e51c5",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-insert-list-preserves-old-and-first-new-mapped-values",
       "expected": "accept",
       "public_header": "map",
@@ -171,14 +163,6 @@
       "source": "#include <set>\nint item(int &state, int value) {\n  state = state * 10 + value;\n  return value;\n}\nstd::set<int>* owner(std::set<int> &values, int &state) {\n  state = state * 10 + 1;\n  return &values;\n}\nint main() {\n  std::set<int> values{1, 2};\n  int state = 0;\n  owner(values, state)->insert({item(state, 3), item(state, 2), item(state, 4)});\n  values.insert({});\n  return state == 1324 && values.size() == 4 && values.count(4) == 1 ? 0 : 1;\n}\n",
       "source_sha256": "d3026bf96a7e0394e76e8e84fc914dcabcb66526dd45c392e23db6259d26e15b",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-insert-list-custom-comparator-remains-unsupported",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int a, int b) const { return a > b; }\n};\nvoid insert(std::map<int, int, Reverse> &values) { values.insert({{1, 2}}); }\n",
-      "source_sha256": "84eaa286496080d046337726d831ddcae7a99a4f3cf15034c4efc872d1a46b5a",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-set-pointer-range-construction-and-empty-insert",
@@ -213,6 +197,22 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-move-assignment-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nusing Table = std::map<int, int, Reverse>;\nvoid transfer(Table *output, Table *input) { *output = static_cast<Table&&>(*input); }\n",
+      "source_sha256": "30738d62ff5996026c1cde0cf79c7ccff5fcfa5be043942ac906eccd451e51c5",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-insert-list-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int a, int b) const { return a > b; }\n};\nvoid insert(std::map<int, int, Reverse> &values) { values.insert({{1, 2}}); }\n",
+      "source_sha256": "84eaa286496080d046337726d831ddcae7a99a4f3cf15034c4efc872d1a46b5a",
+      "kind": "source-body-guard"
+    },
+    {
       "name": "ordered-map-pointer-range-converting-pair-remains-unsupported",
       "expected": "reject",
       "public_header": "map",
@@ -245,7 +245,7 @@
     "TranslateTest.CoreV2OrderedMapPointerRangeConvertingPairRemainsUnsupportedRejected",
     "TranslateTest.CoreV2OrderedSetPointerRangeCustomComparatorRemainsUnsupportedRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "bb12ea1163040adf934b63874bf20669b3cbaee8e970fcf8ccf2c56e8ccb723a",
   "maintained_original_sha256": "7ba291b819182fba645dd7581f92b0a6629deabd4d7da9975b1a7b2da83c7abd",
@@ -257,5 +257,11 @@
   "current_registry_count": 8748,
   "current_python_registry_tests": 254,
   "native_reference_selected_executions": 20,
-  "planned_generated_c23_executions": 20
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "ordered-move-and-list": "872e9cc08c0fe34bd5c7b2c5d22106d79dc58ec169661dd6d496df1cb5afdd00",
+    "ordered-pointer-range": "c7ac1e477711eaae25df1b4521b164fba9f839c02c2565fcd743686e1569d58e"
+  },
+  "native_reference_authentication_sha256": "d774051df68dd87dd399b64ab86c0a502d934305cdf0f2aa4bd5ec82b5a1d9b8",
+  "source_proof_sha256": "846480328fcaedaf1396be81ed7db0a522a0c6f42ef19cd0af7f2ef5d7518ef5"
 }

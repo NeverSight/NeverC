@@ -93,6 +93,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-multimap-owners-comparison-requires-mapped-value-multiplicities",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, int> left{{1, 3}, {1, 5}, {1, 5}, {7, 9}};\n  const std::unordered_multimap<int, int> permuted{{7, 9}, {1, 5}, {1, 3}, {1, 5}};\n  const std::unordered_multimap<int, int> different{{1, 3}, {1, 3}, {1, 5}, {7, 9}};\n  return left != permuted || left == different;\n}\n",
+      "source_sha256": "8783158f896e45d79f58472fa5c53c88dd3d857fe07e66200ced5200dd2aee24",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-multimap-owners-custom-hash-owner",
       "expected": "reject",
       "public_header": "unordered_map",
@@ -107,14 +115,6 @@
       "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> pairs;\n  return pairs.count(1);\n}\n",
       "source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-multimap-owners-comparison-requires-mapped-value-multiplicities",
-      "expected": "accept",
-      "public_header": "unordered_map",
-      "source": "#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, int> left{{1, 3}, {1, 5}, {1, 5}, {7, 9}};\n  const std::unordered_multimap<int, int> permuted{{7, 9}, {1, 5}, {1, 3}, {1, 5}};\n  const std::unordered_multimap<int, int> different{{1, 3}, {1, 3}, {1, 5}, {7, 9}};\n  return left != permuted || left == different;\n}\n",
-      "source_sha256": "8783158f896e45d79f58472fa5c53c88dd3d857fe07e66200ced5200dd2aee24",
-      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -126,7 +126,7 @@
     "TranslateTest.CoreV2UnorderedMultimapOwnersCustomHashOwnerRejected",
     "TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "1e0bbf4c8f5a577626fcbd4167012527fe20826396391e8d4a58c24c8f278168",
   "maintained_original_sha256": "a302000f528d3c79c9d2169d56f19ecc664d4c5245e897a333bb2f561a1c0f64",
@@ -138,5 +138,10 @@
   "current_registry_count": 8631,
   "current_python_registry_tests": 240,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-multimap-owners": "c6f13b6b610a6a4b442984f031eedb8e15c1ded9891605a4d23c33cf502bd365"
+  },
+  "native_reference_authentication_sha256": "02f59def9d0733989c5f908ed75503a7a85a2dd5b6e47afd147d70aefd9dc222",
+  "source_proof_sha256": "846480328fcaedaf1396be81ed7db0a522a0c6f42ef19cd0af7f2ef5d7518ef5"
 }
