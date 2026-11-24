@@ -136885,8 +136885,7 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
     const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
   const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
-  if (!S.coreV2() || !Ctor || !Ctor->isImplicit() || !Ctor->isTrivial() ||
-      !Ctor->isCopyOrMoveConstructor() || Ctor->getNumParams() != 1 ||
+  if (!S.coreV2() || !Ctor || Ctor->getNumParams() != 1 ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
       Construction->getNumArgs() != 1 || !S.owns(SM, Construction->getExprLoc()) ||
       !approvedStandardSDKDeclaration(S, SM, Ctor))
@@ -136894,11 +136893,28 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
   const auto *Record = Ctor->getParent();
   const auto Type = Context.getRecordType(Record);
   const auto Argument = Construction->getArg(0)->getType();
+  if (!Context.hasSameUnqualifiedType(Construction->getType(), Type) || Argument.isVolatileQualified())
+    return false;
+
+  if (!Ctor->isImplicit()) {
+    const auto *From = Argument->getAsCXXRecordDecl();
+    if (!Record->getIdentifier() || Record->getName() != "__map_const_iterator" ||
+        !From || !From->getIdentifier() || From->getName() != "__map_iterator" ||
+        Ctor->isDeleted() || Ctor->getPrimaryTemplate() ||
+        !Context.hasSameType(Ctor->getParamDecl(0)->getType(), Argument) ||
+        !orderedPinnedFunction(S, SM, Ctor, "map"))
+      return false;
+    UtilityOrderedSetStorage Owner{};
+    return approvedOrderedMapIteratorRecord(S, SM, Record, Context, nullptr, &Owner) &&
+           approvedOrderedMapIteratorRecord(S, SM, From, Context, &Owner, nullptr) &&
+           approvedOrderedMapSelectedBody(S, SM, Ctor, Owner.Record, Context);
+  }
+
+  if (!Ctor->isTrivial() || !Ctor->isCopyOrMoveConstructor())
+    return false;
   const auto Parameter = Ctor->isMoveConstructor() ? Context.getRValueReferenceType(Type)
                                                    : Context.getLValueReferenceType(Type.withConst());
-  return !Argument.isVolatileQualified() &&
-         Context.hasSameType(Ctor->getParamDecl(0)->getType(), Parameter) &&
-         Context.hasSameUnqualifiedType(Construction->getType(), Type) &&
+  return Context.hasSameType(Ctor->getParamDecl(0)->getType(), Parameter) &&
          Context.hasSameUnqualifiedType(Argument, Type) &&
          approvedOrderedSetIteratorRecord(S, SM, Record, Context);
 }

@@ -40171,7 +40171,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
     if (approvedOrderedSetIteratorCopyConstruction(A.S, A.Sources, C, A.Context)) {
-      assign(Place, expression(C->getArg(0)), L);
+      const auto *Input = C->getArg(0);
+      auto Source = expression(Input);
+      if (A.Context.hasSameUnqualifiedType(C->getType(), Input->getType()))
+        assign(Place, std::move(Source), L);
+      else
+        assign(orderedIteratorCursor(Place, L), orderedIteratorCursor(std::move(Source), L), L);
       return;
     }
     if (auto Kind = approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context)) {
