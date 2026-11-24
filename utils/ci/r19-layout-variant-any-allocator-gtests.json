@@ -238,30 +238,6 @@
       "source_sha256": "e5a279d72a5bd9aeaf700a9a3492a3331dda93011f81e81daddc84e7500818ec"
     },
     {
-      "name": "any-int-assign-other-payload-guard",
-      "expected": "accept",
-      "source": "#include <any>\nvoid f(std::any& a, long n) { a = n; }\n",
-      "public_header": "any",
-      "kind": "cpp17-operation",
-      "source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3"
-    },
-    {
-      "name": "any-int-make-renamed-installation-guard",
-      "expected": "reject",
-      "source": "#define __create changed_int_installation\n#include <any>\n#undef __create\nbool f() {\n  auto a = std::make_any<int>(7);\n  return a.has_value();\n}\n",
-      "public_header": "any",
-      "kind": "source-body-guard",
-      "source_sha256": "68d4593f49b5b8e52f575420e4a0cc50c3738ee97d69ed0ff15dbde175bf7f7a"
-    },
-    {
-      "name": "any-int-cast-without-active-state-evidence",
-      "expected": "reject",
-      "source": "#include <any>\nint f(const std::any& a) { return std::any_cast<int>(a); }\n",
-      "public_header": "any",
-      "kind": "source-body-guard",
-      "source_sha256": "b26ddc84c5231622e4c25d7f7c17e64d6f40d9dd02523b1f93bf29b1fa8c280f"
-    },
-    {
       "name": "scoped-allocator-same-type-copy",
       "expected": "accept",
       "source": "#include <memory>\n#include <scoped_allocator>\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>>;\nint visits;\nconst Alloc& choose(const Alloc& allocation) { ++visits; return allocation; }\nint main() {\n  Alloc original;\n  Alloc copy(choose(original));\n  int* slot = copy.allocate(1);\n  copy.construct(slot, 29);\n  const int result = *slot;\n  copy.destroy(slot);\n  original.deallocate(slot, 1);\n  return visits != 1 || result != 29;\n}\n",
@@ -286,22 +262,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "scoped-allocator-renamed-storage-copy-guard",
-      "expected": "reject",
-      "source": "#include <memory>\n#define __scoped_allocator_storage changed_scoped_storage\n#include <scoped_allocator>\n#undef __scoped_allocator_storage\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>>;\nint check(const Alloc& source) {\n  Alloc copy(source);\n  return sizeof(copy);\n}\n",
-      "source_sha256": "8815bc41eb99bdcd12c4b78aa5da76172af4358c67bb1dc2c78701e7a9c33f24",
-      "public_header": "scoped_allocator",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "scoped-allocator-inner-pack-copy-guard",
-      "expected": "reject",
-      "source": "#include <memory>\n#include <scoped_allocator>\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>, std::allocator<int>>;\nint check(const Alloc& source) {\n  Alloc copy(source);\n  return sizeof(copy);\n}\n",
-      "source_sha256": "063d514faf39e6c377a519d5fc88b39f3dc9c8efdedf6c9a48c0813480cd2713",
-      "public_header": "scoped_allocator",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "variant-three-visit-function-and-pointer",
       "source": "#include <variant>\nlong combine(int a, long b, int c) { return a * 100L + b * 10L + c; }\nint main() {\n  std::variant<short, int> a(std::in_place_index<0>, short(7));\n  std::variant<long, int> b(std::in_place_index<1>, 4);\n  const std::variant<short, int> c(std::in_place_index<1>, 2);\n  if (std::visit(combine, a, b, c) != 742)\n    return 1;\n  a.emplace<1>(2);\n  b.emplace<0>(5L);\n  return std::visit(&combine, a, b, c) != 252;\n}\n",
       "expected": "accept",
@@ -324,6 +284,46 @@
       "source_sha256": "04233e3af574732b54ef813d95d62a3920bce343d2d904f68cc700a353da0195",
       "public_header": "variant",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-int-assign-other-payload-guard",
+      "expected": "accept",
+      "source": "#include <any>\nvoid f(std::any& a, long n) { a = n; }\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3"
+    },
+    {
+      "name": "any-int-make-renamed-installation-guard",
+      "expected": "reject",
+      "source": "#define __create changed_int_installation\n#include <any>\n#undef __create\nbool f() {\n  auto a = std::make_any<int>(7);\n  return a.has_value();\n}\n",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source_sha256": "68d4593f49b5b8e52f575420e4a0cc50c3738ee97d69ed0ff15dbde175bf7f7a"
+    },
+    {
+      "name": "any-int-cast-without-active-state-evidence",
+      "expected": "reject",
+      "source": "#include <any>\nint f(const std::any& a) { return std::any_cast<int>(a); }\n",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source_sha256": "b26ddc84c5231622e4c25d7f7c17e64d6f40d9dd02523b1f93bf29b1fa8c280f"
+    },
+    {
+      "name": "scoped-allocator-renamed-storage-copy-guard",
+      "expected": "reject",
+      "source": "#include <memory>\n#define __scoped_allocator_storage changed_scoped_storage\n#include <scoped_allocator>\n#undef __scoped_allocator_storage\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>>;\nint check(const Alloc& source) {\n  Alloc copy(source);\n  return sizeof(copy);\n}\n",
+      "source_sha256": "8815bc41eb99bdcd12c4b78aa5da76172af4358c67bb1dc2c78701e7a9c33f24",
+      "public_header": "scoped_allocator",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "scoped-allocator-inner-pack-copy-guard",
+      "expected": "reject",
+      "source": "#include <memory>\n#include <scoped_allocator>\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>, std::allocator<int>>;\nint check(const Alloc& source) {\n  Alloc copy(source);\n  return sizeof(copy);\n}\n",
+      "source_sha256": "063d514faf39e6c377a519d5fc88b39f3dc9c8efdedf6c9a48c0813480cd2713",
+      "public_header": "scoped_allocator",
+      "kind": "source-body-guard"
     },
     {
       "name": "variant-three-visit-renamed-valueless-guard",
@@ -382,7 +382,7 @@
     "TranslateTest.CoreV2VariantThreeVisitMatrixCapacityRejected",
     "TranslateTest.CoreV2VariantThreeVisitFourOperandsRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "561406c89101beb582fd1d4cc65016e90c9ce40fa582d1ca2380e9ce49526a29",
   "maintained_original_sha256": "bb50602a198d000bfebf68c70354d6deac438fcee8db75a6e2c28e12703fc1d0",
@@ -394,5 +394,12 @@
   "current_registry_count": 8228,
   "current_python_registry_tests": 140,
   "native_reference_selected_executions": 26,
-  "planned_generated_c23_executions": 26
+  "planned_generated_c23_executions": 26,
+  "native_reference_proofs": {
+    "any-integer-operations": "f7d9954b823bb2e9d0a09353248f24656892d562850c37b13a37f83dbddb539f",
+    "scoped-allocator": "542ac3bee249292d57c71942cada7a38db3e251f22d6c1d8d47c630d5e3d95b2",
+    "three-variant-visit": "cba2d9fe01d703b8356cdc0f0050500243cc6029bc27b87eeda3b636823d8f69"
+  },
+  "native_reference_authentication_sha256": "133196c0f84bf0621378163efef0ec281c8bac24cc52e9a78f4b401a38f10299",
+  "source_proof_sha256": "f4f0846a59afae9fe5ba80c3556d373177d602d0e72182a1a87bcd914ddb89da"
 }
