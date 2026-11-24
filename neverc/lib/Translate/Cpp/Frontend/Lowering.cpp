@@ -30551,7 +30551,12 @@ class FunctionLowering {
       const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
       auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
       auto Insert = [&]() {
-        if (!Call->getNumArgs()) return emplaceOrderedSetDefault(std::move(Place), Info->Storage, L);
+        if (!Call->getNumArgs()) {
+          auto Result = emplaceOrderedSetDefault(std::move(Place), Info->Storage, L);
+          if (!Info->Storage.MappedPairType.isNull())
+            initializeOrderedMappedValue(Result, A.zero(A.Context.IntTy, L), Info->Storage, L);
+          return Result;
+        }
         auto Input = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
         std::optional<Expression> MappedArgument;
         if (Call->getNumArgs() == 2)

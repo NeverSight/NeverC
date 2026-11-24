@@ -136998,9 +136998,19 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
+  std::optional<UtilityPairRecord> Input;
   if (Insertion == Kind::Emplace) {
+    if (Mapped && Args == 1) {
+      const auto PairType = Method->getParamDecl(0)->getType().getNonReferenceType();
+      Input = approvedUtilityPairRecord(S, SM, PairType->getAsCXXRecordDecl(), Context);
+      if (!Input || PairType.isVolatileQualified() || !Input->Record->hasTrivialDestructor() ||
+          (!Context.hasSameType(Input->First->getType(), Context.IntTy) &&
+           !Context.hasSameType(Input->First->getType(), Context.IntTy.withConst())) ||
+          !Context.hasSameType(Input->Second->getType(), Context.IntTy))
+        return std::nullopt;
+    }
     const auto *Deduced = Method->getTemplateSpecializationArgs();
-    if ((Mapped ? Args != 2 : Args > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+    if ((!Mapped && Args > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         !Deduced || Deduced->size() != 1 || Deduced->get(0).getKind() != TemplateArgument::Pack)
       return std::nullopt;
     const auto Pack = Deduced->get(0).getPackAsArray();
@@ -137015,7 +137025,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          !orderedIntegerEmplacementArgument(Context, Referred))
+          (!Input && !orderedIntegerEmplacementArgument(Context, Referred)))
         return std::nullopt;
     }
   } else {
@@ -137051,7 +137061,6 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
         !orderedIntegerEmplacementArgument(Context, MappedType))
       return std::nullopt;
   }
-  std::optional<UtilityPairRecord> Input;
   if (Mapped && Insertion == Kind::Insert) {
     Input = approvedUtilityPairRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
     if (!Input) return std::nullopt;
