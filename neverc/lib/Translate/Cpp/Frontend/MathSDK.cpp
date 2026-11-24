@@ -136100,10 +136100,12 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
 }
 
 static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
-  return Context.hasSameType(Type, Context.IntTy) ||
-         Context.hasSameType(Type, Context.LongTy) ||
-         Context.hasSameType(Type, Context.LongLongTy) ||
-         Context.hasSameType(Type, Context.UnsignedLongLongTy);
+  const QualType IntegralTypes[] = {
+      Context.BoolTy, Context.CharTy, Context.SignedCharTy, Context.UnsignedCharTy,
+      Context.ShortTy, Context.UnsignedShortTy, Context.IntTy, Context.UnsignedIntTy,
+      Context.LongTy, Context.UnsignedLongTy, Context.LongLongTy, Context.UnsignedLongLongTy,
+  };
+  return llvm::is_contained(IntegralTypes, Type.getCanonicalType());
 }
 
 bool approvedAssociativeContainerMetadataRecord(
