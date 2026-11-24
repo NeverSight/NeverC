@@ -27880,8 +27880,8 @@ class FunctionLowering {
   Expression compareOrderedSets(Expression Left, Expression Right, bool Equality,
       const UtilityOrderedSetStorage &Info, SourceLocation L) {
     auto Result = snapshot(boolean(false, L), L);
-    const auto Read = labelName(), Check = labelName(), Keys = labelName(), OrderKeys = labelName(),
-               Advance = labelName(), End = labelName(), Done = labelName();
+    const auto Read = labelName(), Check = labelName(), CheckSecond = labelName(), Keys = labelName(),
+               OrderKeys = labelName(), Advance = labelName(), FirstEndReached = labelName(), Done = labelName();
     if (Equality) {
       auto LeftSize = orderedContainerMember(Left, "nct_ordered_size", L);
       auto RightSize = orderedContainerMember(Right, "nct_ordered_size", L);
@@ -27896,9 +27896,9 @@ class FunctionLowering {
     auto SecondEnd = snapshot(orderedTreeSentinel(std::move(Right), L), L);
     jump(Check, L);
     label(Check, L);
-    auto FirstHasValue = snapshot(binary("!=", First, FirstEnd, "bool", L), L);
-    auto SecondHasValue = snapshot(binary("!=", Second, SecondEnd, "bool", L), L);
-    branch(binary("&&", FirstHasValue, SecondHasValue, "bool", L), Keys, End, L);
+    branch(binary("!=", First, FirstEnd, "bool", L), CheckSecond, FirstEndReached, L);
+    label(CheckSecond, L);
+    branch(binary("!=", Second, SecondEnd, "bool", L), Keys, Done, L);
     label(Keys, L);
     auto X = snapshot(orderedSetKey(First, Info, L), L);
     auto Y = snapshot(orderedSetKey(Second, Info, L), L);
@@ -27923,11 +27923,8 @@ class FunctionLowering {
     assign(First, stepOrderedIterator(First, true, L), L);
     assign(Second, stepOrderedIterator(Second, true, L), L);
     jump(Check, L);
-    label(End, L);
-    auto AtFirstEnd = binary("==", std::move(FirstHasValue), boolean(false, L), "bool", L);
-    auto Other = Equality ? binary("==", std::move(SecondHasValue), boolean(false, L), "bool", L)
-                          : std::move(SecondHasValue);
-    assign(Result, binary("&&", std::move(AtFirstEnd), std::move(Other), "bool", L), L);
+    label(FirstEndReached, L);
+    assign(Result, binary(Equality ? "==" : "!=", std::move(Second), std::move(SecondEnd), "bool", L), L);
     jump(Done, L);
     label(Done, L);
     return Result;
@@ -30717,7 +30714,8 @@ class FunctionLowering {
         std::swap(Left, Right);
       auto Result = compareOrderedSets(std::move(Left), std::move(Right), Equality, *Info, L);
       if (Op == clang::OO_ExclaimEqual || Op == clang::OO_GreaterEqual || Op == clang::OO_LessEqual)
-        return binary("==", std::move(Result), boolean(false, L), "bool", L);
+        return Expression{{"kind", "unary"}, {"type", "bool"}, {"operator", "!"},
+                          {"args", json::Array{std::move(Result)}}, {"loc", A.loc(L)}};
       return Result;
     }
     if (Operation == UtilityOperation::OrderedSetSwap) {
