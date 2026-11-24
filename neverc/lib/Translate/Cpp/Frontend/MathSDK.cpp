@@ -136100,6 +136100,8 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
 }
 
 static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
+  if (Context.hasSameType(Type, Context.FloatTy) || Context.hasSameType(Type, Context.DoubleTy))
+    return true;
   return Context.hasSameType(Type, Context.IntTy) ||
          Context.hasSameType(Type, Context.LongTy) ||
          Context.hasSameType(Type, Context.LongLongTy) ||
@@ -137119,10 +137121,10 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
-  auto MatchesInteger = [&](QualType Type, QualType Target) {
-    return Hinted ? (Context.hasSameType(Type, Target) ||
-                     Context.hasSameType(Type, Target.withConst()))
-                  : orderedIntegerEmplacementArgument(Context, Type, Target);
+  auto MatchesScalar = [&](QualType Type, QualType Target) {
+    if (Hinted || Target->isRealFloatingType())
+      return Context.hasSameType(Type, Target) || Context.hasSameType(Type, Target.withConst());
+    return orderedIntegerEmplacementArgument(Context, Type, Target);
   };
   std::optional<UtilityPairRecord> Input;
   std::optional<UtilityMapPiecewiseArguments> Piecewise;
@@ -137156,7 +137158,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          (!Input && !Piecewise && !MatchesInteger(Referred, I ? Table->MappedValueType : Context.IntTy)))
+          (!Input && !Piecewise && !MatchesScalar(Referred, I ? Table->MappedValueType : Context.IntTy)))
         return std::nullopt;
     }
   } else {
@@ -137189,7 +137191,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const auto MappedType = Argument->getPointeeType();
     if (!Argument->isReferenceType() ||
         !Context.hasSameUnqualifiedType(MappedType, Call->getArg(Offset + 1)->getType()) ||
-        !MatchesInteger(MappedType, Table->MappedValueType))
+        !MatchesScalar(MappedType, Table->MappedValueType))
       return std::nullopt;
   }
   if (Mapped && Insertion == Kind::Insert) {
