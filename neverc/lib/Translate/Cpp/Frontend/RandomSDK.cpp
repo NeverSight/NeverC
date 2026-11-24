@@ -104,10 +104,11 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     }
   }
-  bool isUnorderedMappedOwner() const {
+  bool isMappedOwner() const {
     if (!SDKGenerator || !Generator->getIdentifier()) return false;
     const auto Name = Generator->getName();
-    return Name == "unordered_map" || Name == "unordered_multimap";
+    return Name == "unordered_map" || Name == "unordered_multimap" ||
+           Name == "map" || Name == "multimap";
   }
 
   bool isAssociativeSetElement(QualType Type) const {
@@ -128,7 +129,8 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     if (!SDKGenerator || !Generator->getIdentifier())
       return false;
     const auto Name = Generator->getName();
-    return isUnorderedMappedOwner() || Name == "unordered_set" || Name == "unordered_multiset";
+    return Name == "unordered_map" || Name == "unordered_multimap" ||
+           Name == "unordered_set" || Name == "unordered_multiset";
   }
 
   bool engineIntrinsic(const FunctionDecl *F, SourceLocation Location) const {
@@ -152,7 +154,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     }
     if (F->getBuiltinID() == Builtin::BI__builtin_launder) {
       const auto Site = S.sdkFile(SM, Location);
-      if (!isUnorderedMappedOwner() || !Site ||
+      if (!isMappedOwner() || !Site ||
           Site->Root != "libcxx" || Site->Path != "__new/launder.h" ||
           F->isVariadic() || F->getNumParams() != 1 ||
           !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) ||
@@ -593,7 +595,7 @@ public:
     if (const auto *Builtin = dyn_cast<BuiltinTemplateDecl>(D))
       return Builtin->isImplicit() && Builtin->getLocation().isInvalid() &&
              (Builtin->getBuiltinTemplateKind() == BTK__builtin_common_type ||
-              (isUnorderedMappedOwner() &&
+              (isMappedOwner() &&
                Builtin->getBuiltinTemplateKind() == BTK__type_pack_element));
     if (++Nodes > 4096 || !origin(D))
       return false;
@@ -2664,6 +2666,18 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       Object, Result, Distance, Selection.MinimumValue, Selection.MaximumValue,
       Index};
 }
+bool approvedOrderedMapSelectedBody(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!Function)
+    return false;
+  const auto Storage = approvedUtilityOrderedMapStorage(S, SM, Record, Context);
+  if (!Storage)
+    return false;
+  RandomSelection Selection(S, SM, Context, Record, Context.getSizeType(), Context.DoubleTy);
+  Selection.OrderedSentinelType = Storage->SentinelType;
+  return Selection.retain(Function);
+}
+
 bool approvedOrderedSetSelectedBody(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const CXXRecordDecl *Record, const ASTContext &Context) {
   if (!Function)
