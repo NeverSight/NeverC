@@ -969,3 +969,10 @@ The combined compiler passes 6,006 source requests across six 64-bit targets
 and 1105 formal tests on Linux x86-64. All 692 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Scalar mapped values and guarded lookup
+
+The combined compiler passes 6,174 source requests across six 64-bit targets
+and 1133 formal tests on Linux x86-64. All 721 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

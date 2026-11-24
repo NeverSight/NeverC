@@ -259,9 +259,10 @@
   "native_reference_selected_executions": 18,
   "planned_generated_c23_executions": 18,
   "native_reference_proofs": {
+    "ordered-map-float": "760559df7326c21d012df460fd5a7035266ce4597af9925657d2619e8c9467b6",
     "variant-value-assignment": "b87c42a509b0ef796575186d0f488a158b88e9f574d8d53a0704eb3aacfe9c5d",
     "variant-zero-visit": "42145c597f00a14b609476b99e821860cd8f438b004fad4818b538f39ae19fa7"
   },
-  "native_reference_authentication_sha256": "eba50ad64defb0e070d6f1c14e3fb23926c74905fa941d605644890162745da7",
-  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
+  "native_reference_authentication_sha256": "dea580a87d426d0b8abd7a09b061d123f9870e4859231818f5f3ec90402be06d",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

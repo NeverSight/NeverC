@@ -95,6 +95,22 @@
       "source_sha256": "0e444f007bca1efaeb7ecc224d36d338630a381f3dd8e81a96db9b061c8ef110",
       "original_case_source_sha256": "0e444f007bca1efaeb7ecc224d36d338630a381f3dd8e81a96db9b061c8ef110",
       "gtest_body_sha256": "ae4141d7bb65d583b6841409b5ccaa9fd5aa5f4fc51ceda6b3533c93096aabce"
+    },
+    {
+      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTraversesInReverseWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
+      "original_case_source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
+      "gtest_body_sha256": "36cf9e1a622a3a554c252c60cc4de5ef58a1fe7403a7add1c48519ea110da95c"
+    },
+    {
+      "name": "ordered-mapped-reverse-conversion-other-mapped-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapConvertsReverseIteratorWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
+      "original_case_source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
+      "gtest_body_sha256": "b07311261da7ae43fedb14e4c4d49f536c95bde3ca46427414191b7b260044a9"
     }
   ],
   "negative_cases": [
@@ -105,14 +121,6 @@
       "source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
       "original_case_source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
       "gtest_body_sha256": "b1d114a74dee6ba94dad632f3c9aef5a4ec18a723f2fdbfacb27e762ac3fb18d"
-    },
-    {
-      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapReverseCursorDifferentMappedStorageGuardRejected",
-      "expected": "reject",
-      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
-      "original_case_source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
-      "gtest_body_sha256": "a928392d653d0289e26457535f5108ecf32a136da0bc24cfbc4c8f982a5b1662"
     },
     {
       "name": "ordered-reverse-range-custom-policy-guard",
@@ -129,14 +137,6 @@
       "source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
       "original_case_source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
       "gtest_body_sha256": "3e05814107d61dc87077abb8ec828e4d22cfead8eede42b72e7ea25120b1ec0a"
-    },
-    {
-      "name": "ordered-mapped-reverse-conversion-other-mapped-storage-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMappedReverseConversionOtherMappedStorageGuardRejected",
-      "expected": "reject",
-      "source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
-      "original_case_source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
-      "gtest_body_sha256": "f627cc7dc41c5eec3621bb2a13ecb907ca40d781138a83c7b4c5a5555e13f104"
     }
   ],
   "source_cases": [
@@ -237,19 +237,27 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n",
+      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-mapped-reverse-conversion-other-mapped-storage-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  Map values{{1, 10}, {5, 50}};\n  auto it = values.rbegin();\n  Map::const_reverse_iterator read = it;\n  return read == it && read->second == 50 ? 0 : 1;\n}\n",
+      "source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-reverse-cursor-custom-policy-guard",
       "expected": "reject",
       "public_header": "set",
       "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n",
       "source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n",
-      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
       "kind": "source-body-guard"
     },
     {
@@ -267,14 +275,6 @@
       "source": "#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map values{{1, 10}, {5, 50}};\n  Map::const_reverse_iterator it = values.rbegin();\n  return it->first == 1 ? 0 : 1;\n}\n",
       "source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-mapped-reverse-conversion-other-mapped-storage-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  Map values{{1, 10}, {5, 50}};\n  auto it = values.rbegin();\n  Map::const_reverse_iterator read = it;\n  return read == it && read->second == 50 ? 0 : 1;\n}\n",
-      "source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -290,11 +290,11 @@
     "TranslateTest.CoreV2OrderedMapMixedReverseCursorsComparePositionsRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMultimapAssignsMutableReversePositionToConstRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapCopiesConstReverseEndFromMutableRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapTraversesInReverseWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedMapConvertsReverseIteratorWithLongMappedValues",
     "TranslateTest.CoreV2OrderedReverseCursorCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedMapReverseCursorDifferentMappedStorageGuardRejected",
     "TranslateTest.CoreV2OrderedReverseRangeCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRejected",
-    "TranslateTest.CoreV2OrderedMappedReverseConversionOtherMappedStorageGuardRejected"
+    "TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -307,11 +307,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8837,
   "current_python_registry_tests": 266,
-  "native_reference_selected_executions": 24,
-  "planned_generated_c23_executions": 24,
+  "native_reference_selected_executions": 28,
+  "planned_generated_c23_executions": 28,
   "native_reference_proofs": {
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
     "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd"
   },
-  "native_reference_authentication_sha256": "5d0a3e4ac0cc950697a01d58ca5263c0af391c5716d136b3e1b8d64d6db1ce45",
-  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
+  "native_reference_authentication_sha256": "923206834dfbeced4a9663de4855d37faab43336c7630498c476c57dc5f5f633",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

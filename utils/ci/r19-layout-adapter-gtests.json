@@ -127,17 +127,17 @@
       "source_sha256": "0457b60d72d4aea4fcbe39b40e777199a7faa674199d69f7f74186e12ab9fa32",
       "original_case_source_sha256": "0457b60d72d4aea4fcbe39b40e777199a7faa674199d69f7f74186e12ab9fa32",
       "gtest_body_sha256": "754f4eb58167d3b0f89351e92a6574d2e2d020aa6f355d5090b76adcd04ea014"
+    },
+    {
+      "name": "associative-multimap-custom-type-or-policy",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapStoresFloatMappedValues",
+      "expected": "accept",
+      "source_sha256": "7f180e3dd903e66f6464b5efab6e7803eff185ae00865bc8c6e9be6c9419964d",
+      "original_case_source_sha256": "7f180e3dd903e66f6464b5efab6e7803eff185ae00865bc8c6e9be6c9419964d",
+      "gtest_body_sha256": "138415778af025f0c37f6834e5658766f090257dfeb0c82a07579890693df82f"
     }
   ],
   "negative_cases": [
-    {
-      "name": "associative-multimap-custom-type-or-policy",
-      "formal_test_name": "TranslateTest.CoreV2AssociativeMultimapCustomTypeOrPolicyRejected",
-      "expected": "reject",
-      "source_sha256": "7f180e3dd903e66f6464b5efab6e7803eff185ae00865bc8c6e9be6c9419964d",
-      "original_case_source_sha256": "7f180e3dd903e66f6464b5efab6e7803eff185ae00865bc8c6e9be6c9419964d",
-      "gtest_body_sha256": "c39303f97666c052a38e977e8f1e5171fbf35e2a702a2ce38c0b20897312aa1b"
-    },
     {
       "name": "associative-multimap-renamed-container-storage",
       "formal_test_name": "TranslateTest.CoreV2AssociativeMultimapRenamedContainerStorageRejected",
@@ -350,11 +350,11 @@
     },
     {
       "name": "associative-multimap-custom-type-or-policy",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <map>\n#include <type_traits>\nusing Container = std::multimap<int, double>;\nint main() { return sizeof(Container) == 0; }\n",
       "public_header": "map",
       "source_sha256": "7f180e3dd903e66f6464b5efab6e7803eff185ae00865bc8c6e9be6c9419964d",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "associative-multimap-renamed-container-storage",
@@ -454,7 +454,7 @@
     "TranslateTest.CoreV2DequeAdapterConstructionQueueCopyConstDequeRunAtBothOptimizations",
     "TranslateTest.CoreV2DequeAdapterConstructionQueueMoveDequeReferenceRunAtBothOptimizations",
     "TranslateTest.CoreV2DequeAdapterConstructionStackMoveDequeOnceRunAtBothOptimizations",
-    "TranslateTest.CoreV2AssociativeMultimapCustomTypeOrPolicyRejected",
+    "TranslateTest.CoreV2OrderedMultimapStoresFloatMappedValues",
     "TranslateTest.CoreV2AssociativeMultimapRenamedContainerStorageRejected",
     "TranslateTest.CoreV2AssociativeMultimapRuntimeStorageGuardRejected",
     "TranslateTest.CoreV2AssociativeMultisetCustomTypeOrPolicyRejected",
@@ -477,12 +477,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8158,
   "current_python_registry_tests": 126,
-  "native_reference_selected_executions": 32,
-  "planned_generated_c23_executions": 32,
+  "native_reference_selected_executions": 34,
+  "planned_generated_c23_executions": 34,
   "native_reference_proofs": {
     "associative-multi-layout": "893283b5a2d3e69e7dcca8830caf4d53f32a2cbe3187b48921909db343824420",
-    "deque-adapter-construction": "866eadf85206909219ddf546815ab8e06b8f30c4283d3392c581d42c36873db8"
+    "deque-adapter-construction": "866eadf85206909219ddf546815ab8e06b8f30c4283d3392c581d42c36873db8",
+    "ordered-map-float": "760559df7326c21d012df460fd5a7035266ce4597af9925657d2619e8c9467b6"
   },
-  "native_reference_authentication_sha256": "962f0e705afd76dcd4fbc54eb3181fb6dcbc2e0e5651727bef44e763f4b0b6df",
-  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
+  "native_reference_authentication_sha256": "8891399827c716aedce89ec1362dbf0bf17cf40a5605c2abb07f73e6843ff751",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

@@ -247,6 +247,22 @@
       "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
       "original_case_source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
       "gtest_body_sha256": "f4be2e0598a0f3ea5eb7490c149977249545ab9f937453c6feb7c70eca7a3d72"
+    },
+    {
+      "name": "ordered-map-unsupported-mapped-type-does-not-admit-count",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapCountsWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
+      "original_case_source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
+      "gtest_body_sha256": "c398a599ac491cc315f13b81057ca652f5484405fdc96a40b73ccfbc5324f652"
+    },
+    {
+      "name": "ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapErasesWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
+      "original_case_source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
+      "gtest_body_sha256": "fd779d0f6b4ab4bbdeecb45aed6511fdeae5d5d3a0c9af8d3192cd76e3602678"
     }
   ],
   "negative_cases": [
@@ -257,14 +273,6 @@
       "source_sha256": "ae4217f653892f9d1e17a2cb405d5df4d44fc499515f5570ea1616c2d44f46cd",
       "original_case_source_sha256": "ae4217f653892f9d1e17a2cb405d5df4d44fc499515f5570ea1616c2d44f46cd",
       "gtest_body_sha256": "866131a09c7b250648bd9b9472d8390e8aee7abbe0b5f5f873ea6a039c062117"
-    },
-    {
-      "name": "ordered-map-unsupported-mapped-type-does-not-admit-count",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapUnsupportedMappedTypeDoesNotAdmitCountRejected",
-      "expected": "reject",
-      "source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
-      "original_case_source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
-      "gtest_body_sha256": "76aaed08dcfbc231b0460640eba52dd5c549bf7be00ef10872d698e9af6cf87c"
     },
     {
       "name": "ordered-map-stateful-policy-remains-outside-checked-mapped-owner",
@@ -281,14 +289,6 @@
       "source_sha256": "45e12e63762a3ffae000241a7fe1ae89bab736ba906d678105fd0bcc72fef6a9",
       "original_case_source_sha256": "45e12e63762a3ffae000241a7fe1ae89bab736ba906d678105fd0bcc72fef6a9",
       "gtest_body_sha256": "e8ac3f8da9f6aed67a808d3659015ea43e4bafea08546f74072cc4a5f4228569"
-    },
-    {
-      "name": "ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapErasureUnsupportedMappedStorageKeepsMutationGuardRejected",
-      "expected": "reject",
-      "source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
-      "original_case_source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
-      "gtest_body_sha256": "063067a8545c1afeffb57e3252c3640195d241b4f0d3c514e1b2e5f0e2bed3e7"
     },
     {
       "name": "ordered-map-insertion-stateful-comparator-insertion-remains-outside-checked-layout",
@@ -573,19 +573,27 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-unsupported-mapped-type-does-not-admit-count",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, long> map;\n  return map.count(7) != 0;\n}\n",
+      "source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, long> values;\n  values.clear();\n  return values.erase(7) != 0;\n}\n",
+      "source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-map-non-default-key-order-remains-outside-checked-subscript",
       "expected": "reject",
       "public_header": "map",
       "source": "#include <map>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::map<int, int, Descending> map;\n  map[3] = 12;\n  return map[3] != 12;\n}\n",
       "source_sha256": "ae4217f653892f9d1e17a2cb405d5df4d44fc499515f5570ea1616c2d44f46cd",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-unsupported-mapped-type-does-not-admit-count",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, long> map;\n  return map.count(7) != 0;\n}\n",
-      "source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
       "kind": "source-body-guard"
     },
     {
@@ -602,14 +610,6 @@
       "public_header": "map",
       "source": "#include <map>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::map<int, int, Descending> values{{2, 5}, {6, 7}};\n  auto position = values.begin();\n  return position->first != 6;\n}\n",
       "source_sha256": "45e12e63762a3ffae000241a7fe1ae89bab736ba906d678105fd0bcc72fef6a9",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, long> values;\n  values.clear();\n  return values.erase(7) != 0;\n}\n",
-      "source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
       "kind": "source-body-guard"
     },
     {
@@ -677,11 +677,11 @@
     "TranslateTest.CoreV2OrderedMapIteratorConversionMultimapMatchesDuplicatePositionRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapIteratorConversionMixedEqualitySeesOwnerEndRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapScalarEmplacementMappedConversionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapCountsWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedMapErasesWithLongMappedValues",
     "TranslateTest.CoreV2OrderedMapNonDefaultKeyOrderRemainsOutsideCheckedSubscriptRejected",
-    "TranslateTest.CoreV2OrderedMapUnsupportedMappedTypeDoesNotAdmitCountRejected",
     "TranslateTest.CoreV2OrderedMapStatefulPolicyRemainsOutsideCheckedMappedOwnerRejected",
     "TranslateTest.CoreV2OrderedMapIteratorCustomMapIteratorReceiverKeepsSourceGuardRejected",
-    "TranslateTest.CoreV2OrderedMapErasureUnsupportedMappedStorageKeepsMutationGuardRejected",
     "TranslateTest.CoreV2OrderedMapInsertionStatefulComparatorInsertionRemainsOutsideCheckedLayoutRejected",
     "TranslateTest.CoreV2OrderedMapTransferStatefulOrderedMapComparatorHasSeparateTransferSemanticsRejected",
     "TranslateTest.CoreV2OrderedMapCopyAssignmentCustomComparatorRemainsUnsupportedRejected",
@@ -698,12 +698,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8734,
   "current_python_registry_tests": 252,
-  "native_reference_selected_executions": 62,
-  "planned_generated_c23_executions": 62,
+  "native_reference_selected_executions": 66,
+  "planned_generated_c23_executions": 66,
   "native_reference_proofs": {
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
     "ordered-maps-with-mixed-cursors": "270ad4645a1f52c6327fd1ce4d683c4c13395b88f2647d000a6355a72d3d88ad",
     "ordered-value-input": "b9b293f9b1ce126fa9c711ec5be48f05d87960878036f2b61436023a654b4e4c"
   },
-  "native_reference_authentication_sha256": "48128d79c42ca43a9d5b802b0173d7d23ab32eae8b4060d679dd15438611532a",
-  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
+  "native_reference_authentication_sha256": "9c0d17d924c4a21f722f2202e0624b5711553e6f23a55ffeea4bad49c2db6f95",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

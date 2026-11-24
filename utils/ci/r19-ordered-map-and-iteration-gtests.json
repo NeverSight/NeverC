@@ -255,6 +255,38 @@
       "source_sha256": "54717bbea90571a42e4770bff5e4991eca6c26c15c2c833ef9d93d649f83db76",
       "original_case_source_sha256": "54717bbea90571a42e4770bff5e4991eca6c26c15c2c833ef9d93d649f83db76",
       "gtest_body_sha256": "10d95d798a05489b95d86c39accdf3339e9606f702709ad8ed2cc251ee55c6c1"
+    },
+    {
+      "name": "ordered-iterator-navigation-different-mapped-layout-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapForwardDistanceWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "01fe23b5bb6ffd68f19c37cffffc693a23042f597ac4306056cb25eb77dea593",
+      "original_case_source_sha256": "01fe23b5bb6ffd68f19c37cffffc693a23042f597ac4306056cb25eb77dea593",
+      "gtest_body_sha256": "30a6dd2abdfcae2ebcc61c7b7dfea6a04af380132fbaa97aac08381ee9648f0c"
+    },
+    {
+      "name": "ordered-free-access-other-mapped-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapFreeSizeWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "f153485f179a9efcd73d7ca5ebab47f01e04b63354a196111e8ef57b17d3b4d9",
+      "original_case_source_sha256": "f153485f179a9efcd73d7ca5ebab47f01e04b63354a196111e8ef57b17d3b4d9",
+      "gtest_body_sha256": "a3a51554e56e5893dee4e9acfca23f36e1f221713c51fe056990f70a81db61cd"
+    },
+    {
+      "name": "ordered-reverse-navigation-different-mapped-layout-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapReverseDistanceWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "5f0fbcc059d77937dcde02ded79d5b02e1beee1c42c4e7c83ae30c4abeb04185",
+      "original_case_source_sha256": "5f0fbcc059d77937dcde02ded79d5b02e1beee1c42c4e7c83ae30c4abeb04185",
+      "gtest_body_sha256": "e1a82523fd3dd7d03ef8707dfb09b746b47a9681151a19836f99643b36194637"
+    },
+    {
+      "name": "ordered-wide-mapped-floating-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapStoresDoubleMappedValues",
+      "expected": "accept",
+      "source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
+      "original_case_source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
+      "gtest_body_sha256": "56cb53c3a35145d75d8123b7eb20795e3d5892f0daaf5b9c5347893033a43382"
     }
   ],
   "negative_cases": [
@@ -299,14 +331,6 @@
       "gtest_body_sha256": "501262dff9136f967f222025d98eb5df5a2e5bdd3609738c0aac2958607cb874"
     },
     {
-      "name": "ordered-iterator-navigation-different-mapped-layout-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedIteratorNavigationDifferentMappedLayoutGuardRejected",
-      "expected": "reject",
-      "source_sha256": "01fe23b5bb6ffd68f19c37cffffc693a23042f597ac4306056cb25eb77dea593",
-      "original_case_source_sha256": "01fe23b5bb6ffd68f19c37cffffc693a23042f597ac4306056cb25eb77dea593",
-      "gtest_body_sha256": "e9ac487342b60d59ee458f871d45be221204547d6dbde633aa10139392ee2198"
-    },
-    {
       "name": "ordered-free-access-custom-comparator-guard",
       "formal_test_name": "TranslateTest.CoreV2OrderedFreeAccessCustomComparatorGuardRejected",
       "expected": "reject",
@@ -315,28 +339,12 @@
       "gtest_body_sha256": "55913c19002671cdded92d9d099b4499cb3937c773e40b50924d6b3668a0cfc9"
     },
     {
-      "name": "ordered-free-access-other-mapped-storage-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedFreeAccessOtherMappedStorageGuardRejected",
-      "expected": "reject",
-      "source_sha256": "f153485f179a9efcd73d7ca5ebab47f01e04b63354a196111e8ef57b17d3b4d9",
-      "original_case_source_sha256": "f153485f179a9efcd73d7ca5ebab47f01e04b63354a196111e8ef57b17d3b4d9",
-      "gtest_body_sha256": "c54a0f2dc363bafc3c322a32bf71d9e582dde8fa3344ca7fa17da5f8b790ae97"
-    },
-    {
       "name": "ordered-reverse-navigation-custom-comparator-guard",
       "formal_test_name": "TranslateTest.CoreV2OrderedReverseNavigationCustomComparatorGuardRejected",
       "expected": "reject",
       "source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
       "original_case_source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
       "gtest_body_sha256": "c7885a49fa667ee725b88830692a31b4c285309e68d7ced7ae848cfe2a7e1815"
-    },
-    {
-      "name": "ordered-reverse-navigation-different-mapped-layout-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedReverseNavigationDifferentMappedLayoutGuardRejected",
-      "expected": "reject",
-      "source_sha256": "5f0fbcc059d77937dcde02ded79d5b02e1beee1c42c4e7c83ae30c4abeb04185",
-      "original_case_source_sha256": "5f0fbcc059d77937dcde02ded79d5b02e1beee1c42c4e7c83ae30c4abeb04185",
-      "gtest_body_sha256": "ecc0ba990169bebb6b0e75473db7006b43611e9faa6d2bc9ddf540ab702ed0c2"
     },
     {
       "name": "ordered-map-hinted-pair-different-mapped-leaf-guard",
@@ -353,14 +361,6 @@
       "source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
       "original_case_source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
       "gtest_body_sha256": "99eb186e49007a1253702c6fdc589aab33ddb25322e3c69914e3951b0f2da137"
-    },
-    {
-      "name": "ordered-wide-mapped-floating-storage-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedWideMappedFloatingStorageGuardRejected",
-      "expected": "reject",
-      "source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
-      "original_case_source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
-      "gtest_body_sha256": "b32679ffaaa2b2d882f09980fbb63cfc4673707ec625f438f7e5d745cb53f690"
     },
     {
       "name": "ordered-wide-map-other-pair-leaf-guard",
@@ -645,6 +645,38 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-iterator-navigation-different-mapped-layout-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> values{{2, 20}, {3, 30}};\n  return std::distance(values.begin(), values.end()) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "01fe23b5bb6ffd68f19c37cffffc693a23042f597ac4306056cb25eb77dea593",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-free-access-other-mapped-storage-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> map{{1, 10}};\n  return std::size(map) == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "f153485f179a9efcd73d7ca5ebab47f01e04b63354a196111e8ef57b17d3b4d9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-reverse-navigation-different-mapped-layout-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <iterator>\n#include <map>\nint main() {\n  std::map<int, long> values{{1, 10}, {2, 20}};\n  return std::distance(values.rbegin(), values.rend()) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "5f0fbcc059d77937dcde02ded79d5b02e1beee1c42c4e7c83ae30c4abeb04185",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-wide-mapped-floating-storage-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, double> values{{1, 2.0}};\n  return values[1] == 2.0 ? 0 : 1;\n}\n",
+      "source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-map-emplacement-pair-with-different-mapped-leaf-guard",
       "expected": "reject",
       "public_header": "map",
@@ -685,14 +717,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "ordered-iterator-navigation-different-mapped-layout-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> values{{2, 20}, {3, 30}};\n  return std::distance(values.begin(), values.end()) == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "01fe23b5bb6ffd68f19c37cffffc693a23042f597ac4306056cb25eb77dea593",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-free-access-custom-comparator-guard",
       "expected": "reject",
       "public_header": "set",
@@ -701,27 +725,11 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "ordered-free-access-other-mapped-storage-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> map{{1, 10}};\n  return std::size(map) == 1 ? 0 : 1;\n}\n",
-      "source_sha256": "f153485f179a9efcd73d7ca5ebab47f01e04b63354a196111e8ef57b17d3b4d9",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-reverse-navigation-custom-comparator-guard",
       "expected": "reject",
       "public_header": "set",
       "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3};\n  return *std::next(values.rbegin()) == 3 ? 0 : 1;\n}\n",
       "source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-reverse-navigation-different-mapped-layout-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <iterator>\n#include <map>\nint main() {\n  std::map<int, long> values{{1, 10}, {2, 20}};\n  return std::distance(values.rbegin(), values.rend()) == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "5f0fbcc059d77937dcde02ded79d5b02e1beee1c42c4e7c83ae30c4abeb04185",
       "kind": "source-body-guard"
     },
     {
@@ -738,14 +746,6 @@
       "public_header": "map",
       "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace_hint(values.cend(), std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(7))->second == 7 ? 0 : 1;\n}\n",
       "source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-wide-mapped-floating-storage-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, double> values{{1, 2.0}};\n  return values[1] == 2.0 ? 0 : 1;\n}\n",
-      "source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
       "kind": "source-body-guard"
     },
     {
@@ -806,19 +806,19 @@
     "TranslateTest.CoreV2OrderedMapAtProvesKeyInLaterInitializerEntryRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapAtMappedReferenceRetainsWideTypeRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapAtDuplicateInitializerKeepsFirstValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapForwardDistanceWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedMapFreeSizeWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedMapReverseDistanceWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedMapStoresDoubleMappedValues",
     "TranslateTest.CoreV2OrderedMapEmplacementPairWithDifferentMappedLeafGuardRejected",
     "TranslateTest.CoreV2OrderedMapPairEmplacementCustomOrderGuardRejected",
     "TranslateTest.CoreV2OrderedMapPiecewiseNarrowTupleLeafGuardRejected",
     "TranslateTest.CoreV2OrderedMapPiecewiseCustomPolicyGuardRejected",
     "TranslateTest.CoreV2OrderedIteratorNavigationCustomComparatorGuardRejected",
-    "TranslateTest.CoreV2OrderedIteratorNavigationDifferentMappedLayoutGuardRejected",
     "TranslateTest.CoreV2OrderedFreeAccessCustomComparatorGuardRejected",
-    "TranslateTest.CoreV2OrderedFreeAccessOtherMappedStorageGuardRejected",
     "TranslateTest.CoreV2OrderedReverseNavigationCustomComparatorGuardRejected",
-    "TranslateTest.CoreV2OrderedReverseNavigationDifferentMappedLayoutGuardRejected",
     "TranslateTest.CoreV2OrderedMapHintedPairDifferentMappedLeafGuardRejected",
     "TranslateTest.CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedWideMappedFloatingStorageGuardRejected",
     "TranslateTest.CoreV2OrderedWideMapOtherPairLeafGuardRejected",
     "TranslateTest.CoreV2OrderedMapAtMissingStaticKeyRemainsThrowingRejected",
     "TranslateTest.CoreV2OrderedMapAtReferenceReceiverDoesNotProvePresenceRejected"
@@ -834,16 +834,18 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8893,
   "current_python_registry_tests": 270,
-  "native_reference_selected_executions": 64,
-  "planned_generated_c23_executions": 64,
+  "native_reference_selected_executions": 72,
+  "planned_generated_c23_executions": 72,
   "native_reference_proofs": {
     "ordered-iteration": "59a2504b946826cc4b34792d15ae0238e10fcb281cac66cca926dd5c6e588b20",
+    "ordered-long-navigation": "0ffa21135bf2e19ca5b7b800c3c832ce9d45f2e3930e133e5c7b0bcf18159d0b",
     "ordered-map-bounded-at": "439d237fe6cf85f90da2a2fadb910c8ddd2cc8947f73007af17e8a79add3c5da",
     "ordered-map-emplacement": "cccc14838e98f52a2b79c0f226ee454b2cd47eabea72db5016f1d08c61429bc3",
+    "ordered-map-float": "760559df7326c21d012df460fd5a7035266ce4597af9925657d2619e8c9467b6",
     "ordered-map-hinted-emplacement": "15278aadc657f313b748c956731116b58554096db0aca8a8094f159e75e1f771",
     "ordered-map-wide-mapped-layout": "24042ea64d327921492261ab30679cc0869d72af780d53fccc8232834f86f3cc",
     "ordered-reverse-navigation": "c18de00ca65af2241e91aa06dfd970b8e099bd4df40757bfa6778aba9030dc03"
   },
-  "native_reference_authentication_sha256": "abfda5ddbcb8c51d738b981f438f7387f39794abb8396bff4b539c660e4cbca2",
-  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
+  "native_reference_authentication_sha256": "483116ebdf156c04141ea43da5e402fdab5dc21fb683345ac04bed33ade40848",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

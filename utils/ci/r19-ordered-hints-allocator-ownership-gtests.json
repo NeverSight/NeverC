@@ -296,5 +296,5 @@
     "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c"
   },
   "native_reference_authentication_sha256": "4f1f548b09a2d3c2321d2014716e000ac65fbde417a37ce098069b7b1e25317e",
-  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

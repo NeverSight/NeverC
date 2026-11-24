@@ -103,6 +103,14 @@
       "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
       "original_case_source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
       "gtest_body_sha256": "11b14a02c2b9e3d067b326d9ac2087ace810e2ebfce13c0a3f61e78dec9223a2"
+    },
+    {
+      "name": "ordered-map-value-compare-other-mapped-type-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapValueComparatorAcceptsLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
+      "original_case_source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
+      "gtest_body_sha256": "c04b7af503d0207aeba9d163024008c40428f8e12230c25bf5277df599d74899"
     }
   ],
   "negative_cases": [
@@ -121,14 +129,6 @@
       "source_sha256": "fe03261d983c89f2580fc863446ab214309e62b4bdc34532f3289a9fcbc585b0",
       "original_case_source_sha256": "fe03261d983c89f2580fc863446ab214309e62b4bdc34532f3289a9fcbc585b0",
       "gtest_body_sha256": "9d9e84d80faf7967af5e16c90e97f22fe39c69dc3f4ca9c571b17eabe72aeac9"
-    },
-    {
-      "name": "ordered-map-value-compare-other-mapped-type-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapValueCompareOtherMappedTypeGuardRejected",
-      "expected": "reject",
-      "source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
-      "original_case_source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
-      "gtest_body_sha256": "6bc69b438029a92bd0281546e8f6cb4922febc6f0e4bbae1a8365c60c3303dc1"
     }
   ],
   "source_cases": [
@@ -237,6 +237,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-value-compare-other-mapped-type-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values;\n  return values.value_comp()(Map::value_type{1, 100L}, Map::value_type{2, -100L}) ? 0 : 1;\n}\n",
+      "source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-extraction-custom-policy-guard",
       "expected": "reject",
       "public_header": "map",
@@ -250,14 +258,6 @@
       "public_header": "map",
       "source": "#include <map>\n#include <functional>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  const Map values;\n  auto compare = values.value_comp();\n  return compare(Map::value_type{2, 10}, Map::value_type{1, 20}) ? 0 : 1;\n}\n",
       "source_sha256": "fe03261d983c89f2580fc863446ab214309e62b4bdc34532f3289a9fcbc585b0",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-value-compare-other-mapped-type-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values;\n  return values.value_comp()(Map::value_type{1, 100L}, Map::value_type{2, -100L}) ? 0 : 1;\n}\n",
-      "source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
       "kind": "source-body-guard"
     }
   ],
@@ -275,9 +275,9 @@
     "TranslateTest.CoreV2OrderedMultimapValueCompareCanBeCalledDirectlyRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedValueCompareConstObjectUsesLiveInputsRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedNodeHintedInsertionRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapValueComparatorAcceptsLongMappedValues",
     "TranslateTest.CoreV2OrderedExtractionCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedMapValueCompareCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedMapValueCompareOtherMappedTypeGuardRejected"
+    "TranslateTest.CoreV2OrderedMapValueCompareCustomPolicyGuardRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -290,12 +290,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8804,
   "current_python_registry_tests": 262,
-  "native_reference_selected_executions": 26,
-  "planned_generated_c23_executions": 26,
+  "native_reference_selected_executions": 28,
+  "planned_generated_c23_executions": 28,
   "native_reference_proofs": {
     "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c",
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
     "ordered-node-and-value-compare": "9f688edfd1ca4e2fceb07c51e787e299665a0488a58c4ecb6c377980d0cd41cc"
   },
-  "native_reference_authentication_sha256": "f78baee6ef072560454cd0becbe5fe57c9da5a1c455687d64d76d6678b7e6ed2",
-  "source_proof_sha256": "8627119fad68d5a8c640e0eb19e6ba708176ee79fb60bc6bfe661bf9057dcc5b"
+  "native_reference_authentication_sha256": "bd90607a9be3fd2f741f2090c715776652205e51abb8faf7241115dff52fb81a",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

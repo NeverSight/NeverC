@@ -18481,3 +18481,13 @@ navigation and the free range access functions. Signed long long mapped
 values retain their type and width through ownership and mutation.
 Const map lookup with `at` accepts keys proved present in a local
 owner's initializer list and returns the stored mapped reference.
+
+## Scalar mapped values and guarded lookup
+
+Checked ordered maps and multimaps support the standard integral mapped
+types, float and double. Lexicographical comparison advances past a pair
+of unordered floating values and equality follows the stored scalar.
+The pinned C++ limits header supplies integral boundary macros for the
+checked source. For a checked map and key, a successful find compared
+with end proves that at can return the mapped reference. Mutable at
+returns a writable reference in the checked branch.

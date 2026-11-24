@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_map_scalar_and_checked_at_registered = cls.registered
+        cls.ordered_map_scalar_and_checked_at_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_map_scalar_and_checked_at_original = cls.adapter.restore_original_gtests(cls.ordered_map_scalar_and_checked_at_registered,
+                                                                        cls.ordered_map_scalar_and_checked_at_suffix)
+        cls.registered = cls.adapter.restore_ordered_map_scalar_and_checked_at_history(cls.ordered_map_scalar_and_checked_at_registered)
         cls.ordered_map_and_iteration_registered = cls.registered
         cls.ordered_map_and_iteration_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_map_and_iteration_original = cls.adapter.restore_original_gtests(cls.ordered_map_and_iteration_registered,
@@ -3544,6 +3549,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_map_and_iteration_history(self.ordered_map_and_iteration_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_map_and_iteration_registered, self.ordered_map_and_iteration_suffix + b' ')
+
+
+    def test_ordered_map_scalar_and_checked_at_retains_published_bodies(self):
+        self.assertEqual(self.ordered_map_scalar_and_checked_at_original + self.ordered_map_scalar_and_checked_at_suffix, self.ordered_map_scalar_and_checked_at_registered)
+        self.assertEqual(self.adapter.restore_ordered_map_scalar_and_checked_at_history(self.ordered_map_scalar_and_checked_at_original),
+                         self.ordered_map_and_iteration_original)
+        output, evidence = self.extractor.extract(self.ordered_map_scalar_and_checked_at_original, ['TranslateTest.CoreV2OrderedMapLongLayoutFollowsTargetWidthRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapUnsignedLongLongComparesAboveSignedMaximumRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapUintNodeAndComparisonRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapUlongAndSizeTRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapUshortAndMapShortRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapBoolAndCharacterValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ClimitsMatchesCxxIntegerLimitsRunAtBothOptimizations', 'TranslateTest.CoreV2ClimitsLongWidthFollowsTargetRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapLongStoresClimitsExtremesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapWideUnsignedUsesClimitsMaximumRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtFindTernaryOnConstReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtIfReturnsMutableReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtIfPreservesWideMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtMutableTernaryDoesNotInsertRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapFloatSubscriptCopyAndNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapDoublePiecewiseAndEqualKeysRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairTypedInputRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapConstLongMappedStorageGuardRejected', 'TranslateTest.CoreV2OrderedMapUnsignedLongLongDifferentPairLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapQualifiedUintValueGuardRejected', 'TranslateTest.CoreV2OrderedMapEnumMappedValueGuardRejected', 'TranslateTest.CoreV2ClimitsQuotedSourceIncludeIsRejectedRejected', 'TranslateTest.CoreV2LimitsResourceHeaderDirectSourceIncludeIsRejectedRejected', 'TranslateTest.CoreV2OrderedMapAtGuardDifferentKeyRejected', 'TranslateTest.CoreV2OrderedMapAtGuardDifferentOwnerRejected', 'TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRejected', 'TranslateTest.CoreV2OrderedMapLongDoubleStorageGuardRejected', 'TranslateTest.CoreV2OrderedMapConstDoubleStorageGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8921)
+        self.assertEqual(evidence['selected_count'], 28)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-uint-node-and-comparison', output)
+        self.assertIn(b'ordered-map-qualified-uint-value-guard', output)
+
+    def test_ordered_map_scalar_and_checked_at_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_map_scalar_and_checked_at_history(self.ordered_map_scalar_and_checked_at_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_map_scalar_and_checked_at_registered, self.ordered_map_scalar_and_checked_at_suffix + b' ')
 
 
 if __name__ == '__main__':
