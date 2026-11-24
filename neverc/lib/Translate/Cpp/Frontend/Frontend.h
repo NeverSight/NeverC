@@ -3548,6 +3548,15 @@ struct UtilityVariantAssignment {
 std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityVariantSwap {
+  const clang::Expr *Left;
+  const clang::Expr *Right;
+  clang::QualType Type;
+  bool Arrow;
+};
+std::optional<UtilityVariantSwap> approvedUtilityVariantSwap(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 inline constexpr llvm::StringLiteral UtilityAnyTag = "nct_any_tag";
 inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
 inline constexpr llvm::StringLiteral UtilityAnyWords = "nct_any_words";
@@ -3572,6 +3581,9 @@ inline constexpr llvm::StringLiteral UtilityAnyUnsignedLong = "nct_any_unsigned_
 inline constexpr llvm::StringLiteral UtilityAnyWideChar = "nct_any_wide_char";
 inline constexpr llvm::StringLiteral UtilityAnyChar16 = "nct_any_char16";
 inline constexpr llvm::StringLiteral UtilityAnyChar32 = "nct_any_char32";
+inline constexpr llvm::StringLiteral UtilityAnyVoidPointer = "nct_any_void_pointer";
+inline constexpr llvm::StringLiteral UtilityAnyConstVoidPointer = "nct_any_const_void_pointer";
+inline constexpr llvm::StringLiteral UtilityAnyNullPointer = "nct_any_null_pointer";
 
 struct UtilityAnyScalar {
   unsigned Tag;

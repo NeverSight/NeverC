@@ -8158,6 +8158,91 @@ std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
   return UtilityVariantAssignment{Receiver,Input,Arrow,isa<CXXOperatorCallExpr>(Call)};
 }
 
+// A variant swap with arithmetic alternatives cannot select a user ADL swap.
+// Authenticate both wrappers and their exact pinned, instantiated implementation.
+static const FunctionDecl *variantSwapDefinition(
+    const State &S, const SourceManager &SM, const FunctionDecl *F,
+    llvm::StringRef Name, unsigned Arity) {
+  if (!F || !F->getIdentifier() || F->getName() != Name ||
+      F->getNumParams() != Arity || F->isVariadic() || F->isDeleted() ||
+      F->isInvalidDecl() || !F->getReturnType()->isVoidType())
+    return nullptr;
+  const auto *Definition = F->getDefinition();
+  if (!Definition || !variantDeclaration(S, SM, Definition))
+    return nullptr;
+  for (const auto *D : F->redecls())
+    if (!variantDeclaration(S, SM, D))
+      return nullptr;
+  if (const auto *Primary = F->getPrimaryTemplate())
+    for (const auto *D : Primary->redecls())
+      if (!variantDeclaration(S, SM, D) || !variantDeclaration(S, SM, D->getTemplatedDecl()))
+        return nullptr;
+  return Definition;
+}
+
+std::optional<UtilityVariantSwap> approvedUtilityVariantSwap(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context) {
+  const auto *F = Call ? Call->getDirectCallee() : nullptr;
+  if (!S.coreV2() || !F || Call->getNumArgs() == 0)
+    return std::nullopt;
+  const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
+  const auto *Free = MemberCall ? nullptr : variantSwapDefinition(S, SM, F, "swap", 2);
+  const auto *Member = MemberCall;
+  if (!Member) {
+    if (!Free || Call->getNumArgs() != 2 || !directFunctionReference(Call))
+      return std::nullopt;
+    Member = dyn_cast_or_null<CXXMemberCallExpr>(variantReturnCall(Free));
+    const auto *Access = Member ? dyn_cast_or_null<MemberExpr>(directMethodReference(Member)) : nullptr;
+    if (!Access || Access->isArrow() || Member->getNumArgs() != 1 ||
+        !variantParameter(Access->getBase(), Free->getParamDecl(0)) ||
+        !variantParameter(Member->getArg(0), Free->getParamDecl(1)))
+      return std::nullopt;
+  }
+  const auto *Access = dyn_cast_or_null<MemberExpr>(directMethodReference(Member));
+  const auto *Swap = dyn_cast_or_null<CXXMethodDecl>(
+      variantSwapDefinition(S, SM, Member->getMethodDecl(), "swap", 1));
+  if (!Access || !Swap || Member->getNumArgs() != 1 || Swap->isConst() ||
+      Swap->isVolatile() || Swap->isStatic() || Swap->getRefQualifier() != RQ_None)
+    return std::nullopt;
+  const Expr *Left = Free ? Call->getArg(0) : Access->getBase();
+  const Expr *Right = Free ? Call->getArg(1) : Member->getArg(0);
+  const bool Arrow = !Free && Access->isArrow();
+  const auto Type = Arrow ? Left->getType()->getPointeeType() : Left->getType();
+  const auto V = approvedUtilityVariantRecord(S, SM, Type, Context);
+  if (!V || Type.isConstQualified() || (!Arrow && !Left->isLValue()) || !Right->isLValue() ||
+      !Context.hasSameType(Type, Right->getType()) ||
+      Swap->getParent()->getCanonicalDecl() != V->Record->getCanonicalDecl() ||
+      !V->Record->isTriviallyCopyable() ||
+      llvm::any_of(V->Alternatives, [](const FieldDecl *Field) {
+        const auto Element = Field->getType();
+        return Element.isConstQualified() || !Element->isArithmeticType() ||
+               !isa<BuiltinType>(Element.getCanonicalType().getTypePtr());
+      }))
+    return std::nullopt;
+  const auto Reference = Context.getLValueReferenceType(Type);
+  if (!Swap->getType()->castAs<FunctionProtoType>()->isNothrow() ||
+      !Context.hasSameType(Swap->getParamDecl(0)->getType(), Reference) ||
+      (Free && (!Free->getType()->castAs<FunctionProtoType>()->isNothrow() ||
+                !Context.hasSameType(Free->getParamDecl(0)->getType(), Reference) ||
+                !Context.hasSameType(Free->getParamDecl(1)->getType(), Reference))))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Swap->getBody());
+  const auto *CallImpl = Body && Body->size() == 1
+      ? dyn_cast<CXXMemberCallExpr>(Body->body_front()) : nullptr;
+  const auto *Impl = CallImpl && CallImpl->getNumArgs() == 1 ? dyn_cast_or_null<CXXMethodDecl>(
+      variantSwapDefinition(S, SM, CallImpl->getMethodDecl(), "__swap", 1)) : nullptr;
+  const auto ImplType = V->Implementation->getType();
+  const auto *Other = Impl ? dyn_cast<MemberExpr>(CallImpl->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  if (!Impl || !variantThisField(CallImpl->getImplicitObjectArgument(), V->Implementation) ||
+      Impl->getParent()->getCanonicalDecl() != ImplType->getAsCXXRecordDecl()->getCanonicalDecl() ||
+      !Context.hasSameType(Impl->getParamDecl(0)->getType(), Context.getLValueReferenceType(ImplType)) ||
+      !Other || Other->isArrow() || Other->getMemberDecl() != V->Implementation ||
+      !variantParameter(Other->getBase(), Swap->getParamDecl(0)))
+    return std::nullopt;
+  return UtilityVariantSwap{Left, Right, Type, Arrow};
+}
+
 bool pinnedUtilityAnyType(const State &S, const SourceManager &SM,
                           const CXXRecordDecl *Record) {
   return S.coreV2() && Record && Record->getIdentifier() &&
@@ -8729,6 +8814,16 @@ std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
   if (Context.hasSameType(Type, Context.Char32Ty) &&
       Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32)
     return UtilityAnyScalar{17, UtilityAnyChar32};
+  const auto ConstVoidPointer = Context.getPointerType(Context.VoidTy.withConst());
+  if ((Context.hasSameType(Type, Context.VoidPtrTy) || Context.hasSameType(Type, ConstVoidPointer) ||
+       Context.hasSameType(Type, Context.NullPtrTy)) &&
+      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64) {
+    if (Context.hasSameType(Type, Context.VoidPtrTy))
+      return UtilityAnyScalar{18, UtilityAnyVoidPointer};
+    if (Context.hasSameType(Type, ConstVoidPointer))
+      return UtilityAnyScalar{19, UtilityAnyConstVoidPointer};
+    return UtilityAnyScalar{20, UtilityAnyNullPointer};
+  }
   return std::nullopt;
 }
 
@@ -10651,15 +10746,15 @@ static bool variantVisitMatrix(const State &S, const SourceManager &SM,
 
 std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
-  if (!S.coreV2() || !Call || Call->getNumArgs() < 2 || Call->getNumArgs() > 4 ||
-      !directFunctionReference(Call))
+  constexpr unsigned MaxMatrixEntries = 64;
+  if (!S.coreV2() || !Call || Call->getNumArgs() < 2 ||
+      Call->getNumArgs() - 1 > MaxMatrixEntries || !directFunctionReference(Call))
     return std::nullopt;
   const unsigned Count = Call->getNumArgs() - 1;
   const auto *Visit = variantVisitDefinition(S, SM, Call->getDirectCallee(), "visit", Count + 1);
   if (!Visit)
     return std::nullopt;
   std::vector<UtilityVariantRecord> Variants;
-  constexpr unsigned MaxMatrixEntries = 64;
   std::size_t MatrixEntries = 1;
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Operand = Call->getArg(I + 1);

@@ -35049,6 +35049,19 @@ class FunctionLowering {
         label(Done, L);
         return Place;
       }
+      if (const auto Swap = approvedUtilityVariantSwap(A.S, A.Sources, Call, A.Context)) {
+        auto LeftAddress = Swap->Arrow
+            ? snapshot(expression(Swap->Left), L)
+            : snapshot(address(lvalue(Swap->Left), Swap->Type, L), L);
+        auto RightAddress = snapshot(address(lvalue(Swap->Right), Swap->Type, L), L);
+        auto Left = dereference(std::move(LeftAddress), L);
+        auto Right = dereference(std::move(RightAddress), L);
+        auto Saved = temporary(type(Swap->Type, L), L);
+        assign(Saved, Right, L);
+        assign(Right, Left, L);
+        assign(Left, Saved, L);
+        return {};
+      }
       if (const auto Emplace = approvedUtilityVariantEmplace(A.S, A.Sources, Call, A.Context)) {
         const auto *Base = Emplace->Callee->getBase();
         auto Receiver = Emplace->Callee->isArrow()
