@@ -10047,12 +10047,36 @@ static bool variantAssignmentBody(const State &S, const SourceManager &SM,
       TestIndex.Val.getInt().getLimitedValue(64) != Index)
     return false;
   const auto *Then = dyn_cast_or_null<CompoundStmt>(Branch->getThen());
-  const auto *Write = Then && Then->size() == 1 ? dyn_cast<BinaryOperator>(Then->body_front()) : nullptr;
-  const auto *Field = Write ? dyn_cast<MemberExpr>(Write->getLHS()->IgnoreParenImpCasts()) : nullptr;
-  return Write && Write->getOpcode() == BO_Assign && Field && !Field->isArrow() &&
+  const auto *Write = Then && Then->size() == 1 ? Then->body_front() : nullptr;
+  const auto Type = V.Alternatives[Index]->getType();
+  const Expr *Destination, *Input;
+  if (const auto *Scalar = dyn_cast_or_null<BinaryOperator>(Write);
+      Scalar && Scalar->getOpcode() == BO_Assign && Type->isScalarType()) {
+    Destination = Scalar->getLHS();
+    Input = Scalar->getRHS();
+  } else {
+    const auto *Store = dyn_cast_or_null<CXXOperatorCallExpr>(Write);
+    const auto *SpecialMember = Store ? dyn_cast_or_null<CXXMethodDecl>(Store->getDirectCallee()) : nullptr;
+    const auto *Monostate = Type->getAsCXXRecordDecl();
+    if (!SpecialMember || Store->getOperator() != OO_Equal || Store->getNumArgs() != 2 ||
+        !approvedUtilityMonostateMetadata(S, SM, Monostate, Context) ||
+        SpecialMember->getParent()->getCanonicalDecl() != Monostate->getCanonicalDecl() ||
+        !SpecialMember->isImplicit() || !SpecialMember->isDefaulted() || !SpecialMember->isTrivial() ||
+        SpecialMember->isDeleted() || SpecialMember->isInvalidDecl() ||
+        SpecialMember->getNumParams() != 1 ||
+        !(SpecialMember->isCopyAssignmentOperator() || SpecialMember->isMoveAssignmentOperator()))
+      return false;
+    for (const auto *Decl : SpecialMember->redecls())
+      if (!variantDeclaration(S, SM, Decl, "__variant/monostate.h"))
+        return false;
+    Destination = Store->getArg(0);
+    Input = Store->getArg(1);
+  }
+  const auto *Field = dyn_cast<MemberExpr>(Destination->IgnoreParenImpCasts());
+  return Field && !Field->isArrow() &&
          Field->getMemberDecl()->getCanonicalDecl() == V.Alternatives[Index]->getCanonicalDecl() &&
          variantParameter(Field->getBase(), Inner->getParamDecl(0)) &&
-         variantForward(S, SM, Write->getRHS(), Inner->getParamDecl(1), Context) &&
+         variantForward(S, SM, Input, Inner->getParamDecl(1), Context) &&
          variantAssignmentReplacement(S, SM, Branch->getElse(), Inner, V, Index, Context);
 }
 
@@ -10104,7 +10128,9 @@ std::optional<UtilityVariantValueAssignment> approvedUtilityVariantValueAssignme
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Owner)))
     return std::nullopt;
   const auto Type = V->Alternatives[Index]->getType();
-  if (!Type->isScalarType() || !Context.hasSameType(Type, Args->get(2).getAsType()) ||
+  if ((!Type->isScalarType() &&
+       !approvedUtilityMonostateMetadata(S, SM, Type->getAsCXXRecordDecl(), Context)) ||
+      !Context.hasSameType(Type, Args->get(2).getAsType()) ||
       !Context.hasSameUnqualifiedType(Type, Param.getNonReferenceType()) ||
       !Context.hasSameUnqualifiedType(Type, Input->getType()) ||
       !variantAssignmentBody(S, SM, Method, *V, unsigned(Index), Context))
@@ -10746,9 +10772,10 @@ static constexpr VariantComparisonOperator VariantComparisonOperators[] = {
     {OO_GreaterEqual, BO_GE, "operator>=", "greater_equal"},
 };
 
-static bool builtinVariantComparisonType(QualType Type) {
+static bool builtinVariantComparisonType(QualType Type, BinaryOperatorKind Operation) {
   return Type->isIntegerType() || Type->isSpecificBuiltinType(BuiltinType::Float) ||
-         Type->isSpecificBuiltinType(BuiltinType::Double);
+         Type->isSpecificBuiltinType(BuiltinType::Double) ||
+         (Type->isPointerType() && (Operation == BO_EQ || Operation == BO_NE));
 }
 
 static bool variantComparisonQuery(const State &S, const SourceManager &SM,
@@ -10868,7 +10895,7 @@ static bool variantComparisonLeaf(const State &S, const SourceManager &SM, const
       return false;
   }
   const auto *Value = variantReturned(Policy);
-  if (builtinVariantComparisonType(Element)) {
+  if (builtinVariantComparisonType(Element, Relation.Operation)) {
     const auto *Compare = Value ? dyn_cast<BinaryOperator>(Value->IgnoreParenImpCasts()) : nullptr;
     return Compare && Compare->getOpcode() == Relation.Operation &&
            variantForward(S, SM, Compare->getLHS(), Policy->getParamDecl(0), Context) &&
@@ -10954,7 +10981,7 @@ std::optional<UtilityVariantComparison> approvedUtilityVariantComparison(const S
       llvm::any_of(V->Alternatives, [&](const FieldDecl *Field) {
         const auto Alternative = Field->getType();
         return Alternative.isVolatileQualified() ||
-               (!builtinVariantComparisonType(Alternative) &&
+               (!builtinVariantComparisonType(Alternative, Relation->Operation) &&
                 !approvedUtilityMonostateMetadata(S, SM, Alternative->getAsCXXRecordDecl(), Context));
       }))
     return std::nullopt;
