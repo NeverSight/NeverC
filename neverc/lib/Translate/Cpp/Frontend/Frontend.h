@@ -1311,6 +1311,7 @@ enum class UtilityOperation {
   List,
   OrderedContainerObserver,
   OrderedSetCount,
+  OrderedMapSubscript,
   OrderedSetCopyAssign,
   OrderedSetInsert,
   OrderedSetIterator,
@@ -4640,8 +4641,9 @@ std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(
 struct UtilityOrderedSetStorage {
   const clang::CXXRecordDecl *Record, *Tree;
   clang::QualType NodeType, LinkType, SentinelType;
-  uint64_t NodeBytes, ValueOffsetBytes;
+  uint64_t NodeBytes, ValueOffsetBytes, MappedOffsetBytes;
   bool Multi;
+  clang::QualType MappedPairType;
 };
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
@@ -4679,15 +4681,26 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+enum class OrderedInsertionKind { Insert, TryEmplace, InsertOrAssign };
+
 struct UtilityOrderedSetInsertion {
   UtilityOrderedSetStorage Storage;
-  std::optional<UtilityPairRecord> Result;
+  std::optional<UtilityPairRecord> Result, Input;
+  OrderedInsertionKind Kind;
 };
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedOrderedMapSelectedBody(const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
@@ -4700,6 +4713,7 @@ const clang::MemberExpr *approvedOrderedSetSwap(const State &S, const clang::Sou
 struct UtilityOrderedSetListConstruction {
   UtilityOrderedSetStorage Storage;
   UtilityInitializerListRecord List;
+  std::optional<UtilityPairRecord> Pair;
 };
 std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
