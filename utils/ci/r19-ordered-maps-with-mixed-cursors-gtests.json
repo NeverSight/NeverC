@@ -239,6 +239,14 @@
       "source_sha256": "03d550923393c544ef49cf3ac1eed374f2eedb43f5c9fc319472fac5141f490d",
       "original_case_source_sha256": "03d550923393c544ef49cf3ac1eed374f2eedb43f5c9fc319472fac5141f490d",
       "gtest_body_sha256": "8ee8905bf858f3cea16dfa9aeb36b1a2fbf86acd64bf2b5c0517c148b96ef8d8"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapScalarEmplacementMappedConversionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
+      "original_case_source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
+      "gtest_body_sha256": "f4be2e0598a0f3ea5eb7490c149977249545ab9f937453c6feb7c70eca7a3d72"
     }
   ],
   "negative_cases": [
@@ -289,14 +297,6 @@
       "source_sha256": "3b6c4db345d47cb158772729aed5a7d3a7f971755accbe9b202961ba04c8bba1",
       "original_case_source_sha256": "3b6c4db345d47cb158772729aed5a7d3a7f971755accbe9b202961ba04c8bba1",
       "gtest_body_sha256": "661ca04ca9e729ac6357ce6a459ed6b2592d95a19648b8728efa7cc4d53ef63c"
-    },
-    {
-      "name": "ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapScalarEmplacementMappedForwardingConversionsRequireTheirOwnProofRejected",
-      "expected": "reject",
-      "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
-      "original_case_source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
-      "gtest_body_sha256": "53fc520524bef0325d1111825290b40b303cb0432bb51c44b51f9fbb706f3724"
     },
     {
       "name": "ordered-map-transfer-stateful-ordered-map-comparator-has-separate-transfer-semantics",
@@ -565,6 +565,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  short value = 41;\n  return !values.try_emplace(5, value).second;\n}\n",
+      "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-map-non-default-key-order-remains-outside-checked-subscript",
       "expected": "reject",
       "public_header": "map",
@@ -610,14 +618,6 @@
       "public_header": "map",
       "source": "#include <map>\n#include <utility>\nstruct Descending {\n  bool active;\n  bool operator()(int a, int b) const { return active ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Descending> values(Descending{true});\n  const std::pair<const int, int> payload{7, 12};\n  return !values.insert(payload).second;\n}\n",
       "source_sha256": "3b6c4db345d47cb158772729aed5a7d3a7f971755accbe9b202961ba04c8bba1",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  short value = 41;\n  return !values.try_emplace(5, value).second;\n}\n",
-      "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
       "kind": "source-body-guard"
     },
     {
@@ -676,13 +676,13 @@
     "TranslateTest.CoreV2OrderedMapIteratorConversionKeepsNodeAndConstViewRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapIteratorConversionMultimapMatchesDuplicatePositionRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapIteratorConversionMixedEqualitySeesOwnerEndRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapScalarEmplacementMappedConversionRunsAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapNonDefaultKeyOrderRemainsOutsideCheckedSubscriptRejected",
     "TranslateTest.CoreV2OrderedMapUnsupportedMappedTypeDoesNotAdmitCountRejected",
     "TranslateTest.CoreV2OrderedMapStatefulPolicyRemainsOutsideCheckedMappedOwnerRejected",
     "TranslateTest.CoreV2OrderedMapIteratorCustomMapIteratorReceiverKeepsSourceGuardRejected",
     "TranslateTest.CoreV2OrderedMapErasureUnsupportedMappedStorageKeepsMutationGuardRejected",
     "TranslateTest.CoreV2OrderedMapInsertionStatefulComparatorInsertionRemainsOutsideCheckedLayoutRejected",
-    "TranslateTest.CoreV2OrderedMapScalarEmplacementMappedForwardingConversionsRequireTheirOwnProofRejected",
     "TranslateTest.CoreV2OrderedMapTransferStatefulOrderedMapComparatorHasSeparateTransferSemanticsRejected",
     "TranslateTest.CoreV2OrderedMapCopyAssignmentCustomComparatorRemainsUnsupportedRejected",
     "TranslateTest.CoreV2OrderedMapIteratorConversionCustomComparatorRemainsUnsupportedRejected"
@@ -698,11 +698,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8734,
   "current_python_registry_tests": 252,
-  "native_reference_selected_executions": 60,
-  "planned_generated_c23_executions": 60,
+  "native_reference_selected_executions": 62,
+  "planned_generated_c23_executions": 62,
   "native_reference_proofs": {
-    "ordered-maps-with-mixed-cursors": "270ad4645a1f52c6327fd1ce4d683c4c13395b88f2647d000a6355a72d3d88ad"
+    "ordered-maps-with-mixed-cursors": "270ad4645a1f52c6327fd1ce4d683c4c13395b88f2647d000a6355a72d3d88ad",
+    "ordered-value-input": "b9b293f9b1ce126fa9c711ec5be48f05d87960878036f2b61436023a654b4e4c"
   },
-  "native_reference_authentication_sha256": "8174dbd08b6930553134aed73ab3da44ee82be0a00770d426d34dbcc69d08532",
-  "source_proof_sha256": "35d4084e6ea23958d6a5f59e8ed2c6616075394d26c7de8f6b9adda15aa062d5"
+  "native_reference_authentication_sha256": "48128d79c42ca43a9d5b802b0173d7d23ab32eae8b4060d679dd15438611532a",
+  "source_proof_sha256": "58de74c11b2fbd82e4e99cb87766737f2f352d108854ef9d3bba0412e2479916"
 }

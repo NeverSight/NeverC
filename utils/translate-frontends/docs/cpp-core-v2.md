@@ -18464,3 +18464,11 @@ dereferencing, traversal, and conversion from mutable to const mapped
 iterators. The supported range constructors and modifiers consume half-open
 reverse ranges, including equivalent-key entries. The underlying cursor
 returned by `base()` follows the standard reverse-iterator convention.
+
+## Pair pointer ranges and integral ordered emplacement
+
+Checked ordered maps consume half-open pointer ranges of pairs whose first
+field is mutable and whose mapped field matches the destination type.
+Selected ordered emplacement calls accept narrower integral arguments
+through their checked standard conversions. The original function-body
+cases keep their source bytes and now require successful translation.

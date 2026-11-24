@@ -79,6 +79,15 @@
       "source_sha256": "44c282465d3c86213c3acca8fdec9185ec3a9eb5de84a942c3654dd7351d0ccb",
       "original_case_source_sha256": "44c282465d3c86213c3acca8fdec9185ec3a9eb5de84a942c3654dd7351d0ccb",
       "gtest_body_sha256": "429ed753543b4415447b345df0a39c95661257943940bc3158c70a45dd396cde"
+    },
+    {
+      "name": "ordered-map-pointer-range-converting-pair-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapPointerRangeConvertingPairAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "4fdd7711332f466d5bd942e87459e7bd14a7b664bd3db3397b0d901d29d4e34b",
+      "original_case_source_sha256": "4fdd7711332f466d5bd942e87459e7bd14a7b664bd3db3397b0d901d29d4e34b",
+      "gtest_body_sha256": "fd110eef967dd9f83b61651783127a2d1a7a993ec98c7abda4d04e2c1d4737da",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -97,14 +106,6 @@
       "source_sha256": "84eaa286496080d046337726d831ddcae7a99a4f3cf15034c4efc872d1a46b5a",
       "original_case_source_sha256": "84eaa286496080d046337726d831ddcae7a99a4f3cf15034c4efc872d1a46b5a",
       "gtest_body_sha256": "a666fa4e939f066ec373cc5a1aec8e230b2e1e9b157a779146358dfcc8e5c7d2"
-    },
-    {
-      "name": "ordered-map-pointer-range-converting-pair-remains-unsupported",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapPointerRangeConvertingPairRemainsUnsupportedRejected",
-      "expected": "reject",
-      "source_sha256": "4fdd7711332f466d5bd942e87459e7bd14a7b664bd3db3397b0d901d29d4e34b",
-      "original_case_source_sha256": "4fdd7711332f466d5bd942e87459e7bd14a7b664bd3db3397b0d901d29d4e34b",
-      "gtest_body_sha256": "2456375da5b39b89979d503bc3390909c584e5773d05c449b04e47cac9b57c55"
     },
     {
       "name": "ordered-set-pointer-range-custom-comparator-remains-unsupported",
@@ -197,6 +198,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-pointer-range-converting-pair-remains-unsupported",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nvoid insert(std::map<int, int> &values, const std::pair<int, int> *first,\n            const std::pair<int, int> *last) { values.insert(first, last); }\n",
+      "source_sha256": "4fdd7711332f466d5bd942e87459e7bd14a7b664bd3db3397b0d901d29d4e34b",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-map-move-assignment-custom-comparator-remains-unsupported",
       "expected": "reject",
       "public_header": "map",
@@ -210,14 +219,6 @@
       "public_header": "map",
       "source": "#include <map>\nstruct Reverse {\n  bool operator()(int a, int b) const { return a > b; }\n};\nvoid insert(std::map<int, int, Reverse> &values) { values.insert({{1, 2}}); }\n",
       "source_sha256": "84eaa286496080d046337726d831ddcae7a99a4f3cf15034c4efc872d1a46b5a",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-pointer-range-converting-pair-remains-unsupported",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nvoid insert(std::map<int, int> &values, const std::pair<int, int> *first,\n            const std::pair<int, int> *last) { values.insert(first, last); }\n",
-      "source_sha256": "4fdd7711332f466d5bd942e87459e7bd14a7b664bd3db3397b0d901d29d4e34b",
       "kind": "source-body-guard"
     },
     {
@@ -240,9 +241,9 @@
     "TranslateTest.CoreV2OrderedMultisetPointerRangeConstInputRetainsDuplicatesRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapPointerRangeUsesFirstValueAndCopiesStorageRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMultimapPointerRangeEvaluatesEndpointsOnceAndKeepsOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapPointerRangeConvertingPairAcceptsFunctionBody",
     "TranslateTest.CoreV2OrderedMapMoveAssignmentCustomComparatorRemainsUnsupportedRejected",
     "TranslateTest.CoreV2OrderedMapInsertListCustomComparatorRemainsUnsupportedRejected",
-    "TranslateTest.CoreV2OrderedMapPointerRangeConvertingPairRemainsUnsupportedRejected",
     "TranslateTest.CoreV2OrderedSetPointerRangeCustomComparatorRemainsUnsupportedRejected"
   ],
   "source_proof_gate_pending": false,
@@ -263,5 +264,5 @@
     "ordered-pointer-range": "c7ac1e477711eaae25df1b4521b164fba9f839c02c2565fcd743686e1569d58e"
   },
   "native_reference_authentication_sha256": "d774051df68dd87dd399b64ab86c0a502d934305cdf0f2aa4bd5ec82b5a1d9b8",
-  "source_proof_sha256": "35d4084e6ea23958d6a5f59e8ed2c6616075394d26c7de8f6b9adda15aa062d5"
+  "source_proof_sha256": "58de74c11b2fbd82e4e99cb87766737f2f352d108854ef9d3bba0412e2479916"
 }

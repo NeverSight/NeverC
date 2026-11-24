@@ -955,3 +955,10 @@ The combined compiler passes 5,670 source requests across six 64-bit targets
 and 1049 formal tests on Linux x86-64. All 653 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Pair pointer ranges and integral ordered emplacement
+
+The combined compiler passes 5,718 source requests across six 64-bit targets
+and 1057 formal tests on Linux x86-64. All 660 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

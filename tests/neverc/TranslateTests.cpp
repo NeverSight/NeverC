@@ -397262,7 +397262,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2OrderedMapScalarEmplacementMappedForwardingConversionsRequireTheirOwnProofRejected) {
+TEST_F(TranslateTest, CoreV2OrderedMapScalarEmplacementMappedConversionRunsAtBothOptimizations) {
   const auto Source = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof.cpp");
   writeFile(Source, R"r19containers(#include <map>
 int main() {
@@ -397271,10 +397271,17 @@ int main() {
   return !values.try_emplace(5, value).second;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2OrderedMapTransferMapCopyCreatesIndependentMappedObjectsRunAtBothOptimizations) {
@@ -397966,16 +397973,14 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2OrderedMapPointerRangeConvertingPairRemainsUnsupportedRejected) {
+TEST_F(TranslateTest, CoreV2OrderedMapPointerRangeConvertingPairAcceptsFunctionBody) {
   const auto Source = tmpFile("ordered-map-pointer-range-converting-pair-remains-unsupported.cpp");
   writeFile(Source, R"r19containers(#include <map>
 void insert(std::map<int, int> &values, const std::pair<int, int> *first,
             const std::pair<int, int> *last) { values.insert(first, last); }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2OrderedSetPointerRangeCustomComparatorRemainsUnsupportedRejected) {
@@ -398253,15 +398258,13 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2OrderedSetEmplaceConvertingKeyRemainsUnsupportedRejected) {
+TEST_F(TranslateTest, CoreV2OrderedSetEmplaceConvertingKeyAcceptsFunctionBody) {
   const auto Source = tmpFile("ordered-set-emplace-converting-key-remains-unsupported.cpp");
   writeFile(Source, R"r19containers(#include <set>
 auto append(std::set<int> &values, short key) { return values.emplace(key); }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2OrderedSetMergeTransfersOriginalAddressesWithoutAllocatingRunAtBothOptimizations) {
@@ -398587,7 +398590,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2OrderedMapEmplaceConvertingMappedArgumentRemainsUnsupportedRejected) {
+TEST_F(TranslateTest, CoreV2OrderedMapEmplaceConvertingMappedArgumentAcceptsFunctionBody) {
   const auto Source = tmpFile("ordered-map-emplace-converting-mapped-argument-remains-unsupported.cpp");
   writeFile(Source, R"r19containers(#include <map>
 void insert(std::map<int, int> &values) {
@@ -398596,9 +398599,7 @@ void insert(std::map<int, int> &values) {
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2OrderedSetIteratorRangeCopiesASubrangeRunAtBothOptimizations) {
@@ -400383,6 +400384,200 @@ int main() {
   auto it = values.rbegin();
   Map::const_reverse_iterator read = it;
   return read == it && read->second == 50 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMapConstructsFromMutablePairPointersRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-map-constructs-from-mutable-pair-pointers.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::pair<int, int> input[]{{3, 30}, {1, 10}, {3, 31}};
+  std::map<int, int> values(input, input + 3);
+  input[0].second = 99;
+  return values.size() == 2 && values.begin()->first == 1 &&
+         values.find(3)->second == 30 ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-map-constructs-from-mutable-pair-pointers.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-map-constructs-from-mutable-pair-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMapInsertsConstPairPointerSubrangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-map-inserts-const-pair-pointer-subrange.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  const std::pair<int, int> input[]{{1, 10}, {2, 20}, {3, 30}, {4, 40}};
+  std::map<int, int> values{{2, 99}};
+  values.insert(input + 1, input + 3);
+  return values.size() == 2 && values.find(2)->second == 99 &&
+         values.find(3)->second == 30 ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-map-inserts-const-pair-pointer-subrange.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-map-inserts-const-pair-pointer-subrange" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMultimapConstructsFromConstPairPointersRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-multimap-constructs-from-const-pair-pointers.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  const std::pair<int, int> input[]{{4, 40}, {2, 20}, {2, 21}};
+  std::multimap<int, int> values(input, input + 3);
+  auto cursor = values.begin();
+  if (cursor->first != 2 || cursor->second != 20 || (++cursor)->second != 21)
+    return 1;
+  return (++cursor)->first == 4 && values.size() == 3 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-multimap-constructs-from-const-pair-pointers.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-multimap-constructs-from-const-pair-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMultimapInsertsMutablePairPointersRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-multimap-inserts-mutable-pair-pointers.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::pair<int, int> input[]{{2, 20}, {2, 21}};
+  std::multimap<int, int> values{{2, 19}};
+  values.insert(input, input);
+  values.insert(input, input + 2);
+  auto cursor = values.lower_bound(2);
+  return values.size() == 3 && cursor->second == 19 &&
+         (++cursor)->second == 20 && (++cursor)->second == 21 ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-multimap-inserts-mutable-pair-pointers.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-multimap-inserts-mutable-pair-pointers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMapPointerRangeDifferentMappedLeafGuardRejected) {
+  const auto Source = tmpFile("ordered-map-pointer-range-different-mapped-leaf-guard.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  const std::pair<int, long> values[]{{1, 7}};
+  std::map<int, int> result(values, values + 1);
+  return result.begin()->second == 7 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedSetEmplacementConvertsIntegerKeyBeforeLookupRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-set-emplacement-converts-integer-key-before-lookup.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  short signed_key = -3;
+  unsigned char small_key = 9;
+  std::set<int> values;
+  auto left = values.emplace(signed_key);
+  auto right = values.emplace(small_key);
+  auto duplicate = values.emplace(static_cast<short>(small_key));
+  return left.second && right.second && !duplicate.second &&
+         duplicate.first == right.first && *left.first == -3 &&
+         *right.first == 9 && values.size() == 2 ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-set-emplacement-converts-integer-key-before-lookup.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-set-emplacement-converts-integer-key-before-lookup" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMapEmplacementConvertsKeysAndMappedIntegersRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-map-emplacement-converts-keys-and-mapped-integers.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::map<int, int> values;
+  signed char key = 3;
+  short mapped = -7;
+  auto inserted = values.emplace(key, mapped);
+  if (!inserted.second || inserted.first->second != -7)
+    return 1;
+  auto duplicate = values.try_emplace(3, static_cast<unsigned char>(10));
+  if (duplicate.second || duplicate.first->second != -7)
+    return 2;
+  auto assigned = values.insert_or_assign(3, static_cast<unsigned short>(11));
+  std::multimap<int, int> duplicates;
+  auto first = duplicates.emplace(key, mapped);
+  auto second = duplicates.emplace(key, static_cast<unsigned char>(8));
+  return !assigned.second && assigned.first->second == 11 && values.size() == 1 &&
+         first->second == -7 && second->second == 8 &&
+         duplicates.count(3) == 2 ? 0 : 3;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-map-emplacement-converts-keys-and-mapped-integers.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-map-emplacement-converts-keys-and-mapped-integers" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedEmplacementUserDefinedKeyConversionGuardRejected) {
+  const auto Source = tmpFile("ordered-emplacement-user-defined-key-conversion-guard.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+struct Key {
+  operator int() const { return 3; }
+};
+int main() {
+  std::set<int> values;
+  return values.emplace(Key{}).second ? 0 : 1;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

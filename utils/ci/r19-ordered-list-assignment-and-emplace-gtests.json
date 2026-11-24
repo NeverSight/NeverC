@@ -55,6 +55,15 @@
       "source_sha256": "0f62026374de6991bbd76fcf4967d802dd86fb9ab417dba6a2f5b9072db37375",
       "original_case_source_sha256": "0f62026374de6991bbd76fcf4967d802dd86fb9ab417dba6a2f5b9072db37375",
       "gtest_body_sha256": "c4d3e18d7a145a4f4a998f597b0dbcf63204366e1d22b823c5d80c2430817581"
+    },
+    {
+      "name": "ordered-set-emplace-converting-key-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
+      "original_case_source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
+      "gtest_body_sha256": "1632baf9dbeb50182b7e61272626a963cf884e2bb8dc2258f3185904fd03eb55",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -65,14 +74,6 @@
       "source_sha256": "3928bf69997340da27cc04522bddc07852441e10cf8cc999d18a357afffc8b57",
       "original_case_source_sha256": "3928bf69997340da27cc04522bddc07852441e10cf8cc999d18a357afffc8b57",
       "gtest_body_sha256": "cfedf3f8500d227188f598f616802a88389b1f2b8b35fec0436a54e3c125a6da"
-    },
-    {
-      "name": "ordered-set-emplace-converting-key-remains-unsupported",
-      "formal_test_name": "TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyRemainsUnsupportedRejected",
-      "expected": "reject",
-      "source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
-      "original_case_source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
-      "gtest_body_sha256": "8dfe1ce597f3ce2250564fd6cf4d9ee0a4fd7a8b9e32914cc88d3b020537fb10"
     }
   ],
   "source_cases": [
@@ -133,19 +134,19 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-set-emplace-converting-key-remains-unsupported",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nauto append(std::set<int> &values, short key) { return values.emplace(key); }\n",
+      "source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-map-list-assignment-custom-comparator-remains-unsupported",
       "expected": "reject",
       "public_header": "map",
       "source": "#include <map>\nstruct Reverse {\n  bool operator()(int lhs, int rhs) const { return lhs > rhs; }\n};\nvoid assign(std::map<int, int, Reverse> &values) { values = {{1, 7}, {1, 8}}; }\n",
       "source_sha256": "3928bf69997340da27cc04522bddc07852441e10cf8cc999d18a357afffc8b57",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-set-emplace-converting-key-remains-unsupported",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nauto append(std::set<int> &values, short key) { return values.emplace(key); }\n",
-      "source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
       "kind": "source-body-guard"
     }
   ],
@@ -157,8 +158,8 @@
     "TranslateTest.CoreV2OrderedSetEmplaceExactIntReusesTheExistingKeyWithoutAllocatingRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedSetEmplaceDefaultDestroysARejectedZeroNodeRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMultisetEmplaceDefaultAndRvaluePreserveEquivalentOrderRunAtBothOptimizations",
-    "TranslateTest.CoreV2OrderedMapListAssignmentCustomComparatorRemainsUnsupportedRejected",
-    "TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyRemainsUnsupportedRejected"
+    "TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyAcceptsFunctionBody",
+    "TranslateTest.CoreV2OrderedMapListAssignmentCustomComparatorRemainsUnsupportedRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -177,5 +178,5 @@
     "ordered-list-assign-and-emplace": "fefd9316cfc570d68252c8f81f3251485376c14200db77e2834760c6bc6c1910"
   },
   "native_reference_authentication_sha256": "e14506aa90b5390f72dd8349936361bf9c529c737c9078b7aad37c5cdf2f6b13",
-  "source_proof_sha256": "35d4084e6ea23958d6a5f59e8ed2c6616075394d26c7de8f6b9adda15aa062d5"
+  "source_proof_sha256": "58de74c11b2fbd82e4e99cb87766737f2f352d108854ef9d3bba0412e2479916"
 }

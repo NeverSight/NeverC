@@ -79,6 +79,15 @@
       "source_sha256": "cec3455990acfa9e00e151dc509c50c0e752be79ea056cf70a0649925e302547",
       "original_case_source_sha256": "cec3455990acfa9e00e151dc509c50c0e752be79ea056cf70a0649925e302547",
       "gtest_body_sha256": "5672237b580ad2fb89cd3b2840ab530ad001b6e4cb478a7162db0e0caa72beea"
+    },
+    {
+      "name": "ordered-map-emplace-converting-mapped-argument-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
+      "original_case_source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
+      "gtest_body_sha256": "4446d272251f6bfc284cb902ce11a05eb8f684b762ee1d252fd692214d8b14f2",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -97,14 +106,6 @@
       "source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
       "original_case_source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
       "gtest_body_sha256": "39540e122532927042d96901cab479101f9bd0dad95dda44da4d4ca641092b29"
-    },
-    {
-      "name": "ordered-map-emplace-converting-mapped-argument-remains-unsupported",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentRemainsUnsupportedRejected",
-      "expected": "reject",
-      "source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
-      "original_case_source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
-      "gtest_body_sha256": "c10c59428ecfb2fa5ed44dee28369c05240a80998bc17de75fa824d745e049a5"
     }
   ],
   "source_cases": [
@@ -189,6 +190,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-emplace-converting-mapped-argument-remains-unsupported",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nvoid insert(std::map<int, int> &values) {\n  short converted = 3;\n  values.emplace(1, converted);\n}\n",
+      "source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-map-merge-custom-comparator-remains-unsupported",
       "expected": "reject",
       "public_header": "map",
@@ -203,14 +212,6 @@
       "source": "#include <set>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nbool equal(const std::set<int, Reverse> &a, const std::set<int, Reverse> &b) { return a == b; }\n",
       "source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-emplace-converting-mapped-argument-remains-unsupported",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nvoid insert(std::map<int, int> &values) {\n  short converted = 3;\n  values.emplace(1, converted);\n}\n",
-      "source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -224,9 +225,9 @@
     "TranslateTest.CoreV2OrderedMultisetComparisonDistinguishesDuplicateCountsRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapEmplaceIntDoesNotReplaceAnExistingValueRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMultimapEmplaceIntKeepsEquivalentInsertionOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentAcceptsFunctionBody",
     "TranslateTest.CoreV2OrderedMapMergeCustomComparatorRemainsUnsupportedRejected",
-    "TranslateTest.CoreV2OrderedComparisonCustomComparatorRemainsUnsupportedRejected",
-    "TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentRemainsUnsupportedRejected"
+    "TranslateTest.CoreV2OrderedComparisonCustomComparatorRemainsUnsupportedRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -246,5 +247,5 @@
     "ordered-merge-and-comparison": "f90cc9fb8817a57ef3b8bfb7c3ba12ecd7e55e185b95f3ab6bd37265264b1794"
   },
   "native_reference_authentication_sha256": "a8426f4bff1fa7c2ee342d56db6b358a520c8ed92494f19d293a67a8ce37484d",
-  "source_proof_sha256": "35d4084e6ea23958d6a5f59e8ed2c6616075394d26c7de8f6b9adda15aa062d5"
+  "source_proof_sha256": "58de74c11b2fbd82e4e99cb87766737f2f352d108854ef9d3bba0412e2479916"
 }
