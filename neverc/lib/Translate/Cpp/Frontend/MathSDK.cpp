@@ -136929,6 +136929,20 @@ std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(
   return checkedOrderedTreeStorage(S, SM, Record, Context, {}, true);
 }
 
+static bool compatibleOrderedCursorLayout(const ASTContext &Context,
+    const UtilityOrderedSetStorage &Left, const UtilityOrderedSetStorage &Right) {
+  if (!Context.hasSameType(Left.NodeType, Right.NodeType) ||
+      !Context.hasSameType(Left.LinkType, Right.LinkType) ||
+      !Context.hasSameType(Left.SentinelType, Right.SentinelType) ||
+      Left.NodeBytes != Right.NodeBytes ||
+      Left.ValueOffsetBytes != Right.ValueOffsetBytes || Left.MappedOffsetBytes != Right.MappedOffsetBytes ||
+      Left.MappedPairType.isNull() != Right.MappedPairType.isNull())
+    return false;
+  return Left.MappedPairType.isNull() ||
+      (Context.hasSameType(Left.MappedPairType, Right.MappedPairType) &&
+       Context.hasSameType(Left.MappedValueType, Right.MappedValueType));
+}
+
 static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record, const ASTContext &Context,
     const UtilityOrderedSetStorage *Owner, UtilityOrderedSetStorage *Resolved) {
@@ -136973,7 +136987,8 @@ static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
           const auto Storage = approvedUtilityOrderedMapStorage(S, SM, Declaration, Context);
           if (!Storage || !Context.hasSameType(Storage->NodeType, Node)) continue;
           if (!LocalOwner) LocalOwner = Storage;
-          else if (LocalOwner->Tree->getCanonicalDecl() != Storage->Tree->getCanonicalDecl()) return nullptr;
+          else if (!compatibleOrderedCursorLayout(Context, *LocalOwner, *Storage))
+            return nullptr;
         }
       }
     }
@@ -137032,7 +137047,8 @@ const CXXRecordDecl *approvedOrderedSetIteratorRecord(
           const auto Storage = approvedUtilityOrderedSetStorage(S, SM, Declaration, Context);
           if (!Storage || !Context.hasSameType(Storage->NodeType, Node)) continue;
           if (!LocalOwner) LocalOwner = Storage;
-          else if (LocalOwner->Tree->getCanonicalDecl() != Storage->Tree->getCanonicalDecl()) return nullptr;
+          else if (!compatibleOrderedCursorLayout(Context, *LocalOwner, *Storage))
+            return nullptr;
         }
       }
     }
