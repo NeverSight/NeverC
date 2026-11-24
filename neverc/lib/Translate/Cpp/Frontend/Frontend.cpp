@@ -31040,7 +31040,7 @@ public:
           checkBinding(C->getArg(0), true);
         }
         for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
-          checkBinding(C->getArg(I + 1), false);
+          checkBinding(C->getArg(I + 1), /*AllowFullExpression=*/true);
           A.type(A.Context.getRecordType(Visit->Variants[I].Record), L);
         }
         for (const auto Argument : Visit->Arguments)
