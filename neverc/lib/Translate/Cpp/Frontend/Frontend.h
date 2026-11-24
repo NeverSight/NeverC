@@ -1316,6 +1316,7 @@ enum class UtilityOperation {
   OrderedSetMoveAssign,
   OrderedSetInsert,
   OrderedSetInsertList,
+  OrderedSetListAssign,
   OrderedSetInsertRange,
   OrderedSetIterator,
   OrderedSetMutation,
@@ -4684,7 +4685,7 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-enum class OrderedInsertionKind { Insert, TryEmplace, InsertOrAssign };
+enum class OrderedInsertionKind { Insert, Emplace, TryEmplace, InsertOrAssign };
 
 struct UtilityOrderedSetInsertion {
   UtilityOrderedSetStorage Storage;
@@ -4722,6 +4723,9 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetListInput> approvedOrderedSetListInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetListInput> approvedOrderedSetListAssignment(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UtilityOrderedSetRangeInput {
