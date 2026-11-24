@@ -117,22 +117,6 @@
       "source_sha256": "4129801a403f6dc985c5bf92f469b9e171385325dfe85ab78ca5c5c1df9d705e"
     },
     {
-      "name": "variant-swap-unchecked-associated-pointer-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nnamespace payload {\nstruct Item { int n; };\nvoid swap(Item*& left, Item*& right) noexcept { left = right; }\n}\nusing Value = std::variant<int, payload::Item*>;\nvoid exchange(Value& left, Value& right) { left.swap(right); }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "94c1505db2076c780f57ff2b11b3ccde7cb8b1e1ddd6368132dd0eb5b2d8f630"
-    },
-    {
-      "name": "variant-swap-unchecked-associated-enum-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nnamespace payload {\nenum class Code { first, second };\nvoid swap(Code& left, Code& right) noexcept { left = right; }\n}\nusing Value = std::variant<int, payload::Code>;\nvoid exchange(Value& left, Value& right) { left.swap(right); }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "7dd65e1ce59e86a507b1127d642d7323a4d6f51be9552190383790c1ef7d83d5"
-    },
-    {
       "name": "any-int-pointer-mutable-slot-and-cv-identity",
       "public_header": "any",
       "expected": "accept",
@@ -147,6 +131,22 @@
       "source": "#include <any>\nint main() {\n  const int number = 39;\n  bool flag = false;\n  const int* pointer = &number;\n  std::any first{std::in_place_type<const int*>, pointer};\n  std::any second{&flag};\n  first.swap(second);\n  auto* boolean = std::any_cast<bool*>(&first);\n  auto* constant = std::any_cast<const int*>(&second);\n  if (!boolean || !constant || *boolean != &flag || *constant != &number ||\n      std::any_cast<int*>(&second) || std::any_cast<bool*>(&second))\n    return 1;\n  **boolean = true;\n  return !flag;\n}\n",
       "kind": "cpp17-operation",
       "source_sha256": "5e46bee0523ae64b35941e1fc1a01e8af43d1a1132a88130bbfa953ffa39d902"
+    },
+    {
+      "name": "variant-swap-unchecked-associated-pointer-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nnamespace payload {\nstruct Item { int n; };\nvoid swap(Item*& left, Item*& right) noexcept { left = right; }\n}\nusing Value = std::variant<int, payload::Item*>;\nvoid exchange(Value& left, Value& right) { left.swap(right); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "94c1505db2076c780f57ff2b11b3ccde7cb8b1e1ddd6368132dd0eb5b2d8f630"
+    },
+    {
+      "name": "variant-swap-unchecked-associated-enum-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nnamespace payload {\nenum class Code { first, second };\nvoid swap(Code& left, Code& right) noexcept { left = right; }\n}\nusing Value = std::variant<int, payload::Code>;\nvoid exchange(Value& left, Value& right) { left.swap(right); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "7dd65e1ce59e86a507b1127d642d7323a4d6f51be9552190383790c1ef7d83d5"
     },
     {
       "name": "any-unchecked-record-pointer-payload-guard",
@@ -177,7 +177,7 @@
     "TranslateTest.CoreV2AnyUncheckedRecordPointerPayloadGuardRejected",
     "TranslateTest.CoreV2AnyUncheckedVolatileIntPointerPayloadGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "f77b76b823c42a24ca3a2cb9a60a3badfee0ac9ccce5d120234d1ffe55d959cd",
   "maintained_original_sha256": "95cf9aef09bac395384e711aebe3775ea05f12f467f09c9123abab6b0e8aee35",
@@ -189,5 +189,11 @@
   "current_registry_count": 9008,
   "current_python_registry_tests": 284,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "any-integer-pointer-values": "3cc63e628ea4625533ed2535b5a93c89b4d29439f9d68843e90ac9a2c66c9348",
+    "variant-swap-void-pointer-replay": "7cc782131e87916d742c366f6d10ac68affd3e3e44b456746310864bb846dcdc"
+  },
+  "native_reference_authentication_sha256": "a0819bafdca6cf20e2712f701ed27d93c11d1cf4cf901034fb0dd15af9829286",
+  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
 }

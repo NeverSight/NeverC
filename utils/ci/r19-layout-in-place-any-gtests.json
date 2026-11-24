@@ -210,7 +210,7 @@
       "public_header": "any",
       "source": "#include <any>\nint main() {\n  std::any a;\n  if (a.has_value()) return 1;\n  a.reset();\n  a.reset();\n  return a.has_value();\n}\n",
       "source_sha256": "e399a21f07a466b7426a6c217dac0324998aeeb8a6dc914f92df8df2d8926874",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-receiver-evaluation",
@@ -218,7 +218,7 @@
       "public_header": "any",
       "source": "#include <any>\nint visits;\nstd::any* receive(std::any* p) { ++visits; return p; }\nint main() {\n  std::any a;\n  receive(&a)->reset();\n  const std::any* p = receive(&a);\n  return visits != 2 || p->has_value();\n}\n",
       "source_sha256": "ab0625ffa0cf84bad9c0db281c30b24d07e80f0a238f05d691e2c5693dfdd06c",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-temporary",
@@ -226,7 +226,7 @@
       "public_header": "any",
       "source": "#include <any>\nint main() {\n  return std::any{}.has_value();\n}\n",
       "source_sha256": "ef4cb6dea33875f5738078979e04d31fcb456880bc9b2270892aa0b7c1709665",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-member-lifetime",
@@ -234,7 +234,7 @@
       "public_header": "any",
       "source": "#include <any>\nstruct Owner { std::any any; int marker; };\nint main() {\n  Owner object{{}, 2};\n  object.any.reset();\n  return object.marker != 2 || object.any.has_value();\n}\n",
       "source_sha256": "67aace76f54980f76ec0b125fd0416a22ab1c0471ae28d27da5398a051164592",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-array-lifetime",
@@ -242,7 +242,7 @@
       "public_header": "any",
       "source": "#include <any>\nint main() {\n  std::any values[2];\n  values[1].reset();\n  return values[0].has_value() || values[1].has_value();\n}\n",
       "source_sha256": "856e0ea7c38cbd16b8b71fb4995f47e2b5eb75183f3912e0256c62d13c9bfab3",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-unproved-copy",
@@ -250,7 +250,7 @@
       "public_header": "any",
       "source": "#include <any>\nint main() {\n  std::any a;\n  std::any b(a);\n  return b.has_value();\n}\n",
       "source_sha256": "fdb1b4aa621ea589bf033cb811c2b287eece8341bbd8bd80e5b79b3975e97073",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-pointer-cast-mutable",
@@ -258,7 +258,7 @@
       "source": "#include <any>\nint main() {\n  std::any value;\n  int* payload = std::any_cast<int>(&value);\n  return payload != nullptr || value.has_value();\n}\n",
       "source_sha256": "fd4cc477df5f590b5bc50ea7f97e3a5b565623b046dd0d08f64eac9730045ec1",
       "public_header": "any",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-pointer-cast-const",
@@ -266,7 +266,7 @@
       "source": "#include <any>\n#include <type_traits>\nint main() {\n  const std::any value;\n  using T = unsigned;\n  const auto* pointer = std::any_cast<T>(&value);\n  static_assert(std::is_same_v<decltype(pointer), const T*>);\n  return pointer != nullptr || std::any_cast<const T>(&value) != nullptr;\n}\n",
       "source_sha256": "d0660498f60db5ee214e9a39689ac8447f4b7a03f217d140caa571f657576734",
       "public_header": "any",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-pointer-cast-null-and-evaluation",
@@ -274,7 +274,7 @@
       "source": "#include <any>\nint calls;\nstd::any* choose(std::any* value) { ++calls; return value; }\nint main() {\n  std::any value;\n  auto* first = std::any_cast<int>(choose(&value));\n  auto* second = std::any_cast<int>(choose(nullptr));\n  return first != nullptr || second != nullptr || calls != 2;\n}\n",
       "source_sha256": "9597c80c8a713d816b325d30c905bb8f08f9af3b71756d7070cd2def4774dcef",
       "public_header": "any",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-pointer-cast-pointer-type",
@@ -282,7 +282,7 @@
       "source": "#include <any>\nint main() {\n  const std::any* value = nullptr;\n  int* const* pointer = std::any_cast<int*>(value);\n  return pointer != nullptr;\n}\n",
       "source_sha256": "5438c2e78bbce415f7ff74933e677e3699ec0e97c4db2592b1941ae52efa4a1d",
       "public_header": "any",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-copy-move",
@@ -290,7 +290,7 @@
       "source": "#include <any>\n#include <utility>\nint main() {\n  std::any original;\n  std::any moved(std::move(original));\n  return original.has_value() || moved.has_value() || std::any_cast<int>(&moved);\n}\n",
       "source_sha256": "58e76703f9a3cac62f51065d1ee65be8d31a45b16ec2e3cd12ae4a73fcdee6a6",
       "public_header": "any",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-copy-copy-effects",
@@ -298,7 +298,7 @@
       "source": "#include <any>\nint calls;\nconst std::any& observe(const std::any& value) { ++calls; return value; }\nint main() {\n  std::any original;\n  std::any copy(observe(original));\n  return calls != 1 || copy.has_value();\n}\n",
       "source_sha256": "98bf50f9ffc271801af7e38fbe5e0e4d627f94f985792fab977158f9f5e40ce0",
       "public_header": "any",
-      "kind": "any-layout-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-assignment-copy-identity",
@@ -306,7 +306,7 @@
       "expected": "accept",
       "source_sha256": "dacd898d582026878c3f5f2193dec0edcff6e52b0a1ce5c9c8e3a7d912430032",
       "public_header": "any",
-      "kind": "any-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-assignment-operator-notation-order",
@@ -314,7 +314,7 @@
       "expected": "accept",
       "source_sha256": "656120c5fdb0240a5266521e6f1123bb48925f65705bcd945eb48ff6a3410013",
       "public_header": "any",
-      "kind": "any-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-assignment-explicit-assignment-order",
@@ -322,7 +322,7 @@
       "expected": "accept",
       "source_sha256": "b2b24240f5ac89c2f7cc2f5f3e0c61d1e3f44ce8cb74f3ccf4e2cd6284babcca",
       "public_header": "any",
-      "kind": "any-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-assignment-move-and-self",
@@ -330,7 +330,7 @@
       "expected": "accept",
       "source_sha256": "5b6f9960b49def437b2b00cf2882c64738304019eedd803ec617b872783b54b8",
       "public_header": "any",
-      "kind": "any-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-assignment-swap-sequencing",
@@ -338,7 +338,7 @@
       "expected": "accept",
       "source_sha256": "8393e08781429ad91bb6c305bc70b4c6d4989167cc9072333d839d1eebab8fda",
       "public_header": "any",
-      "kind": "any-runtime-control"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-empty-altered-observer",
@@ -391,7 +391,7 @@
     "any-layout-unevaluated-object",
     "any-layout-altered-handler-field"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "f92c06c48a9fad4a28afc4a157985a18624fd4ddfb17d0869e3e925d8dfa908a",
   "maintained_original_sha256": "20c9f075f5b6d3a2f1394438f689368c7f2da1a75286dce1704b219e87e6d5df",
@@ -403,5 +403,10 @@
   "current_registry_count": 8119,
   "current_python_registry_tests": 122,
   "native_reference_selected_executions": 34,
-  "planned_generated_c23_executions": 34
+  "planned_generated_c23_executions": 34,
+  "native_reference_proofs": {
+    "any-empty-runtime": "0bb71d358ea25b5e0ae51a6353aff89c50f729178cb2f0aece8f990c247da948"
+  },
+  "native_reference_authentication_sha256": "6006bad24e84bf02aaeb4b4883c0265f08c5ad6b03204f03e922334e591bc501",
+  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
 }

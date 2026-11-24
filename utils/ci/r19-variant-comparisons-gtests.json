@@ -109,14 +109,6 @@
       "source_sha256": "46f0f67639aed0b6739fd0d260fc2d490bf6303255a87df8534c6f0bfecf1ccc"
     },
     {
-      "name": "variant-comparison-long-double-remains-unsupported",
-      "public_header": "variant",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include <variant>\nusing Value = std::variant<int, long double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
-      "source_sha256": "5f888adfe5e6bc6daee27d693894c49c74c27e55ca0494879ef328431ea8c01a"
-    },
-    {
       "name": "variant-comparison-live-and-temporary-operands",
       "public_header": "variant",
       "expected": "accept",
@@ -139,14 +131,6 @@
       "kind": "cpp17-operation",
       "source": "#include <variant>\nusing Value = std::variant<std::monostate, long long>;\n\nbool compare(const Value& value) {\n  return value > Value{} && Value{} == Value{} &&\n         Value(-8589934593LL) < value && value == Value(8589934593LL);\n}\n\nint main() {\n  const Value value(8589934593LL);\n  return compare(value) ? 0 : 1;\n}\n",
       "source_sha256": "a58d7e6e582668d19d574caa918c6de62fa0bfc0513a3e014e8b53f3c3613cd3"
-    },
-    {
-      "name": "variant-comparison-escaping-reference-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nconst int& escape() { return std::get<1>(Value(3)); }\n",
-      "source_sha256": "cb2883bc9c02d155c917469e7e2ed815636e16c2ac9b5d3c84d4ed05eadc61f4"
     },
     {
       "name": "variant-monostate-converting-rvalue",
@@ -179,6 +163,22 @@
       "kind": "cpp17-operation",
       "source": "#include <variant>\nint main() {\n  std::variant<int, std::monostate> value{25};\n  const std::monostate source{};\n  auto& inserted = value.emplace<1>(source);\n  return value.index() != 1 || &inserted != std::get_if<std::monostate>(&value);\n}\n",
       "source_sha256": "062d899f57cb4a0b01696b1a181bd0dc410a58248b901dabae4e6f3d4c291785"
+    },
+    {
+      "name": "variant-comparison-long-double-remains-unsupported",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing Value = std::variant<int, long double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
+      "source_sha256": "5f888adfe5e6bc6daee27d693894c49c74c27e55ca0494879ef328431ea8c01a"
+    },
+    {
+      "name": "variant-comparison-escaping-reference-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nconst int& escape() { return std::get<1>(Value(3)); }\n",
+      "source_sha256": "cb2883bc9c02d155c917469e7e2ed815636e16c2ac9b5d3c84d4ed05eadc61f4"
     }
   ],
   "new_gtest_names": [
@@ -194,7 +194,7 @@
     "TranslateTest.CoreV2VariantComparisonLongDoubleRemainsUnsupportedRejected",
     "TranslateTest.CoreV2VariantComparisonEscapingReferenceGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "f5b5204fe9f8d1cd6a7c799247f7d597f7d5f0b2b359777fdb734b5d2d3a533e",
   "maintained_original_sha256": "285343a6f104bdf7b274c691d605bf033b80e13d36a5e2e937536cff7aa2fa9e",
@@ -206,5 +206,12 @@
   "current_registry_count": 8973,
   "current_python_registry_tests": 278,
   "native_reference_selected_executions": 18,
-  "planned_generated_c23_executions": 18
+  "planned_generated_c23_executions": 18,
+  "native_reference_proofs": {
+    "variant-comparison-temporary": "7b8764ff63a2bae2d7d12b9e19af6687e050c87b94cf3c368fa27c5c93019971",
+    "variant-floating-comparison-replay": "4f3df93d9f109a50ac4040eb5c6cdcb2377429dc9116294a8fa162efc61b451d",
+    "variant-monostate-forwarding": "f4e54161f8aad55710a77dccb2298feb76fe082fbd3ab52171c42150dade3213"
+  },
+  "native_reference_authentication_sha256": "44f8a67d9b99eac87446a55fe37875470d3c9b26940c47aa3342a24062d5a2f9",
+  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
 }
