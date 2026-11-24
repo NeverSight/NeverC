@@ -49405,7 +49405,7 @@ bool approvedUtilityReverseIteratorMetadata(const State &S,
 std::optional<UtilityReverseIteratorRecord>
 approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
                                      const CXXRecordDecl *Record,
-                                     const ASTContext &Context) {
+                                     const ASTContext &Context, bool AllowOrdered) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -49438,8 +49438,16 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
   const auto Iterator = Arguments.get(0).getAsType();
   const auto Wrapped = approvedUtilityWrapIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
-  const auto Pointer = Wrapped ? Wrapped->IteratorType : Iterator;
-  if (!utilityObjectPointer(Context, Pointer) ||
+  UtilityOrderedSetStorage Tree{};
+  const auto *Ordered = AllowOrdered && !Wrapped
+      ? approvedOrderedSetIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, nullptr, &Tree)
+      : nullptr;
+  auto OrderedElement = !Ordered ? QualType() : Tree.MappedPairType.isNull()
+      ? Context.IntTy.withConst() : Tree.MappedPairType;
+  if (Ordered && Ordered->getName() == "__map_const_iterator")
+    OrderedElement = OrderedElement.withConst();
+  const auto Pointer = Ordered ? Context.VoidPtrTy : Wrapped ? Wrapped->IteratorType : Iterator;
+  if ((!Ordered && !utilityObjectPointer(Context, Pointer)) ||
       Context.getTypeSize(Iterator) != Context.getTypeSize(Pointer) ||
       Context.getTypeAlign(Iterator) != Context.getTypeAlign(Pointer))
     return std::nullopt;
@@ -49516,7 +49524,7 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
   return UtilityReverseIteratorRecord{Specialization, Legacy, Current,
                                       Iterator,
                                       Wrapped ? Wrapped->Current : nullptr,
-                                      Pointer};
+                                      Pointer, OrderedElement, Ordered ? Tree.ValueOffsetBytes : 0};
 }
 
 std::optional<UtilityReverseIteratorConstruction>
@@ -49531,7 +49539,7 @@ approvedUtilityReverseIteratorConstruction(const State &S,
     return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
   const auto Destination = approvedUtilityReverseIteratorRecord(
-      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context, true);
   if (!Constructor || !Destination || Constructor->isVariadic() ||
       Constructor->getParent()->getCanonicalDecl() !=
           Destination->Record->getCanonicalDecl() ||
@@ -49560,6 +49568,8 @@ approvedUtilityReverseIteratorConstruction(const State &S,
                ? std::optional(UtilityReverseIteratorConstruction::Iterator)
                : std::nullopt;
   }
+  if (!Destination->OrderedElementType.isNull())
+    return std::nullopt;
   const auto *Primary = Constructor->getPrimaryTemplate();
   auto Parameter = Constructor->getParamDecl(0)->getType();
   const auto Source = approvedUtilityReverseIteratorRecord(
@@ -49592,9 +49602,9 @@ approvedUtilityReverseIteratorAssignment(const State &S,
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
   const auto Destination = approvedUtilityReverseIteratorRecord(
-      S, SM, Method ? Method->getParent() : nullptr, Context);
+      S, SM, Method ? Method->getParent() : nullptr, Context, true);
   const auto Source = approvedUtilityReverseIteratorRecord(
-      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context, true);
   if (!Method || !Destination || !Source || Method->isStatic() ||
       Method->isVariadic() || Method->getNumParams() != 1 ||
       Method->getOverloadedOperator() != OO_Equal ||
@@ -49614,6 +49624,8 @@ approvedUtilityReverseIteratorAssignment(const State &S,
       (Method->isCopyAssignmentOperator() ||
        Method->isMoveAssignmentOperator()))
     return UtilityReverseIteratorAssignment{*Destination, *Source, false};
+  if (!Destination->OrderedElementType.isNull() || !Source->OrderedElementType.isNull())
+    return std::nullopt;
   const auto *Primary = Method->getPrimaryTemplate();
   auto Parameter = Method->getParamDecl(0)->getType();
   if (Same || !Primary || !Method->hasBody() ||
@@ -126469,8 +126481,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
   }
   const auto Reverse = approvedUtilityReverseIteratorRecord(
-      S, SM, Method ? Method->getParent() : nullptr, Context);
+      S, SM, Method ? Method->getParent() : nullptr, Context, true);
   if (Method && Reverse) {
+    const bool Ordered = !Reverse->OrderedElementType.isNull();
+    const auto Pointer = Ordered ? Context.getPointerType(Reverse->OrderedElementType) : Reverse->PointerType;
     const auto *Reference = directMethodReference(Call);
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
@@ -126515,14 +126529,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Call->getType(), Reverse->IteratorType))
         return UtilityOperation::ReverseBase;
       if (Method->getOverloadedOperator() == OO_Arrow && Call->isPRValue() &&
-          Same(Method->getReturnType(), Reverse->PointerType) &&
-          Same(Call->getType(), Reverse->PointerType))
+          Same(Method->getReturnType(), Pointer) &&
+          Same(Call->getType(), Pointer))
         return UtilityOperation::ReverseArrow;
     }
     if (!Operator)
       return std::nullopt;
     const auto Kind = Operator->getOperator();
-    const auto Pointee = Reverse->PointerType->getPointeeType();
+    const auto Pointee = Pointer->getPointeeType();
     if (Kind == OO_Star && !Method->getNumParams() && Method->isConst() &&
         Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
         Same(Method->getReturnType()->getPointeeType(), Pointee) &&
@@ -126530,8 +126544,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::ReverseDereference;
     if (Kind == OO_Arrow && !Method->getNumParams() && Method->isConst() &&
         Call->isPRValue() &&
-        Same(Method->getReturnType(), Reverse->PointerType) &&
-        Same(Call->getType(), Reverse->PointerType))
+        Same(Method->getReturnType(), Pointer) &&
+        Same(Call->getType(), Pointer))
       return UtilityOperation::ReverseArrow;
     if ((Kind == OO_PlusPlus || Kind == OO_MinusMinus) &&
         !Object->getType().isConstQualified()) {
@@ -126556,6 +126570,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::ReversePostDecrement;
       }
     }
+    if (Ordered) return std::nullopt;
     if ((Kind == OO_Plus || Kind == OO_Minus) && Method->isConst() &&
         DifferenceParameter() && Call->isPRValue() &&
         SameReverse(Method->getReturnType()) && SameReverse(Call->getType()))
@@ -127383,9 +127398,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__functional/invoke.h" && Name == "invoke");
   if (!Function->isInlined() && !ApprovedNonInlineOperation)
     return std::nullopt;
-  auto ReverseFor = [&](QualType Type) {
+  auto ReverseFor = [&](QualType Type, bool AllowOrdered = false) {
     return approvedUtilityReverseIteratorRecord(
-        S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
+        S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context, AllowOrdered);
   };
   auto ReverseParameter = [&](unsigned Index,
                               const UtilityReverseIteratorRecord &Record) {
@@ -134489,11 +134504,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {
-    const auto Result = ReverseFor(Function->getReturnType());
+    const auto Result = ReverseFor(Function->getReturnType(), true);
     auto Parameter = Function->getParamDecl(0)->getType();
     if (Result &&
         (utilityObjectPointer(Context, Parameter) ||
-         Result->WrappedCurrent) &&
+         Result->WrappedCurrent || !Result->OrderedElementType.isNull()) &&
         Same(Parameter, Result->IteratorType) &&
         Same(Call->getArg(0)->getType(), Parameter) &&
         Same(Call->getType(), Function->getReturnType()))
@@ -134502,8 +134517,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2) {
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-    const auto Left = ReverseFor(Call->getArg(0)->getType());
-    const auto Right = ReverseFor(Call->getArg(1)->getType());
+    const auto Left = ReverseFor(Call->getArg(0)->getType(), true);
+    const auto Right = ReverseFor(Call->getArg(1)->getType(), true);
+    if (Left && Right && (!Left->OrderedElementType.isNull() || !Right->OrderedElementType.isNull()) &&
+        (!Context.hasSameType(Left->IteratorType, Right->IteratorType) || !Operator ||
+         (Operator->getOperator() != OO_EqualEqual && Operator->getOperator() != OO_ExclaimEqual)))
+      return std::nullopt;
     if (Operator && Left && Right && ReverseParameter(0, *Left) &&
         ReverseParameter(1, *Right) &&
         Context.hasSameUnqualifiedType(Left->PointerType->getPointeeType(),
@@ -137151,7 +137170,9 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     const auto Name = Method->getName();
     const bool Begin = Name == "begin" || Name == "cbegin";
     const bool End = Name == "end" || Name == "cend";
-    if (!Begin && !End) return std::nullopt;
+    const bool ReverseBegin = Name == "rbegin" || Name == "crbegin";
+    const bool ReverseEnd = Name == "rend" || Name == "crend";
+    if (!(Begin || End || ReverseBegin || ReverseEnd)) return std::nullopt;
     const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
     const auto Receiver = associativeMemberReceiverType(Reference);
     const auto *Owner = Method->getParent();
@@ -137169,11 +137190,18 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
       return std::nullopt;
     const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
-    if (!Table || !approvedOrderedSetIteratorRecord(
-            S, SM, Call->getType()->getAsCXXRecordDecl(), Context, &*Table) ||
-        !SelectedBody(S, SM, Method, Owner, Context))
+    if (!Table || !SelectedBody(S, SM, Method, Owner, Context))
       return std::nullopt;
-    return UtilityOrderedSetIteratorCall{Begin ? Op::Begin : Op::End, *Table, Reference, nullptr, nullptr};
+    auto Type = Call->getType();
+    if (ReverseBegin || ReverseEnd) {
+      const auto Reverse = approvedUtilityReverseIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context, true);
+      if (!Reverse || Reverse->OrderedElementType.isNull()) return std::nullopt;
+      Type = Reverse->IteratorType;
+    }
+    if (!approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context, &*Table))
+      return std::nullopt;
+    const auto Operation = ReverseBegin ? Op::ReverseBegin : ReverseEnd ? Op::ReverseEnd : Begin ? Op::Begin : Op::End;
+    return UtilityOrderedSetIteratorCall{Operation, *Table, Reference, nullptr, nullptr};
   }
 
   if (Method && Method->getIdentifier() && Method->getNumParams() == 1 && Call->getNumArgs() == 1) {

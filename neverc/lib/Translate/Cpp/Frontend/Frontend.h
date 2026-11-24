@@ -4374,7 +4374,8 @@ struct UtilityReverseIteratorRecord {
   const clang::FieldDecl *Legacy, *Current;
   clang::QualType IteratorType;
   const clang::FieldDecl *WrappedCurrent;
-  clang::QualType PointerType;
+  clang::QualType PointerType, OrderedElementType;
+  uint64_t OrderedValueOffset;
 };
 struct UtilityWrapIteratorRecord {
   const clang::CXXRecordDecl *Record;
@@ -4406,7 +4407,7 @@ std::optional<UtilityReverseIteratorRecord>
 approvedUtilityReverseIteratorRecord(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CXXRecordDecl *Record,
-                                     const clang::ASTContext &Context);
+                                     const clang::ASTContext &Context, bool AllowOrdered = false);
 enum class UtilityReverseIteratorConstruction {
   Default,
   Iterator,
@@ -4663,7 +4664,7 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
     const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 enum class OrderedSetIteratorOperation {
-  Begin, End, Find, LowerBound, UpperBound, EqualRange, Dereference, Arrow,
+  Begin, End, ReverseBegin, ReverseEnd, Find, LowerBound, UpperBound, EqualRange, Dereference, Arrow,
   Increment, PostIncrement, Decrement, PostDecrement, Equal, NotEqual
 };
 struct UtilityOrderedSetIteratorCall {
