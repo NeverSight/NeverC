@@ -109,6 +109,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-set-owner-copy-explicit-allocator-multiset-copy",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{8, 8};\n  std::unordered_multiset<int> copy(source, std::allocator<int>{});\n  return copy.count(8) != 2;\n}\n",
+      "source_sha256": "f2856bb20efbd88a95e06d80be1a8f1075b42f26986b3a8314fa59936c517385",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-set-owner-copy-other-key-copy",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -123,14 +131,6 @@
       "source": "#include <unordered_set>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  std::unordered_set<int, std::hash<int>, Equal> source;\n  std::unordered_set<int, std::hash<int>, Equal> copy(source);\n  return copy.empty();\n}\n",
       "source_sha256": "a612f5577bbaf3d15076ebbf4e98a5160fc701345f74e880d0629687e40b7984",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-set-owner-copy-explicit-allocator-multiset-copy",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{8, 8};\n  std::unordered_multiset<int> copy(source, std::allocator<int>{});\n  return copy.count(8) != 2;\n}\n",
-      "source_sha256": "f2856bb20efbd88a95e06d80be1a8f1075b42f26986b3a8314fa59936c517385",
-      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetOwnerCopyOtherKeyCopyRejected",
     "TranslateTest.CoreV2UnorderedSetOwnerCopyCustomEqualityCopyRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "9d45502a38f1ee189fb816f0ffaa6f9a83d66b4c2e00792e08094a09ebf71090",
   "maintained_original_sha256": "b5861e602fe2e117514cbc02fbff1737609071bd6aa6d4452161039c5c032491",
@@ -155,5 +155,11 @@
   "current_registry_count": 8536,
   "current_python_registry_tests": 220,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-owner-copy": "9d4b27a82684c5b4c9119f2c2570a7396aa2569d48ac850aece4ad5edf3de3b6",
+    "unordered-set-storage-construction": "9005a76d9532e4c4a9e301c517dd51fa24734609763fb1008eea27c3ed872306"
+  },
+  "native_reference_authentication_sha256": "63c3eb2b16a126d9fa9ae4d4443c5896ff962dc300e0f77cd3455efbf18050c3",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

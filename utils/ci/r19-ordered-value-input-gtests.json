@@ -101,14 +101,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-pointer-range-different-mapped-leaf-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  const std::pair<int, long> values[]{{1, 7}};\n  std::map<int, int> result(values, values + 1);\n  return result.begin()->second == 7 ? 0 : 1;\n}\n",
-      "source_sha256": "1f6f3f97a73bab8a711099e8d0d24fed984c5337de0b354ebdadc977c74d6140",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-emplacement-converts-integer-key-before-lookup",
       "expected": "accept",
       "public_header": "set",
@@ -123,6 +115,14 @@
       "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  signed char key = 3;\n  short mapped = -7;\n  auto inserted = values.emplace(key, mapped);\n  if (!inserted.second || inserted.first->second != -7)\n    return 1;\n  auto duplicate = values.try_emplace(3, static_cast<unsigned char>(10));\n  if (duplicate.second || duplicate.first->second != -7)\n    return 2;\n  auto assigned = values.insert_or_assign(3, static_cast<unsigned short>(11));\n  std::multimap<int, int> duplicates;\n  auto first = duplicates.emplace(key, mapped);\n  auto second = duplicates.emplace(key, static_cast<unsigned char>(8));\n  return !assigned.second && assigned.first->second == 11 && values.size() == 1 &&\n         first->second == -7 && second->second == 8 &&\n         duplicates.count(3) == 2 ? 0 : 3;\n}\n",
       "source_sha256": "9ea9e587f478ed4f49058871da4292a57cfa5ac2ca1c78875084da008c90db98",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-pointer-range-different-mapped-leaf-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::pair<int, long> values[]{{1, 7}};\n  std::map<int, int> result(values, values + 1);\n  return result.begin()->second == 7 ? 0 : 1;\n}\n",
+      "source_sha256": "1f6f3f97a73bab8a711099e8d0d24fed984c5337de0b354ebdadc977c74d6140",
+      "kind": "source-body-guard"
     },
     {
       "name": "ordered-emplacement-user-defined-key-conversion-guard",
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2OrderedMapPointerRangeDifferentMappedLeafGuardRejected",
     "TranslateTest.CoreV2OrderedEmplacementUserDefinedKeyConversionGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "c5db0e72676a6713cfc15e29904c4e2efba396e97047ac2e1f82de58f009e30f",
   "maintained_original_sha256": "095817b19e138f070eeba1f668ef2853c45e25ae7a2936c0216a4710c6f7a0ee",
@@ -155,5 +155,10 @@
   "current_registry_count": 8845,
   "current_python_registry_tests": 268,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "ordered-value-input": "b9b293f9b1ce126fa9c711ec5be48f05d87960878036f2b61436023a654b4e4c"
+  },
+  "native_reference_authentication_sha256": "dbef923ce4ca848ce1a01cd13e8f140ed3bce534072caabdf604ad7d800d4a5b",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }

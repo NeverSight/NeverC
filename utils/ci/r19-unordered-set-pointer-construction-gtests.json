@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetPointerConstructionCustomHashRangeRejected",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionClassIteratorRangeRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "9cb7ceb21565984eeb74ecb04de81d829a7d4044e642eac1474b7bf9eb3196da",
   "maintained_original_sha256": "83193b7e67658eecd8f05e1f39207b4c07eea93fabaf11c3fdfaa4259719510a",
@@ -155,5 +155,11 @@
   "current_registry_count": 8520,
   "current_python_registry_tests": 216,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
+    "unordered-set-pointer-construction": "2e9180690029cb6d6117a8018ed9fcfe78668647ece9486f2bea6b464f33a74e"
+  },
+  "native_reference_authentication_sha256": "fcf8f4de3aab9f04025c8d9d83eff9c8da882ccf3863b4d580c41358a743f666",
+  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
 }
