@@ -49527,6 +49527,30 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
                                       Pointer, OrderedElement, Ordered ? Tree.ValueOffsetBytes : 0};
 }
 
+static bool approvedOrderedReverseQualification(const State &S, const SourceManager &SM,
+    const UtilityReverseIteratorRecord &Source, const UtilityReverseIteratorRecord &Destination,
+    const ASTContext &Context) {
+  if (Source.OrderedElementType.isNull() || Destination.OrderedElementType.isNull() ||
+      !Context.hasSameType(Source.OrderedElementType.withConst(), Destination.OrderedElementType))
+    return false;
+  UtilityOrderedSetStorage Owner{};
+  const auto *From = approvedOrderedSetIteratorRecord(S, SM,
+      Source.IteratorType->getAsCXXRecordDecl(), Context, nullptr, &Owner);
+  if (!From || From->getName() != "__map_iterator") return false;
+  const auto *To = approvedOrderedSetIteratorRecord(S, SM,
+      Destination.IteratorType->getAsCXXRecordDecl(), Context, &Owner);
+  return To && To->getName() == "__map_const_iterator";
+}
+
+static bool approvedReverseIteratorConversion(const State &S, const SourceManager &SM,
+    const UtilityReverseIteratorRecord &Source, const UtilityReverseIteratorRecord &Destination,
+    const ASTContext &Context) {
+  if (!Source.OrderedElementType.isNull() || !Destination.OrderedElementType.isNull())
+    return approvedOrderedReverseQualification(S, SM, Source, Destination, Context);
+  return bool(Source.WrappedCurrent) == bool(Destination.WrappedCurrent) &&
+      utilityPointerConversion(Context, Source.PointerType, Destination.PointerType);
+}
+
 std::optional<UtilityReverseIteratorConstruction>
 approvedUtilityReverseIteratorConstruction(const State &S,
                                            const SourceManager &SM,
@@ -49568,12 +49592,10 @@ approvedUtilityReverseIteratorConstruction(const State &S,
                ? std::optional(UtilityReverseIteratorConstruction::Iterator)
                : std::nullopt;
   }
-  if (!Destination->OrderedElementType.isNull())
-    return std::nullopt;
   const auto *Primary = Constructor->getPrimaryTemplate();
   auto Parameter = Constructor->getParamDecl(0)->getType();
   const auto Source = approvedUtilityReverseIteratorRecord(
-      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context, true);
   if (!Primary || !Source || !Parameter->isLValueReferenceType() ||
       !Parameter->getPointeeType().isConstQualified() ||
       !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
@@ -49581,9 +49603,7 @@ approvedUtilityReverseIteratorConstruction(const State &S,
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__iterator/reverse_iterator.h") ||
-      bool(Source->WrappedCurrent) != bool(Destination->WrappedCurrent) ||
-      !utilityPointerConversion(Context, Source->PointerType,
-                                Destination->PointerType))
+      !approvedReverseIteratorConversion(S, SM, *Source, *Destination, Context))
     return std::nullopt;
   return UtilityReverseIteratorConstruction::Converting;
 }
@@ -49624,8 +49644,6 @@ approvedUtilityReverseIteratorAssignment(const State &S,
       (Method->isCopyAssignmentOperator() ||
        Method->isMoveAssignmentOperator()))
     return UtilityReverseIteratorAssignment{*Destination, *Source, false};
-  if (!Destination->OrderedElementType.isNull() || !Source->OrderedElementType.isNull())
-    return std::nullopt;
   const auto *Primary = Method->getPrimaryTemplate();
   auto Parameter = Method->getParamDecl(0)->getType();
   if (Same || !Primary || !Method->hasBody() ||
@@ -49639,9 +49657,7 @@ approvedUtilityReverseIteratorAssignment(const State &S,
                      "__iterator/reverse_iterator.h") ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__iterator/reverse_iterator.h") ||
-      bool(Source->WrappedCurrent) != bool(Destination->WrappedCurrent) ||
-      !utilityPointerConversion(Context, Source->PointerType,
-                                Destination->PointerType))
+      !approvedReverseIteratorConversion(S, SM, *Source, *Destination, Context))
     return std::nullopt;
   return UtilityReverseIteratorAssignment{*Destination, *Source, true};
 }
@@ -134520,8 +134536,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto Left = ReverseFor(Call->getArg(0)->getType(), true);
     const auto Right = ReverseFor(Call->getArg(1)->getType(), true);
     if (Left && Right && (!Left->OrderedElementType.isNull() || !Right->OrderedElementType.isNull()) &&
-        (!Context.hasSameType(Left->IteratorType, Right->IteratorType) || !Operator ||
-         (Operator->getOperator() != OO_EqualEqual && Operator->getOperator() != OO_ExclaimEqual)))
+        (!(Context.hasSameType(Left->IteratorType, Right->IteratorType) ||
+           approvedOrderedReverseQualification(S, SM, *Left, *Right, Context) ||
+           approvedOrderedReverseQualification(S, SM, *Right, *Left, Context)) ||
+         !Operator || (Operator->getOperator() != OO_EqualEqual && Operator->getOperator() != OO_ExclaimEqual)))
       return std::nullopt;
     if (Operator && Left && Right && ReverseParameter(0, *Left) &&
         ReverseParameter(1, *Right) &&

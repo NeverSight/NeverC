@@ -35410,11 +35410,7 @@ class FunctionLowering {
         Expression Converted;
         if (Assignment->Converting) {
           auto Right = dereference(json::Object(RightAddress), L);
-          auto Current =
-              fieldStorage(std::move(Right), Assignment->Source.Current, L);
-          if (Assignment->Source.WrappedCurrent)
-            Current = fieldStorage(std::move(Current),
-                                   Assignment->Source.WrappedCurrent, L);
+          auto Current = reverseIteratorSlot(std::move(Right), Assignment->Source.Current, Assignment->Source, L);
           Converted = snapshot(
               cast(std::move(Current),
                    type(Assignment->Destination.PointerType, L), L),
@@ -35427,12 +35423,7 @@ class FunctionLowering {
           assign(Left, dereference(std::move(RightAddress), L), L);
         } else {
           auto MemberPointer = [&](const FieldDecl *Field) {
-            auto Member = fieldStorage(json::Object(Left), Field, L);
-            return Assignment->Destination.WrappedCurrent
-                       ? fieldStorage(std::move(Member),
-                                      Assignment->Destination.WrappedCurrent,
-                                      L)
-                       : Member;
+            return reverseIteratorSlot(Left, Field, Assignment->Destination, L);
           };
           assign(MemberPointer(Assignment->Destination.Legacy),
                  json::Object(Converted), L);
@@ -41399,15 +41390,11 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       case UtilityReverseIteratorConstruction::Converting: {
         auto Source = approvedUtilityReverseIteratorRecord(
             A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
-            A.Context);
+            A.Context, true);
         if (!Source)
           reject(L, "reverse iterator conversion",
                  "The source std::reverse_iterator layout is unavailable.");
-        auto Current = fieldStorage(lvalue(C->getArg(0)), Source->Current, L);
-        InitializePointer(
-            Source->WrappedCurrent
-                ? fieldStorage(std::move(Current), Source->WrappedCurrent, L)
-                : std::move(Current));
+        InitializePointer(reverseIteratorSlot(lvalue(C->getArg(0)), Source->Current, *Source, L));
         return;
       }
       }
