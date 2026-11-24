@@ -3593,7 +3593,7 @@ struct UtilityAnyPointerScalar {
   clang::QualType Type;
   UtilityAnyScalar Scalar;
 };
-llvm::SmallVector<UtilityAnyPointerScalar, 6> utilityAnyPointerScalars(
+llvm::SmallVector<UtilityAnyPointerScalar, 37> utilityAnyPointerScalars(
     const clang::ASTContext &Context);
 std::optional<UtilityAnyScalar> utilityAnyInlineScalar(clang::QualType Type,
     const clang::ASTContext &Context);

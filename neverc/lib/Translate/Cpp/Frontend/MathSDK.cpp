@@ -8822,15 +8822,37 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
 static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
     const FunctionDecl *F, llvm::StringRef Name, unsigned Arity, llvm::StringRef Path);
 
-llvm::SmallVector<UtilityAnyPointerScalar, 6> utilityAnyPointerScalars(const ASTContext &Context) {
-  return {
+llvm::SmallVector<UtilityAnyPointerScalar, 37> utilityAnyPointerScalars(const ASTContext &Context) {
+  llvm::SmallVector<UtilityAnyPointerScalar, 37> Scalars{
       {Context.VoidPtrTy, {18, UtilityAnyVoidPointer}},
       {Context.getPointerType(Context.VoidTy.withConst()), {19, UtilityAnyConstVoidPointer}},
       {Context.NullPtrTy, {20, UtilityAnyNullPointer}},
       {Context.getPointerType(Context.BoolTy), {21, "nct_any_bool_pointer"}},
       {Context.getPointerType(Context.IntTy), {22, "nct_any_int_pointer"}},
       {Context.getPointerType(Context.IntTy.withConst()), {23, "nct_any_const_int_pointer"}},
+      {Context.getPointerType(Context.BoolTy.withConst()), {24, "nct_any_const_bool_pointer"}},
   };
+  unsigned Tag = 25;
+  const auto Add = [&](QualType Pointee, llvm::StringLiteral Name, llvm::StringLiteral ConstName) {
+    Scalars.push_back({Context.getPointerType(Pointee), {Tag++, Name}});
+    Scalars.push_back({Context.getPointerType(Pointee.withConst()), {Tag++, ConstName}});
+  };
+  Add(Context.UnsignedIntTy, "nct_any_unsigned_pointer", "nct_any_const_unsigned_pointer");
+  Add(Context.FloatTy, "nct_any_float_pointer", "nct_any_const_float_pointer");
+  Add(Context.DoubleTy, "nct_any_double_pointer", "nct_any_const_double_pointer");
+  Add(Context.LongLongTy, "nct_any_long_long_pointer", "nct_any_const_long_long_pointer");
+  Add(Context.UnsignedLongLongTy, "nct_any_unsigned_long_long_pointer", "nct_any_const_unsigned_long_long_pointer");
+  Add(Context.CharTy, "nct_any_char_pointer", "nct_any_const_char_pointer");
+  Add(Context.SignedCharTy, "nct_any_signed_char_pointer", "nct_any_const_signed_char_pointer");
+  Add(Context.UnsignedCharTy, "nct_any_unsigned_char_pointer", "nct_any_const_unsigned_char_pointer");
+  Add(Context.ShortTy, "nct_any_short_pointer", "nct_any_const_short_pointer");
+  Add(Context.UnsignedShortTy, "nct_any_unsigned_short_pointer", "nct_any_const_unsigned_short_pointer");
+  Add(Context.LongTy, "nct_any_long_pointer", "nct_any_const_long_pointer");
+  Add(Context.UnsignedLongTy, "nct_any_unsigned_long_pointer", "nct_any_const_unsigned_long_pointer");
+  Add(Context.WCharTy, "nct_any_wchar_pointer", "nct_any_const_wchar_pointer");
+  Add(Context.Char16Ty, "nct_any_char16_pointer", "nct_any_const_char16_pointer");
+  Add(Context.Char32Ty, "nct_any_char32_pointer", "nct_any_const_char32_pointer");
+  return Scalars;
 }
 
 std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
