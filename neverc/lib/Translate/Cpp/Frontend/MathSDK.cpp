@@ -136834,7 +136834,8 @@ const CXXRecordDecl *approvedOrderedSetIteratorRecord(
   if (Record && Record->getIdentifier() &&
       (Record->getName() == "__map_iterator" || Record->getName() == "__map_const_iterator"))
     return approvedOrderedMapIteratorRecord(S, SM, Record, Context, Owner, Resolved);
-  const auto *Spec = associativeTypeIdentity(S, SM, Record, "__tree_const_iterator", "__tree", {}, 3);
+  // The pinned map const cursor also befriends this tree iterator.
+  const auto *Spec = associativeTypeIdentity(S, SM, Record, "__tree_const_iterator", "__tree", "map", 3);
   const auto *Definition = Spec ? Spec->getDefinition() : nullptr;
   if (!S.coreV2() || !Definition || Definition->isDependentContext() ||
       Definition->isUnion() || Definition->isDynamicClass() || Definition->getNumBases() ||
