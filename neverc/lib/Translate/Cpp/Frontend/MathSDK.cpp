@@ -136992,6 +136992,11 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
          approvedOrderedSetIteratorRecord(S, SM, Record, Context);
 }
 
+static bool orderedIntegerEmplacementArgument(const ASTContext &Context, QualType Type) {
+  return !Type.isNull() && !Type.isVolatileQualified() && Type->isIntegerType() &&
+      utilityScalarDirectConversion(Context, Type, Context.IntTy);
+}
+
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -137042,6 +137047,11 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
+  auto MatchesInteger = [&](QualType Type) {
+    return Hinted ? (Context.hasSameType(Type, Context.IntTy) ||
+                     Context.hasSameType(Type, Context.IntTy.withConst()))
+                  : orderedIntegerEmplacementArgument(Context, Type);
+  };
   if (Insertion == Kind::Emplace) {
     const auto *Deduced = Method->getTemplateSpecializationArgs();
     if ((Mapped ? Values != 2 : Values > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
@@ -137059,7 +137069,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          (!Context.hasSameType(Referred, Value) && !Context.hasSameType(Referred, Value.withConst())))
+          !MatchesInteger(Referred))
         return std::nullopt;
     }
   } else {
@@ -137090,9 +137100,9 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Values == 2) {
     const auto Argument = Method->getParamDecl(Offset + 1)->getType();
     const auto MappedType = Argument->getPointeeType();
-    if (!Argument->isReferenceType() || MappedType.isVolatileQualified() ||
-        !Context.hasSameUnqualifiedType(MappedType, Context.IntTy) ||
-        !Context.hasSameUnqualifiedType(Call->getArg(Offset + 1)->getType(), Context.IntTy))
+    if (!Argument->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(MappedType, Call->getArg(Offset + 1)->getType()) ||
+        !MatchesInteger(MappedType))
       return std::nullopt;
   }
   std::optional<UtilityPairRecord> Input;
@@ -137111,9 +137121,15 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   }
   const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   if (!approvedOrderedSetIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, &*Table) ||
-      !SelectedBody(S, SM, Method, Record, Context) ||
-      !approvedOrderedContainerDestructor(S, SM, Record->getDestructor(), Context) ||
-      !SelectedBody(S, SM, Record->getDestructor(), Record, Context))
+      !SelectedBody(S, SM, Method, Record, Context))
+    return std::nullopt;
+  const auto *Destructor = Record->getDestructor();
+  if (!orderedPinnedFunction(S, SM, Destructor, Header) || Destructor->isVirtual())
+    return std::nullopt;
+  // Inserting into a borrowed owner does not instantiate its destructor.
+  if (Destructor->hasBody() &&
+      (!approvedOrderedContainerDestructor(S, SM, Destructor, Context) ||
+       !SelectedBody(S, SM, Destructor, Record, Context)))
     return std::nullopt;
   return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion, Hinted};
 }
@@ -137949,12 +137965,21 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Storage) return std::nullopt;
+  std::optional<UtilityPairRecord> Pair;
   std::optional<UtilityReverseIteratorRecord> Reverse;
   if (Iterator->isPointerType()) {
     const auto Element = Iterator->getPointeeType();
     const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
-    if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
-      return std::nullopt;
+    if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst())) {
+      if (!Mapped) return std::nullopt;
+      Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
+      if (!Pair || !Context.hasSameType(Pair->First->getType(), Context.IntTy) ||
+          !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
+        return std::nullopt;
+      const auto Input = Context.getRecordType(Pair->Record);
+      if (!Context.hasSameType(Element, Input) && !Context.hasSameType(Element, Input.withConst()))
+        return std::nullopt;
+    }
   } else {
     auto Base = Iterator;
     Reverse = approvedUtilityReverseIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, true);
@@ -137965,12 +137990,10 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
     if (!approvedOrderedSetIteratorRecord(S, SM, Base->getAsCXXRecordDecl(), Context, &*Storage))
       return std::nullopt;
   }
-  std::optional<UtilityPairRecord> Pair;
-  if (Mapped) {
+  if (Mapped && !Pair)
     Pair = approvedUtilityPairRecord(S, SM, Storage->MappedPairType->getAsCXXRecordDecl(), Context);
-    if (!Pair || !Pair->Record->hasTrivialDestructor())
-      return std::nullopt;
-  }
+  if (Mapped && (!Pair || !Pair->Record->hasTrivialDestructor()))
+    return std::nullopt;
   return UtilityOrderedSetRangeInput{*Storage, Iterator, Pair, Reverse};
 }
 
@@ -137997,6 +138020,16 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
         !orderedParameter(Compare->getLHS(), First) || !orderedParameter(Compare->getRHS(), Last) ||
         !Step || Step->getOpcode() != UO_PreInc || !orderedParameter(Step->getSubExpr(), First))
       return std::nullopt;
+    if (Input->Pair && Context.hasSameType(Input->Pair->First->getType(), Context.IntTy)) {
+      const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(
+          orderedExpression(dyn_cast<Expr>(Loop->getBody())));
+      const auto *Element = Insert && Insert->getNumArgs() == 2
+          ? dyn_cast_or_null<UnaryOperator>(orderedExpression(Insert->getArg(1))) : nullptr;
+      if (!Element || Element->getOpcode() != UO_Deref ||
+          !Context.hasSameType(Element->getType(), Input->IteratorType->getPointeeType()) ||
+          !orderedParameter(Element->getSubExpr(), First))
+        return std::nullopt;
+    }
   } else if (Input->Reverse) {
     auto Check = [&](const Expr *E, OverloadedOperatorKind Kind, const ParmVarDecl *Second = nullptr) {
       const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(E);
