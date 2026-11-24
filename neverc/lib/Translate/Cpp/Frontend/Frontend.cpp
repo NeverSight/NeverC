@@ -32112,7 +32112,14 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
               json::Object{{"name", UtilityAnyChar16.str()},
                            {"type", type(Context.Char16Ty, R->getLocation())}},
               json::Object{{"name", UtilityAnyChar32.str()},
-                           {"type", type(Context.Char32Ty, R->getLocation())}}}},
+                           {"type", type(Context.Char32Ty, R->getLocation())}},
+              json::Object{{"name", UtilityAnyVoidPointer.str()},
+                           {"type", type(Context.VoidPtrTy, R->getLocation())}},
+              json::Object{{"name", UtilityAnyConstVoidPointer.str()},
+                           {"type", type(Context.getPointerType(Context.VoidTy.withConst()),
+                                         R->getLocation())}},
+              json::Object{{"name", UtilityAnyNullPointer.str()},
+                           {"type", type(Context.NullPtrTy, R->getLocation())}}}},
           {"layout", json::Object{
               {"size_bits", Context.getTypeSize(StorageType)},
               {"abi_align_bits", Context.getTypeAlign(StorageType)},
@@ -32120,7 +32127,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                   uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
                   uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
                   uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
-                  uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0)}},
+                  uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
+                  uint64_t(0), uint64_t(0), uint64_t(0)}},
               {"union", true}}}});
       RecordData.push_back(json::Object{
           {"id", name(R)}, {"loc", loc(R->getLocation())},

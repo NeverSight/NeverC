@@ -8729,6 +8729,16 @@ std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
   if (Context.hasSameType(Type, Context.Char32Ty) &&
       Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32)
     return UtilityAnyScalar{17, UtilityAnyChar32};
+  const auto ConstVoidPointer = Context.getPointerType(Context.VoidTy.withConst());
+  if ((Context.hasSameType(Type, Context.VoidPtrTy) || Context.hasSameType(Type, ConstVoidPointer) ||
+       Context.hasSameType(Type, Context.NullPtrTy)) &&
+      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64) {
+    if (Context.hasSameType(Type, Context.VoidPtrTy))
+      return UtilityAnyScalar{18, UtilityAnyVoidPointer};
+    if (Context.hasSameType(Type, ConstVoidPointer))
+      return UtilityAnyScalar{19, UtilityAnyConstVoidPointer};
+    return UtilityAnyScalar{20, UtilityAnyNullPointer};
+  }
   return std::nullopt;
 }
 
