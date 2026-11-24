@@ -124002,6 +124002,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedOrderedSetListAssignment(S, SM, Call, Context)) return UtilityOperation::OrderedSetListAssign;
   if (approvedOrderedSetRangeInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertRange;
   if (approvedOrderedSetIteratorCall(S, SM, Call, Context)) return UtilityOperation::OrderedSetIterator;
+  if (approvedOrderedValueComparatorFactory(S, SM, Call, Context)) return UtilityOperation::OrderedMapValueComparator;
+  if (approvedOrderedValueComparatorCall(S, SM, Call, Context)) return UtilityOperation::OrderedMapCompareValues;
   if (approvedOrderedSetMutation(S, SM, Call, Context)) return UtilityOperation::OrderedSetMutation;
   if (approvedOrderedSetSwap(S, SM, Call, Context)) return UtilityOperation::OrderedSetSwap;
   if (approvedOrderedSetComparison(S, SM, Call, Context)) return UtilityOperation::OrderedSetCompare;
@@ -140347,9 +140349,9 @@ bool approvedUtilityUnorderedTableDefaultArgument(
 }
 
 static const CXXConstructExpr *associativePolicyCopy(
-    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const State &S, const SourceManager &SM, const Expr *Value,
     QualType Type, const ASTContext &Context) {
-  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(orderedReturn(Method)));
+  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Value));
   const auto Construction = functionalObjectConstruction(S, SM, Copy, Type, Context);
   if (Construction != FunctionalObjectConstruction::CopyOrMove ||
       !Copy->getConstructor()->isCopyConstructor() ||
@@ -140385,6 +140387,36 @@ static const CXXRecordDecl *orderedMapComparatorWrapper(
   return Record;
 }
 
+static bool approvedOrderedComparatorRead(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Owner,
+    const CXXMemberCallExpr *Read, QualType Type, bool Map, const ASTContext &Context) {
+  QualType StoredType = Type;
+  if (Map) {
+    const auto *Wrapper = orderedMapComparatorWrapper(S, SM, Read, Type, Context);
+    if (!Wrapper)
+      return false;
+    StoredType = Context.getRecordType(Wrapper);
+    Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Read->getImplicitObjectArgument()));
+  }
+
+  const auto *Storage = orderedTreeField(Owner, "__tree_");
+  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Selected = Tree ? orderedTreeMethod(S, SM, Read, Tree, "value_comp") : nullptr;
+  const auto *Receiver = Selected
+      ? dyn_cast_or_null<MemberExpr>(orderedExpression(Read->getImplicitObjectArgument())) : nullptr;
+  const auto *Comparator = Tree ? orderedTreeField(Tree, "__value_comp_") : nullptr;
+  const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Selected)));
+  if (!Receiver || Receiver->getMemberDecl() != Storage ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) ||
+      !Selected->isConst() ||
+      !Context.hasSameType(Selected->getReturnType(), Context.getLValueReferenceType(StoredType.withConst())) ||
+      !Comparator || !Context.hasSameType(Comparator->getType(), StoredType) ||
+      !Value || Value->getMemberDecl() != Comparator ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())))
+    return false;
+  return true;
+}
+
 static std::optional<FunctionalObjectRecord> approvedOrderedComparatorCopy(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
@@ -140415,33 +140447,141 @@ static std::optional<FunctionalObjectRecord> approvedOrderedComparatorCopy(
   if (!Policy || !Context.hasSameType(Type, Expected) ||
       !Context.hasSameType(Type, Method->getReturnType()))
     return std::nullopt;
-  const auto *Copy = associativePolicyCopy(S, SM, Method, Type, Context);
+  const auto *Copy = associativePolicyCopy(S, SM, orderedReturn(Method), Type, Context);
   const auto *Read = Copy ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Copy->getArg(0))) : nullptr;
-  QualType StoredType = Type;
-  if (Map) {
-    const auto *Wrapper = orderedMapComparatorWrapper(S, SM, Read, Type, Context);
-    if (!Wrapper)
-      return std::nullopt;
-    StoredType = Context.getRecordType(Wrapper);
-    Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Read->getImplicitObjectArgument()));
-  }
+  return approvedOrderedComparatorRead(S, SM, Owner, Read, Type, Map, Context)
+      ? Policy : std::nullopt;
+}
 
-  const auto *Storage = orderedTreeField(Owner, "__tree_");
-  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
-  const auto *Selected = Tree ? orderedTreeMethod(S, SM, Read, Tree, "value_comp") : nullptr;
-  const auto *Receiver = Selected
-      ? dyn_cast_or_null<MemberExpr>(orderedExpression(Read->getImplicitObjectArgument())) : nullptr;
-  const auto *Comparator = Tree ? orderedTreeField(Tree, "__value_comp_") : nullptr;
-  const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Selected)));
-  if (!Receiver || Receiver->getMemberDecl() != Storage ||
-      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) ||
-      !Selected->isConst() ||
-      !Context.hasSameType(Selected->getReturnType(), Context.getLValueReferenceType(StoredType.withConst())) ||
-      !Comparator || !Context.hasSameType(Comparator->getType(), StoredType) ||
-      !Value || Value->getMemberDecl() != Comparator ||
-      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())))
+std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier() || Record->getName() != "value_compare")
     return std::nullopt;
-  return Policy;
+  Record = Record->getDefinition();
+  const auto *Owner = Record ? dyn_cast<CXXRecordDecl>(Record->getDeclContext()) : nullptr;
+  if (!Owner || !Owner->getIdentifier() || associativeContainerHeader(Owner->getName()) != "map" ||
+      !approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
+      !Record->isStandardLayout() || !Record->isTriviallyCopyable() || !Record->hasTrivialDestructor() ||
+      Record->getNumBases() != 1 || Record->bases_begin()->isVirtual() || Record->getNumVBases())
+    return std::nullopt;
+  for (const auto *Decl : Record->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Decl) ||
+        !cstddefOrigin(S, SM, Decl->getLocation(), "libcxx", "map"))
+      return std::nullopt;
+  const auto *Field = orderedTreeField(Record, "comp");
+  const auto Base = Record->bases_begin()->getType();
+  const auto *BaseRecord = Base->getAsCXXRecordDecl();
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs();
+  if (!Field || Field->isMutable() || Field->isBitField() || Field->getAccess() != AS_protected ||
+      !associativeStorageDeclaration(S, SM, Field, true) ||
+      !Context.hasSameType(Field->getType(), Arguments.get(2).getAsType()) ||
+      !approvedFunctionalObjectRecord(S, SM, Field->getType()->getAsCXXRecordDecl(), Context) ||
+      !BaseRecord || !BaseRecord->getIdentifier() || !BaseRecord->getName().starts_with("__binary_function") ||
+      !orderedTrivialPolicy(S, SM, Base) || Layout.getFieldCount() != 1 ||
+      Layout.getFieldOffset(Field->getFieldIndex()) || !Layout.getBaseClassOffset(BaseRecord).isZero() ||
+      Layout.getSize().getQuantity() != 1 || Layout.getAlignment().getQuantity() != 1)
+    return std::nullopt;
+  const auto *Allocator = cast<ClassTemplateSpecializationDecl>(Arguments.get(3).getAsType()->getAsCXXRecordDecl());
+  const auto Pair = approvedUtilityPairRecord(S, SM,
+      Allocator->getTemplateArgs().get(0).getAsType()->getAsCXXRecordDecl(), Context);
+  if (!Pair || !Context.hasSameType(Pair->First->getType(), Context.IntTy.withConst()) ||
+      !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
+    return std::nullopt;
+  return UtilityOrderedValueComparator{Record, Owner, Field, *Pair};
+}
+
+const MemberExpr *approvedOrderedValueComparatorFactory(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "value_comp" ||
+      !Method->isConst() || Method->isStatic() || Method->isVirtual() || Method->isVolatile() ||
+      Method->getNumParams() || Call->getNumArgs() || !Call->isPRValue() ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return nullptr;
+  const auto Info = approvedOrderedValueComparatorRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Member);
+  if (!Info || Receiver.isNull() || !S.owns(SM, Member->getMemberLoc()) ||
+      Method->getParent()->getCanonicalDecl() != Info->Owner->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Info->Owner)) ||
+      !orderedPinnedFunction(S, SM, Method, "map"))
+    return nullptr;
+  const auto *Aggregate = orderedExpression(orderedReturn(Method));
+  if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Aggregate)) {
+    if (Cast->getCastKind() != CK_ConstructorConversion) return nullptr;
+    Aggregate = orderedExpression(Cast->getSubExpr());
+  }
+  const auto *Build = dyn_cast_or_null<CXXConstructExpr>(Aggregate);
+  const auto *Ctor = Build ? Build->getConstructor() : nullptr;
+  const auto Type = Info->Comparator->getType();
+  const auto *Body = Ctor ? dyn_cast_or_null<CompoundStmt>(Ctor->getBody()) : nullptr;
+  if (!Body || !Body->body_empty() || Ctor->getNumParams() != 1 || Build->getNumArgs() != 1 ||
+      Ctor->getParent()->getCanonicalDecl() != Info->Record->getCanonicalDecl() ||
+      Ctor->getAccess() != AS_protected || !orderedPinnedFunction(S, SM, Ctor, "map") ||
+      !Context.hasSameType(Ctor->getParamDecl(0)->getType(), Type))
+    return nullptr;
+  bool Checked = false;
+  for (const auto *Init : Ctor->inits()) {
+    if (Init->isMemberInitializer()) {
+      if (Init->getMember() != Info->Comparator ||
+          !orderedPolicyInit(S, SM, Init->getInit(), Ctor))
+        return nullptr;
+      Checked = true;
+    } else if (!Init->isBaseInitializer() || !orderedPolicyInit(S, SM, Init->getInit(), nullptr)) {
+      return nullptr;
+    }
+  }
+  const auto *Copy = associativePolicyCopy(S, SM, Build->getArg(0), Type, Context);
+  const auto *Read = Copy ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Copy->getArg(0))) : nullptr;
+  return Checked && approvedOrderedComparatorRead(S, SM, Info->Owner, Read, Type, true, Context)
+      ? Member : nullptr;
+}
+
+std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Operator ? dyn_cast_or_null<CXXMethodDecl>(Operator->getDirectCallee()) : nullptr;
+  if (!Method || Operator->getOperator() != OO_Call || Method->getNumParams() != 2 ||
+      Operator->getNumArgs() != 3 || !Method->isConst() || Method->isStatic() ||
+      Method->isVirtual() || Method->isVolatile() || !Call->isPRValue() ||
+      !Context.hasSameType(Method->getReturnType(), Context.BoolTy) ||
+      !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      !S.owns(SM, Operator->getOperatorLoc()) || !orderedPinnedFunction(S, SM, Method, "map"))
+    return std::nullopt;
+  const auto Info = approvedOrderedValueComparatorRecord(S, SM, Method->getParent(), Context);
+  const auto Receiver = Call->getArg(0)->getType();
+  if (!Info || Receiver.isVolatileQualified() || Receiver.isRestrictQualified() ||
+      Receiver.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Info->Record)))
+    return std::nullopt;
+  const auto PairType = Context.getRecordType(Info->Pair.Record);
+  const auto Parameter = Context.getLValueReferenceType(PairType.withConst());
+  const auto *Invoke = dyn_cast_or_null<CXXOperatorCallExpr>(orderedExpression(orderedReturn(Method)));
+  const auto *Compare = Invoke ? dyn_cast_or_null<CXXMethodDecl>(Invoke->getDirectCallee()) : nullptr;
+  if (!Compare || Invoke->getOperator() != OO_Call || Compare->getNumParams() != 2 ||
+      Invoke->getNumArgs() != 3 ||
+      !Context.hasSameType(Context.getRecordType(Compare->getParent()), Info->Comparator->getType()) ||
+      !orderedPinnedFunction(S, SM, Compare, "__functional/operations.h"))
+    return std::nullopt;
+  const auto *Field = dyn_cast_or_null<MemberExpr>(orderedExpression(Invoke->getArg(0)));
+  const auto *Less = dyn_cast_or_null<BinaryOperator>(orderedExpression(orderedReturn(Compare)));
+  if (!Field || Field->getMemberDecl() != Info->Comparator ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())) ||
+      !Less || Less->getOpcode() != BO_LT ||
+      !orderedParameter(Less->getLHS(), Compare->getParamDecl(0)) ||
+      !orderedParameter(Less->getRHS(), Compare->getParamDecl(1)))
+    return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Key = dyn_cast_or_null<MemberExpr>(orderedExpression(Invoke->getArg(I + 1)));
+    const auto *Argument = Method->getParamDecl(I);
+    if (!Key || Key->getMemberDecl() != Info->Pair.First ||
+        !orderedParameter(Key->getBase(), Argument) || !Context.hasSameType(Argument->getType(), Parameter) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(), PairType))
+      return std::nullopt;
+  }
+  return Info->Pair;
 }
 
 static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
@@ -140479,7 +140619,7 @@ static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
       !Context.hasSameType(Type, Method->getReturnType()))
     return std::nullopt;
 
-  const auto *Copy = associativePolicyCopy(S, SM, Method, Type, Context);
+  const auto *Copy = associativePolicyCopy(S, SM, orderedReturn(Method), Type, Context);
   if (!Copy)
     return std::nullopt;
 

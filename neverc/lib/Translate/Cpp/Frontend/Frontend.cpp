@@ -13843,7 +13843,8 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
             return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
-      } else if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
+      } else if (approvedFunctionalObjectRecord(S, Sources, D, Context) ||
+                 approvedOrderedValueComparatorRecord(S, Sources, D, Context)) {
         if (!requireFunctionalObject(D, L, Depth + 1))
           return {};
       } else if (const auto NotFn = functionalNotFnLayout(S, Sources, D, Context)) {
@@ -14675,7 +14676,10 @@ bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
   }
   const auto Object =
       approvedFunctionalObjectRecord(S, Sources, Record, Context);
-  if (!Object) {
+  const auto ValueComparator = Object ? std::nullopt
+      : approvedOrderedValueComparatorRecord(S, Sources, Record, Context);
+  const auto *Definition = Object ? Object->Record : ValueComparator ? ValueComparator->Record : nullptr;
+  if (!Definition) {
     reject(Location, "standard library record",
            "Only pinned one-byte arithmetic, bitwise, comparison, logical, "
            "integral, floating-point, enum, object-pointer and null-pointer "
@@ -14685,10 +14689,10 @@ bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
            "TR0203");
     return false;
   }
-  const auto *Canonical = Object->Record->getCanonicalDecl();
+  const auto *Canonical = Definition->getCanonicalDecl();
   if (!RequiredFunctionalObjects.insert(Canonical).second)
     return true;
-  Records.push_back(const_cast<CXXRecordDecl *>(Object->Record));
+  Records.push_back(const_cast<CXXRecordDecl *>(Definition));
   return true;
 }
 
@@ -14755,7 +14759,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
-    if (approvedFunctionalObjectRecord(S, Sources, R, Context)) {
+    if (approvedFunctionalObjectRecord(S, Sources, R, Context) ||
+        approvedOrderedValueComparatorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto NotFn = functionalNotFnLayout(S, Sources, R, Context)) {
       Args.push_back(zero(NotFn->CallableType, L));
@@ -15333,7 +15338,8 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
                                 llvm::APInt(64, Tuple->StoragePaddingBytes),
                                 nullptr, ArraySizeModifier::Normal, 0),
                             L));
-    } else if (approvedFunctionalObjectRecord(S, Sources, Record, Context)) {
+    } else if (approvedFunctionalObjectRecord(S, Sources, Record, Context) ||
+        approvedOrderedValueComparatorRecord(S, Sources, Record, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Bitset = approvedUtilityBitsetRecord(S, Sources, Record, Context)) {
       if (!Bitset->Words) {
@@ -31780,8 +31786,9 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityDefaultDeleteRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityAllocator =
         approvedUtilityAllocatorRecord(A.S, A.Sources, R, A.Context);
-    const auto FunctionalObject =
-        approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context);
+    const auto ValueComparator = approvedOrderedValueComparatorRecord(A.S, A.Sources, R, A.Context);
+    const bool FunctionalObject =
+        approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context).has_value() || ValueComparator.has_value();
     const auto FunctionalReference =
         approvedFunctionalReferenceRecord(A.S, A.Sources, R, A.Context);
     const auto NotFn = functionalNotFnLayout(A.S, A.Sources, R, A.Context);
@@ -31898,6 +31905,8 @@ static void orderCoreV2Records(Adapter &A) {
                                    Bind->Storage.BoundArguments->getLocation());
     } else if (NotFn) {
       DependencyTypes.emplace_back(NotFn->CallableType, R->getLocation());
+    } else if (ValueComparator) {
+      DependencyTypes.emplace_back(A.Context.UnsignedCharTy, R->getLocation());
     } else if (FunctionalReference) {
       DependencyTypes.emplace_back(FunctionalReference->PointerType,
                                    FunctionalReference->Record->getLocation());
@@ -32203,9 +32212,9 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     const auto UtilityAllocator =
         S.coreV2() ? approvedUtilityAllocatorRecord(S, Sources, R, Context)
                    : std::optional<UtilityAllocatorRecord>();
-    const auto FunctionalObject =
-        S.coreV2() ? approvedFunctionalObjectRecord(S, Sources, R, Context)
-                   : std::optional<FunctionalObjectRecord>();
+    const bool FunctionalObject = S.coreV2() &&
+        (approvedFunctionalObjectRecord(S, Sources, R, Context) ||
+         approvedOrderedValueComparatorRecord(S, Sources, R, Context));
     const auto FunctionalReference =
         S.coreV2() ? approvedFunctionalReferenceRecord(S, Sources, R, Context)
                    : std::optional<FunctionalReferenceRecord>();

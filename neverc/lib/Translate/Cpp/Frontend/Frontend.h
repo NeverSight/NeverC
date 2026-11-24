@@ -1310,6 +1310,8 @@ enum class UtilityOperation {
   ForwardList,
   List,
   OrderedContainerObserver,
+  OrderedMapValueComparator,
+  OrderedMapCompareValues,
   OrderedSetCount,
   OrderedMapSubscript,
   OrderedSetCopyAssign,
@@ -4766,6 +4768,21 @@ bool approvedOrderedContainerDestructor(const State &S,
 std::optional<UtilityContainerObserver> approvedOrderedContainerObserver(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityOrderedValueComparator {
+  const clang::CXXRecordDecl *Record, *Owner;
+  const clang::FieldDecl *Comparator;
+  UtilityPairRecord Pair;
+};
+std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorRecord(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+const clang::MemberExpr *approvedOrderedValueComparatorFactory(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 clang::QualType approvedOrderedContainerObserverQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
