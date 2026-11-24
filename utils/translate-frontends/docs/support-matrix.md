@@ -927,3 +927,10 @@ The combined compiler passes 5,136 source requests across six 64-bit targets
 and 960 formal tests on Linux x86-64. All 583 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Default integer ordered list assignment and set emplacement
+
+The combined compiler passes 5,190 source requests across six 64-bit targets
+and 969 formal tests on Linux x86-64. All 590 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

@@ -408,5 +408,5 @@
     "any-empty-runtime": "0bb71d358ea25b5e0ae51a6353aff89c50f729178cb2f0aece8f990c247da948"
   },
   "native_reference_authentication_sha256": "6006bad24e84bf02aaeb4b4883c0265f08c5ad6b03204f03e922334e591bc501",
-  "source_proof_sha256": "846480328fcaedaf1396be81ed7db0a522a0c6f42ef19cd0af7f2ef5d7518ef5"
+  "source_proof_sha256": "52f07c91054c21abac9e600a4f4f96ec564f80f96354dccb05b5ed284af3e388"
 }

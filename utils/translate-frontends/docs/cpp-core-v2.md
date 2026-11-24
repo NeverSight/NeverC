@@ -18413,3 +18413,11 @@ empty sentinel. The supported range forms use the default comparator. Unique
 containers retain the first stored value for a key. Duplicate-key containers
 retain input order within an equivalent-key group. Checked map insertion also
 accepts a nonconst lvalue of its exact `value_type`.
+
+## Default integer ordered list assignment and set emplacement
+
+Ordered integer sets and maps and their duplicate-key counterparts support
+assignment from an initializer list of the exact value type. The assignment
+replaces the previous sequence and retains input order within equivalent-key
+groups in duplicate-key containers. Integer sets and multisets also support
+emplacing a value with no arguments or one integer expression.

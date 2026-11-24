@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_list_assignment_and_emplace_registered = cls.registered
+        cls.ordered_list_assignment_and_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_list_assignment_and_emplace_original = cls.adapter.restore_original_gtests(cls.ordered_list_assignment_and_emplace_registered,
+                                                                        cls.ordered_list_assignment_and_emplace_suffix)
+        cls.registered = cls.adapter.restore_ordered_list_assignment_and_emplace_history(cls.ordered_list_assignment_and_emplace_registered)
         cls.ordered_move_list_range_registered = cls.registered
         cls.ordered_move_list_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_move_list_range_original = cls.adapter.restore_original_gtests(cls.ordered_move_list_range_registered,
@@ -3360,6 +3365,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_move_list_range_history(self.ordered_move_list_range_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_move_list_range_registered, self.ordered_move_list_range_suffix + b' ')
+
+
+    def test_ordered_list_assignment_and_emplace_retains_published_bodies(self):
+        self.assertEqual(self.ordered_list_assignment_and_emplace_original + self.ordered_list_assignment_and_emplace_suffix, self.ordered_list_assignment_and_emplace_registered)
+        self.assertEqual(self.adapter.restore_ordered_list_assignment_and_emplace_history(self.ordered_list_assignment_and_emplace_original),
+                         self.ordered_move_list_range_original)
+        output, evidence = self.extractor.extract(self.ordered_list_assignment_and_emplace_original, ['TranslateTest.CoreV2OrderedMapListAssignmentReusesOnlySuccessfulUniqueInsertionsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapListAssignmentKeepsTheNewEquivalentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetListAssignmentPreservesOperatorAndMemberEvaluationOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetEmptyListAssignmentReusesAnEmptyOwnerAfterClearRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEmplaceExactIntReusesTheExistingKeyWithoutAllocatingRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEmplaceDefaultDestroysARejectedZeroNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetEmplaceDefaultAndRvaluePreserveEquivalentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapListAssignmentCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8757)
+        self.assertEqual(evidence['selected_count'], 9)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-list-assignment-reuses-only-successful-unique-insertions', output)
+        self.assertIn(b'ordered-set-emplace-converting-key-remains-unsupported', output)
+
+    def test_ordered_list_assignment_and_emplace_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_list_assignment_and_emplace_history(self.ordered_list_assignment_and_emplace_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_list_assignment_and_emplace_registered, self.ordered_list_assignment_and_emplace_suffix + b' ')
 
 
 if __name__ == '__main__':

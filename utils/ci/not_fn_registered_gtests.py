@@ -2386,6 +2386,30 @@ def restore_ordered_move_list_range_history(source):
     return restored
 
 
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_REGISTERED_SHA256 = '045b8bf332dc81fa11c018ca5e0360fe683be8e2808d3e61e89dac547bce4905'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256 = '7f999b85b761decd27f7e336a4ae778552062c84936b797d0d834c864a31f26a'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_PREVIOUS_REGISTERED_SHA256 = 'bb12ea1163040adf934b63874bf20669b3cbaee8e970fcf8ccf2c56e8ccb723a'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_PREVIOUS_MAINTAINED_SHA256 = '7ba291b819182fba645dd7581f92b0a6629deabd4d7da9975b1a7b2da83c7abd'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_ADDITIONS_SHA256 = 'fc420c72f89f33c6222ae46a66d457de5d5ae0c2f96377998d993948be5ff9c2'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SIZE = 20462171
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_ADDITIONS_SIZE = 12408
+
+
+def restore_ordered_list_assignment_and_emplace_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_REGISTERED_SHA256, R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_REGISTERED_SHA256
+             else R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2910,6 +2934,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
