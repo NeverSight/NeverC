@@ -2742,6 +2742,36 @@ def restore_associative_cursor_and_value_history(source):
     return restored
 
 
+R19_VARIANT_COMPARISONS_REGISTERED_SHA256 = 'f5b5204fe9f8d1cd6a7c799247f7d597f7d5f0b2b359777fdb734b5d2d3a533e'
+R19_VARIANT_COMPARISONS_MAINTAINED_SHA256 = '285343a6f104bdf7b274c691d605bf033b80e13d36a5e2e937536cff7aa2fa9e'
+R19_VARIANT_COMPARISONS_PREVIOUS_REGISTERED_SHA256 = '9a53740d79d62df82fe3fd1efbb81b4e479555d5c6c41815036f82a5e4e844d3'
+R19_VARIANT_COMPARISONS_PREVIOUS_MAINTAINED_SHA256 = 'fd6daaebffdceb8456e0d0ad6a42e754ac6e98c4a9fa9ec310991260f1f13a61'
+R19_VARIANT_COMPARISONS_ADDITIONS_SHA256 = '3592bcebc7d0fe558bb5d8538032dcf0bf4beda31a7d40b1efaae330e820a090'
+R19_VARIANT_COMPARISONS_MAINTAINED_SIZE = 20722709
+R19_VARIANT_COMPARISONS_ADDITIONS_SIZE = 12731
+
+
+def restore_variant_comparisons_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_COMPARISONS_REGISTERED_SHA256, R19_VARIANT_COMPARISONS_MAINTAINED_SHA256}
+    stop = R19_VARIANT_COMPARISONS_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_COMPARISONS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_COMPARISONS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantOrderingAcceptsTemporaryOperand) {\n  const auto Source = tmpFile("variant-ordering-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nbool compare(const Value& a) { return a <= Value(3); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantOrderingAcceptsTemporaryOperand) {\n  const auto Source = tmpFile("variant-ordering-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nbool compare(const Value& a) { return a <= Value(3); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantOrderingTemporaryOperandRejected) {\n  const auto Source = tmpFile("variant-ordering-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nbool compare(const Value& a) { return a <= Value(3); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantOrderingAcceptsFloatingAlternative) {\n  const auto Source = tmpFile("variant-ordering-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantOrderingAcceptsFloatingAlternative) {\n  const auto Source = tmpFile("variant-ordering-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantOrderingFloatingAlternativeRejected) {\n  const auto Source = tmpFile("variant-ordering-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantEqualityAcceptsFloatingAlternative) {\n  const auto Source = tmpFile("variant-equality-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantEqualityAcceptsFloatingAlternative) {\n  const auto Source = tmpFile("variant-equality-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantEqualityFloatingAlternativeRejected) {\n  const auto Source = tmpFile("variant-equality-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_COMPARISONS_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_COMPARISONS_REGISTERED_SHA256
+             else R19_VARIANT_COMPARISONS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -3343,6 +3373,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ASSOCIATIVE_CURSOR_AND_VALUE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_COMPARISONS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_COMPARISONS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_COMPARISONS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

@@ -23,6 +23,15 @@
       "source_sha256": "6a7b9219c593a5a77cf13ebf7cf62c2a8a3396fa0c7580dda03bd9d44c8368c9",
       "original_case_source_sha256": "6a7b9219c593a5a77cf13ebf7cf62c2a8a3396fa0c7580dda03bd9d44c8368c9",
       "gtest_body_sha256": "e41dedb052fc4138e664e3160a38e6539bd2c78e245744771ea4144e2ca14be0"
+    },
+    {
+      "name": "variant-equality-floating-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantEqualityAcceptsFloatingAlternative",
+      "expected": "accept",
+      "source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
+      "original_case_source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
+      "gtest_body_sha256": "059042e958f5d6100380e890a48d32642c298255fa149145dc44e9ba2659b03f",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -41,14 +50,6 @@
       "source_sha256": "18e0e4256885ae3a97113d979cb22e9aca254af63169deca9aceafe5693bdecd",
       "original_case_source_sha256": "18e0e4256885ae3a97113d979cb22e9aca254af63169deca9aceafe5693bdecd",
       "gtest_body_sha256": "38ac5a5b866ce39bab4641b9512161940885dd34b12896e527fcc3b306d61d17"
-    },
-    {
-      "name": "variant-equality-floating-alternative",
-      "formal_test_name": "TranslateTest.CoreV2VariantEqualityFloatingAlternativeRejected",
-      "expected": "reject",
-      "source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
-      "original_case_source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
-      "gtest_body_sha256": "5f5f705aac9464cd43880e0d6c8e1f2a75cf45726c063c2d26e95143fcd2694e"
     }
   ],
   "source_cases": [
@@ -77,6 +78,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "variant-equality-floating-alternative",
+      "source": "#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
+      "expected": "accept",
+      "source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "variant-equality-renamed-diagonal-visitor",
       "source": "#define __visit_value_at changed_diagonal_visitor\n#include <variant>\n#undef __visit_value_at\nusing Value = std::variant<short, int>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
       "expected": "reject",
@@ -91,23 +100,15 @@
       "source_sha256": "18e0e4256885ae3a97113d979cb22e9aca254af63169deca9aceafe5693bdecd",
       "public_header": "variant",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "variant-equality-floating-alternative",
-      "source": "#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
-      "expected": "reject",
-      "source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
-      "public_header": "variant",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
     "TranslateTest.CoreV2VariantEqualityMatchingAndDifferentLiveAlternativesRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantEqualityDuplicateTypesRetainIndexRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantEqualityAliasedOperandsEvaluateOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEqualityAcceptsFloatingAlternative",
     "TranslateTest.CoreV2VariantEqualityRenamedDiagonalVisitorRejected",
-    "TranslateTest.CoreV2VariantEqualityRenamedConversionPolicyRejected",
-    "TranslateTest.CoreV2VariantEqualityFloatingAlternativeRejected"
+    "TranslateTest.CoreV2VariantEqualityRenamedConversionPolicyRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -126,5 +127,5 @@
     "variant-equality": "334ee7f0c947e95b85726f55ae47aeda3caa5c97e157eb1047582ea0aeb778a1"
   },
   "native_reference_authentication_sha256": "4fe35865b873b190fff942a84b0f18c284084a80b8a777c7b1fb2053a61db0d3",
-  "source_proof_sha256": "7f57d82cbb91272569973ec064d194105f1096b650f29ec1f22e7ef598355394"
+  "source_proof_sha256": "f90b7122847acc179b22edb3ff01c5813f4f4a6556b4d938c9f27bfe79422c4a"
 }

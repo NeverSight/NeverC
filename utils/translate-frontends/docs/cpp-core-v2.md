@@ -18510,3 +18510,11 @@ Checked hash set pointer ranges load signed short and long elements
 before converting them to the stored integer key. Checked unordered
 maps and multimaps preserve the target field layout of scalar mapped
 values, including float, double, short, bool and unsigned long long.
+
+## Variant comparisons and monostate forwarding
+
+Checked variant relational operators compare float and double alternatives
+at their stored width, preserving NaN behavior and equality of signed
+zeros. Comparisons accept temporaries with a verified full-expression
+lifetime. Checked converting and in-place constructors and emplace accept
+std::monostate inputs and evaluate each supplied initializer once.

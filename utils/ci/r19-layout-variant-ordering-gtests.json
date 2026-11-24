@@ -23,6 +23,24 @@
       "source_sha256": "1aaeb113bcd8b2e82c3512c5280a6a251478296140743479e534a98371a23f4d",
       "original_case_source_sha256": "1aaeb113bcd8b2e82c3512c5280a6a251478296140743479e534a98371a23f4d",
       "gtest_body_sha256": "5bd68dbc87fa7e890dc3362433a6d8bd638605326345767811d8b48da767ce5c"
+    },
+    {
+      "name": "variant-ordering-floating-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantOrderingAcceptsFloatingAlternative",
+      "expected": "accept",
+      "source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
+      "original_case_source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
+      "gtest_body_sha256": "c61dce0cb109f20ae339a32ff31d27523bc3666780333abaaebc5fe10a9e1a49",
+      "source_only": true
+    },
+    {
+      "name": "variant-ordering-temporary-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantOrderingAcceptsTemporaryOperand",
+      "expected": "accept",
+      "source_sha256": "65fa3ac2a218ac7de88660ebc1ddefee7a782c40f9a6e0f802152d4874771d45",
+      "original_case_source_sha256": "65fa3ac2a218ac7de88660ebc1ddefee7a782c40f9a6e0f802152d4874771d45",
+      "gtest_body_sha256": "6cd32d1718e79ec128ab66f9c910bc6c43a780a28d7bdf924f7ed26fe5793855",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -33,22 +51,6 @@
       "source_sha256": "071750b73bb03a0e6d080200f781dbebaa56b73111b006b0817a870b4de5be98",
       "original_case_source_sha256": "071750b73bb03a0e6d080200f781dbebaa56b73111b006b0817a870b4de5be98",
       "gtest_body_sha256": "79638d031254ab90abda6e5f4d573f25ef565a6bb8af1708f9667cdde22caf86"
-    },
-    {
-      "name": "variant-ordering-temporary-operand",
-      "formal_test_name": "TranslateTest.CoreV2VariantOrderingTemporaryOperandRejected",
-      "expected": "reject",
-      "source_sha256": "65fa3ac2a218ac7de88660ebc1ddefee7a782c40f9a6e0f802152d4874771d45",
-      "original_case_source_sha256": "65fa3ac2a218ac7de88660ebc1ddefee7a782c40f9a6e0f802152d4874771d45",
-      "gtest_body_sha256": "ae0dca2a4bf7ddd2dc3aac27960f5f75e03c2c5b19a36162269d050151f32073"
-    },
-    {
-      "name": "variant-ordering-floating-alternative",
-      "formal_test_name": "TranslateTest.CoreV2VariantOrderingFloatingAlternativeRejected",
-      "expected": "reject",
-      "source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
-      "original_case_source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
-      "gtest_body_sha256": "dd8a30c3e6ec7e3588665fbfdba4a078abe7f03ffa39e0289aef7576c303177f"
     }
   ],
   "source_cases": [
@@ -77,26 +79,26 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "variant-ordering-renamed-policy",
-      "source": "#define less altered_variant_less\n#include <variant>\n#undef less\nusing Value = std::variant<short, int>;\nbool compare(const Value& a, const Value& b) { return a < b; }\n",
-      "expected": "reject",
-      "source_sha256": "071750b73bb03a0e6d080200f781dbebaa56b73111b006b0817a870b4de5be98",
+      "name": "variant-ordering-floating-alternative",
+      "source": "#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n",
+      "expected": "accept",
+      "source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
       "public_header": "variant",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "variant-ordering-temporary-operand",
       "source": "#include <variant>\nusing Value = std::variant<short, int>;\nbool compare(const Value& a) { return a <= Value(3); }\n",
-      "expected": "reject",
+      "expected": "accept",
       "source_sha256": "65fa3ac2a218ac7de88660ebc1ddefee7a782c40f9a6e0f802152d4874771d45",
       "public_header": "variant",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
-      "name": "variant-ordering-floating-alternative",
-      "source": "#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n",
+      "name": "variant-ordering-renamed-policy",
+      "source": "#define less altered_variant_less\n#include <variant>\n#undef less\nusing Value = std::variant<short, int>;\nbool compare(const Value& a, const Value& b) { return a < b; }\n",
       "expected": "reject",
-      "source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
+      "source_sha256": "071750b73bb03a0e6d080200f781dbebaa56b73111b006b0817a870b4de5be98",
       "public_header": "variant",
       "kind": "source-body-guard"
     }
@@ -105,9 +107,9 @@
     "TranslateTest.CoreV2VariantOrderingIndexBeforeValueRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantOrderingSignedValuesAndDuplicateTypesRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantOrderingOnceOnlyConstOperandsRunAtBothOptimizations",
-    "TranslateTest.CoreV2VariantOrderingRenamedPolicyRejected",
-    "TranslateTest.CoreV2VariantOrderingTemporaryOperandRejected",
-    "TranslateTest.CoreV2VariantOrderingFloatingAlternativeRejected"
+    "TranslateTest.CoreV2VariantOrderingAcceptsFloatingAlternative",
+    "TranslateTest.CoreV2VariantOrderingAcceptsTemporaryOperand",
+    "TranslateTest.CoreV2VariantOrderingRenamedPolicyRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -126,5 +128,5 @@
     "variant-ordering": "1f8eaed0efc9ab7e629dc17d69896bc04b5710ebfc5adfdada4d0f576a3655a8"
   },
   "native_reference_authentication_sha256": "b5386b2eaa34e1d92fb233c24f00a4dbeec9767b4e61bbb0eccfd1cc5250ea5a",
-  "source_proof_sha256": "7f57d82cbb91272569973ec064d194105f1096b650f29ec1f22e7ef598355394"
+  "source_proof_sha256": "f90b7122847acc179b22edb3ff01c5813f4f4a6556b4d938c9f27bfe79422c4a"
 }
