@@ -28157,12 +28157,24 @@ class FunctionLowering {
       label(Mapped, L);
       auto AValue = snapshot(nodeFieldAt(First, Info.MappedValueType, Info.MappedOffsetBytes, L), L);
       auto BValue = snapshot(nodeFieldAt(Second, Info.MappedValueType, Info.MappedOffsetBytes, L), L);
-      const auto OrderValues = labelName();
-      branch(binary("==", AValue, BValue, "bool", L), Advance, OrderValues, L);
-      label(OrderValues, L);
-      if (!Equality)
+      if (Equality) {
+        branch(binary("==", std::move(AValue), std::move(BValue), "bool", L), Advance, Done, L);
+      } else if (Info.MappedValueType->isRealFloatingType()) {
+        // Lexicographical ordering advances if neither floating value is less.
+        const auto Less = labelName(), Reverse = labelName();
+        branch(binary("<", AValue, BValue, "bool", L), Less, Reverse, L);
+        label(Less, L);
+        assign(Result, boolean(true, L), L);
+        jump(Done, L);
+        label(Reverse, L);
+        branch(binary("<", std::move(BValue), std::move(AValue), "bool", L), Done, Advance, L);
+      } else {
+        const auto OrderValues = labelName();
+        branch(binary("==", AValue, BValue, "bool", L), Advance, OrderValues, L);
+        label(OrderValues, L);
         assign(Result, binary("<", std::move(AValue), std::move(BValue), "bool", L), L);
-      jump(Done, L);
+        jump(Done, L);
+      }
     }
     label(Advance, L);
     assign(First, stepOrderedIterator(First, true, L), L);
