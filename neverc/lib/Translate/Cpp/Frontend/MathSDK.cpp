@@ -10380,17 +10380,44 @@ static bool variantVisitZeroMatrix(const State &S, const SourceManager &SM,
          variantForwardedCapture(S, SM, Forward, Capture, Context);
 }
 
+static const Expr *variantVisitMoveSource(const State &S, const SourceManager &SM,
+    const Expr *Operand, const ASTContext &Context) {
+  const auto *Call = variantVisitCall(Operand);
+  const auto *Move = Call && Call->getNumArgs() == 1 ? variantVisitDefinition(
+      S, SM, Call->getDirectCallee(), "move", 1, {}, "__utility/move.h") : nullptr;
+  if (!Move || !Move->getReturnType()->isRValueReferenceType())
+    return nullptr;
+  const auto *Input = Move->getParamDecl(0);
+  const auto Type = Input->getType();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Move->getBody());
+  const auto *AliasDecl = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
+  const auto *Alias = AliasDecl && AliasDecl->isSingleDecl()
+      ? dyn_cast<TypeAliasDecl>(AliasDecl->getSingleDecl()) : nullptr;
+  const auto *Return = Alias ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  const auto *Result = Return ? Return->getRetValue() : nullptr;
+  const auto *Cast = Result ? dyn_cast<CXXStaticCastExpr>(Result->IgnoreParenImpCasts()) : nullptr;
+  if (!Type->isLValueReferenceType() || !Alias || !Cast || Cast->getCastKind() != CK_NoOp ||
+      !Context.hasSameType(Alias->getUnderlyingType(), Type.getNonReferenceType()) ||
+      !Context.hasSameType(Cast->getTypeAsWritten(), Move->getReturnType()) ||
+      !Context.hasSameType(Type.getNonReferenceType(), Move->getReturnType().getNonReferenceType()) ||
+      !variantParameter(Cast->getSubExpr(), Input))
+    return nullptr;
+  return Call->getArg(0);
+}
+
 static const FunctionDecl *variantVisitAsVariant(const State &S, const SourceManager &SM,
     const CallExpr *Call, const UtilityVariantRecord &V, const ASTContext &Context) {
   const auto *F = Call && Call->getNumArgs() == 1 ? variantVisitDefinition(
       S, SM, Call->getDirectCallee(), "__as_variant", 1) : nullptr;
   const auto *Owner = F ? F->getReturnType().getNonReferenceType()->getAsCXXRecordDecl() : nullptr;
-  if (!F || !F->getReturnType()->isLValueReferenceType() ||
+  if (!F || !F->getReturnType()->isReferenceType() ||
       !Context.hasSameType(F->getReturnType(), F->getParamDecl(0)->getType()) ||
-      !Owner || Owner->getCanonicalDecl() != V.Record->getCanonicalDecl() ||
-      !variantParameter(variantReturned(F), F->getParamDecl(0)))
+      !Owner || Owner->getCanonicalDecl() != V.Record->getCanonicalDecl())
     return nullptr;
-  return F;
+  const auto *Result = variantReturned(F);
+  if (F->getReturnType()->isRValueReferenceType())
+    Result = variantVisitMoveSource(S, SM, Result, Context);
+  return variantParameter(Result, F->getParamDecl(0)) ? F : nullptr;
 }
 
 static bool variantVisitValuelessTest(const State &S, const SourceManager &SM,
@@ -10562,7 +10589,7 @@ static bool variantVisitParameter(const State &S, const SourceManager &SM,
 
 static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APValue &Entry,
     const FieldDecl *Capture, llvm::ArrayRef<UtilityVariantRecord> Variants,
-    llvm::ArrayRef<unsigned> Indices, llvm::ArrayRef<QualType> Inputs,
+    llvm::ArrayRef<unsigned> Indices, llvm::ArrayRef<QualType> Inputs, const FunctionDecl *Base,
     QualType Object, QualType Result, const CXXMethodDecl *&SelectedMethod,
     const ASTContext &Context) {
   const auto *Target = variantVisitDispatchTarget(S, SM, Entry, Capture, Variants, Indices, Context);
@@ -10598,7 +10625,9 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
         !Context.hasSameUnqualifiedType(Argument->getType(), Value))
       return false;
     if (Parameter->isLValueReferenceType()) {
-      if (!Argument->isLValue() || !Context.hasSameType(Argument->getType(), Value) ||
+      // An owned variant's payload may be passed only by value.
+      if (Base->getParamDecl(I + 1)->getType()->isRValueReferenceType() ||
+          !Argument->isLValue() || !Context.hasSameType(Argument->getType(), Value) ||
           !Context.hasSameUnqualifiedType(Alternative, Value))
         return false;
     } else if (!Context.hasSameUnqualifiedType(Alternative, Value) &&
@@ -10705,11 +10734,17 @@ static bool variantVisitMatrix(const State &S, const SourceManager &SM,
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Borrow = dyn_cast_or_null<CXXMemberCallExpr>(variantVisitCall(Indirect->getArg(I + 1)));
     const auto *AsBase = Borrow ? Borrow->getMethodDecl() : nullptr;
+    const auto *Operand = Base->getParamDecl(I + 1);
+    const bool Moved = Operand->getType()->isRValueReferenceType();
     if (!variantFunction(S, SM, AsBase, 0, false) || AsBase->getName() != "__as_base" ||
-        !AsBase->getReturnType()->isLValueReferenceType() || Borrow->getNumArgs() ||
-        !variantForward(S, SM, Borrow->getImplicitObjectArgument(), Base->getParamDecl(I + 1), Context))
+        !AsBase->getReturnType()->isReferenceType() ||
+        AsBase->getReturnType()->isRValueReferenceType() != Moved ||
+        AsBase->getRefQualifier() != (Moved ? RQ_RValue : RQ_LValue) || Borrow->getNumArgs() ||
+        !variantForward(S, SM, Borrow->getImplicitObjectArgument(), Operand, Context))
       return false;
     const auto *Self = variantReturned(AsBase);
+    if (Moved)
+      Self = variantVisitMoveSource(S, SM, Self, Context);
     const auto *Deref = Self ? dyn_cast<UnaryOperator>(Self->IgnoreParenImpCasts()) : nullptr;
     if (!Deref || Deref->getOpcode() != UO_Deref ||
         !isa<CXXThisExpr>(Deref->getSubExpr()->IgnoreParenImpCasts()))
@@ -10722,7 +10757,7 @@ static bool variantVisitMatrix(const State &S, const SourceManager &SM,
   auto CheckEntries = [&](auto &&Self, const APValue &Entry, unsigned Dimension) -> bool {
     if (Dimension == Count) {
       const CXXMethodDecl *Method = nullptr;
-      if (!variantVisitLeaf(S, SM, Entry, Capture, Variants, Indices, Inputs,
+      if (!variantVisitLeaf(S, SM, Entry, Capture, Variants, Indices, Inputs, Base,
                                     Object, Result, Method, Context))
         return false;
       Methods.push_back(Method);
@@ -10758,10 +10793,19 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
   std::size_t MatrixEntries = 1;
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Operand = Call->getArg(I + 1);
-    if (!Operand->isLValue() || Operand->getType().isVolatileQualified() ||
-        !Context.hasSameType(Visit->getParamDecl(I + 1)->getType(),
-                             Context.getLValueReferenceType(Operand->getType())))
+    const auto Value = Operand->getType();
+    if (Value.isVolatileQualified())
       return std::nullopt;
+    const auto Reference = Operand->isLValue() ? Context.getLValueReferenceType(Value)
+                                               : Context.getRValueReferenceType(Value);
+    if (!Context.hasSameType(Visit->getParamDecl(I + 1)->getType(), Reference))
+      return std::nullopt;
+    if (!Operand->isLValue()) {
+      const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Operand->IgnoreParens());
+      if (!Temporary || Temporary->getStorageDuration() != SD_FullExpression ||
+          Temporary->getExtendingDecl() || !Temporary->getSubExpr()->isPRValue())
+        return std::nullopt;
+    }
     auto V = approvedUtilityVariantRecord(S, SM, Operand->getType(), Context);
     if (!V || V->Alternatives.empty() || V->Alternatives.size() > 8 ||
         V->Alternatives.size() > MaxMatrixEntries / MatrixEntries ||
@@ -10838,6 +10882,8 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     if (!variantForward(S, SM, Value->getArg(Arg), Visit->getParamDecl(Arg), Context) ||
         !variantForward(S, SM, Alternative->getArg(Arg), VisitValue->getParamDecl(Arg), Context) ||
         !Impl || Impl->isArrow() ||
+        Impl->isXValue() != Call->getArg(Arg)->isXValue() ||
+        Impl->isXValue() != Base->getParamDecl(Arg)->getType()->isRValueReferenceType() ||
         Impl->getMemberDecl()->getCanonicalDecl() != Variants[I].Implementation->getCanonicalDecl() ||
         !variantVisitAsVariant(S, SM, AsVariant, Variants[I], Context) ||
         !variantForward(S, SM, AsVariant->getArg(0), VisitAlternative->getParamDecl(Arg), Context))
