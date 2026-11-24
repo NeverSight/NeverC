@@ -7464,6 +7464,23 @@ static bool variantObjectPointerToVoid(QualType From, QualType To) {
          (!Pointee.isConstQualified() || Destination.isConstQualified());
 }
 
+static bool variantValuePreservingIntegerConversion(const ASTContext &Context,
+                                                     QualType From, QualType To) {
+  if (!From->getAs<BuiltinType>() || !To->getAs<BuiltinType>() ||
+      !From->isIntegerType() || !To->isIntegerType() || To->isBooleanType() ||
+      From.isVolatileQualified() || To.isVolatileQualified() ||
+      From.getAddressSpace() != LangAS::Default || To.getAddressSpace() != LangAS::Default ||
+      !utilityScalar(Context, From) || !utilityScalar(Context, To))
+    return false;
+  const auto FromWidth = Context.getIntWidth(From);
+  const auto ToWidth = Context.getIntWidth(To);
+  const bool FromUnsigned = From->isUnsignedIntegerType();
+  const bool ToUnsigned = To->isUnsignedIntegerType();
+  if (FromUnsigned == ToUnsigned)
+    return FromWidth <= ToWidth;
+  return FromUnsigned && FromWidth < ToWidth;
+}
+
 static bool variantStoredAlternative(const State &S, const SourceManager &SM,
     const CXXConstructExpr *Data, const UtilityVariantRecord &V, unsigned Index,
     unsigned Arity, const ASTContext &Context) {
@@ -7531,11 +7548,23 @@ static bool variantStoredAlternative(const State &S, const SourceManager &SM,
     const auto To = Alt->getType();
     if (!Context.hasSameUnqualifiedType(From, To)) {
       const auto *Conversion = dyn_cast<ImplicitCastExpr>(Initialization->IgnoreParens());
-      if (!variantObjectPointerToVoid(From, To) || !Conversion || Conversion->getCastKind() != CK_BitCast ||
-          !Context.hasSameUnqualifiedType(Conversion->getType(), To) ||
+      if (!Conversion || !Context.hasSameUnqualifiedType(Conversion->getType(), To) ||
           !Context.hasSameUnqualifiedType(Conversion->getSubExpr()->getType(), From))
         return false;
       Initialization = Conversion->getSubExpr();
+      if (Conversion->getCastKind() == CK_IntegralCast &&
+          variantValuePreservingIntegerConversion(Context, From, To)) {
+        if (const auto *Read = dyn_cast<ImplicitCastExpr>(Initialization->IgnoreParens())) {
+          if (Read->getCastKind() != CK_LValueToRValue ||
+              !Context.hasSameUnqualifiedType(Read->getSubExpr()->getType(), From))
+            return false;
+          Initialization = Read->getSubExpr();
+        }
+        if (!isa<CallExpr>(Initialization->IgnoreParens()))
+          return false;
+      } else if (Conversion->getCastKind() != CK_BitCast || !variantObjectPointerToVoid(From, To)) {
+        return false;
+      }
     }
     if (!variantForward(S, SM, Initialization, Parameter, Context))
       return false;
@@ -7615,11 +7644,16 @@ std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
   if (!I || *I >= Variant->Alternatives.size() ||
       (Requested ? *Requested != *I : (!Arity && *I != 0)))
     return std::nullopt;
-  if (Input && (!C->getParamDecl(Offset)->getType()->isReferenceType() ||
-                !variantForward(S, SM, Impl->getArg(1), C->getParamDecl(Offset), Context) ||
-                (!Context.hasSameUnqualifiedType(Input->getType(), Variant->Alternatives[*I]->getType()) &&
-                 (!Requested || !variantObjectPointerToVoid(Input->getType(), Variant->Alternatives[*I]->getType())))))
-    return std::nullopt;
+  if (Input) {
+    const auto From = Input->getType();
+    const auto To = Variant->Alternatives[*I]->getType();
+    if (!C->getParamDecl(Offset)->getType()->isReferenceType() ||
+        !variantForward(S, SM, Impl->getArg(1), C->getParamDecl(Offset), Context) ||
+        !(Context.hasSameUnqualifiedType(From, To) ||
+          variantValuePreservingIntegerConversion(Context, From, To) ||
+          (Requested && variantObjectPointerToVoid(From, To))))
+      return std::nullopt;
+  }
   // Inherited constructors introduce no user-written arguments. Confirm each
   // selecting declaration ends in the exact storage base constructor.
   const auto *Base = Impl->getConstructor();
@@ -10045,7 +10079,8 @@ std::optional<UtilityVariantEmplace> approvedUtilityVariantEmplace(
   if ((ByType && !Context.hasSameType(Selected, Args->get(0).getAsType())) ||
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Selected)) ||
       (Input && (Input->getType().isVolatileQualified() ||
-                 !Context.hasSameUnqualifiedType(Selected, Input->getType()))) ||
+                 !(Context.hasSameUnqualifiedType(Selected, Input->getType()) ||
+                   variantValuePreservingIntegerConversion(Context, Input->getType(), Selected)))) ||
       !variantEmplaceBody(S, SM, Method, *V, unsigned(Index), Arity, Context))
     return std::nullopt;
   return UtilityVariantEmplace{*V, Member, unsigned(Index), Input};
