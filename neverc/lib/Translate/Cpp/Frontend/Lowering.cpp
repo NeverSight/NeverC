@@ -27406,6 +27406,7 @@ class FunctionLowering {
   Expression orderedSetBoundary(Expression Place, Expression Key,
       const UtilityOrderedSetStorage &Info, OrderedSetIteratorOperation Operation, SourceLocation L) {
     const bool Upper = Operation == OrderedSetIteratorOperation::UpperBound;
+    const auto ComparisonType = Key.getString("type")->str();
     auto End = snapshot(orderedTreeSentinel(Place, L), L);
     auto Result = snapshot(End, L);
     auto Node = snapshot(orderedContainerMember(std::move(Place), "nct_ordered_root", L), L);
@@ -27415,7 +27416,7 @@ class FunctionLowering {
     label(Check, L);
     branch(cast(Node, "bool", L), Compare, Found, L);
     label(Compare, L);
-    auto AtNode = snapshot(orderedSetKey(Node, Info, L), L);
+    auto AtNode = snapshot(cast(orderedSetKey(Node, Info, L), ComparisonType, L), L);
     const auto Comparison = Info.Descending ? (Upper ? "<" : "<=") : (Upper ? ">" : ">=");
     branch(binary(Comparison, std::move(AtNode), Key, "bool", L), Left, Right, L);
     label(Left, L);
@@ -27430,7 +27431,8 @@ class FunctionLowering {
       const auto Match = labelName(), Miss = labelName(), Done = labelName();
       branch(binary("!=", Result, End, "bool", L), Match, Done, L);
       label(Match, L);
-      branch(binary("==", orderedSetKey(Result, Info, L), std::move(Key), "bool", L), Done, Miss, L);
+      auto Candidate = cast(orderedSetKey(Result, Info, L), ComparisonType, L);
+      branch(binary("==", std::move(Candidate), std::move(Key), "bool", L), Done, Miss, L);
       label(Miss, L);
       assign(Result, std::move(End), L);
       jump(Done, L);

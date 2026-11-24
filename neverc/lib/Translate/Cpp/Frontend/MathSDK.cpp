@@ -137311,6 +137311,29 @@ static std::optional<UtilityOrderedSetIteratorCall> checkedOrderedIteratorOperat
   return UtilityOrderedSetIteratorCall{Operation, Table, nullptr, First, nullptr};
 }
 
+static QualType checkedOrderedLookupParameter(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const Expr *Argument, const UtilityOrderedSetStorage &Storage,
+    const ASTContext &Context) {
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  const auto Query = Argument->getType().getUnqualifiedType();
+  if (!Context.hasSameType(Parameter, Context.getLValueReferenceType(Query.withConst())))
+    return {};
+  const auto *Primary = Method->getPrimaryTemplate();
+  if (!Primary)
+    return Context.hasSameType(Query, Context.IntTy) ? Parameter : QualType();
+  if (Argument->getType().isVolatileQualified() ||
+      (!Context.hasSameType(Query, Context.LongTy) && !Context.hasSameType(Query, Context.LongLongTy)))
+    return {};
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Storage.Record)->getTemplateArgs();
+  const bool Mapped = !Storage.MappedPairType.isNull();
+  const auto Policy = Arguments.get(Mapped ? 2 : 1).getAsType();
+  // A void operand identifies the pinned transparent comparator specialization.
+  if (!orderedComparatorDirection(S, SM, Policy, Context.VoidTy, Context) ||
+      !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), Mapped ? "map" : "set"))
+    return {};
+  return Parameter;
+}
+
 std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   using Op = OrderedSetIteratorOperation;
@@ -137367,19 +137390,18 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     const bool Mapped = Header == "map";
     const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
     const auto *Key = Call->getArg(0);
-    const auto Parameter = Context.getLValueReferenceType(Context.IntTy.withConst());
     if (Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
-        !S.owns(SM, Reference->getMemberLoc()) || Method->getPrimaryTemplate() ||
+        !S.owns(SM, Reference->getMemberLoc()) ||
         Method->isStatic() || Method->isVolatile() || Method->isVirtual() || !Call->isPRValue() ||
         !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
         !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
-        !Context.hasSameType(Method->getParamDecl(0)->getType(), Parameter) ||
-        !Context.hasSameUnqualifiedType(Key->getType(), Context.IntTy) ||
         !orderedPinnedFunction(S, SM, Method, Header))
       return std::nullopt;
     const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
     if (!Table) return std::nullopt;
+    const auto Parameter = checkedOrderedLookupParameter(S, SM, Method, Key, *Table, Context);
+    if (Parameter.isNull()) return std::nullopt;
     auto Element = Call->getType();
     std::optional<UtilityPairRecord> Pair;
     if (Range) {
@@ -137402,8 +137424,9 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
       Returned = orderedExpression(Convert->getArg(0));
     }
     const auto *Forward = dyn_cast_or_null<CXXMemberCallExpr>(Returned);
-    const auto InnerName = Range ? llvm::StringRef(Table->Multi ? "__equal_range_multi"
-                                                               : "__equal_range_unique") : Name;
+    const bool MultiRange = Table->Multi || Method->getPrimaryTemplate();
+    const auto InnerName = Range ? llvm::StringRef(MultiRange ? "__equal_range_multi"
+                                                             : "__equal_range_unique") : Name;
     const auto *Selected = orderedTreeMethod(S, SM, Forward, Table->Tree, InnerName, 1);
     const auto *Storage = Selected ? dyn_cast_or_null<MemberExpr>(
         orderedExpression(Forward->getImplicitObjectArgument())) : nullptr;
@@ -138130,12 +138153,9 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
   const auto *Method = Access ? Access->getMethodDecl() : nullptr;
   if (!Method || !Method->getIdentifier() || Method->getName() != "count" ||
       !Method->isConst() || Method->isStatic() || Method->isVolatile() || Method->isVirtual() ||
-      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
       !Call->isPRValue() || !Context.hasSameType(Call->getType(), Context.getSizeType()) ||
-      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()) ||
-      !Context.hasSameType(Method->getParamDecl(0)->getType(),
-          Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))
+      !Context.hasSameType(Method->getReturnType(), Context.getSizeType()))
     return std::nullopt;
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto Receiver = associativeMemberReceiverType(Member);
@@ -138149,12 +138169,15 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
   const auto Table = Header == "map" ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                                     : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Table) return std::nullopt;
+  const auto Parameter = checkedOrderedLookupParameter(S, SM, Method, Call->getArg(0), *Table, Context);
+  if (Parameter.isNull()) return std::nullopt;
   const auto *Forward = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(orderedReturn(Method)));
   const auto *Find = orderedTreeMethod(S, SM, Forward, Table->Tree,
-      Table->Multi ? "__count_multi" : "__count_unique", 1);
+      (Table->Multi || Method->getPrimaryTemplate()) ? "__count_multi" : "__count_unique", 1);
   const auto *Storage = Forward ? dyn_cast<MemberExpr>(
       orderedExpression(Forward->getImplicitObjectArgument())) : nullptr;
-  if (!Find || !Storage || Storage->getMemberDecl() != orderedTreeField(Record, "__tree_") ||
+  if (!Find || !Find->isConst() || !Context.hasSameType(Find->getParamDecl(0)->getType(), Parameter) ||
+      !Storage || Storage->getMemberDecl() != orderedTreeField(Record, "__tree_") ||
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Storage->getBase())) ||
       !orderedParameter(Forward->getArg(0), Method->getParamDecl(0)) ||
       !(Header == "map" ? approvedOrderedMapSelectedBody(S, SM, Method, Record, Context)
