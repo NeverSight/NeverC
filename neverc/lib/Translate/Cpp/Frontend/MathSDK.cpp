@@ -6897,6 +6897,29 @@ static bool utilityVariantAlternativeType(const State &S, const SourceManager &S
           approvedUtilityMonostateMetadata(S, SM, T->getAsCXXRecordDecl(), Context));
 }
 
+static bool variantTrivialRecordAlternative(const State &S, const SourceManager &SM,
+    QualType Type, const ASTContext &Context) {
+  if (Type.hasLocalQualifiers() || Type.getAddressSpace() != LangAS::Default)
+    return false;
+  const auto *Decl = Type->getAsCXXRecordDecl();
+  const auto *Record = Decl ? Decl->getDefinition() : nullptr;
+  if (!Record || !Record->getIdentifier() || Record->isUnion() || Record->isLocalClass() ||
+      Record->getNumBases() || !Record->isAggregate() || !Record->isStandardLayout() ||
+      !Record->isTriviallyCopyable() || !Record->hasTrivialDefaultConstructor() ||
+      !Record->hasTrivialDestructor() || Record->field_empty() ||
+      !llvm::all_of(Record->redecls(), [&](const auto *Redecl) {
+        return S.owns(SM, Redecl->getLocation());
+      }))
+    return false;
+  return llvm::all_of(Record->fields(), [&](const FieldDecl *Field) {
+    const auto Value = Field->getType();
+    return Field->getIdentifier() && Field->getAccess() == AS_public &&
+           !Field->isBitField() && !Field->isMutable() && !Field->hasInClassInitializer() &&
+           !Value.hasLocalQualifiers() && Value.getAddressSpace() == LangAS::Default &&
+           utilityScalar(Context, Value);
+  });
+}
+
 bool pinnedUtilityVariantType(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record) {
   const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
@@ -7012,7 +7035,8 @@ std::optional<UtilityVariantRecord> approvedUtilityVariantRecord(const State &S,
   };
   for (const auto &Alternative : Alternatives) {
     const auto T = Alternative.getAsType();
-    if (!utilityVariantAlternativeType(S, SM, T, Context))
+    if (!utilityVariantAlternativeType(S, SM, T, Context) &&
+        !variantTrivialRecordAlternative(S, SM, T, Context))
       return std::nullopt;
   }
 
@@ -7466,14 +7490,21 @@ static bool variantStoredAlternative(const State &S, const SourceManager &SM,
   const auto *Initialization = variantMemberInit(Item, Alt);
   if (!Initialization)
     return false;
-  if (const auto *Empty = Alt->getType()->getAsCXXRecordDecl()) {
+  if (const auto *Record = Alt->getType()->getAsCXXRecordDecl()) {
     const auto *Build = variantConstruct(Initialization);
     const auto *Selected = Build ? Build->getConstructor() : nullptr;
-    if (!approvedUtilityMonostateConstruction(S, SM, Build, Context) ||
+    if (!Selected || Build->getNumArgs() != Arity ||
         !Context.hasSameType(Build->getType(), Alt->getType()) ||
-        Selected->getParent()->getCanonicalDecl() != Empty->getCanonicalDecl() ||
-        !variantDeclaration(S, SM, Selected, "__variant/monostate.h"))
+        Selected->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
       return false;
+    if (variantTrivialRecordAlternative(S, SM, Alt->getType(), Context)) {
+      if (!Selected->isDefaulted() || !Selected->isTrivial() ||
+          !S.owns(SM, Selected->getLocation()))
+        return false;
+    } else if (!approvedUtilityMonostateConstruction(S, SM, Build, Context) ||
+               !variantDeclaration(S, SM, Selected, "__variant/monostate.h")) {
+      return false;
+    }
     if (Arity) {
       if (Arity != 1 || !Selected->isCopyOrMoveConstructor() ||
           !variantForward(S, SM, Build->getArg(0), Item->getParamDecl(1), Context))

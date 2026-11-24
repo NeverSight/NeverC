@@ -13974,7 +13974,7 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
         if (!Variant || llvm::any_of(Variant->Alternatives,
                 [](const FieldDecl *F) { return F->getType().isConstQualified(); })) {
           reject(L, "variant object layout",
-                 "Expected the pinned variant layout with mutable scalar or monostate alternatives.", "TR0203");
+                 "Expected a checked variant layout with mutable alternatives.", "TR0203");
           return {};
         }
         if (RequiredUtilityVariants.insert(D->getCanonicalDecl()).second) {
