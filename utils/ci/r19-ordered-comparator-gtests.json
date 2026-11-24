@@ -1,0 +1,159 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-comparator-set-key-and-value",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorSetKeyAndValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6f22dffe3b98ed3cb309314d799b4b0a9eb7f262c7f5a5e503a846a2ab8f5ec2",
+      "original_case_source_sha256": "6f22dffe3b98ed3cb309314d799b4b0a9eb7f262c7f5a5e503a846a2ab8f5ec2",
+      "gtest_body_sha256": "7ac918c07aaa904c949e8dfd917bd0bfae43e7f7a7a98021cb8e43bfdb7cfa1c"
+    },
+    {
+      "name": "ordered-comparator-multiset-const-value",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorMultisetConstValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8b34a2fc0d6158dc94c94a6f5be4e857462059683e9dd4112feee1714a1f961e",
+      "original_case_source_sha256": "8b34a2fc0d6158dc94c94a6f5be4e857462059683e9dd4112feee1714a1f961e",
+      "gtest_body_sha256": "2b5ebe02141d80f33e2f3a4c05512992657ca1bfe02c090736d8d13fd9ec81be"
+    },
+    {
+      "name": "ordered-comparator-map-key-wrapper",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorMapKeyWrapperRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0da2e3f065be63b02e11e54eaba683a694217442a2d9c63e60cd1db2809fa0ca",
+      "original_case_source_sha256": "0da2e3f065be63b02e11e54eaba683a694217442a2d9c63e60cd1db2809fa0ca",
+      "gtest_body_sha256": "f94a0624d794604dfe6b7a81338155eb4c62021a47ad6186cd52d70acbbc43a8"
+    },
+    {
+      "name": "ordered-comparator-multimap-key-wrapper",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorMultimapKeyWrapperRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ffe743350b55e78a5ac9d5b5fd39e96e6c5157082ff91cbd8d4b884fc4d196d2",
+      "original_case_source_sha256": "ffe743350b55e78a5ac9d5b5fd39e96e6c5157082ff91cbd8d4b884fc4d196d2",
+      "gtest_body_sha256": "2a61651d77bc2f0336127bd3f94341b3edfcbce6ccb2fe2fab225d23edf5b4ad"
+    },
+    {
+      "name": "ordered-comparator-arrow-receiver",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
+      "original_case_source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
+      "gtest_body_sha256": "fca9d155a9e100efd585e03bdd183b57a7ab5532931a1120cb859b5254fe3087"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-comparator-custom-comparator",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorCustomComparatorRejected",
+      "expected": "reject",
+      "source_sha256": "050934e6b0f1370aae8ff2d700b58c217736de3e35d99e6d387341506a439db7",
+      "original_case_source_sha256": "050934e6b0f1370aae8ff2d700b58c217736de3e35d99e6d387341506a439db7",
+      "gtest_body_sha256": "d4f198dbdae9bfa763c3ff09bd0cc0e599791fc958431de9c18b170ed89a6ed5"
+    },
+    {
+      "name": "ordered-comparator-map-value-comparator",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorMapValueComparatorRejected",
+      "expected": "reject",
+      "source_sha256": "88d155ead5a99e6c35af7bd4ba4991f5283dbff0a5ade18aa0d333d74ecb500b",
+      "original_case_source_sha256": "88d155ead5a99e6c35af7bd4ba4991f5283dbff0a5ade18aa0d333d74ecb500b",
+      "gtest_body_sha256": "df23e554ef0f2fb56b7d77874ed663aa9077ba88016984588bf7491831f585d7"
+    },
+    {
+      "name": "ordered-comparator-non-default-key",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparatorNonDefaultKeyRejected",
+      "expected": "reject",
+      "source_sha256": "a8d1e710d5f17789de27ee5b0e26d9453fa21c1f940388f9f59c6ad2d9e780b7",
+      "original_case_source_sha256": "a8d1e710d5f17789de27ee5b0e26d9453fa21c1f940388f9f59c6ad2d9e780b7",
+      "gtest_body_sha256": "7601210f7a41b67dafb6a72238415da36abf8da1295270cf894bed7e3af4d1d4"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-comparator-set-key-and-value",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::set<int> values;\n  auto keys = values.key_comp();\n  auto elements = values.value_comp();\n  return !keys(-7, 3) || keys(3, -7) || !elements(0, 1) || elements(1, 1);\n}\n",
+      "source_sha256": "6f22dffe3b98ed3cb309314d799b4b0a9eb7f262c7f5a5e503a846a2ab8f5ec2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-comparator-multiset-const-value",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::multiset<int> values;\n  const auto& view = values;\n  const auto cmp = view.value_comp();\n  return !cmp(-1, 1) || cmp(4, 4);\n}\n",
+      "source_sha256": "8b34a2fc0d6158dc94c94a6f5be4e857462059683e9dd4112feee1714a1f961e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-comparator-map-key-wrapper",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Map = std::map<int, int>;\nconst Map& observe(const Map& values, int& calls) {\n  ++calls;\n  return values;\n}\nint main() {\n  const Map values;\n  int calls = 0;\n  auto cmp = observe(values, calls).key_comp();\n  return calls != 1 || !cmp(-8, 2) || cmp(2, 2);\n}\n",
+      "source_sha256": "0da2e3f065be63b02e11e54eaba683a694217442a2d9c63e60cd1db2809fa0ca",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-comparator-multimap-key-wrapper",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::multimap<int, int> values;\n  auto cmp = values.key_comp();\n  return !cmp(42, 100) || cmp(100, 42);\n}\n",
+      "source_sha256": "ffe743350b55e78a5ac9d5b5fd39e96e6c5157082ff91cbd8d4b884fc4d196d2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-comparator-custom-comparator",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Greater { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::set<int, Greater> values;\n  auto cmp = values.key_comp();\n  return !cmp(2, 1);\n}\n",
+      "source_sha256": "050934e6b0f1370aae8ff2d700b58c217736de3e35d99e6d387341506a439db7",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-comparator-map-value-comparator",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  auto cmp = values.value_comp();\n  return !cmp({1, 4}, {2, 3});\n}\n",
+      "source_sha256": "88d155ead5a99e6c35af7bd4ba4991f5283dbff0a5ade18aa0d333d74ecb500b",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-comparator-non-default-key",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::multiset<long> values;\n  return !values.value_comp()(0L, 1L);\n}\n",
+      "source_sha256": "a8d1e710d5f17789de27ee5b0e26d9453fa21c1f940388f9f59c6ad2d9e780b7",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-comparator-arrow-receiver",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n",
+      "source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
+      "kind": "cpp17-operation"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedComparatorSetKeyAndValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedComparatorMultisetConstValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedComparatorMapKeyWrapperRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedComparatorMultimapKeyWrapperRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedComparatorCustomComparatorRejected",
+    "TranslateTest.CoreV2OrderedComparatorMapValueComparatorRejected",
+    "TranslateTest.CoreV2OrderedComparatorNonDefaultKeyRejected"
+  ],
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6",
+  "maintained_original_sha256": "e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9",
+  "previous_registered_source_sha256": "4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13",
+  "previous_maintained_original_sha256": "92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896",
+  "restorer_sha256": "b0eefd5a202c6002d2e44cd7c10702e535bdc37f66498a68074b220a4185ffbe",
+  "extractor_sha256": "2477412954cb027403796706095eb43663b9c2e1be5d7e008b149bc364053225",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8384,
+  "current_python_registry_tests": 182,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10
+}
