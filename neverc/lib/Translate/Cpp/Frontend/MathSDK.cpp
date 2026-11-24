@@ -134645,11 +134645,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Type->isFunctionPointerType() &&
            !Type->getPointeeType()->isVoidType();
   };
-  auto PointerOrReverse = [&](QualType Type) {
+  auto NavigableIterator = [&](QualType Type) {
     return ObjectPointer(Type) || ReverseFor(Type).has_value() ||
            approvedUtilityWrapIteratorRecord(S, SM, Type->getAsCXXRecordDecl(),
-                                             Context)
-               .has_value();
+                                             Context).has_value() ||
+           approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
   };
   if (Origin->Path == "__iterator/advance.h" && Name == "advance" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
@@ -134657,7 +134657,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     auto Iterator = Function->getParamDecl(0)->getType();
     auto Distance = Function->getParamDecl(1)->getType();
     if (Iterator->isLValueReferenceType() &&
-        PointerOrReverse(Iterator->getPointeeType()) &&
+        NavigableIterator(Iterator->getPointeeType()) &&
         !Iterator->getPointeeType().isConstQualified() &&
         Distance->isIntegralType(Context) &&
         Context.getTypeSize(Distance) <= 64 &&
@@ -134672,7 +134672,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     auto First = Function->getParamDecl(0)->getType();
     auto Last = Function->getParamDecl(1)->getType();
-    if (PointerOrReverse(First) && Same(First, Last) &&
+    if (NavigableIterator(First) && Same(First, Last) &&
         Same(Call->getArg(0)->getType(), First) &&
         Same(Call->getArg(1)->getType(), Last))
       return UtilityOperation::IteratorDistance;
@@ -134683,7 +134683,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == 2 && Call->isPRValue()) {
     auto Iterator = Function->getParamDecl(0)->getType();
     auto Distance = Function->getParamDecl(1)->getType();
-    if (PointerOrReverse(Iterator) &&
+    if (NavigableIterator(Iterator) &&
         Same(Distance, Context.getPointerDiffType()) &&
         Same(Call->getType(), Iterator) &&
         Same(Function->getReturnType(), Iterator) &&
@@ -134755,7 +134755,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
       Call->isPRValue()) {
     auto Iterator = Function->getParamDecl(0)->getType();
-    if (PointerOrReverse(Iterator) && Same(Call->getType(), Iterator) &&
+    if (NavigableIterator(Iterator) && Same(Call->getType(), Iterator) &&
         Same(Function->getReturnType(), Iterator) &&
         Same(Call->getArg(0)->getType(), Iterator))
       return UtilityOperation::IteratorPrev;

@@ -18325,6 +18325,11 @@ class FunctionLowering {
                                   type(A.Context.getPointerDiffType(), L), L),
                              L);
       auto Iterator = dereference(std::move(IteratorAddress), L);
+      if (approvedOrderedSetIteratorRecord(A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context)) {
+        auto Cursor = orderedIteratorCursor(std::move(Iterator), L);
+        assign(Cursor, stepOrderedIteratorBy(Cursor, std::move(Offset), false, L), L);
+        return {};
+      }
       auto Reverse = ReverseFor(IteratorType);
       const auto Wrapped = approvedUtilityWrapIteratorRecord(
           A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
@@ -18352,6 +18357,11 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::IteratorDistance: {
+      if (approvedOrderedSetIteratorRecord(A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)) {
+        auto First = loadOrderedIteratorArgument(Call, 0, L);
+        auto Last = loadOrderedIteratorArgument(Call, 1, L);
+        return countOrderedIteratorSteps(std::move(First), std::move(Last), L);
+      }
       auto First = AlgorithmRangeValue(0).first;
       auto Last = AlgorithmRangeValue(1).first;
       auto Reverse = ReverseFor(Call->getArg(0)->getType());
@@ -18371,6 +18381,17 @@ class FunctionLowering {
     }
     case UtilityOperation::IteratorNext:
     case UtilityOperation::IteratorPrev: {
+      if (approvedOrderedSetIteratorRecord(A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)) {
+        auto Input = loadOrderedIteratorArgument(Call, 0, L);
+        const auto Difference = type(A.Context.getPointerDiffType(), L);
+        auto Offset = Call->getNumArgs() == 1 ? one(Difference, L)
+            : argument(Call->getArg(1), Call->getDirectCallee()->getParamDecl(1)->getType());
+        auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        auto Position = stepOrderedIteratorBy(std::move(Input), std::move(Offset),
+            Operation == UtilityOperation::IteratorPrev, L);
+        assign(orderedIteratorCursor(Output, L), std::move(Position), L);
+        return Output;
+      }
       auto IteratorRange = AlgorithmRangeValue(0);
       auto Iterator = std::move(IteratorRange.first);
       Expression Offset;
@@ -27250,6 +27271,51 @@ class FunctionLowering {
     auto Stored = fieldStorage(std::move(Place), Field, L);
     if (!Info.OrderedElementType.isNull()) return orderedIteratorCursor(std::move(Stored), L);
     return Info.WrappedCurrent ? fieldStorage(std::move(Stored), Info.WrappedCurrent, L) : Stored;
+  }
+
+  Expression loadOrderedIteratorArgument(const CallExpr *Call, unsigned Index, SourceLocation L) {
+    const auto Parameter = Call->getDirectCallee()->getParamDecl(Index)->getType();
+    auto Argument = dereference(argument(Call->getArg(Index), Parameter), L);
+    return snapshot(orderedIteratorCursor(std::move(Argument), L), L);
+  }
+
+  Expression stepOrderedIteratorBy(Expression Node, Expression Offset, bool Reverse, SourceLocation L) {
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Zero = A.zero(A.Context.getPointerDiffType(), L);
+    auto Current = snapshot(std::move(Node), L);
+    auto Remaining = snapshot(std::move(Offset), L);
+    const auto Check = labelName(), Direction = labelName(), Forward = labelName(),
+               Backward = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("==", Remaining, Zero, "bool", L), Done, Direction, L);
+    label(Direction, L);
+    branch(binary(">", Remaining, Zero, "bool", L), Forward, Backward, L);
+    label(Forward, L);
+    assign(Current, stepOrderedIterator(Current, !Reverse, L), L);
+    assign(Remaining, binary("-", Remaining, one(Difference, L), Difference, L), L);
+    jump(Check, L);
+    label(Backward, L);
+    assign(Current, stepOrderedIterator(Current, Reverse, L), L);
+    assign(Remaining, binary("+", Remaining, one(Difference, L), Difference, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Current;
+  }
+
+  Expression countOrderedIteratorSteps(Expression Current, Expression Last, SourceLocation L) {
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    auto Count = snapshot(A.zero(A.Context.getPointerDiffType(), L), L);
+    const auto Check = labelName(), Step = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, Last, "bool", L), Step, Done, L);
+    label(Step, L);
+    assign(Current, stepOrderedIterator(Current, true, L), L);
+    assign(Count, binary("+", Count, one(Difference, L), Difference, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Count;
   }
 
   Expression stepOrderedIterator(Expression Node, bool Forward, SourceLocation L) {
