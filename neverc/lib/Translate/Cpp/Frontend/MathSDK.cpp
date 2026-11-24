@@ -13543,6 +13543,39 @@ class UtilityTupleQueryGraph
     const auto *Primary = Instance ? Instance->getSpecializedTemplate() : nullptr;
     return !Primary || S.owns(SM, Primary->getLocation());
   }
+  bool pairNumericLimitsResultType(QualType Type) const {
+    const auto *Alias = dyn_cast<TypedefType>(Type.getTypePtr());
+    if (!Alias) return false;
+    const auto Scalar = Type.getCanonicalType().getUnqualifiedType();
+    if ((!Context.hasSameType(Scalar, Context.FloatTy) &&
+         !Context.hasSameType(Scalar, Context.DoubleTy)) ||
+        !PairInputTypes.count(Scalar.getTypePtr())) return false;
+    auto Pinned = [&](const Decl *D) {
+      return approvedStandardSDKDeclaration(S, SM, D) &&
+             cstddefOrigin(S, SM, D->getLocation(), "libcxx", "limits");
+    };
+    auto Matches = [&](const TypedefType *Result, llvm::StringRef Name, unsigned Arity) {
+      const auto *Member = Result ? Result->getDecl() : nullptr;
+      const auto *Owner = Member
+          ? dyn_cast<ClassTemplateSpecializationDecl>(Member->getDeclContext()) : nullptr;
+      const auto *Primary = Owner ? Owner->getSpecializedTemplate() : nullptr;
+      if (!Primary || Member->getName() != "type" || Owner->getName() != Name ||
+          Primary->getName() != Name || !Pinned(Member) || !Pinned(Owner) ||
+          !Pinned(Primary->getCanonicalDecl())) return false;
+      const auto Args = Owner->getTemplateArgs().asArray();
+      return Args.size() == Arity && Args[0].getKind() == TemplateArgument::Type &&
+             Context.hasSameType(Args[0].getAsType(), Scalar) &&
+             (Arity == 1 || (Args[1].getKind() == TemplateArgument::Integral &&
+                             Args[1].getAsIntegral() == 1));
+    };
+    if (!Matches(Alias, "numeric_limits", 1)) return false;
+    auto Underlying = Alias->desugar();
+    if (const auto *Written = dyn_cast<ElaboratedType>(Underlying.getTypePtr()))
+      Underlying = Written->getNamedType();
+    const auto *Base = dyn_cast<TypedefType>(Underlying.getTypePtr());
+    return Matches(Base, "__libcpp_numeric_limits", 2) && Base->desugar() == Scalar;
+  }
+
   bool pairSourceTypeSpelling(QualType Type) {
     if (!PairInputTypes.count(Type.getCanonicalType().getTypePtr())) return false;
     const auto *Raw = Type.getTypePtr();
@@ -20961,8 +20994,11 @@ public:
           Failed = true;
           return false;
         }
-    if (Mode == UtilityTupleQueryMode::PairConstruction && pairSourceTypeSpelling(T))
-      return true;
+    if (Mode == UtilityTupleQueryMode::PairConstruction) {
+      if (pairSourceTypeSpelling(T)) return true;
+      // Deduced arguments retain the two pinned typedefs in the SDK result.
+      if (pairNumericLimitsResultType(T)) return TraverseType(T.getCanonicalType());
+    }
     if (Mode == UtilityTupleQueryMode::CatSignature && CatInputFunction)
       if (const auto *Leaf = dyn_cast<RecordType>(T.getTypePtr())) {
         const auto *Record = dyn_cast<CXXRecordDecl>(Leaf->getDecl());
@@ -136111,6 +136147,19 @@ static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
   return llvm::is_contained(IntegralTypes, Type.getCanonicalType());
 }
 
+static std::optional<bool> orderedComparatorDirection(const State &S,
+    const SourceManager &SM, QualType Type, QualType Key, const ASTContext &Context) {
+  const auto *Record = Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+  if (!Record || !Record->getIdentifier()) return std::nullopt;
+  const auto Name = Record->getName();
+  if (Name != "less" && Name != "greater") return std::nullopt;
+  const auto *Policy = associativeTypeIdentity(S, SM, Record, Name,
+      "__functional/operations.h", "__fwd/functional.h", 1);
+  if (!Policy || !Context.hasSameType(Policy->getTemplateArgs().get(0).getAsType(), Key))
+    return std::nullopt;
+  return Name == "greater";
+}
+
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {
@@ -136144,7 +136193,7 @@ bool approvedAssociativeContainerMetadataRecord(
     if (!PolicyFor(1, "hash", "__functional/hash.h") ||
         !PolicyFor(2, "equal_to", "__functional/operations.h"))
       return false;
-  } else if (!PolicyFor(Map ? 2 : 1, "less", "__functional/operations.h")) {
+  } else if (!orderedComparatorDirection(S, SM, Args.get(Map ? 2 : 1).getAsType(), Key, Context)) {
     return false;
   }
   const auto *Allocator = associativeTypeIdentity(
@@ -136856,9 +136905,13 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
   } else if (!Context.hasSameType(Element, Context.IntTy)) {
     return std::nullopt;
   }
+  const auto &Args = cast<ClassTemplateSpecializationDecl>(Record)->getTemplateArgs();
+  const auto Descending = orderedComparatorDirection(S, SM,
+      Args.get(Mapped ? 2 : 1).getAsType(), Args.get(0).getAsType(), Context);
+  if (!Descending) return std::nullopt;
   return UtilityOrderedSetStorage{Record, Tree, NodeType, LinkType, SentinelType,
       uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()), KeyOffset / Byte, MappedOffset / Byte,
-      Record->getName() == "multiset" || Record->getName() == "multimap", MappedPairType, MappedValueType};
+      Record->getName() == "multiset" || Record->getName() == "multimap", MappedPairType, MappedValueType, *Descending};
 }
 
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
@@ -137793,9 +137846,12 @@ static std::optional<UtilityInitializerListRecord> orderedSetListParameter(
     return std::nullopt;
   const auto Type = Ctor->getParamDecl(1)->getType();
   const auto Policy = Type.getNonReferenceType().getUnqualifiedType();
-  const auto *Less = associativeTypeIdentity(S, SM, Policy->getAsCXXRecordDecl(),
-      "less", "__functional/operations.h", "__fwd/functional.h", 1);
-  if (!Less || !Context.hasSameType(Less->getTemplateArgs().get(0).getAsType(), Context.IntTy) ||
+  const auto *OwnerSpec = dyn_cast<ClassTemplateSpecializationDecl>(Record);
+  const unsigned PolicyIndex = Header == "map" ? 2 : 1;
+  if (!OwnerSpec || OwnerSpec->getTemplateArgs().size() <= PolicyIndex ||
+      OwnerSpec->getTemplateArgs().get(PolicyIndex).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Policy, OwnerSpec->getTemplateArgs().get(PolicyIndex).getAsType()) ||
+      !orderedComparatorDirection(S, SM, Policy, Context.IntTy, Context) ||
       !Context.hasSameType(Type, Context.getLValueReferenceType(Policy.withConst())))
     return std::nullopt;
   const auto Input = Ctor->getParamDecl(0)->getType();
@@ -137996,6 +138052,7 @@ static bool checkedOrderedMapAtGuard(const State &S, const SourceManager &SM,
   }
   if (!Parent) return false;
   const Expr *Condition = nullptr;
+  auto Operator = OO_ExclaimEqual;
   if (const auto *Select = Parent->get<ConditionalOperator>()) {
     if (Select->getTrueExpr() != Use) return false;
     Condition = Select->getCond();
@@ -138005,27 +138062,60 @@ static bool checkedOrderedMapAtGuard(const State &S, const SourceManager &SM,
     Parent = ParentOf(*Use);
     if (!Parent) return false;
     if (const auto *Block = Parent->get<CompoundStmt>()) {
-      if (Block->size() != 1 || Block->body_front() != Use) return false;
-      Use = Block;
-      Parent = ParentOf(*Use);
+      if (Block->size() == 1 && Block->body_front() == Use) {
+        Use = Block;
+        Parent = ParentOf(*Use);
+      } else {
+        // Require a contiguous if and return in a single block.
+        const Stmt *Previous = nullptr;
+        const auto Limit = std::min<unsigned>(Block->size(), 64);
+        for (unsigned I = 0; I != Limit; ++I) {
+          const auto *Sibling = Block->body_begin()[I];
+          if (Sibling != Use) {
+            Previous = Sibling;
+            continue;
+          }
+          const auto *Exit = dyn_cast_or_null<IfStmt>(Previous);
+          if (!Exit || Exit->isConstexpr() || Exit->getInit() ||
+              Exit->getConditionVariable() || Exit->getElse()) return false;
+          const auto *Absent = Exit->getThen();
+          if (const auto *Body = dyn_cast<CompoundStmt>(Absent))
+            Absent = Body->size() == 1 ? Body->body_front() : nullptr;
+          if (!isa_and_nonnull<ReturnStmt>(Absent)) return false;
+          Condition = Exit->getCond();
+          Operator = OO_EqualEqual;
+          break;
+        }
+        if (!Condition) return false;
+      }
     }
-    const auto *Branch = Parent ? Parent->get<IfStmt>() : nullptr;
-    if (!Branch || Branch->getThen() != Use) return false;
-    Condition = Branch->getCond();
+    if (!Condition) {
+      const auto *Branch = Parent ? Parent->get<IfStmt>() : nullptr;
+      if (!Branch || Branch->isConstexpr() || Branch->getConditionVariable()) return false;
+      if (Branch->getElse() == Use)
+        Operator = OO_EqualEqual;
+      else if (Branch->getThen() != Use)
+        return false;
+      Condition = Branch->getCond();
+    }
   }
 
   const auto *Test = dyn_cast_or_null<CXXOperatorCallExpr>(orderedExpression(Condition));
-  if (!Test || Test->getOperator() != OO_ExclaimEqual) return false;
+  if (!Test || Test->getOperator() != Operator) return false;
   const auto Compare = checkedOrderedIteratorOperator(S, SM, Test, Context, &Storage);
   if (!Compare) return false;
-  const auto *Find = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Compare->First));
-  const auto *End = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Compare->Second));
-  if (!Find || !End) return false;
-  const auto Lookup = approvedOrderedSetIteratorCall(S, SM, Find, Context);
-  const auto Limit = approvedOrderedSetIteratorCall(S, SM, End, Context);
+  const auto *First = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Compare->First));
+  const auto *Second = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Compare->Second));
+  if (!First || !Second) return false;
+  const auto Left = approvedOrderedSetIteratorCall(S, SM, First, Context);
+  const auto Right = approvedOrderedSetIteratorCall(S, SM, Second, Context);
+  if (!Left || !Right) return false;
   using Op = OrderedSetIteratorOperation;
-  if (!Lookup || Lookup->Operation != Op::Find || !Limit || Limit->Operation != Op::End)
-    return false;
+  const bool Reversed = Left->Operation == Op::End;
+  const auto &Lookup = Reversed ? Right : Left;
+  const auto &Limit = Reversed ? Left : Right;
+  const auto *Find = Reversed ? Second : First;
+  if (Lookup->Operation != Op::Find || Limit->Operation != Op::End) return false;
   auto IsOwner = [&](const MemberExpr *Member) {
     const auto *Object = Member && !Member->isArrow() ? dyn_cast_or_null<DeclRefExpr>(
         orderedExpression(Member->getBase())) : nullptr;
@@ -138392,9 +138482,12 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeConstructor(
   if (Header != "map" && Header != "set") return std::nullopt;
   const auto Type = Ctor->getParamDecl(2)->getType();
   const auto Policy = Type.getNonReferenceType().getUnqualifiedType();
-  const auto *Less = associativeTypeIdentity(S, SM, Policy->getAsCXXRecordDecl(),
-      "less", "__functional/operations.h", "__fwd/functional.h", 1);
-  if (!Less || !Context.hasSameType(Less->getTemplateArgs().get(0).getAsType(), Context.IntTy) ||
+  const auto *OwnerSpec = dyn_cast<ClassTemplateSpecializationDecl>(Record);
+  const unsigned PolicyIndex = Header == "map" ? 2 : 1;
+  if (!OwnerSpec || OwnerSpec->getTemplateArgs().size() <= PolicyIndex ||
+      OwnerSpec->getTemplateArgs().get(PolicyIndex).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Policy, OwnerSpec->getTemplateArgs().get(PolicyIndex).getAsType()) ||
+      !orderedComparatorDirection(S, SM, Policy, Context.IntTy, Context) ||
       !Context.hasSameType(Type, Context.getLValueReferenceType(Policy.withConst())))
     return std::nullopt;
   return orderedSetRangeInput(S, SM, Ctor, Record, Header, Context);
@@ -141002,7 +141095,9 @@ std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorRecor
   if (!Pair || !Context.hasSameType(Pair->First->getType(), Arguments.get(0).getAsType().withConst()) ||
       !Context.hasSameType(Pair->Second->getType(), Arguments.get(1).getAsType()))
     return std::nullopt;
-  return UtilityOrderedValueComparator{Record, Owner, Field, *Pair};
+  const auto Descending = orderedComparatorDirection(S, SM, Field->getType(), Arguments.get(0).getAsType(), Context);
+  if (!Descending) return std::nullopt;
+  return UtilityOrderedValueComparator{Record, Owner, Field, *Pair, *Descending};
 }
 
 const MemberExpr *approvedOrderedValueComparatorFactory(
@@ -141053,7 +141148,7 @@ const MemberExpr *approvedOrderedValueComparatorFactory(
       ? Member : nullptr;
 }
 
-std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
+std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorCall(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Operator ? dyn_cast_or_null<CXXMethodDecl>(Operator->getDirectCallee()) : nullptr;
@@ -141083,7 +141178,7 @@ std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
   const auto *Less = dyn_cast_or_null<BinaryOperator>(orderedExpression(orderedReturn(Compare)));
   if (!Field || Field->getMemberDecl() != Info->Comparator ||
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())) ||
-      !Less || Less->getOpcode() != BO_LT ||
+      !Less || Less->getOpcode() != (Info->Descending ? BO_GT : BO_LT) ||
       !orderedParameter(Less->getLHS(), Compare->getParamDecl(0)) ||
       !orderedParameter(Less->getRHS(), Compare->getParamDecl(1)))
     return std::nullopt;
@@ -141095,7 +141190,7 @@ std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
         !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(), PairType))
       return std::nullopt;
   }
-  return Info->Pair;
+  return Info;
 }
 
 static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
