@@ -1490,7 +1490,7 @@ bool Adapter::registerDecomposition(const DecompositionDecl *D) {
   } else {
     const auto *Record = Object->getAsCXXRecordDecl();
     Record = Record ? Record->getDefinition() : nullptr;
-    const auto NodeResult = unorderedNodeInsertResult(S, Sources, Record, Context);
+    const auto NodeResult = associativeNodeInsertResult(S, Sources, Record, Context);
     if (!Record || (!NodeResult && !S.owns(Sources, Record->getLocation())) || Record->isInvalidDecl() ||
         Record->isDependentContext() || Record->isUnion() || Record->getNumBases() ||
         !Record->isAggregate() || (!NodeResult && !Record->isTrivial()) ||
@@ -2449,8 +2449,8 @@ static bool unorderedNodeTypeQueryMetadata(Adapter &A,
     A.chargeExpansion(1, Location);
     return A.CompleteSDKRecord && A.CompleteSDKRecord(Type, Location);
   };
-  return unorderedNodeRecord(A.S, A.Sources, Record, A.Context, Complete).has_value() ||
-         unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete).has_value();
+  return associativeNodeRecord(A.S, A.Sources, Record, A.Context, Complete).has_value() ||
+         associativeNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete).has_value();
 }
 
 // Identity/source admission does not consume a runtime value, selected
@@ -3329,9 +3329,9 @@ static bool utilityUnorderedMapQueryLayout(Adapter &A, const CXXRecordDecl *Reco
   };
   if (Record && Record->getIdentifier()) {
     if (Record->getName() == "__basic_node_handle")
-      return bool(unorderedNodeRecord(A.S, A.Sources, Record, A.Context, Complete));
+      return bool(associativeNodeRecord(A.S, A.Sources, Record, A.Context, Complete));
     if (Record->getName() == "__insert_return_type")
-      return bool(unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete));
+      return bool(associativeNodeInsertResult(A.S, A.Sources, Record, A.Context, Complete));
   }
   if (approvedSequenceContainerMetadataRecord(A.S, A.Sources, Record, A.Context)) {
     A.chargeExpansion(1, Location);
@@ -5238,7 +5238,7 @@ static bool utilityPairMemberSource(Adapter &A, const MemberExpr *Reference) {
   const auto *Field = dyn_cast<FieldDecl>(Reference->getMemberDecl());
   const auto *Record = Field ? dyn_cast<CXXRecordDecl>(Field->getParent())
                              : nullptr;
-  if (const auto Result = unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context))
+  if (const auto Result = associativeNodeInsertResult(A.S, A.Sources, Record, A.Context))
     return Field == Result->Position || Field == Result->Inserted || Field == Result->Handle;
   if (!approvedUtilityPairMetadata(A.S, A.Sources, Record))
     return false;
@@ -10665,14 +10665,14 @@ static bool utilityStringDestructionSource(Adapter &A,
          utilityStringOperationSource(A, Destructor);
 }
 
-static bool utilityUnorderedNodeDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
-  if (const auto Node = unorderedNodeRecord(A.S, A.Sources, Record, A.Context))
-    return unorderedNodeDestructor(A.S, A.Sources, Node->Record->getDestructor(), A.Context);
-  const auto Result = unorderedNodeInsertResult(A.S, A.Sources, Record, A.Context);
+static bool utilityAssociativeNodeDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
+  if (const auto Node = associativeNodeRecord(A.S, A.Sources, Record, A.Context))
+    return associativeNodeDestructor(A.S, A.Sources, Node->Record->getDestructor(), A.Context);
+  const auto Result = associativeNodeInsertResult(A.S, A.Sources, Record, A.Context);
   if (!Result) return false;
   const auto *D = Result->Record->getDestructor();
   return D && D->isImplicit() && approvedStandardSDKDeclaration(A.S, A.Sources, D) &&
-      unorderedNodeDestructor(A.S, A.Sources, Result->Node.Record->getDestructor(), A.Context);
+      associativeNodeDestructor(A.S, A.Sources, Result->Node.Record->getDestructor(), A.Context);
 }
 
 static bool utilityUnorderedMapDestructionSource(Adapter &A, const CXXRecordDecl *Record) {
@@ -11854,7 +11854,7 @@ public:
       return destruction(Seq->Storage->getType()->getAsCXXRecordDecl(), Depth + 1);
     }
     if (approvedUtilityUnorderedMapIteratorDestructor(A.S, A.Sources, Record, A.Context)) return true;
-    if (utilityUnorderedNodeDestructionSource(A, Record)) return true;
+    if (utilityAssociativeNodeDestructionSource(A, Record)) return true;
     if (utilityUnorderedMapDestructionSource(A, Record)) return true;
     if (utilityForwardListDestructionSource(A, Record)) return true;
     if (utilityEmptyHashSetDestructionSource(A, Record)) return true;
@@ -13843,7 +13843,8 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
             return {};
           Records.push_back(const_cast<CXXRecordDecl *>(D));
         }
-      } else if (approvedFunctionalObjectRecord(S, Sources, D, Context)) {
+      } else if (approvedFunctionalObjectRecord(S, Sources, D, Context) ||
+                 approvedOrderedValueComparatorRecord(S, Sources, D, Context)) {
         if (!requireFunctionalObject(D, L, Depth + 1))
           return {};
       } else if (const auto NotFn = functionalNotFnLayout(S, Sources, D, Context)) {
@@ -13902,9 +13903,9 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
       } else if (approvedUtilityStringRecord(S, Sources, D, Context) &&
                  !requireUtilityString(D, L, Depth + 1)) {
         return {};
-      } else if ((unorderedNodeRecord(S, Sources, D, Context) ||
-                  unorderedNodeInsertResult(S, Sources, D, Context)) &&
-                 !requireUnorderedNode(D, L, Depth + 1)) {
+      } else if ((associativeNodeRecord(S, Sources, D, Context) ||
+                  associativeNodeInsertResult(S, Sources, D, Context)) &&
+                 !requireAssociativeNode(D, L, Depth + 1)) {
         return {};
       } else if (approvedUtilityUnorderedIteratorMetadata(S, Sources, D) &&
                  !requireUtilityUnorderedMapIterator(D, L, Depth + 1)) {
@@ -14312,19 +14313,19 @@ bool Adapter::requireUtilityString(const CXXRecordDecl *Record,
   return true;
 }
 
-bool Adapter::requireUnorderedNode(const CXXRecordDecl *Record,
+bool Adapter::requireAssociativeNode(const CXXRecordDecl *Record,
     SourceLocation Location, unsigned Depth) {
   if (Depth > 64) {
-    reject(Location, "unordered node type", "Nested node types exceed the protocol limit.");
+    reject(Location, "associative node type", "Nested node types exceed the protocol limit.");
     return false;
   }
-  const auto Node = unorderedNodeRecord(S, Sources, Record, Context);
-  const auto Result = unorderedNodeInsertResult(S, Sources, Record, Context);
+  const auto Node = associativeNodeRecord(S, Sources, Record, Context);
+  const auto Result = associativeNodeInsertResult(S, Sources, Record, Context);
   if (!Node && !Result) return false;
   const auto *R = Node ? Node->Record : Result->Record;
-  if (!RequiredUnorderedNodes.insert(R->getCanonicalDecl()).second) return true;
+  if (!RequiredAssociativeNodes.insert(R->getCanonicalDecl()).second) return true;
   if (Node) {
-    if (type(Node->Map.NodePointerType, Location, false, Depth + 1).empty()) return false;
+    if (type(Node->PointerType, Location, false, Depth + 1).empty()) return false;
   } else {
     for (const auto *Field : {Result->Position, Result->Inserted, Result->Handle})
       if (type(Field->getType(), Location, false, Depth + 1).empty()) return false;
@@ -14675,7 +14676,10 @@ bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
   }
   const auto Object =
       approvedFunctionalObjectRecord(S, Sources, Record, Context);
-  if (!Object) {
+  const auto ValueComparator = Object ? std::nullopt
+      : approvedOrderedValueComparatorRecord(S, Sources, Record, Context);
+  const auto *Definition = Object ? Object->Record : ValueComparator ? ValueComparator->Record : nullptr;
+  if (!Definition) {
     reject(Location, "standard library record",
            "Only pinned one-byte arithmetic, bitwise, comparison, logical, "
            "integral, floating-point, enum, object-pointer and null-pointer "
@@ -14685,10 +14689,10 @@ bool Adapter::requireFunctionalObject(const CXXRecordDecl *Record,
            "TR0203");
     return false;
   }
-  const auto *Canonical = Object->Record->getCanonicalDecl();
+  const auto *Canonical = Definition->getCanonicalDecl();
   if (!RequiredFunctionalObjects.insert(Canonical).second)
     return true;
-  Records.push_back(const_cast<CXXRecordDecl *>(Object->Record));
+  Records.push_back(const_cast<CXXRecordDecl *>(Definition));
   return true;
 }
 
@@ -14755,7 +14759,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
     return json::Object{{"kind", "null"}, {"type", Kind}, {"loc", loc(L)}};
   if (const auto *R = T->getAsCXXRecordDecl()) {
     json::Array Args;
-    if (approvedFunctionalObjectRecord(S, Sources, R, Context)) {
+    if (approvedFunctionalObjectRecord(S, Sources, R, Context) ||
+        approvedOrderedValueComparatorRecord(S, Sources, R, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto NotFn = functionalNotFnLayout(S, Sources, R, Context)) {
       Args.push_back(zero(NotFn->CallableType, L));
@@ -14782,8 +14787,8 @@ json::Object Adapter::zero(QualType T, SourceLocation L) {
         Args.push_back(zero((String->AlternateLayout ? I == 0 : I == 2)
                                 ? String->PointerType
                                 : Context.getSizeType(), L));
-    } else if (auto Node = unorderedNodeRecord(S, Sources, R, Context)) {
-      Args.push_back(zero(Node->Map.NodePointerType, L));
+    } else if (auto Node = associativeNodeRecord(S, Sources, R, Context)) {
+      Args.push_back(zero(Node->PointerType, L));
       Args.push_back(zero(Context.UnsignedCharTy, L));
       Args.push_back(zero(Context.BoolTy, L));
     } else if (auto Iterator = approvedUtilityUnorderedIteratorRecord(S, Sources, R, Context)) {
@@ -15333,7 +15338,8 @@ json::Object Adapter::constant(const APValue &V, QualType T, SourceLocation L) {
                                 llvm::APInt(64, Tuple->StoragePaddingBytes),
                                 nullptr, ArraySizeModifier::Normal, 0),
                             L));
-    } else if (approvedFunctionalObjectRecord(S, Sources, Record, Context)) {
+    } else if (approvedFunctionalObjectRecord(S, Sources, Record, Context) ||
+        approvedOrderedValueComparatorRecord(S, Sources, Record, Context)) {
       Args.push_back(zero(Context.UnsignedCharTy, L));
     } else if (auto Bitset = approvedUtilityBitsetRecord(S, Sources, Record, Context)) {
       if (!Bitset->Words) {
@@ -18807,8 +18813,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedUtilityUniquePtrConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityStringConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context) ||
-         unorderedResultConstruction(A.S, A.Sources, C, A.Context) ||
-         unorderedNodeConstruction(A.S, A.Sources, C, A.Context) ||
+         associativeNodeResultConstruction(A.S, A.Sources, C, A.Context) ||
+         associativeNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
@@ -19303,11 +19309,13 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
             (unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context) ||
-             unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
+             associativeNodeResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context) ||
              unorderedTableMerge(A.S, A.Sources, Call, A.Context) ||
-             unorderedNodeCall(A.S, A.Sources, Call, A.Context) ||
+             associativeNodeCall(A.S, A.Sources, Call, A.Context) ||
              unorderedNodeTransfer(A.S, A.Sources, Call, A.Context) ||
+             orderedNodeExtraction(A.S, A.Sources, Call, A.Context) ||
+             orderedNodeInsertion(A.S, A.Sources, Call, A.Context) ||
              functionalObjectCallSource(A, Call)))
           // The exact operation proves this scalar result and SDK signature.
           // Retain caller operands rather than private trailing-return sugar.
@@ -19459,12 +19467,12 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           Self(Self, Iterator->ValueType, true, Depth + 1);
           return;
         }
-        if (unorderedNodeRecord(A.S, A.Sources, Declaration, A.Context)) {
+        if (associativeNodeRecord(A.S, A.Sources, Declaration, A.Context)) {
           Self(Self, A.Context.IntTy, true, Depth + 1);
           return;
         }
-        if (const auto Result = unorderedNodeInsertResult(A.S, A.Sources, Declaration, A.Context)) {
-          Self(Self, A.Context.getRecordType(Result->Iterator.Record), true, Depth + 1);
+        if (const auto Result = associativeNodeInsertResult(A.S, A.Sources, Declaration, A.Context)) {
+          Self(Self, Result->Position->getType(), true, Depth + 1);
           Self(Self, A.Context.getRecordType(Result->Node.Record), true, Depth + 1);
           return;
         }
@@ -21049,11 +21057,13 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
         if (unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context) ||
-             unorderedResultCall(A.S, A.Sources, Call, A.Context) ||
+             associativeNodeResultCall(A.S, A.Sources, Call, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context) ||
              unorderedTableMerge(A.S, A.Sources, Call, A.Context) ||
-             unorderedNodeCall(A.S, A.Sources, Call, A.Context) ||
+             associativeNodeCall(A.S, A.Sources, Call, A.Context) ||
             unorderedNodeTransfer(A.S, A.Sources, Call, A.Context) ||
+             orderedNodeExtraction(A.S, A.Sources, Call, A.Context) ||
+             orderedNodeInsertion(A.S, A.Sources, Call, A.Context) ||
             ReferenceInvoke || UserInvoke ||
             A.S.UnevaluatedFunctionalCalls.count(Call) ||
             A.S.UnevaluatedMemoryCalls.count(Call) ||
@@ -21289,7 +21299,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
              utilityStringDestructionSource(A, Destructor->getParent()) ||
              utilityUniquePtrDestructionSource(A, Destructor->getParent()) ||
              approvedUtilityUnorderedMapIteratorDestructor(A.S, A.Sources, Destructor->getParent(), A.Context) ||
-             utilityUnorderedNodeDestructionSource(A, Destructor->getParent()) ||
+             utilityAssociativeNodeDestructionSource(A, Destructor->getParent()) ||
              utilityUnorderedMapDestructionSource(A, Destructor->getParent()) ||
              utilityForwardListDestructionSource(A, Destructor->getParent()) ||
              utilityEmptyHashSetDestructionSource(A, Destructor->getParent()) ||
@@ -21329,7 +21339,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             const auto *Owner = cast<DecompositionDecl>(Binding->getDecomposedDecl());
             operationTypeDependency(Owner->getTypeSourceInfo());
             if (const auto *Field = A.recordBindingField(Binding)) {
-              if (unorderedNodeInsertResult(A.S, A.Sources, dyn_cast<CXXRecordDecl>(Field->getParent()), A.Context))
+              if (associativeNodeInsertResult(A.S, A.Sources, dyn_cast<CXXRecordDecl>(Field->getParent()), A.Context))
                 collectOperationTypeSource(Field->getType(), Binding->getLocation(), true);
               else
                 operationTypeDependency(Field->getTypeSourceInfo());
@@ -21367,7 +21377,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
       };
       if (const auto *E = dyn_cast<Expr>(S)) {
         if (const auto *Cast = dyn_cast<CastExpr>(E);
-            unorderedNodeBaseCast(A.S, A.Sources, Cast, A.Context)) {
+            associativeNodeBaseCast(A.S, A.Sources, Cast, A.Context)) {
           collectOperationTypeSource(Cast->getSubExpr()->getType(), E->getExprLoc(), true);
           return;
         }
@@ -21497,8 +21507,8 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             IndexedUnevaluatedSources.count(TupleQuery->second) && approvedUtilityTupleConstructionSignature(A.S, A.Sources, Construction, A.Context, A.SpecialMembers, A.OperationTraits);
         bool SDKConstruction =
             DefaultViewQuery || CarrierViewCopyQuery || TupleSignatureQuery ||
-            unorderedResultConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
-            unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            associativeNodeResultConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
+            associativeNodeConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             approvedSeedSequenceConstruction(A.S, A.Sources, Construction, A.Context) ||
             (functionalObjectStorageSource(
                  A, Construction->getType()->getAsCXXRecordDecl()) &&
@@ -24330,8 +24340,8 @@ public:
            approvedUtilityStringConstruction(A.S, A.Sources, Construction,
                                              A.Context) ||
            approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, Construction, A.Context) ||
-         unorderedResultConstruction(A.S, A.Sources, Construction, A.Context) ||
-         unorderedNodeConstruction(A.S, A.Sources, Construction, A.Context) ||
+         associativeNodeResultConstruction(A.S, A.Sources, Construction, A.Context) ||
+         associativeNodeConstruction(A.S, A.Sources, Construction, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityBitsetConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityForwardListConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -30299,11 +30309,13 @@ public:
               unorderedGenericSwapCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedIteratorTraversalCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context).has_value() ||
-             unorderedResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
+             associativeNodeResultCall(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedTableListAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
              unorderedTableMerge(A.S, A.Sources, Call, A.Context).has_value() ||
-              unorderedNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
+              associativeNodeCall(A.S, A.Sources, Call, A.Context).has_value() ||
               unorderedNodeTransfer(A.S, A.Sources, Call, A.Context).has_value() ||
+              orderedNodeExtraction(A.S, A.Sources, Call, A.Context).has_value() ||
+              orderedNodeInsertion(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantZeroVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantVisit(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantQuery(A.S, A.Sources, Call, A.Context).has_value() ||
@@ -30462,7 +30474,7 @@ public:
           case CK_DerivedToBase:
           case CK_UncheckedDerivedToBase:
           case CK_BaseToDerived:
-            if (!unorderedNodeBaseCast(A.S, A.Sources, C, A.Context) &&
+            if (!associativeNodeBaseCast(A.S, A.Sources, C, A.Context) &&
                 !approvedUtilityOptionalBaseCast(A.S, A.Sources, C, A.Context) &&
                 !approvedFunctionalObjectBaseCast(A.S, A.Sources, C,
                                                   A.Context))
@@ -30550,7 +30562,7 @@ public:
                                          A.S, A.Sources, E, A.Context)) &&
                    !(A.S.coreV2() && approvedUtilityPiecewiseConstructExpression(
                                          A.S, A.Sources, E, A.Context)) &&
-                   !(A.S.coreV2() && unorderedNodeBaseCast(
+                   !(A.S.coreV2() && associativeNodeBaseCast(
                          A.S, A.Sources, dyn_cast<CastExpr>(E), A.Context)) &&
                    !(A.S.coreV2() &&
                      approvedUtilityOptionalBaseCast(
@@ -31105,11 +31117,13 @@ public:
           (unorderedGenericSwapCall(A.S, A.Sources, C, A.Context) ||
              unorderedIteratorTraversalCall(A.S, A.Sources, C, A.Context) ||
              unorderedTableNonmemberCall(A.S, A.Sources, C, A.Context) ||
-             unorderedResultCall(A.S, A.Sources, C, A.Context) ||
+             associativeNodeResultCall(A.S, A.Sources, C, A.Context) ||
              unorderedTableListAssignment(A.S, A.Sources, C, A.Context) ||
              unorderedTableMerge(A.S, A.Sources, C, A.Context) ||
-           unorderedNodeCall(A.S, A.Sources, C, A.Context) ||
-           unorderedNodeTransfer(A.S, A.Sources, C, A.Context))) {
+           associativeNodeCall(A.S, A.Sources, C, A.Context) ||
+           unorderedNodeTransfer(A.S, A.Sources, C, A.Context) ||
+           orderedNodeExtraction(A.S, A.Sources, C, A.Context) ||
+           orderedNodeInsertion(A.S, A.Sources, C, A.Context))) {
         A.type(C->getType(), L, true);
         A.S.Module["memory_lifetimes"] = true;
         return true;
@@ -31506,8 +31520,8 @@ public:
                    approvedUtilityStringConstruction(A.S, A.Sources, C,
                                                      A.Context) ||
                    approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context) ||
-         unorderedResultConstruction(A.S, A.Sources, C, A.Context) ||
-         unorderedNodeConstruction(A.S, A.Sources, C, A.Context) ||
+         associativeNodeResultConstruction(A.S, A.Sources, C, A.Context) ||
+         associativeNodeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityUnorderedMapConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityBitsetConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityForwardListConstruction(A.S, A.Sources, C, A.Context) ||
@@ -31774,14 +31788,15 @@ static void orderCoreV2Records(Adapter &A) {
         approvedUtilityUnorderedIteratorRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityUnorderedMap =
         approvedUtilityUnorderedMapRecord(A.S, A.Sources, R, A.Context);
-    const auto UnorderedNode = unorderedNodeRecord(A.S, A.Sources, R, A.Context);
-    const auto UnorderedResult = unorderedNodeInsertResult(A.S, A.Sources, R, A.Context);
+    const auto UnorderedNode = associativeNodeRecord(A.S, A.Sources, R, A.Context);
+    const auto UnorderedResult = associativeNodeInsertResult(A.S, A.Sources, R, A.Context);
     const auto UtilityDefaultDelete =
         approvedUtilityDefaultDeleteRecord(A.S, A.Sources, R, A.Context);
     const auto UtilityAllocator =
         approvedUtilityAllocatorRecord(A.S, A.Sources, R, A.Context);
-    const auto FunctionalObject =
-        approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context);
+    const auto ValueComparator = approvedOrderedValueComparatorRecord(A.S, A.Sources, R, A.Context);
+    const bool FunctionalObject =
+        approvedFunctionalObjectRecord(A.S, A.Sources, R, A.Context).has_value() || ValueComparator.has_value();
     const auto FunctionalReference =
         approvedFunctionalReferenceRecord(A.S, A.Sources, R, A.Context);
     const auto NotFn = functionalNotFnLayout(A.S, A.Sources, R, A.Context);
@@ -31859,7 +31874,7 @@ static void orderCoreV2Records(Adapter &A) {
       DependencyTypes.emplace_back(UtilityString->PointerType,
                                    UtilityString->Record->getLocation());
     } else if (UnorderedNode) {
-      DependencyTypes.emplace_back(UnorderedNode->Map.NodePointerType, R->getLocation());
+      DependencyTypes.emplace_back(UnorderedNode->PointerType, R->getLocation());
     } else if (UnorderedResult) {
       for (const auto *Field : {UnorderedResult->Position, UnorderedResult->Inserted, UnorderedResult->Handle})
         DependencyTypes.emplace_back(Field->getType(), Field->getLocation());
@@ -31898,6 +31913,8 @@ static void orderCoreV2Records(Adapter &A) {
                                    Bind->Storage.BoundArguments->getLocation());
     } else if (NotFn) {
       DependencyTypes.emplace_back(NotFn->CallableType, R->getLocation());
+    } else if (ValueComparator) {
+      DependencyTypes.emplace_back(A.Context.UnsignedCharTy, R->getLocation());
     } else if (FunctionalReference) {
       DependencyTypes.emplace_back(FunctionalReference->PointerType,
                                    FunctionalReference->Record->getLocation());
@@ -32195,17 +32212,17 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
         approvedUtilityUnorderedIteratorRecord(S, Sources, R, Context);
     const auto UtilityUnorderedMap =
         approvedUtilityUnorderedMapRecord(S, Sources, R, Context);
-    const auto UnorderedNode = unorderedNodeRecord(S, Sources, R, Context);
-    const auto UnorderedResult = unorderedNodeInsertResult(S, Sources, R, Context);
+    const auto UnorderedNode = associativeNodeRecord(S, Sources, R, Context);
+    const auto UnorderedResult = associativeNodeInsertResult(S, Sources, R, Context);
     const auto UtilityDefaultDelete =
         S.coreV2() ? approvedUtilityDefaultDeleteRecord(S, Sources, R, Context)
                    : std::optional<UtilityDefaultDeleteRecord>();
     const auto UtilityAllocator =
         S.coreV2() ? approvedUtilityAllocatorRecord(S, Sources, R, Context)
                    : std::optional<UtilityAllocatorRecord>();
-    const auto FunctionalObject =
-        S.coreV2() ? approvedFunctionalObjectRecord(S, Sources, R, Context)
-                   : std::optional<FunctionalObjectRecord>();
+    const bool FunctionalObject = S.coreV2() &&
+        (approvedFunctionalObjectRecord(S, Sources, R, Context) ||
+         approvedOrderedValueComparatorRecord(S, Sources, R, Context));
     const auto FunctionalReference =
         S.coreV2() ? approvedFunctionalReferenceRecord(S, Sources, R, Context)
                    : std::optional<FunctionalReferenceRecord>();
@@ -32334,7 +32351,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                               : Context.getSizeType(), R->getLocation())}});
     } else if (UnorderedNode) {
       Fields.push_back(json::Object{{"name", "nct_unordered_handle_node"},
-          {"type", type(UnorderedNode->Map.NodePointerType, R->getLocation())}});
+          {"type", type(UnorderedNode->PointerType, R->getLocation())}});
       Fields.push_back(json::Object{{"name", "nct_unordered_handle_allocator"}, {"type", "u8"}});
       Fields.push_back(json::Object{{"name", "nct_unordered_handle_engaged"}, {"type", "bool"}});
     } else if (UtilityUnorderedIterator) {
