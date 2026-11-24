@@ -9652,28 +9652,39 @@ const CXXRecordDecl *approvedUtilityAnyPointerCast(const State &S, const SourceM
   return anyPointerCast(S, SM, Call->getDirectCallee(), Context, true);
 }
 
-static bool anySingleUseLocal(const State &S, const SourceManager &SM,
-                              const VarDecl *Local, const DeclRefExpr *Use) {
+static const CXXRecordDecl *checkedAnyActiveValueCast(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool CheckOwnerUses);
+
+static bool anyCastsKeepActiveLocal(const State &S, const SourceManager &SM,
+    const VarDecl *Local, const DeclRefExpr *Use, const ASTContext &Context) {
   const auto *Owner = dyn_cast<FunctionDecl>(Local->getDeclContext());
   const auto *Body = Owner ? Owner->getBody() : nullptr;
   const auto AfterInitializer = SM.getExpansionLoc(Local->getEndLoc());
-  const auto AtUse = SM.getExpansionLoc(Use->getExprLoc());
-  if (!Body || !S.owns(SM, Owner->getLocation()) || AfterInitializer.isInvalid() || AtUse.isInvalid() ||
-      !SM.isBeforeInTranslationUnit(AfterInitializer, AtUse))
+  if (!Body || !S.owns(SM, Owner->getLocation()) || AfterInitializer.isInvalid())
     return false;
   const auto *Identity = Local->getCanonicalDecl();
   unsigned Nodes = 0;
   bool Found = false;
-  // The only reference is consumed by the authenticated value cast, so
-  // no assignment or borrowed access can change the active payload.
+  // Each use of the owner must be an authenticated cast of its initial
+  // payload type. A returned scalar reference can only modify that payload.
   const auto Scan = [&](auto &&Self, const Stmt *Statement, unsigned Depth) -> bool {
     if (!Statement) return true;
     if (Depth >= 64 || ++Nodes > 200000) return false;
-    if (const auto *Read = dyn_cast<DeclRefExpr>(Statement);
-        Read && Read->getDecl()->getCanonicalDecl() == Identity) {
-      if (Read != Use || Found) return false;
-      Found = true;
+    if (const auto *Call = dyn_cast<CallExpr>(Statement); Call && Call->getNumArgs() == 1) {
+      const auto *Read = anyReference(Call->getArg(0));
+      if (Read && Read->getDecl()->getCanonicalDecl() == Identity) {
+        const auto Location = SM.getExpansionLoc(Read->getExprLoc());
+        if (Location.isInvalid() || !SM.isBeforeInTranslationUnit(AfterInitializer, Location) ||
+            (Found && Read == Use) || !checkedAnyActiveValueCast(S, SM, Call, Context, false))
+          return false;
+        Found = Found || Read == Use;
+        return true;
+      }
     }
+    if (const auto *Read = dyn_cast<DeclRefExpr>(Statement);
+        Read && Read->getDecl()->getCanonicalDecl() == Identity)
+      return false;
     if (const auto *Lambda = dyn_cast<LambdaExpr>(Statement))
       for (const auto &Capture : Lambda->captures())
         if (Capture.capturesVariable() && Capture.getCapturedVar()->getCanonicalDecl() == Identity)
@@ -9685,8 +9696,9 @@ static bool anySingleUseLocal(const State &S, const SourceManager &SM,
   return Scan(Scan, Body, 0) && Found;
 }
 
-const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
-    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+static const CXXRecordDecl *checkedAnyActiveValueCast(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool CheckOwnerUses) {
   if (!S.coreV2() || !Call || Call->getNumArgs() != 1)
     return nullptr;
   const auto *Original = Call->getDirectCallee();
@@ -9701,7 +9713,9 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   if (!utilityAnyInlineScalar(Payload, Context))
     return nullptr;
   const auto ConstValue = Payload.withConst();
-  const bool Reference = Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue));
+  const bool MutableReference = Context.hasSameType(Result, Context.getLValueReferenceType(Payload));
+  const bool Reference = MutableReference ||
+      Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue));
   if (!Context.hasSameType(Result, Args->get(0).getAsType()) ||
       (!Reference && !Context.hasSameType(Result, Payload)) ||
       Call->isLValue() != Reference || !Context.hasSameType(Call->getType(), Result.getNonReferenceType()))
@@ -9716,7 +9730,8 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
     return nullptr;
   const bool Const = Local->getType().isConstQualified();
   const auto Owner = Context.getRecordType(Any);
-  if ((!Const && (Reference || !anySingleUseLocal(S, SM, Local, Receiver))) ||
+  if ((Const && MutableReference) ||
+      (!Const && CheckOwnerUses && !anyCastsKeepActiveLocal(S, SM, Local, Receiver, Context)) ||
       !Context.hasSameType(F->getParamDecl(0)->getType(),
                            Context.getLValueReferenceType(Const ? Owner.withConst() : Owner)))
     return nullptr;
@@ -9766,6 +9781,11 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
          anySelectedVariable(Access->getSubExpr(), Pointer) &&
          Context.hasSameType(Value->getType(), Call->getType()) && Value->isLValue() == Reference
       ? Any : nullptr;
+}
+
+const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  return checkedAnyActiveValueCast(S, SM, Call, Context, true);
 }
 
 static const CXXMethodDecl *variantEmplaceDefinition(const State &S,
