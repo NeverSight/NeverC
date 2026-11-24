@@ -136071,6 +136071,17 @@ static const ClassTemplateSpecializationDecl *associativeTypeIdentity(
   return R;
 }
 
+static bool associativeMappedValueType(const ASTContext &Context, QualType Type) {
+  if (Context.hasSameType(Type, Context.FloatTy) || Context.hasSameType(Type, Context.DoubleTy))
+    return true;
+  const QualType IntegralTypes[] = {
+      Context.BoolTy, Context.CharTy, Context.SignedCharTy, Context.UnsignedCharTy,
+      Context.ShortTy, Context.UnsignedShortTy, Context.IntTy, Context.UnsignedIntTy,
+      Context.LongTy, Context.UnsignedLongTy, Context.LongLongTy, Context.UnsignedLongLongTy,
+  };
+  return llvm::is_contained(IntegralTypes, Type.getCanonicalType());
+}
+
 bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
     const CXXRecordDecl *Record, const ASTContext &Context) {
   if (!S.coreV2() || !Record || !Record->getIdentifier()) return false;
@@ -136082,8 +136093,7 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
   const auto &Arguments = Map->getTemplateArgs();
   const auto Mapped = Arguments[1].getAsType();
   if (!Context.hasSameType(Arguments[0].getAsType(), Context.IntTy) ||
-      !(Context.hasSameType(Mapped, Context.IntTy) || Context.hasSameType(Mapped, Context.LongTy) ||
-        Context.hasSameType(Mapped, Context.LongLongTy))) return false;
+      !associativeMappedValueType(Context, Mapped)) return false;
   const auto *Hash = associativeTypeIdentity(S, SM, Arguments[2].getAsType()->getAsCXXRecordDecl(),
       "hash", "__functional/hash.h", "__fwd/functional.h", 1);
   const auto *Equal = associativeTypeIdentity(S, SM, Arguments[3].getAsType()->getAsCXXRecordDecl(),
@@ -136138,17 +136148,6 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
   });
 }
 
-static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
-  if (Context.hasSameType(Type, Context.FloatTy) || Context.hasSameType(Type, Context.DoubleTy))
-    return true;
-  const QualType IntegralTypes[] = {
-      Context.BoolTy, Context.CharTy, Context.SignedCharTy, Context.UnsignedCharTy,
-      Context.ShortTy, Context.UnsignedShortTy, Context.IntTy, Context.UnsignedIntTy,
-      Context.LongTy, Context.UnsignedLongTy, Context.LongLongTy, Context.UnsignedLongLongTy,
-  };
-  return llvm::is_contained(IntegralTypes, Type.getCanonicalType());
-}
-
 static std::optional<bool> orderedComparatorDirection(const State &S,
     const SourceManager &SM, QualType Type, QualType Key, const ASTContext &Context) {
   const auto *Record = Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
@@ -136186,7 +136185,7 @@ bool approvedAssociativeContainerMetadataRecord(
   const auto Mapped = Map ? Args.get(1).getAsType() : QualType();
   if ((!Context.hasSameType(Key, Context.IntTy) &&
        !(HashTable && Context.hasSameType(Key, Context.UnsignedIntTy))) ||
-      (Map && !orderedMappedValueType(Context, Mapped)))
+      (Map && !associativeMappedValueType(Context, Mapped)))
     return false;
   auto PolicyFor = [&](unsigned I, llvm::StringRef Policy, llvm::StringRef Header) {
     const auto *Spec = associativeTypeIdentity(S, SM, Args.get(I).getAsType()->getAsCXXRecordDecl(),
@@ -136889,7 +136888,7 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
                             : std::nullopt;
     if (!Wrapper || Wrapper->getNumBases() || !Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->First->getType(), Context.IntTy.withConst()) ||
-        !orderedMappedValueType(Context, Pair->Second->getType()))
+        !associativeMappedValueType(Context, Pair->Second->getType()))
       return std::nullopt;
     MappedValueType = Pair->Second->getType();
     const auto &WrapperLayout = Context.getASTRecordLayout(Wrapper);

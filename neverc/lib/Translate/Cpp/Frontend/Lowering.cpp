@@ -2235,6 +2235,12 @@ class FunctionLowering {
     branch(binary("!=", Current, LeftEnd, "bool", L), Compare, Done, L);
     label(Compare, L);
     auto Value = snapshot(unorderedNodeValue(Current, Table, L), L);
+    if (Table.MappedType->isRealFloatingType()) {
+      // A non-reflexive value cannot match a member of the other group.
+      const auto CountMatches = labelName();
+      branch(binary("==", Value, Value, "bool", L), CountMatches, Different, L);
+      label(CountMatches, L);
+    }
     auto LeftCount = unorderedMappedValueCount(Left, LeftEnd, Value, Table, L);
     auto RightCount = unorderedMappedValueCount(Right, RightEnd, Value, Table, L);
     branch(binary("==", std::move(LeftCount), std::move(RightCount), "bool", L), Advance, Different, L);
