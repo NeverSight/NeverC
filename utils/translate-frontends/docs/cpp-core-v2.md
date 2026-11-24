@@ -18449,3 +18449,10 @@ insertion preserves the stored node. On a unique-key conflict, the return
 value carries the uninserted node. A detached map node permits changes to
 its key and mapped value before reinsertion. The checked map and multimap
 `value_comp()` compares the keys of two value pairs.
+
+## Hinted ordered insertion and allocator-extended construction
+
+The checked integer ordered containers support compatible insertion hints for
+values and node handles. An unusable hint falls back to the tree search.
+The supported allocator-extended copy and move constructors preserve stored
+values, equivalent-key order, and the selected ownership semantics.

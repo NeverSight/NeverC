@@ -941,3 +941,10 @@ The combined compiler passes 5,472 source requests across six 64-bit targets
 and 1016 formal tests on Linux x86-64. All 626 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Hinted ordered insertion and allocator-extended construction
+
+The combined compiler passes 5,568 source requests across six 64-bit targets
+and 1032 formal tests on Linux x86-64. All 640 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

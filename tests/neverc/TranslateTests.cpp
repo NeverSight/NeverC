@@ -398934,7 +398934,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2OrderedAllocatorCopyConstructionGuardRejected) {
+TEST_F(TranslateTest, CoreV2OrderedAllocatorCopyConstructionRunAtBothOptimizations) {
   const auto Source = tmpFile("ordered-allocator-copy-construction-guard.cpp");
   writeFile(Source, R"r19containers(#include <map>
 int main() {
@@ -398945,10 +398945,17 @@ int main() {
   return copy.size() == 1 ? 0 : 1;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("ordered-allocator-copy-construction-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-allocator-copy-construction-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2OrderedSetAllocatorObserverEvaluatesReceiverRunAtBothOptimizations) {
@@ -399367,7 +399374,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2OrderedNodeHintedInsertionGuardRejected) {
+TEST_F(TranslateTest, CoreV2OrderedNodeHintedInsertionRunAtBothOptimizations) {
   const auto Source = tmpFile("ordered-node-hinted-insertion-guard.cpp");
   writeFile(Source, R"r19containers(#include <map>
 #include <utility>
@@ -399378,10 +399385,17 @@ int main() {
   return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("ordered-node-hinted-insertion-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-node-hinted-insertion-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2OrderedNodeCaseRetainsReinsertionGuardRunAtBothOptimizations) {
@@ -399512,6 +399526,447 @@ int main() {
   using Map = std::map<int, long>;
   const Map values;
   return values.value_comp()(Map::value_type{1, 100L}, Map::value_type{2, -100L}) ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedSetHintedNodeConflictLeavesTheHandleRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-set-hinted-node-conflict-leaves-the-handle.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <utility>
+using Set = std::set<int>;
+static Set *observe(Set *owner, int &calls) {
+  ++calls;
+  return owner;
+}
+int main() {
+  Set source{2, 4, 6}, destination{2, 3, 5};
+  auto conflict = source.extract(2);
+  auto same = destination.insert(destination.cbegin(), std::move(conflict));
+  if (same != destination.begin() || conflict.empty() || conflict.value() != 2)
+    return 1;
+  auto adjacent = source.extract(4);
+  auto four = destination.insert(destination.find(3), std::move(adjacent));
+  if (four == destination.end() || *four != 4 || !adjacent.empty())
+    return 2;
+  auto distant = source.extract(6);
+  auto six = destination.insert(destination.cbegin(), std::move(distant));
+  if (six == destination.end() || *six != 6 || !distant.empty() || destination.size() != 5)
+    return 3;
+  Set::node_type empty;
+  int calls = 0;
+  auto missing = destination.insert(observe(&destination, calls)->cend(), std::move(empty));
+  return missing == destination.end() && calls == 1 && empty.empty() ? 0 : 4;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-set-hinted-node-conflict-leaves-the-handle.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-set-hinted-node-conflict-leaves-the-handle" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMapHintedNodeUsesConstCursorConversionRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-map-hinted-node-uses-const-cursor-conversion.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <utility>
+int main() {
+  std::map<int, int> source{{1, 11}, {4, 44}}, destination{{2, 22}, {5, 55}};
+  auto first = source.extract(1);
+  auto before = destination.find(2);
+  auto one = destination.insert(before, std::move(first));
+  if (one != destination.begin() || one->second != 11 || !first.empty())
+    return 1;
+  auto middle = source.extract(4);
+  auto four = destination.insert(destination.find(5), std::move(middle));
+  return four != destination.end() && four->first == 4 && four->second == 44 &&
+         middle.empty() && source.empty() && destination.size() == 4 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-map-hinted-node-uses-const-cursor-conversion.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-map-hinted-node-uses-const-cursor-conversion" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMultisetHintedNodePrecedesAnEquivalentCursorRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-multiset-hinted-node-precedes-an-equivalent-cursor.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <utility>
+int main() {
+  std::multiset<int> source{2}, destination{1, 2, 2, 3};
+  const int *saved = &*source.begin();
+  auto node = source.extract(source.cbegin());
+  auto hint = destination.lower_bound(2);
+  auto result = destination.insert(hint, std::move(node));
+  return result != hint && result == destination.lower_bound(2) &&
+         &*result == saved && node.empty() && destination.count(2) == 3 ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-multiset-hinted-node-precedes-an-equivalent-cursor.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-multiset-hinted-node-precedes-an-equivalent-cursor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMultimapHintedFallbackPreservesEquivalentOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-multimap-hinted-fallback-preserves-equivalent-order.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <utility>
+int main() {
+  std::multimap<int, int> source{{2, 70}, {2, 80}};
+  std::multimap<int, int> destination{{1, 10}, {2, 20}, {2, 21}, {5, 50}};
+  auto left = source.extract(source.cbegin());
+  auto low = destination.insert(destination.cbegin(), std::move(left));
+  auto right = source.extract(source.cbegin());
+  auto high = destination.insert(destination.cend(), std::move(right));
+  auto cursor = destination.lower_bound(2);
+  if (cursor != low || cursor->second != 70 || !left.empty() || !right.empty())
+    return 1;
+  if ((++cursor)->second != 20 || (++cursor)->second != 21)
+    return 2;
+  return ++cursor == high && cursor->second == 80 && destination.count(2) == 4 ? 0 : 3;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-multimap-hinted-fallback-preserves-equivalent-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-multimap-hinted-fallback-preserves-equivalent-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedHintedNodeCustomPolicyGuardRejected) {
+  const auto Source = tmpFile("ordered-hinted-node-custom-policy-guard.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <map>
+#include <utility>
+int main() {
+  std::map<int, int, std::greater<int>> source{{2, 20}}, destination{{1, 10}};
+  auto node = source.extract(2);
+  auto position = destination.insert(destination.cbegin(), std::move(node));
+  return node.empty() && position->first == 2 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedSetHintedValueInsertionAndEmplacementRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-set-hinted-value-insertion-and-emplacement.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  std::set<int> values{1, 3};
+  const int key = 2;
+  auto middle = values.insert(values.find(3), key);
+  auto same = values.emplace_hint(values.cend(), 2);
+  if (same != middle || *same != 2 || values.size() != 3)
+    return 1;
+  auto zero = values.emplace_hint(values.cbegin());
+  auto duplicate = values.emplace_hint(values.cend());
+  return zero == values.begin() && duplicate == zero && *zero == 0 && values.size() == 4 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-set-hinted-value-insertion-and-emplacement.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-set-hinted-value-insertion-and-emplacement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMultisetHintedValueInsertsBeforeEquivalentCursorRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-multiset-hinted-value-inserts-before-equivalent-cursor.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+int main() {
+  std::multiset<int> values{1, 2, 2, 4};
+  auto first = values.lower_bound(2);
+  const int *saved = &*first;
+  auto inserted = values.emplace_hint(first, 2);
+  if (inserted == first || inserted != values.lower_bound(2) || &*first != saved)
+    return 1;
+  auto high = values.insert(values.cend(), 2);
+  return ++high == values.find(4) && values.count(2) == 4 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-multiset-hinted-value-inserts-before-equivalent-cursor.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-multiset-hinted-value-inserts-before-equivalent-cursor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMapHintedTryEmplaceAndInsertOrAssignRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-map-hinted-try-emplace-and-insert-or-assign.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+static int observe(int &calls, int value) {
+  ++calls;
+  return value;
+}
+int main() {
+  std::map<int, int> values{{2, 20}, {5, 50}};
+  int calls = 0;
+  auto existing = values.find(2);
+  auto kept = values.try_emplace(values.cend(), 2, observe(calls, 99));
+  if (kept != existing || kept->second != 20 || calls != 1)
+    return 1;
+  const int three = 3;
+  auto created = values.try_emplace(values.find(5), three);
+  if (created->second != 0 || created->first != 3)
+    return 2;
+  auto assigned = values.insert_or_assign(values.cbegin(), three, observe(calls, 31));
+  auto inserted = values.insert_or_assign(values.cend(), 7, 70);
+  return assigned == created && assigned->second == 31 && inserted->second == 70 &&
+         calls == 2 && values.size() == 4 ? 0 : 3;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-map-hinted-try-emplace-and-insert-or-assign.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-map-hinted-try-emplace-and-insert-or-assign" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMultimapHintedPairAndValuePreserveOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-multimap-hinted-pair-and-value-preserve-order.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  using Map = std::multimap<int, int>;
+  Map values{{1, 10}, {2, 20}, {2, 21}, {4, 40}};
+  Map::value_type written{2, 19};
+  auto first = values.insert(values.cbegin(), written);
+  auto last = values.emplace_hint(values.cend(), 2, 22);
+  auto cursor = values.lower_bound(2);
+  if (cursor != first || cursor->second != 19)
+    return 1;
+  if ((++cursor)->second != 20 || (++cursor)->second != 21)
+    return 2;
+  return ++cursor == last && cursor->second == 22 && values.count(2) == 4 ? 0 : 3;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-multimap-hinted-pair-and-value-preserve-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-multimap-hinted-pair-and-value-preserve-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMapHintedEmplaceConvertingValueGuardRejected) {
+  const auto Source = tmpFile("ordered-map-hinted-emplace-converting-value-guard.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+int main() {
+  std::map<int, int> values;
+  short mapped = 14;
+  auto inserted = values.emplace_hint(values.cend(), 1, mapped);
+  return inserted->second == 14 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedSetHintedInsertCustomPolicyGuardRejected) {
+  const auto Source = tmpFile("ordered-set-hinted-insert-custom-policy-guard.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <set>
+int main() {
+  std::set<int, std::greater<int>> values{2};
+  auto inserted = values.insert(values.cbegin(), 3);
+  return inserted == values.begin() && *inserted == 3 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2OrderedSetAllocatorCopyEvaluatesAllocatorAndOwnsNewNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-set-allocator-copy-evaluates-allocator-and-owns-new-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+using Set = std::set<int>;
+static const Set::allocator_type *observe(const Set::allocator_type *a, int &calls) {
+  ++calls;
+  return a;
+}
+int main() {
+  const Set source{2, 5, 7};
+  const Set::allocator_type allocator;
+  int calls = 0;
+  Set copy(source, *observe(&allocator, calls));
+  if (calls != 1 || copy != source || &*copy.begin() == &*source.begin())
+    return 1;
+  copy.erase(5);
+  return source.count(5) == 1 && copy.count(5) == 0 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-set-allocator-copy-evaluates-allocator-and-owns-new-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-set-allocator-copy-evaluates-allocator-and-owns-new-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMultisetAllocatorMoveTransfersExistingAddressesRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-multiset-allocator-move-transfers-existing-addresses.cpp");
+  writeFile(Source, R"r19containers(#include <set>
+#include <utility>
+int main() {
+  using Set = std::multiset<int>;
+  Set source{1, 2, 2, 9};
+  const int *saved = &*source.begin();
+  const Set::allocator_type allocator;
+  Set moved(std::move(source), allocator);
+  if (!source.empty() || moved.count(2) != 2 || &*moved.begin() != saved)
+    return 1;
+  source.insert(8);
+  return source.size() == 1 && *source.begin() == 8 && moved.size() == 4 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-multiset-allocator-move-transfers-existing-addresses.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-multiset-allocator-move-transfers-existing-addresses" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMapAllocatorMoveKeepsPayloadAndNodeRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-map-allocator-move-keeps-payload-and-node.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <utility>
+int main() {
+  using Map = std::map<int, int>;
+  Map source{{2, 20}, {5, 50}};
+  const Map::value_type *saved = &*source.begin();
+  Map moved(std::move(source), Map::allocator_type{});
+  if (!source.empty() || moved.size() != 2 || &*moved.begin() != saved)
+    return 1;
+  moved[2] = 21;
+  return moved.find(2)->second == 21 && moved.find(5)->second == 50 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-map-allocator-move-keeps-payload-and-node.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-map-allocator-move-keeps-payload-and-node" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedMultimapAllocatorCopyAndMoveRetainEquivalentSequenceRunAtBothOptimizations) {
+  const auto Source = tmpFile("ordered-multimap-allocator-copy-and-move-retain-equivalent-sequence.cpp");
+  writeFile(Source, R"r19containers(#include <map>
+#include <utility>
+int main() {
+  using Map = std::multimap<int, int>;
+  const Map source{{2, 20}, {2, 21}, {5, 50}};
+  const Map::allocator_type allocator;
+  Map copy(source, allocator);
+  if (copy != source || &*copy.begin() == &*source.begin())
+    return 1;
+  auto saved = &*copy.begin();
+  Map moved(std::move(copy), allocator);
+  auto first = moved.begin();
+  if (!copy.empty() || &*first != saved || first->second != 20)
+    return 2;
+  return (++first)->second == 21 && moved.count(2) == 2 && source.size() == 3 ? 0 : 3;
+}
+)r19containers");
+  const auto Output = tmpFile("ordered-multimap-allocator-copy-and-move-retain-equivalent-sequence.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("ordered-multimap-allocator-copy-and-move-retain-equivalent-sequence" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRejected) {
+  const auto Source = tmpFile("ordered-allocator-extended-constructor-custom-compare-guard.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <map>
+int main() {
+  using Map = std::map<int, int, std::greater<int>>;
+  Map source{{2, 20}};
+  Map copy(source, Map::allocator_type{});
+  return copy.size() == 1 ? 0 : 1;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

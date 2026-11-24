@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_hints_allocator_ownership_registered = cls.registered
+        cls.ordered_hints_allocator_ownership_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_hints_allocator_ownership_original = cls.adapter.restore_original_gtests(cls.ordered_hints_allocator_ownership_registered,
+                                                                        cls.ordered_hints_allocator_ownership_suffix)
+        cls.registered = cls.adapter.restore_ordered_hints_allocator_ownership_history(cls.ordered_hints_allocator_ownership_registered)
         cls.ordered_node_and_value_compare_registered = cls.registered
         cls.ordered_node_and_value_compare_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_node_and_value_compare_original = cls.adapter.restore_original_gtests(cls.ordered_node_and_value_compare_registered,
@@ -3452,6 +3457,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_node_and_value_compare_history(self.ordered_node_and_value_compare_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_node_and_value_compare_registered, self.ordered_node_and_value_compare_suffix + b' ')
+
+
+    def test_ordered_hints_allocator_ownership_retains_published_bodies(self):
+        self.assertEqual(self.ordered_hints_allocator_ownership_original + self.ordered_hints_allocator_ownership_suffix, self.ordered_hints_allocator_ownership_registered)
+        self.assertEqual(self.adapter.restore_ordered_hints_allocator_ownership_history(self.ordered_hints_allocator_ownership_original),
+                         self.ordered_node_and_value_compare_original)
+        output, evidence = self.extractor.extract(self.ordered_hints_allocator_ownership_original, ['TranslateTest.CoreV2OrderedSetHintedNodeConflictLeavesTheHandleRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapHintedNodeUsesConstCursorConversionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetHintedNodePrecedesAnEquivalentCursorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapHintedFallbackPreservesEquivalentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetHintedValueInsertionAndEmplacementRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetHintedValueInsertsBeforeEquivalentCursorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapHintedTryEmplaceAndInsertOrAssignRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapHintedPairAndValuePreserveOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetAllocatorCopyEvaluatesAllocatorAndOwnsNewNodesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetAllocatorMoveTransfersExistingAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAllocatorMoveKeepsPayloadAndNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapAllocatorCopyAndMoveRetainEquivalentSequenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedHintedNodeCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedMapHintedEmplaceConvertingValueGuardRejected', 'TranslateTest.CoreV2OrderedSetHintedInsertCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8820)
+        self.assertEqual(evidence['selected_count'], 16)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-multimap-hinted-fallback-preserves-equivalent-order', output)
+        self.assertIn(b'ordered-hinted-node-custom-policy-guard', output)
+
+    def test_ordered_hints_allocator_ownership_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_hints_allocator_ownership_history(self.ordered_hints_allocator_ownership_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_hints_allocator_ownership_registered, self.ordered_hints_allocator_ownership_suffix + b' ')
 
 
 if __name__ == '__main__':

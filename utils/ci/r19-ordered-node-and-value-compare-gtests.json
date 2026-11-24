@@ -95,6 +95,14 @@
       "source_sha256": "12f3b4d7efa99e271c7f0f9f910318290ed2dc5ca67453fdccd4be952a2a8ffa",
       "original_case_source_sha256": "12f3b4d7efa99e271c7f0f9f910318290ed2dc5ca67453fdccd4be952a2a8ffa",
       "gtest_body_sha256": "3a4d0848d07280a81edd37135538363d7836f1542f2dbf5421ab90807332dbac"
+    },
+    {
+      "name": "ordered-node-hinted-insertion-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedNodeHintedInsertionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
+      "original_case_source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
+      "gtest_body_sha256": "11b14a02c2b9e3d067b326d9ac2087ace810e2ebfce13c0a3f61e78dec9223a2"
     }
   ],
   "negative_cases": [
@@ -105,14 +113,6 @@
       "source_sha256": "e94867acffd285de6f0eb8632bf3c2ed508b3e9921173d3fea9a59a49c42ce53",
       "original_case_source_sha256": "e94867acffd285de6f0eb8632bf3c2ed508b3e9921173d3fea9a59a49c42ce53",
       "gtest_body_sha256": "331191d3b13296e3bb94403af06415ca1449ce1c6c63dfd1d78708d1b9b950a8"
-    },
-    {
-      "name": "ordered-node-hinted-insertion-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedNodeHintedInsertionGuardRejected",
-      "expected": "reject",
-      "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
-      "original_case_source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
-      "gtest_body_sha256": "0e3750a573aeaa8542f3e5c311c2cc1054a1132aebb155c22fe8a64cd716e4e0"
     },
     {
       "name": "ordered-map-value-compare-custom-policy-guard",
@@ -229,19 +229,19 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-node-hinted-insertion-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> source{{2, 10}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto inserted = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;\n}\n",
+      "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-extraction-custom-policy-guard",
       "expected": "reject",
       "public_header": "map",
       "source": "#include <map>\nstruct Compare {\n  bool descending;\n  bool operator()(int a, int b) const { return descending ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Compare> map({{1, 5}, {3, 7}}, Compare{true});\n  auto node = map.extract(3);\n  return node.key() == 3 && node.mapped() == 7 && map.size() == 1 ? 0 : 1;\n}\n",
       "source_sha256": "e94867acffd285de6f0eb8632bf3c2ed508b3e9921173d3fea9a59a49c42ce53",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-node-hinted-insertion-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> source{{2, 10}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto inserted = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;\n}\n",
-      "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
       "kind": "source-body-guard"
     },
     {
@@ -274,8 +274,8 @@
     "TranslateTest.CoreV2OrderedValueCompareIgnoresTheMappedValueRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMultimapValueCompareCanBeCalledDirectlyRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedValueCompareConstObjectUsesLiveInputsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedNodeHintedInsertionRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedExtractionCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedNodeHintedInsertionGuardRejected",
     "TranslateTest.CoreV2OrderedMapValueCompareCustomPolicyGuardRejected",
     "TranslateTest.CoreV2OrderedMapValueCompareOtherMappedTypeGuardRejected"
   ],
@@ -290,11 +290,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8804,
   "current_python_registry_tests": 262,
-  "native_reference_selected_executions": 24,
-  "planned_generated_c23_executions": 24,
+  "native_reference_selected_executions": 26,
+  "planned_generated_c23_executions": 26,
   "native_reference_proofs": {
+    "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c",
     "ordered-node-and-value-compare": "9f688edfd1ca4e2fceb07c51e787e299665a0488a58c4ecb6c377980d0cd41cc"
   },
-  "native_reference_authentication_sha256": "196799a85decba64575df89a6218387d9b6fc46c1f953d606744e129311443f5",
-  "source_proof_sha256": "838246acd03b39f750614aa652dfe4ace00028902c9fe2b763be40beae6b0983"
+  "native_reference_authentication_sha256": "f78baee6ef072560454cd0becbe5fe57c9da5a1c455687d64d76d6678b7e6ed2",
+  "source_proof_sha256": "6a89b4d134035217aa54d5a4b59883be7d0f8ec8bccdf9dfc05bec269669cbad"
 }
