@@ -27263,8 +27263,10 @@ class FunctionLowering {
   }
 
   Expression orderedTreeSentinel(Expression Place, SourceLocation L) {
-    return cast(address(orderedContainerMember(std::move(Place), "nct_ordered_root", L),
-                        A.Context.VoidPtrTy, L), "ptr:void", L);
+    // The address identifies the sentinel even when the owner is const.
+    auto Root = orderedContainerMember(std::move(Place), "nct_ordered_root", L);
+    return cast(address(std::move(Root), A.Context.VoidPtrTy.withConst(), L),
+                "ptr:void", L);
   }
 
   Expression orderedSetBoundary(Expression Place, Expression Key,
@@ -27606,6 +27608,18 @@ class FunctionLowering {
     return Next;
   }
 
+  Expression initializeOrderedMappedValue(OrderedSetInserted Result, Expression Value,
+      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    auto Mapped = nodeFieldAt(std::move(Result.Node), A.Context.IntTy, Info.MappedOffsetBytes, L);
+    const auto New = labelName(), Done = labelName();
+    branch(std::move(Result.Inserted), New, Done, L);
+    label(New, L);
+    assign(Mapped, std::move(Value), L);
+    jump(Done, L);
+    label(Done, L);
+    return Mapped;
+  }
+
   Expression eraseOrderedSetSpan(Expression Place, Expression First, Expression Last,
       const UtilityOrderedSetStorage &Info, SourceLocation L) {
     auto Node = snapshot(std::move(First), L);
@@ -27791,6 +27805,11 @@ class FunctionLowering {
     // Source traversal is sorted. The previous insertion remains the rightmost node after balancing.
     auto Node = Cache ? reuseOrderedSetNode(*Cache, Info, L) : allocateOrderedSetNode(Info, L);
     linkOrderedSetKey(Place, Node, orderedSetKey(Current, Info, L), Parent, Slot, Info, L);
+    if (!Info.MappedPairType.isNull()) {
+      auto From = nodeFieldAt(Current, A.Context.IntTy, Info.MappedOffsetBytes, L);
+      auto To = nodeFieldAt(Node, A.Context.IntTy, Info.MappedOffsetBytes, L);
+      assign(std::move(To), std::move(From), L);
+    }
     assign(Parent, Node, L);
     assign(Slot, address(orderedNodeChild(std::move(Node), true, L), A.Context.VoidPtrTy, L), L);
     auto Next = stepOrderedIterator(Current, true, L);
@@ -30368,7 +30387,22 @@ class FunctionLowering {
       const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
       auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
       auto Input = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-      auto Result = insertOrderedSetKey(std::move(Place), dereference(std::move(Input), L), Info->Storage, L);
+      std::optional<Expression> MappedArgument;
+      if (Call->getNumArgs() == 2)
+        MappedArgument = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
+      auto Value = dereference(std::move(Input), L);
+      auto Key = Info->Input ? fieldStorage(Value, Info->Input->First, L) : std::move(Value);
+      auto Result = insertOrderedSetKey(std::move(Place), std::move(Key), Info->Storage, L);
+      using Kind = OrderedInsertionKind;
+      if (Info->Input) {
+        initializeOrderedMappedValue(Result, fieldStorage(std::move(Value), Info->Input->Second, L), Info->Storage, L);
+      } else if (Info->Kind == Kind::TryEmplace) {
+        auto Mapped = MappedArgument ? dereference(std::move(*MappedArgument), L) : A.zero(A.Context.IntTy, L);
+        initializeOrderedMappedValue(Result, std::move(Mapped), Info->Storage, L);
+      } else if (Info->Kind == Kind::InsertOrAssign) {
+        auto Mapped = nodeFieldAt(Result.Node, A.Context.IntTy, Info->Storage.MappedOffsetBytes, L);
+        assign(std::move(Mapped), dereference(std::move(*MappedArgument), L), L);
+      }
       auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
       if (Info->Result) {
         assign(orderedIteratorCursor(fieldStorage(Output, Info->Result->First, L), L), std::move(Result.Node), L);
@@ -30414,6 +30448,11 @@ class FunctionLowering {
         return binary(Kind == Op::Equal ? "==" : "!=", std::move(Node), std::move(Right), "bool", L);
       }
       if (Kind == Op::Dereference || Kind == Op::Arrow) {
+        if (!Info->Storage.MappedPairType.isNull()) {
+          const auto Type = Kind == Op::Dereference ? Call->getType() : Call->getType()->getPointeeType();
+          auto Pair = nodeFieldAt(std::move(Node), Type, Info->Storage.ValueOffsetBytes, L);
+          return Kind == Op::Dereference ? std::move(Pair) : address(std::move(Pair), Type, L);
+        }
         auto Key = orderedSetKey(std::move(Node), Info->Storage, L);
         return Kind == Op::Dereference ? std::move(Key) : address(std::move(Key), A.Context.IntTy.withConst(), L);
       }
@@ -30505,6 +30544,18 @@ class FunctionLowering {
       label(Done, L);
       return Place;
     }
+    if (Operation == UtilityOperation::OrderedMapSubscript) {
+      const auto Info = approvedOrderedMapSubscript(A.S, A.Sources, Call, A.Context);
+      if (!Info) reject(L, "map subscript", "The exact checked tree and selected SDK subscript are required.");
+      const auto *Method = clang::cast<CXXMethodDecl>(Call->getDirectCallee());
+      const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+      const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
+      auto Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+          : address(lvalue(Object), Object->getType(), L), L);
+      auto Input = snapshot(argument(Call->getArg(Member ? 0 : 1), Method->getParamDecl(0)->getType()), L);
+      auto Result = insertOrderedSetKey(dereference(std::move(Receiver), L), dereference(std::move(Input), L), *Info, L);
+      return initializeOrderedMappedValue(std::move(Result), A.zero(A.Context.IntTy, L), *Info, L);
+    }
     if (Operation == UtilityOperation::OrderedSetCount) {
       const auto Info = approvedOrderedSetCount(A.S, A.Sources, Call, A.Context);
       if (!Info) reject(L, "ordered set count", "The exact selected lookup body is required.");
@@ -30530,8 +30581,11 @@ class FunctionLowering {
         label(Done, L);
         return Count;
       }
-      auto Found = searchOrderedSet(std::move(Place), std::move(Key), *Info, L);
-      return cast(cast(std::move(Found.Node), "bool", L), type(Call->getType(), L), L);
+      auto End = snapshot(orderedTreeSentinel(Place, L), L);
+      auto Found = orderedSetBoundary(std::move(Place), std::move(Key), *Info,
+                                    OrderedSetIteratorOperation::Find, L);
+      return cast(binary("!=", std::move(Found), std::move(End), "bool", L),
+                  type(Call->getType(), L), L);
     }
     if (Operation == UtilityOperation::OrderedContainerObserver) {
       const auto Info = approvedOrderedContainerObserver(A.S, A.Sources, Call, A.Context);
@@ -40122,7 +40176,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
     if (approvedOrderedSetIteratorCopyConstruction(A.S, A.Sources, C, A.Context)) {
-      assign(Place, expression(C->getArg(0)), L);
+      const auto *Input = C->getArg(0);
+      auto Source = expression(Input);
+      if (A.Context.hasSameUnqualifiedType(C->getType(), Input->getType()))
+        assign(Place, std::move(Source), L);
+      else
+        assign(orderedIteratorCursor(Place, L), orderedIteratorCursor(std::move(Source), L), L);
       return;
     }
     if (auto Kind = approvedUtilityUnorderedMapIteratorConstruction(A.S, A.Sources, C, A.Context)) {
@@ -40403,8 +40462,15 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       label(Check, L);
       branch(binary("<", Position, Length, "bool", L), Read, Done, L);
       label(Read, L);
-      auto Key = dereference(binary("+", Begin, Position, Pointer, L), L);
-      insertOrderedSetKey(Place, std::move(Key), Info->Storage, L);
+      auto Element = dereference(binary("+", Begin, Position, Pointer, L), L);
+      if (Info->Pair) {
+        auto Key = fieldStorage(Element, Info->Pair->First, L);
+        auto Value = fieldStorage(std::move(Element), Info->Pair->Second, L);
+        auto Result = insertOrderedSetKey(Place, std::move(Key), Info->Storage, L);
+        initializeOrderedMappedValue(std::move(Result), std::move(Value), Info->Storage, L);
+      } else {
+        insertOrderedSetKey(Place, std::move(Element), Info->Storage, L);
+      }
       assign(Position, binary("+", Position, one(Size, L), Size, L), L);
       jump(Check, L);
       label(Done, L);
@@ -42339,7 +42405,10 @@ public:
             Set && approvedOrderedSetSelectedBody(A.S, A.Sources, DestroyedRecord->getDestructor(),
                                                   DestroyedRecord, A.Context))
           releaseOrderedSet(dereference(*ThisPointer, L), *Set, L);
-        // Other admitted ordered owners have a null root.
+        else if (const auto Map = approvedUtilityOrderedMapStorage(A.S, A.Sources, DestroyedRecord, A.Context);
+                 Map && approvedOrderedMapSelectedBody(A.S, A.Sources, DestroyedRecord->getDestructor(),
+                                                       DestroyedRecord, A.Context))
+          releaseOrderedSet(dereference(*ThisPointer, L), *Map, L);
       } else if (auto Owner = approvedUtilityListRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyListStorage(dereference(*ThisPointer, L), Owner->Node, L);
       } else if (auto Owner = approvedUtilityPriorityQueueRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
