@@ -136945,7 +136945,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   Kind Insertion;
   if (Name == "insert" && Args == 1)
     Insertion = Kind::Insert;
-  else if (Name == "emplace" && Template && Args <= 1)
+  else if (Name == "emplace" && Template && Args <= 2)
     Insertion = Kind::Emplace;
   else if (Name == "try_emplace" && Template && (Args == 1 || Args == 2))
     Insertion = Kind::TryEmplace;
@@ -136971,18 +136971,18 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
   if (Insertion == Kind::Emplace) {
     const auto *Deduced = Method->getTemplateSpecializationArgs();
-    if (Mapped || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+    if ((Mapped ? Args != 2 : Args > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         !Deduced || Deduced->size() != 1 || Deduced->get(0).getKind() != TemplateArgument::Pack)
       return std::nullopt;
     const auto Pack = Deduced->get(0).getPackAsArray();
     if (Pack.size() != Args) return std::nullopt;
-    if (Args) {
-      const auto *Element = Call->getArg(0);
-      const auto Parameter = Method->getParamDecl(0)->getType();
-      if (Pack.front().getKind() != TemplateArgument::Type || !Parameter->isReferenceType() ||
+    for (unsigned I = 0; I != Args; ++I) {
+      const auto *Element = Call->getArg(I);
+      const auto Parameter = Method->getParamDecl(I)->getType();
+      if (Pack[I].getKind() != TemplateArgument::Type || !Parameter->isReferenceType() ||
           Parameter->isLValueReferenceType() != Element->isLValue())
         return std::nullopt;
-      const auto Type = Pack.front().getAsType();
+      const auto Type = Pack[I].getAsType();
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||

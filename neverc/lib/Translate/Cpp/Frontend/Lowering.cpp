@@ -30459,7 +30459,7 @@ class FunctionLowering {
         using Kind = OrderedInsertionKind;
         if (Info->Input) {
           initializeOrderedMappedValue(Result, fieldStorage(std::move(Value), Info->Input->Second, L), Info->Storage, L);
-        } else if (Info->Kind == Kind::TryEmplace) {
+        } else if (Info->Kind == Kind::TryEmplace || (Info->Kind == Kind::Emplace && MappedArgument)) {
           auto Mapped = MappedArgument ? dereference(std::move(*MappedArgument), L) : A.zero(A.Context.IntTy, L);
           initializeOrderedMappedValue(Result, std::move(Mapped), Info->Storage, L);
         } else if (Info->Kind == Kind::InsertOrAssign) {
