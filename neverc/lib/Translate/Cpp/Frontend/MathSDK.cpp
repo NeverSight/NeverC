@@ -136100,6 +136100,8 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
 }
 
 static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
+  if (Context.hasSameType(Type, Context.FloatTy) || Context.hasSameType(Type, Context.DoubleTy))
+    return true;
   return Context.hasSameType(Type, Context.IntTy) ||
          Context.hasSameType(Type, Context.LongTy) ||
          Context.hasSameType(Type, Context.LongLongTy) ||
