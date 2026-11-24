@@ -27463,6 +27463,28 @@ class FunctionLowering {
     return {std::move(Search.Node), std::move(Inserted)};
   }
 
+  OrderedSetInserted emplaceOrderedSetDefault(Expression Place,
+      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    // Empty emplacement constructs a node before searching, even for an
+    // existing unique key. Destroy that candidate if the tree rejects it.
+    auto Candidate = allocateOrderedSetNode(Info, L);
+    auto Key = A.zero(A.Context.IntTy, L);
+    auto Search = searchOrderedSet(Place, Key, Info, L, Info.Multi);
+    auto Inserted = snapshot(binary("==", Search.Node, A.zero(A.Context.VoidPtrTy, L), "bool", L), L);
+    const auto Insert = labelName(), Destroy = labelName(), Done = labelName();
+    branch(Inserted, Insert, Destroy, L);
+    label(Insert, L);
+    linkOrderedSetKey(Place, Candidate, std::move(Key), std::move(Search.Parent), std::move(Search.Slot), Info, L);
+    assign(Search.Node, Candidate, L);
+    jump(Done, L);
+    label(Destroy, L);
+    unorderedHeapRelease(std::move(Candidate), Info.NodeType,
+        quantity(Info.NodeBytes, type(A.Context.getSizeType(), L), L), L);
+    jump(Done, L);
+    label(Done, L);
+    return {std::move(Search.Node), std::move(Inserted)};
+  }
+
   Expression orderedNodeIsRed(Expression Node, SourceLocation L) {
     auto Red = snapshot(boolean(false, L), L);
     const auto Read = labelName(), Done = labelName();
@@ -30431,29 +30453,33 @@ class FunctionLowering {
       const auto *Method = clang::cast<CXXMemberCallExpr>(Call)->getMethodDecl();
       const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
       auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
-      auto Input = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
-      std::optional<Expression> MappedArgument;
-      if (Call->getNumArgs() == 2)
-        MappedArgument = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
-      auto Value = dereference(std::move(Input), L);
-      auto Key = Info->Input ? fieldStorage(Value, Info->Input->First, L) : std::move(Value);
-      auto Result = insertOrderedSetKey(std::move(Place), std::move(Key), Info->Storage, L);
-      using Kind = OrderedInsertionKind;
-      if (Info->Input) {
-        initializeOrderedMappedValue(Result, fieldStorage(std::move(Value), Info->Input->Second, L), Info->Storage, L);
-      } else if (Info->Kind == Kind::TryEmplace) {
-        auto Mapped = MappedArgument ? dereference(std::move(*MappedArgument), L) : A.zero(A.Context.IntTy, L);
-        initializeOrderedMappedValue(Result, std::move(Mapped), Info->Storage, L);
-      } else if (Info->Kind == Kind::InsertOrAssign) {
-        auto Mapped = nodeFieldAt(Result.Node, A.Context.IntTy, Info->Storage.MappedOffsetBytes, L);
-        assign(std::move(Mapped), dereference(std::move(*MappedArgument), L), L);
-      }
+      auto Insert = [&]() {
+        if (!Call->getNumArgs()) return emplaceOrderedSetDefault(std::move(Place), Info->Storage, L);
+        auto Input = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        std::optional<Expression> MappedArgument;
+        if (Call->getNumArgs() == 2)
+          MappedArgument = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
+        auto Value = dereference(std::move(Input), L);
+        auto Key = Info->Input ? fieldStorage(Value, Info->Input->First, L) : std::move(Value);
+        auto Result = insertOrderedSetKey(std::move(Place), std::move(Key), Info->Storage, L);
+        using Kind = OrderedInsertionKind;
+        if (Info->Input) {
+          initializeOrderedMappedValue(Result, fieldStorage(std::move(Value), Info->Input->Second, L), Info->Storage, L);
+        } else if (Info->Kind == Kind::TryEmplace) {
+          auto Mapped = MappedArgument ? dereference(std::move(*MappedArgument), L) : A.zero(A.Context.IntTy, L);
+          initializeOrderedMappedValue(Result, std::move(Mapped), Info->Storage, L);
+        } else if (Info->Kind == Kind::InsertOrAssign) {
+          auto Mapped = nodeFieldAt(Result.Node, A.Context.IntTy, Info->Storage.MappedOffsetBytes, L);
+          assign(std::move(Mapped), dereference(std::move(*MappedArgument), L), L);
+        }
+        return Result;
+      }();
       auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
       if (Info->Result) {
-        assign(orderedIteratorCursor(fieldStorage(Output, Info->Result->First, L), L), std::move(Result.Node), L);
-        assign(fieldStorage(Output, Info->Result->Second, L), std::move(Result.Inserted), L);
+        assign(orderedIteratorCursor(fieldStorage(Output, Info->Result->First, L), L), std::move(Insert.Node), L);
+        assign(fieldStorage(Output, Info->Result->Second, L), std::move(Insert.Inserted), L);
       } else {
-        assign(orderedIteratorCursor(Output, L), std::move(Result.Node), L);
+        assign(orderedIteratorCursor(Output, L), std::move(Insert.Node), L);
       }
       return Output;
     }

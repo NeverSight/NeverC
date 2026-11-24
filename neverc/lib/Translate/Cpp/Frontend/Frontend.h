@@ -4684,7 +4684,7 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-enum class OrderedInsertionKind { Insert, TryEmplace, InsertOrAssign };
+enum class OrderedInsertionKind { Insert, Emplace, TryEmplace, InsertOrAssign };
 
 struct UtilityOrderedSetInsertion {
   UtilityOrderedSetStorage Storage;

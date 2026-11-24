@@ -136944,6 +136944,8 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   Kind Insertion;
   if (Name == "insert" && Args == 1)
     Insertion = Kind::Insert;
+  else if (Name == "emplace" && Template && Args <= 1)
+    Insertion = Kind::Emplace;
   else if (Name == "try_emplace" && Template && (Args == 1 || Args == 2))
     Insertion = Kind::TryEmplace;
   else if (Name == "insert_or_assign" && Template && Args == 2)
@@ -136963,30 +136965,53 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                             : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Table) return std::nullopt;
-  if (Template && (!Mapped || (Insertion != Kind::Insert && Table->Multi) ||
-                   !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header)))
+  if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
-  const auto Parameter = Method->getParamDecl(0)->getType();
-  const auto *Element = Call->getArg(0);
-  if (!Context.hasSameUnqualifiedType(Element->getType(), Value))
-    return std::nullopt;
-  if (Insertion == Kind::Insert && Template) {
+  if (Insertion == Kind::Emplace) {
     const auto *Deduced = Method->getTemplateSpecializationArgs();
-    const auto Reference = Context.getLValueReferenceType(Value);
-    if (Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-        !Deduced || Deduced->size() != 2 ||
-        Deduced->get(0).getKind() != TemplateArgument::Type ||
-        !Context.hasSameType(Deduced->get(0).getAsType(), Reference) ||
-        Deduced->get(1).getKind() != TemplateArgument::Integral ||
-        !Context.hasSameType(Deduced->get(1).getIntegralType(), Context.IntTy) ||
-        !Deduced->get(1).getAsIntegral().isZero() ||
-        !Context.hasSameType(Parameter, Reference) ||
-        !Context.hasSameType(Element->getType(), Value) || !Element->isLValue())
+    if (Mapped || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Deduced || Deduced->size() != 1 || Deduced->get(0).getKind() != TemplateArgument::Pack)
       return std::nullopt;
-  } else if (!Context.hasSameType(Parameter, Context.getLValueReferenceType(Value.withConst())) &&
-             !Context.hasSameType(Parameter, Context.getRValueReferenceType(Value))) {
-    return std::nullopt;
+    const auto Pack = Deduced->get(0).getPackAsArray();
+    if (Pack.size() != Args) return std::nullopt;
+    if (Args) {
+      const auto *Element = Call->getArg(0);
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      if (Pack.front().getKind() != TemplateArgument::Type || !Parameter->isReferenceType() ||
+          Parameter->isLValueReferenceType() != Element->isLValue())
+        return std::nullopt;
+      const auto Type = Pack.front().getAsType();
+      const auto Referred = Parameter.getNonReferenceType();
+      const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
+      if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
+          (!Context.hasSameType(Referred, Value) && !Context.hasSameType(Referred, Value.withConst())))
+        return std::nullopt;
+    }
+  } else {
+    if (Template && (!Mapped || (Insertion != Kind::Insert && Table->Multi)))
+      return std::nullopt;
+    const auto Parameter = Method->getParamDecl(0)->getType();
+    const auto *Element = Call->getArg(0);
+    if (!Context.hasSameUnqualifiedType(Element->getType(), Value))
+      return std::nullopt;
+    if (Insertion == Kind::Insert && Template) {
+      const auto *Deduced = Method->getTemplateSpecializationArgs();
+      const auto Reference = Context.getLValueReferenceType(Value);
+      if (Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+          !Deduced || Deduced->size() != 2 ||
+          Deduced->get(0).getKind() != TemplateArgument::Type ||
+          !Context.hasSameType(Deduced->get(0).getAsType(), Reference) ||
+          Deduced->get(1).getKind() != TemplateArgument::Integral ||
+          !Context.hasSameType(Deduced->get(1).getIntegralType(), Context.IntTy) ||
+          !Deduced->get(1).getAsIntegral().isZero() ||
+          !Context.hasSameType(Parameter, Reference) ||
+          !Context.hasSameType(Element->getType(), Value) || !Element->isLValue())
+        return std::nullopt;
+    } else if (!Context.hasSameType(Parameter, Context.getLValueReferenceType(Value.withConst())) &&
+               !Context.hasSameType(Parameter, Context.getRValueReferenceType(Value))) {
+      return std::nullopt;
+    }
   }
   if (Args == 2) {
     const auto Argument = Method->getParamDecl(1)->getType();
