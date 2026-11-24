@@ -30899,11 +30899,11 @@ class FunctionLowering {
         Operation == UtilityOperation::BitsetResetAll || Operation == UtilityOperation::BitsetFlipAll ||
         Operation == UtilityOperation::BitsetAssign)
       return utilityBitsetOperation(Call, Operation);
-    if (Operation == UtilityOperation::UnorderedTableGetAllocator ||
+    if (Operation == UtilityOperation::AssociativeGetAllocator ||
         Operation == UtilityOperation::AssociativePolicy) {
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      const bool Valid = Operation == UtilityOperation::UnorderedTableGetAllocator
-          ? bool(approvedUtilityUnorderedTableAllocatorQuery(A.S, A.Sources, Call, A.Context))
+      const bool Valid = Operation == UtilityOperation::AssociativeGetAllocator
+          ? bool(approvedUtilityAssociativeAllocatorQuery(A.S, A.Sources, Call, A.Context))
           : bool(approvedUtilityAssociativePolicyQuery(A.S, A.Sources, Call, A.Context));
       if (!Member || !Valid) reject(L, "associative container observer", "The authenticated stateless result is unavailable.");
       const auto *Object = Member->getImplicitObjectArgument();

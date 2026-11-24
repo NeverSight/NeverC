@@ -124039,8 +124039,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (approvedUtilityAssociativePolicyQuery(S, SM, Call, Context))
     return UtilityOperation::AssociativePolicy;
-  if (approvedUtilityUnorderedTableAllocatorQuery(S, SM, Call, Context))
-    return UtilityOperation::UnorderedTableGetAllocator;
+  if (approvedUtilityAssociativeAllocatorQuery(S, SM, Call, Context))
+    return UtilityOperation::AssociativeGetAllocator;
   if (auto Assignment = approvedUtilityUnorderedTableAssignment(S, SM, Call, Context))
     return Assignment;
   if (approvedUtilityUnorderedMapRangeInsertion(S, SM, Call, Context))
@@ -140230,7 +140230,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedTableAssignment(
   return Move ? UtilityOperation::UnorderedTableMoveAssign : UtilityOperation::UnorderedTableCopyAssign;
 }
 
-std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuery(
+std::optional<UtilityAllocatorRecord> approvedUtilityAssociativeAllocatorQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -140246,6 +140246,22 @@ std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuer
   const auto *Owner = Method->getParent();
   if (!Owner->getIdentifier()) return std::nullopt;
   const auto Header = associativeContainerHeader(Owner->getName());
+  if (Header == "map" || Header == "set") {
+    const auto Receiver = associativeMemberReceiverType(Reference);
+    if (Receiver.isNull() || Method->isStatic() || Method->isVirtual() || Method->isVolatile() ||
+        Method->getPrimaryTemplate() || !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
+        !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
+        !approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
+        !orderedPinnedFunction(S, SM, Method, Header))
+      return std::nullopt;
+    const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs();
+    if (!Context.hasSameType(Call->getType(), Arguments.get(Arguments.size() - 1).getAsType()))
+      return std::nullopt;
+    const auto Allocator = approvedUtilityAllocatorRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    const auto Body = Header == "map" ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+    return Allocator && Body(S, SM, Method, Owner, Context) ? Allocator : std::nullopt;
+  }
   if ((Header != "unordered_map" && Header != "unordered_set") ||
       !unorderedMapPublicMethod(S, SM, Method, Header))
     return std::nullopt;

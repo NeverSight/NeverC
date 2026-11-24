@@ -1114,7 +1114,7 @@ enum class UtilityOperation {
   UnorderedMapInsertRange,
   UnorderedTableCopyAssign,
   UnorderedTableMoveAssign,
-  UnorderedTableGetAllocator,
+  AssociativeGetAllocator,
   AssociativePolicy,
   UnorderedIteratorDereference,
   UnorderedIteratorArrow,
@@ -4599,7 +4599,7 @@ bool approvedUtilityUnorderedTableDefaultArgument(
 std::optional<FunctionalObjectRecord> approvedUtilityAssociativePolicyQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuery(
+std::optional<UtilityAllocatorRecord> approvedUtilityAssociativeAllocatorQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 std::optional<UtilityUnorderedMapConstructionKind>
