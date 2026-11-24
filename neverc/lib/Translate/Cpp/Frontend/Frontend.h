@@ -1311,8 +1311,11 @@ enum class UtilityOperation {
   List,
   OrderedContainerObserver,
   OrderedSetCount,
+  OrderedSetCopyAssign,
   OrderedSetInsert,
   OrderedSetIterator,
+  OrderedSetMutation,
+  OrderedSetSwap,
   EmptyHashSetObserver,
   EmptyHashSetSetMaxLoadFactor,
   EmptyHashSetResizeBuckets,
@@ -4638,6 +4641,7 @@ struct UtilityOrderedSetStorage {
   const clang::CXXRecordDecl *Record, *Tree;
   clang::QualType NodeType, LinkType, SentinelType;
   uint64_t NodeBytes, ValueOffsetBytes;
+  bool Multi;
 };
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
@@ -4647,8 +4651,11 @@ std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
 const clang::CXXRecordDecl *approvedOrderedSetIteratorRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context, const UtilityOrderedSetStorage *Owner = nullptr, UtilityOrderedSetStorage *Resolved = nullptr);
+bool approvedOrderedSetIteratorCopyConstruction(const State &S,
+    const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
 enum class OrderedSetIteratorOperation {
-  Begin, End, Find, LowerBound, UpperBound, Dereference, Arrow,
+  Begin, End, Find, LowerBound, UpperBound, EqualRange, Dereference, Arrow,
   Increment, PostIncrement, Decrement, PostDecrement, Equal, NotEqual
 };
 struct UtilityOrderedSetIteratorCall {
@@ -4656,18 +4663,39 @@ struct UtilityOrderedSetIteratorCall {
   UtilityOrderedSetStorage Storage;
   const clang::MemberExpr *Endpoint;
   const clang::Expr *First, *Second;
+  std::optional<UtilityPairRecord> Pair{};
 };
 std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+enum class OrderedSetMutation { Clear, Key, Position, Range };
+struct UtilityOrderedSetMutation {
+  OrderedSetMutation Operation;
+  UtilityOrderedSetStorage Storage;
+  const clang::MemberExpr *Receiver;
+};
+std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 struct UtilityOrderedSetInsertion {
   UtilityOrderedSetStorage Storage;
-  UtilityPairRecord Result;
+  std::optional<UtilityPairRecord> Result;
 };
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool approvedOrderedSetMoveConstruction(const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+const clang::MemberExpr *approvedOrderedSetSwap(const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
 
 struct UtilityOrderedSetListConstruction {
   UtilityOrderedSetStorage Storage;

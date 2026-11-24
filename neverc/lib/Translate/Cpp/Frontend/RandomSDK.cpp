@@ -113,7 +113,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
   bool isAssociativeSetElement(QualType Type) const {
     if (!SDKGenerator || !Generator->getIdentifier()) return false;
     const auto Name = Generator->getName();
-    const bool Ordered = Name == "set";
+    const bool Ordered = Name == "set" || Name == "multiset";
     if (!Ordered && Name != "unordered_set" && Name != "unordered_multiset") return false;
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Generator);
     if (!Owner || Owner->getTemplateArgs().size() != (Ordered ? 3u : 4u) ||
