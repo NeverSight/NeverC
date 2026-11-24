@@ -27737,6 +27737,62 @@ class FunctionLowering {
     initializeOrderedContainer(std::move(Source), L);
   }
 
+  Expression compareOrderedSets(Expression Left, Expression Right, bool Equality,
+      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    auto Result = snapshot(boolean(false, L), L);
+    const auto Read = labelName(), Check = labelName(), Keys = labelName(), OrderKeys = labelName(),
+               Advance = labelName(), End = labelName(), Done = labelName();
+    if (Equality) {
+      auto LeftSize = orderedContainerMember(Left, "nct_ordered_size", L);
+      auto RightSize = orderedContainerMember(Right, "nct_ordered_size", L);
+      branch(binary("==", std::move(LeftSize), std::move(RightSize), "bool", L), Read, Done, L);
+    } else {
+      jump(Read, L);
+    }
+    label(Read, L);
+    auto First = snapshot(orderedContainerMember(Left, "nct_ordered_begin", L), L);
+    auto Second = snapshot(orderedContainerMember(Right, "nct_ordered_begin", L), L);
+    auto FirstEnd = snapshot(orderedTreeSentinel(std::move(Left), L), L);
+    auto SecondEnd = snapshot(orderedTreeSentinel(std::move(Right), L), L);
+    jump(Check, L);
+    label(Check, L);
+    auto FirstHasValue = snapshot(binary("!=", First, FirstEnd, "bool", L), L);
+    auto SecondHasValue = snapshot(binary("!=", Second, SecondEnd, "bool", L), L);
+    branch(binary("&&", FirstHasValue, SecondHasValue, "bool", L), Keys, End, L);
+    label(Keys, L);
+    auto X = snapshot(orderedSetKey(First, Info, L), L);
+    auto Y = snapshot(orderedSetKey(Second, Info, L), L);
+    const auto Mapped = Info.MappedPairType.isNull() ? Advance : labelName();
+    branch(binary("==", X, Y, "bool", L), Mapped, OrderKeys, L);
+    label(OrderKeys, L);
+    if (!Equality)
+      assign(Result, binary("<", std::move(X), std::move(Y), "bool", L), L);
+    jump(Done, L);
+    if (!Info.MappedPairType.isNull()) {
+      label(Mapped, L);
+      auto AValue = snapshot(nodeFieldAt(First, A.Context.IntTy, Info.MappedOffsetBytes, L), L);
+      auto BValue = snapshot(nodeFieldAt(Second, A.Context.IntTy, Info.MappedOffsetBytes, L), L);
+      const auto OrderValues = labelName();
+      branch(binary("==", AValue, BValue, "bool", L), Advance, OrderValues, L);
+      label(OrderValues, L);
+      if (!Equality)
+        assign(Result, binary("<", std::move(AValue), std::move(BValue), "bool", L), L);
+      jump(Done, L);
+    }
+    label(Advance, L);
+    assign(First, stepOrderedIterator(First, true, L), L);
+    assign(Second, stepOrderedIterator(Second, true, L), L);
+    jump(Check, L);
+    label(End, L);
+    auto AtFirstEnd = binary("==", std::move(FirstHasValue), boolean(false, L), "bool", L);
+    auto Other = Equality ? binary("==", std::move(SecondHasValue), boolean(false, L), "bool", L)
+                          : std::move(SecondHasValue);
+    assign(Result, binary("&&", std::move(AtFirstEnd), std::move(Other), "bool", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
+  }
+
   void swapOrderedOwners(Expression Place, Expression Other, SourceLocation L) {
     for (const auto *Field : {"nct_ordered_begin", "nct_ordered_root", "nct_ordered_size"}) {
       auto Left = orderedContainerMember(Place, Field, L);
@@ -30507,6 +30563,21 @@ class FunctionLowering {
       if (Kind == Op::Increment || Kind == Op::Decrement) return Place;
       auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
       assign(orderedIteratorCursor(Result, L), std::move(Node), L);
+      return Result;
+    }
+    if (Operation == UtilityOperation::OrderedSetCompare) {
+      const auto Info = approvedOrderedSetComparison(A.S, A.Sources, Call, A.Context);
+      if (!Info) reject(L, "ordered comparison", "The exact checked comparison and owner storage are required.");
+      const auto *Function = Call->getDirectCallee();
+      auto Left = dereference(snapshot(argument(Call->getArg(0), Function->getParamDecl(0)->getType()), L), L);
+      auto Right = dereference(snapshot(argument(Call->getArg(1), Function->getParamDecl(1)->getType()), L), L);
+      const auto Op = Function->getOverloadedOperator();
+      const bool Equality = Op == clang::OO_EqualEqual || Op == clang::OO_ExclaimEqual;
+      if (Op == clang::OO_Greater || Op == clang::OO_LessEqual)
+        std::swap(Left, Right);
+      auto Result = compareOrderedSets(std::move(Left), std::move(Right), Equality, *Info, L);
+      if (Op == clang::OO_ExclaimEqual || Op == clang::OO_GreaterEqual || Op == clang::OO_LessEqual)
+        return binary("==", std::move(Result), boolean(false, L), "bool", L);
       return Result;
     }
     if (Operation == UtilityOperation::OrderedSetSwap) {

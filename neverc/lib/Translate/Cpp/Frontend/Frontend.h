@@ -1320,6 +1320,7 @@ enum class UtilityOperation {
   OrderedSetIterator,
   OrderedSetMutation,
   OrderedSetSwap,
+  OrderedSetCompare,
   EmptyHashSetObserver,
   EmptyHashSetSetMaxLoadFactor,
   EmptyHashSetResizeBuckets,
@@ -4695,6 +4696,9 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetComparison(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context, bool Move);
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(

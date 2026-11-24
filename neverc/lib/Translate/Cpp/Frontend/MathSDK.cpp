@@ -124002,6 +124002,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedOrderedSetIteratorCall(S, SM, Call, Context)) return UtilityOperation::OrderedSetIterator;
   if (approvedOrderedSetMutation(S, SM, Call, Context)) return UtilityOperation::OrderedSetMutation;
   if (approvedOrderedSetSwap(S, SM, Call, Context)) return UtilityOperation::OrderedSetSwap;
+  if (approvedOrderedSetComparison(S, SM, Call, Context)) return UtilityOperation::OrderedSetCompare;
   if (approvedOrderedContainerObserver(S, SM, Call, Context))
     return UtilityOperation::OrderedContainerObserver;
   if (approvedEmptyHashSetObserver(S, SM, Call, Context))
@@ -137244,6 +137245,53 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
       !SelectedBody(S, SM, Owner->getDestructor(), Owner, Context))
     return std::nullopt;
   return UtilityOrderedSetMutation{Operation, *Storage, Reference};
+}
+
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetComparison(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || isa<CXXMethodDecl>(Function) || Function->getNumParams() != 2 || Call->getNumArgs() != 2 ||
+      !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      !Context.hasSameType(Function->getReturnType(), Context.BoolTy) ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !S.owns(SM, Call->getExprLoc()))
+    return std::nullopt;
+  switch (Function->getOverloadedOperator()) {
+  case OO_EqualEqual: case OO_ExclaimEqual: case OO_Less: case OO_LessEqual:
+  case OO_Greater: case OO_GreaterEqual:
+    break;
+  default:
+    return std::nullopt;
+  }
+  const auto Parameter = Function->getParamDecl(0)->getType();
+  const auto Type = Parameter.getNonReferenceType().getUnqualifiedType();
+  const auto *Owner = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Type->getAsCXXRecordDecl());
+  if (!Owner || !Owner->getIdentifier() ||
+      !Context.hasSameType(Parameter, Context.getLValueReferenceType(Type.withConst())) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Parameter) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Type) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Type) ||
+      Call->getArg(0)->getType().isVolatileQualified() || Call->getArg(1)->getType().isVolatileQualified())
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  const auto *Primary = Function->getPrimaryTemplate();
+  if ((Header != "map" && Header != "set") || !Primary ||
+      !orderedPinnedFunction(S, SM, Function, Header) ||
+      !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), Header))
+    return std::nullopt;
+  const auto *Deduced = Function->getTemplateSpecializationArgs();
+  const auto &Args = Owner->getTemplateArgs();
+  if (!Deduced || Deduced->size() != Args.size()) return std::nullopt;
+  for (unsigned I = 0; I != Args.size(); ++I)
+    if (Deduced->get(I).getKind() != TemplateArgument::Type ||
+        Args.get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Deduced->get(I).getAsType(), Args.get(I).getAsType()))
+      return std::nullopt;
+  const bool Mapped = Header == "map";
+  const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
+                              : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  return Storage && SelectedBody(S, SM, Function, Owner, Context) ? Storage : std::nullopt;
 }
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,
