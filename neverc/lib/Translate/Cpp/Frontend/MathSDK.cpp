@@ -59039,6 +59039,10 @@ static bool approvedOrderedSetListDefault(const State &S, const SourceManager &S
     const CXXDefaultArgExpr *Default, const FunctionDecl *Function, unsigned Index,
     const ASTContext &Context);
 
+static bool approvedOrderedSetRangeDefault(const State &S, const SourceManager &SM,
+    const CXXDefaultArgExpr *Default, const FunctionDecl *Function, unsigned Index,
+    const ASTContext &Context);
+
 bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
                                     const CXXDefaultArgExpr *Default,
                                     const FunctionDecl *Function,
@@ -59057,6 +59061,7 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
     return true;
   if (valarrayResizeDefaultArgument(S, SM, Default, Function, Index, Context)) return true;
   if (approvedOrderedSetListDefault(S, SM, Default, Function, Index, Context)) return true;
+  if (approvedOrderedSetRangeDefault(S, SM, Default, Function, Index, Context)) return true;
   if (approvedUtilityUnorderedTableDefaultArgument(S, SM, Default, Function, Index, Context))
     return true;
   if (approvedScalarRealDistributionDefaultArgument(S, SM, Default, Function, Index, Context))
@@ -123989,8 +123994,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedUtilityListCall(S, SM, Call, Context)) return UtilityOperation::List;
   if (approvedOrderedSetCount(S, SM, Call, Context)) return UtilityOperation::OrderedSetCount;
   if (approvedOrderedMapSubscript(S, SM, Call, Context)) return UtilityOperation::OrderedMapSubscript;
-  if (approvedOrderedSetCopyAssignment(S, SM, Call, Context)) return UtilityOperation::OrderedSetCopyAssign;
+  if (approvedOrderedSetAssignment(S, SM, Call, Context, false)) return UtilityOperation::OrderedSetCopyAssign;
+  if (approvedOrderedSetAssignment(S, SM, Call, Context, true)) return UtilityOperation::OrderedSetMoveAssign;
   if (approvedOrderedSetInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsert;
+  if (approvedOrderedSetListInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertList;
+  if (approvedOrderedSetRangeInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertRange;
   if (approvedOrderedSetIteratorCall(S, SM, Call, Context)) return UtilityOperation::OrderedSetIterator;
   if (approvedOrderedSetMutation(S, SM, Call, Context)) return UtilityOperation::OrderedSetMutation;
   if (approvedOrderedSetSwap(S, SM, Call, Context)) return UtilityOperation::OrderedSetSwap;
@@ -136934,7 +136942,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   const auto *Template = Method->getPrimaryTemplate();
   const auto Args = Call->getNumArgs();
   Kind Insertion;
-  if (Name == "insert" && !Template && Args == 1)
+  if (Name == "insert" && Args == 1)
     Insertion = Kind::Insert;
   else if (Name == "try_emplace" && Template && (Args == 1 || Args == 2))
     Insertion = Kind::TryEmplace;
@@ -136955,15 +136963,31 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                             : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Table) return std::nullopt;
-  if (Insertion != Kind::Insert &&
-      (!Mapped || Table->Multi || !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header)))
+  if (Template && (!Mapped || (Insertion != Kind::Insert && Table->Multi) ||
+                   !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header)))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
   const auto Parameter = Method->getParamDecl(0)->getType();
-  if (!(Context.hasSameType(Parameter, Context.getLValueReferenceType(Value.withConst())) ||
-        Context.hasSameType(Parameter, Context.getRValueReferenceType(Value))) ||
-      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Value))
+  const auto *Element = Call->getArg(0);
+  if (!Context.hasSameUnqualifiedType(Element->getType(), Value))
     return std::nullopt;
+  if (Insertion == Kind::Insert && Template) {
+    const auto *Deduced = Method->getTemplateSpecializationArgs();
+    const auto Reference = Context.getLValueReferenceType(Value);
+    if (Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Deduced || Deduced->size() != 2 ||
+        Deduced->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Deduced->get(0).getAsType(), Reference) ||
+        Deduced->get(1).getKind() != TemplateArgument::Integral ||
+        !Context.hasSameType(Deduced->get(1).getIntegralType(), Context.IntTy) ||
+        !Deduced->get(1).getAsIntegral().isZero() ||
+        !Context.hasSameType(Parameter, Reference) ||
+        !Context.hasSameType(Element->getType(), Value) || !Element->isLValue())
+      return std::nullopt;
+  } else if (!Context.hasSameType(Parameter, Context.getLValueReferenceType(Value.withConst())) &&
+             !Context.hasSameType(Parameter, Context.getRValueReferenceType(Value))) {
+    return std::nullopt;
+  }
   if (Args == 2) {
     const auto Argument = Method->getParamDecl(1)->getType();
     const auto MappedType = Argument->getPointeeType();
@@ -137222,10 +137246,11 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
   return UtilityOrderedSetMutation{Operation, *Storage, Reference};
 }
 
-std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const State &S,
-    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context, bool Move) {
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
-  if (!Method || !Method->isCopyAssignmentOperator() || Method->getNumParams() != 1 ||
+  if (!Method || (Move ? !Method->isMoveAssignmentOperator() : !Method->isCopyAssignmentOperator()) ||
+      Method->getNumParams() != 1 ||
       Method->isConst() || Method->isVolatile() || Method->isVirtual() ||
       !Call->isLValue())
     return std::nullopt;
@@ -137245,11 +137270,14 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const S
   if (!S.owns(SM, Site)) return std::nullopt;
   const auto Receiver = Operator && Operator->getArg(0)->isLValue() ? Operator->getArg(0)->getType()
       : associativeMemberReceiverType(Reference);
+  const auto *Source = Call->getArg(Offset);
+  const auto Parameter = Move ? Context.getRValueReferenceType(Type)
+                              : Context.getLValueReferenceType(Type.withConst());
   if (Receiver.isNull() || !Context.hasSameType(Receiver, Type) ||
       !Context.hasSameType(Call->getType(), Type) ||
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)) ||
-      !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getLValueReferenceType(Type.withConst())) ||
-      !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), Type))
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Parameter) ||
+      !Context.hasSameUnqualifiedType(Source->getType(), Type) || (Move && !Source->isXValue()))
     return std::nullopt;
   const bool Mapped = Header == "map";
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
@@ -137440,7 +137468,31 @@ static bool approvedOrderedSetListDefault(const State &S, const SourceManager &S
          orderedPolicyInit(S, SM, Init, nullptr);
 }
 
-std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruction(
+static bool orderedSetListRange(const FunctionDecl *Function, const CXXRecordDecl *Record,
+    const UtilityInitializerListRecord &List, const ASTContext &Context) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
+  const auto *Range = Body && Body->size() == 1 ? dyn_cast_or_null<CXXMemberCallExpr>(
+      orderedExpression(dyn_cast<Expr>(Body->body_front()))) : nullptr;
+  const auto *Insert = Range ? Range->getMethodDecl() : nullptr;
+  if (!Insert || !Insert->getIdentifier() || Insert->getName() != "insert" ||
+      Insert->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Insert->getPrimaryTemplate() || Insert->getNumParams() != 2 || Range->getNumArgs() != 2 ||
+      !Insert->getReturnType()->isVoidType() || !orderedReceiver(Range))
+    return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Endpoint = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Range->getArg(I)));
+    const auto *Method = Endpoint ? Endpoint->getMethodDecl() : nullptr;
+    if (!Method || !Method->getIdentifier() || Method->getName() != (I ? "end" : "begin") ||
+        Method->getParent()->getCanonicalDecl() != List.Record->getCanonicalDecl() ||
+        !Method->isConst() || Endpoint->getNumArgs() ||
+        !orderedParameter(Endpoint->getImplicitObjectArgument(), Function->getParamDecl(0)) ||
+        !Context.hasSameType(Insert->getParamDecl(I)->getType(), List.Begin->getType()))
+      return false;
+  }
+  return true;
+}
+
+std::optional<UtilityOrderedSetListInput> approvedOrderedSetListConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
   if (!Construction || Construction->getConstructionKind() != CXXConstructionKind::Complete ||
@@ -137467,36 +137519,63 @@ std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruct
   }
   const auto *Init = *Ctor->init_begin();
   const auto *Build = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit()));
-  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
-  const auto *Range = Body && Body->size() == 1 ? dyn_cast_or_null<CXXMemberCallExpr>(
-      orderedExpression(dyn_cast<Expr>(Body->body_front()))) : nullptr;
-  const auto *Insert = Range ? Range->getMethodDecl() : nullptr;
   if (!Table || !Init->isMemberInitializer() || Init->getMember() != orderedTreeField(Record, "__tree_") ||
       !Build || Build->getNumArgs() != 1 || Build->getConstructor()->getParent()->getCanonicalDecl() !=
           Table->Tree->getCanonicalDecl() ||
       !(Mapped ? orderedPolicyInit(S, SM, Build->getArg(0), Ctor)
                : orderedParameter(Build->getArg(0), Ctor->getParamDecl(1))) ||
-      !Insert || !Insert->getIdentifier() || Insert->getName() != "insert" ||
-      Insert->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
-      !Insert->getPrimaryTemplate() || Insert->getNumParams() != 2 || Range->getNumArgs() != 2 ||
-      !Insert->getReturnType()->isVoidType() || !orderedReceiver(Range))
+      !orderedSetListRange(Ctor, Record, *List, Context))
     return std::nullopt;
-  for (unsigned I = 0; I != 2; ++I) {
-    const auto *Endpoint = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Range->getArg(I)));
-    const auto *Method = Endpoint ? Endpoint->getMethodDecl() : nullptr;
-    if (!Method || !Method->getIdentifier() || Method->getName() != (I ? "end" : "begin") ||
-        Method->getParent()->getCanonicalDecl() != List->Record->getCanonicalDecl() ||
-        !Method->isConst() || Endpoint->getNumArgs() ||
-        !orderedParameter(Endpoint->getImplicitObjectArgument(), Ctor->getParamDecl(0)) ||
-        !Context.hasSameType(Insert->getParamDecl(I)->getType(), List->Begin->getType()))
-      return std::nullopt;
-  }
   const auto *Destructor = Record->getDestructor();
   const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   if (!approvedOrderedContainerDestructor(S, SM, Destructor, Context) ||
       !SelectedBody(S, SM, Destructor, Record, Context) || !SelectedBody(S, SM, Ctor, Record, Context))
     return std::nullopt;
-  return UtilityOrderedSetListConstruction{*Table, *List, Pair};
+  return UtilityOrderedSetListInput{*Table, *List, Pair};
+}
+
+std::optional<UtilityOrderedSetListInput> approvedOrderedSetListInsertion(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() || Method->isVirtual() ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType())
+    return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (Parameter.hasQualifiers() || Parameter->isReferenceType() ||
+      !Context.hasSameType(Parameter, Call->getArg(0)->getType()))
+    return std::nullopt;
+  const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
+  const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Reference);
+  const auto *Record = Method->getParent();
+  if (!List || !Record->getIdentifier() || Receiver.isNull() ||
+      !Context.hasSameType(Receiver, Context.getRecordType(Record)) ||
+      !S.owns(SM, Reference->getMemberLoc()))
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Record->getName());
+  const bool Mapped = Header == "map";
+  if ((!Mapped && Header != "set") || !orderedPinnedFunction(S, SM, Method, Header))
+    return std::nullopt;
+  const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
+                              : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
+  if (!Storage || !orderedSetListRange(Method, Record, *List, Context) ||
+      !Context.hasSameType(List->ElementType, Mapped ? Storage->MappedPairType : Context.IntTy))
+    return std::nullopt;
+  std::optional<UtilityPairRecord> Pair;
+  if (Mapped) {
+    Pair = approvedUtilityPairRecord(S, SM, Storage->MappedPairType->getAsCXXRecordDecl(), Context);
+    if (!Pair || !Pair->Record->hasTrivialDestructor())
+      return std::nullopt;
+  }
+  const auto *Destructor = Record->getDestructor();
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  if (!approvedOrderedContainerDestructor(S, SM, Destructor, Context) ||
+      !SelectedBody(S, SM, Destructor, Record, Context) || !SelectedBody(S, SM, Method, Record, Context))
+    return std::nullopt;
+  return UtilityOrderedSetListInput{*Storage, *List, Pair};
 }
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
@@ -137536,6 +137615,155 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
                          : approvedOrderedSetSelectedBody(S, SM, Method, Record, Context)))
     return std::nullopt;
   return Table;
+}
+
+static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function, const CXXRecordDecl *Record,
+    llvm::StringRef Header, const ASTContext &Context) {
+  const auto *Primary = Function->getPrimaryTemplate();
+  const auto *TemplateArgs = Function->getTemplateSpecializationArgs();
+  if (!Primary || !orderedPinnedFunction(S, SM, Function, Header) ||
+      !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), Header) ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !TemplateArgs || TemplateArgs->size() != 1 || TemplateArgs->get(0).getKind() != TemplateArgument::Type)
+    return std::nullopt;
+  const auto Pointer = TemplateArgs->get(0).getAsType();
+  if (Pointer.isNull() || Pointer.hasQualifiers() || !Pointer->isPointerType() ||
+      !Context.hasSameType(Pointer, Function->getParamDecl(0)->getType()) ||
+      !Context.hasSameType(Pointer, Function->getParamDecl(1)->getType()))
+    return std::nullopt;
+  const auto Element = Pointer->getPointeeType();
+  const bool Mapped = Header == "map";
+  const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
+                              : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
+  if (!Storage) return std::nullopt;
+  const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
+  if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
+    return std::nullopt;
+  std::optional<UtilityPairRecord> Pair;
+  if (Mapped) {
+    Pair = approvedUtilityPairRecord(S, SM, Storage->MappedPairType->getAsCXXRecordDecl(), Context);
+    if (!Pair || !Pair->Record->hasTrivialDestructor())
+      return std::nullopt;
+  }
+  return UtilityOrderedSetRangeInput{*Storage, Pointer, Pair};
+}
+
+static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const CXXRecordDecl *Record, llvm::StringRef Header, const ASTContext &Context) {
+  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() || Method->isVirtual() ||
+      Method->getNumParams() != 2 || !Method->getReturnType()->isVoidType())
+    return std::nullopt;
+  const auto Input = orderedSetRangeInput(S, SM, Method, Record, Header, Context);
+  if (!Input) return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  const auto *Loop = Body && Body->size() == 1 ? dyn_cast<ForStmt>(Body->body_front()) : nullptr;
+  const auto *Condition = Loop ? dyn_cast_or_null<BinaryOperator>(orderedExpression(Loop->getCond())) : nullptr;
+  const auto *Advance = Loop ? dyn_cast_or_null<UnaryOperator>(orderedExpression(Loop->getInc())) : nullptr;
+  if (!Condition || Condition->getOpcode() != BO_NE ||
+      !orderedParameter(Condition->getLHS(), Method->getParamDecl(0)) ||
+      !orderedParameter(Condition->getRHS(), Method->getParamDecl(1)) ||
+      !Advance || Advance->getOpcode() != UO_PreInc ||
+      !orderedParameter(Advance->getSubExpr(), Method->getParamDecl(0)))
+    return std::nullopt;
+  const auto SelectedBody = Header == "map" ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  return SelectedBody(S, SM, Method, Record, Context) ? Input : std::nullopt;
+}
+
+std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || Call->getNumArgs() != 2 || !Call->getType()->isVoidType())
+    return std::nullopt;
+  const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Reference);
+  const auto *Record = Method->getParent();
+  if (!Record->getIdentifier() || Receiver.isNull() ||
+      !Context.hasSameType(Receiver, Context.getRecordType(Record)) || !S.owns(SM, Reference->getMemberLoc()))
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Record->getName());
+  if (Header != "map" && Header != "set") return std::nullopt;
+  const auto Input = orderedSetRangeMethod(S, SM, Method, Record, Header, Context);
+  if (!Input || !Context.hasSameType(Call->getArg(0)->getType(), Input->PointerType) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Input->PointerType))
+    return std::nullopt;
+  return Input;
+}
+
+static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeConstructor(
+    const State &S, const SourceManager &SM, const CXXConstructorDecl *Ctor, const ASTContext &Context) {
+  if (!Ctor || Ctor->getNumParams() != 3 || !Ctor->getPrimaryTemplate()) return std::nullopt;
+  const auto *Record = Ctor->getParent();
+  if (!Record->getIdentifier()) return std::nullopt;
+  const auto Header = associativeContainerHeader(Record->getName());
+  if (Header != "map" && Header != "set") return std::nullopt;
+  const auto Type = Ctor->getParamDecl(2)->getType();
+  const auto Policy = Type.getNonReferenceType().getUnqualifiedType();
+  const auto *Less = associativeTypeIdentity(S, SM, Policy->getAsCXXRecordDecl(),
+      "less", "__functional/operations.h", "__fwd/functional.h", 1);
+  if (!Less || !Context.hasSameType(Less->getTemplateArgs().get(0).getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Type, Context.getLValueReferenceType(Policy.withConst())))
+    return std::nullopt;
+  return orderedSetRangeInput(S, SM, Ctor, Record, Header, Context);
+}
+
+static bool approvedOrderedSetRangeDefault(const State &S, const SourceManager &SM,
+    const CXXDefaultArgExpr *Default, const FunctionDecl *Function, unsigned Index,
+    const ASTContext &Context) {
+  const auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(Function);
+  if (!Default || Index != 2 || !orderedSetRangeConstructor(S, SM, Ctor, Context))
+    return false;
+  const auto *Parameter = Default->getParam();
+  const auto *Init = selectedDefaultArgument(Default, Context);
+  const auto Header = associativeContainerHeader(Ctor->getParent()->getName());
+  return Parameter && Parameter == Ctor->getParamDecl(Index) && Parameter->getFunctionScopeIndex() == Index &&
+         Init && cstddefOrigin(S, SM, Init->getExprLoc(), "libcxx", Header) &&
+         Context.hasSameUnqualifiedType(Init->getType(), Parameter->getType().getNonReferenceType()) &&
+         orderedPolicyInit(S, SM, Init, nullptr);
+}
+
+std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
+    const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
+    const ASTContext &Context) {
+  if (!Construction || Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      Construction->getNumArgs() != 3 || !S.owns(SM, Construction->getExprLoc()))
+    return std::nullopt;
+  const auto *Selected = Construction->getConstructor();
+  const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
+  const auto Input = orderedSetRangeConstructor(S, SM, Ctor, Context);
+  if (!Input || Ctor->getNumCtorInitializers() != 1 ||
+      !Context.hasSameType(Construction->getArg(0)->getType(), Input->PointerType) ||
+      !Context.hasSameType(Construction->getArg(1)->getType(), Input->PointerType) ||
+      !Context.hasSameUnqualifiedType(Construction->getArg(2)->getType(), Ctor->getParamDecl(2)->getType().getNonReferenceType()))
+    return std::nullopt;
+  const auto *Record = Ctor->getParent();
+  const auto Header = associativeContainerHeader(Record->getName());
+  const auto *Init = *Ctor->init_begin();
+  const auto *Tree = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit()));
+  if (!Init->isMemberInitializer() || Init->getMember() != orderedTreeField(Record, "__tree_") ||
+      !Tree || Tree->getNumArgs() != 1 || Tree->getConstructor()->getParent()->getCanonicalDecl() !=
+          Input->Storage.Tree->getCanonicalDecl() ||
+      !(Header == "map" ? orderedPolicyInit(S, SM, Tree->getArg(0), Ctor)
+                        : orderedParameter(Tree->getArg(0), Ctor->getParamDecl(2))))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
+  const auto *Range = Body && Body->size() == 1 ? dyn_cast_or_null<CXXMemberCallExpr>(
+      orderedExpression(dyn_cast<Expr>(Body->body_front()))) : nullptr;
+  if (!orderedReceiver(Range) || Range->getNumArgs() != 2 ||
+      !orderedParameter(Range->getArg(0), Ctor->getParamDecl(0)) ||
+      !orderedParameter(Range->getArg(1), Ctor->getParamDecl(1)) ||
+      !orderedSetRangeMethod(S, SM, Range->getMethodDecl(), Record, Header, Context))
+    return std::nullopt;
+  const auto *Destructor = Record->getDestructor();
+  const auto SelectedBody = Header == "map" ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  if (!approvedOrderedContainerDestructor(S, SM, Destructor, Context) ||
+      !SelectedBody(S, SM, Destructor, Record, Context) || !SelectedBody(S, SM, Ctor, Record, Context))
+    return std::nullopt;
+  return Input;
 }
 
 bool approvedOrderedContainerDefaultConstruction(const State &S,

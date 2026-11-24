@@ -18402,3 +18402,14 @@ construction and copy assignment on both containers. A mutable cursor can
 convert to its const type, and ordered set and map cursors retain their
 independent owner sentinels when the headers are used together. Const
 lookup and end queries preserve the read-only owner's storage.
+
+## Default integer ordered ownership and input ranges
+
+Default integer sets and maps and their duplicate-key counterparts support
+move assignment, initializer-list insertion, and construction and insertion
+from exact mutable or const pointers to the container's value type. Move
+assignment transfers the stored nodes and restores the moved-from owner's
+empty sentinel. The supported range forms use the default comparator. Unique
+containers retain the first stored value for a key. Duplicate-key containers
+retain input order within an equivalent-key group. Checked map insertion also
+accepts a nonconst lvalue of its exact `value_type`.

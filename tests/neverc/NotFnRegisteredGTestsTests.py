@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_move_list_range_registered = cls.registered
+        cls.ordered_move_list_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_move_list_range_original = cls.adapter.restore_original_gtests(cls.ordered_move_list_range_registered,
+                                                                        cls.ordered_move_list_range_suffix)
+        cls.registered = cls.adapter.restore_ordered_move_list_range_history(cls.ordered_move_list_range_registered)
         cls.ordered_maps_with_mixed_cursors_registered = cls.registered
         cls.ordered_maps_with_mixed_cursors_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_maps_with_mixed_cursors_original = cls.adapter.restore_original_gtests(cls.ordered_maps_with_mixed_cursors_registered,
@@ -3337,6 +3342,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_maps_with_mixed_cursors_history(self.ordered_maps_with_mixed_cursors_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_maps_with_mixed_cursors_registered, self.ordered_maps_with_mixed_cursors_suffix + b' ')
+
+
+    def test_ordered_move_list_range_retains_published_bodies(self):
+        self.assertEqual(self.ordered_move_list_range_original + self.ordered_move_list_range_suffix, self.ordered_move_list_range_registered)
+        self.assertEqual(self.adapter.restore_ordered_move_list_range_history(self.ordered_move_list_range_original),
+                         self.ordered_maps_with_mixed_cursors_original)
+        output, evidence = self.extractor.extract(self.ordered_move_list_range_original, ['TranslateTest.CoreV2OrderedMapMoveAssignmentReleasesOldStorageAndKeepsIncomingNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMoveAssignmentEmptyMultimapRebindsSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetMoveAssignmentKeepsIncomingKeyAddressRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertListPreservesOldAndFirstNewMappedValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertListMultimapKeepsDuplicateInsertionOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetInsertListEvaluatesReceiverAndListOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetPointerRangeConstructionAndEmptyInsertRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetPointerRangeConstInputRetainsDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPointerRangeUsesFirstValueAndCopiesStorageRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapPointerRangeEvaluatesEndpointsOnceAndKeepsOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMoveAssignmentCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedMapInsertListCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedMapPointerRangeConvertingPairRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedSetPointerRangeCustomComparatorRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8748)
+        self.assertEqual(evidence['selected_count'], 14)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-move-assignment-releases-old-storage-and-keeps-incoming-node', output)
+        self.assertIn(b'ordered-set-pointer-range-custom-comparator-remains-unsupported', output)
+
+    def test_ordered_move_list_range_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_move_list_range_history(self.ordered_move_list_range_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_move_list_range_registered, self.ordered_move_list_range_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -2362,6 +2362,30 @@ def restore_ordered_maps_with_mixed_cursors_history(source):
     return restored
 
 
+R19_ORDERED_MOVE_LIST_RANGE_REGISTERED_SHA256 = 'bb12ea1163040adf934b63874bf20669b3cbaee8e970fcf8ccf2c56e8ccb723a'
+R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256 = '7ba291b819182fba645dd7581f92b0a6629deabd4d7da9975b1a7b2da83c7abd'
+R19_ORDERED_MOVE_LIST_RANGE_PREVIOUS_REGISTERED_SHA256 = '32075ed5590611d862e4bd001e979b72fd0989115ffd0a18586f2ba71a590624'
+R19_ORDERED_MOVE_LIST_RANGE_PREVIOUS_MAINTAINED_SHA256 = '2780fb91a65d18cf4059ff79ac2436884aa57f420b42296c99f3f0b80b69ebd7'
+R19_ORDERED_MOVE_LIST_RANGE_ADDITIONS_SHA256 = 'db863c686754c1857449180de0977e6e61ed6ee450786aba94ac68394ff580da'
+R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SIZE = 20449763
+R19_ORDERED_MOVE_LIST_RANGE_ADDITIONS_SIZE = 17315
+
+
+def restore_ordered_move_list_range_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MOVE_LIST_RANGE_REGISTERED_SHA256, R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MOVE_LIST_RANGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MOVE_LIST_RANGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_MOVE_LIST_RANGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MOVE_LIST_RANGE_REGISTERED_SHA256
+             else R19_ORDERED_MOVE_LIST_RANGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2879,6 +2903,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MOVE_LIST_RANGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
