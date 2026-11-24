@@ -136953,6 +136953,11 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
          approvedOrderedSetIteratorRecord(S, SM, Record, Context);
 }
 
+static bool orderedIntegerEmplacementArgument(const ASTContext &Context, QualType Type) {
+  return !Type.isNull() && Type->isIntegerType() &&
+      utilityScalarDirectConversion(Context, Type, Context.IntTy);
+}
+
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -137010,7 +137015,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          (!Context.hasSameType(Referred, Value) && !Context.hasSameType(Referred, Value.withConst())))
+          !orderedIntegerEmplacementArgument(Context, Referred))
         return std::nullopt;
     }
   } else {
@@ -137041,9 +137046,9 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Args == 2) {
     const auto Argument = Method->getParamDecl(1)->getType();
     const auto MappedType = Argument->getPointeeType();
-    if (!Argument->isReferenceType() || MappedType.isVolatileQualified() ||
-        !Context.hasSameUnqualifiedType(MappedType, Context.IntTy) ||
-        !Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Context.IntTy))
+    if (!Argument->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(MappedType, Call->getArg(1)->getType()) ||
+        !orderedIntegerEmplacementArgument(Context, MappedType))
       return std::nullopt;
   }
   std::optional<UtilityPairRecord> Input;

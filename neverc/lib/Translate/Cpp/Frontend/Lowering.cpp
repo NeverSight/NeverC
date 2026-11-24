@@ -30557,17 +30557,20 @@ class FunctionLowering {
         if (Call->getNumArgs() == 2)
           MappedArgument = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
         auto Value = dereference(std::move(Input), L);
-        auto Key = Info->Input ? fieldStorage(Value, Info->Input->First, L) : std::move(Value);
+        const auto Integer = type(A.Context.IntTy, L);
+        auto Key = Info->Input ? fieldStorage(Value, Info->Input->First, L)
+                               : cast(std::move(Value), Integer, L);
         auto Result = insertOrderedSetKey(std::move(Place), std::move(Key), Info->Storage, L);
         using Kind = OrderedInsertionKind;
         if (Info->Input) {
           initializeOrderedMappedValue(Result, fieldStorage(std::move(Value), Info->Input->Second, L), Info->Storage, L);
         } else if (Info->Kind == Kind::TryEmplace || (Info->Kind == Kind::Emplace && MappedArgument)) {
-          auto Mapped = MappedArgument ? dereference(std::move(*MappedArgument), L) : A.zero(A.Context.IntTy, L);
+          auto Mapped = MappedArgument ? cast(dereference(std::move(*MappedArgument), L), Integer, L)
+                                       : A.zero(A.Context.IntTy, L);
           initializeOrderedMappedValue(Result, std::move(Mapped), Info->Storage, L);
         } else if (Info->Kind == Kind::InsertOrAssign) {
           auto Mapped = nodeFieldAt(Result.Node, A.Context.IntTy, Info->Storage.MappedOffsetBytes, L);
-          assign(std::move(Mapped), dereference(std::move(*MappedArgument), L), L);
+          assign(std::move(Mapped), cast(dereference(std::move(*MappedArgument), L), Integer, L), L);
         }
         return Result;
       }();
