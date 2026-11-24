@@ -1,0 +1,703 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-map-default-mapped-value-and-stable-reference",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapDefaultMappedValueAndStableReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1f3f950ffe7d7433331cf412dbcc9c1feb6679d0e376bdd173686a42168279e3",
+      "original_case_source_sha256": "1f3f950ffe7d7433331cf412dbcc9c1feb6679d0e376bdd173686a42168279e3",
+      "gtest_body_sha256": "695b66a8ed5b06af57417db1a39e5d1c44e5416982a2699f29298151e61b0737"
+    },
+    {
+      "name": "ordered-map-pointer-receiver-and-key-evaluated-once-in-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapPointerReceiverAndKeyEvaluatedOnceInOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c4bad64f3b68f18d695ca36318f3294cbafc2ccd5e9c63e6252abd2fe5b36dab",
+      "original_case_source_sha256": "c4bad64f3b68f18d695ca36318f3294cbafc2ccd5e9c63e6252abd2fe5b36dab",
+      "gtest_body_sha256": "3268b9485d5573d7cfabba733be68b36ed7d4f81bf5e3a6fa76ab6f1ac9cb9dc"
+    },
+    {
+      "name": "ordered-map-repeated-subscript-allocates-and-destroys-one-node-per-key",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapRepeatedSubscriptAllocatesAndDestroysOneNodePerKeyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "21a19ebb67fd8c82e01c77692cc4c12796d8cf38ccec6fca1187dd089930a0ba",
+      "original_case_source_sha256": "21a19ebb67fd8c82e01c77692cc4c12796d8cf38ccec6fca1187dd089930a0ba",
+      "gtest_body_sha256": "7bfcb4d79443f30001a3002aad00622a01322547fb8f4253e24cd46529f9ab43"
+    },
+    {
+      "name": "ordered-map-contains-integer-keys-after-insertion-and-preserves-size",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapContainsIntegerKeysAfterInsertionAndPreservesSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "88cbe75e765c6e6219d2ec5d50e30e982d7e46d41bb57932407525b54423682f",
+      "original_case_source_sha256": "88cbe75e765c6e6219d2ec5d50e30e982d7e46d41bb57932407525b54423682f",
+      "gtest_body_sha256": "99f5f92985e204ebffa607d7333708ea37555d6575413fae9d9ce6135a4362d1"
+    },
+    {
+      "name": "ordered-map-const-pointer-count-evaluates-receiver-and-key-once",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapConstPointerCountEvaluatesReceiverAndKeyOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d05e696ec337a85a3dae0b348643cdeb5ad4e6df3b03b07330e46f7a8a3c2d1d",
+      "original_case_source_sha256": "d05e696ec337a85a3dae0b348643cdeb5ad4e6df3b03b07330e46f7a8a3c2d1d",
+      "gtest_body_sha256": "30eabc0ee6c427a13fcd8bd12af124999b672034c84be737fde1ffecc112360d"
+    },
+    {
+      "name": "ordered-map-initializer-list-constructs-ordered-map-with-first-mapped-value",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapInitializerListConstructsOrderedMapWithFirstMappedValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "45f62f392acda7911f980fbd14ef9b5e9976efea7799cc25a3d0e67c0a9754f0",
+      "original_case_source_sha256": "45f62f392acda7911f980fbd14ef9b5e9976efea7799cc25a3d0e67c0a9754f0",
+      "gtest_body_sha256": "3b7440548a48bb2ecb44498078f3b6afbc93cc5e868b741fa7f115c54d914276"
+    },
+    {
+      "name": "ordered-map-multimap-initializer-list-keeps-duplicates",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapMultimapInitializerListKeepsDuplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "57e93749bdd42895ffa10a9a6e1375b64ddec28b855010849b4017e1d26048ef",
+      "original_case_source_sha256": "57e93749bdd42895ffa10a9a6e1375b64ddec28b855010849b4017e1d26048ef",
+      "gtest_body_sha256": "8ed55d1d9f9b59b3fd4750155c4f46f4ca415d66a85a03d2af3c17795f9fff4d"
+    },
+    {
+      "name": "ordered-map-initializer-list-destroys-each-mapped-node-only-once",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapInitializerListDestroysEachMappedNodeOnlyOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d24062de3e3fbb73d1b53136b3f0683d81a9631871664cfdbf8061f7ab945c6d",
+      "original_case_source_sha256": "d24062de3e3fbb73d1b53136b3f0683d81a9631871664cfdbf8061f7ab945c6d",
+      "gtest_body_sha256": "c1103c86177e016a04cfb95cbc0bb9418b90859dca344d712ef8c828a88c7fa2"
+    },
+    {
+      "name": "ordered-map-iterator-find-returns-a-mutable-mapped-lvalue",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapIteratorFindReturnsAMutableMappedLvalueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2a46b1871fadaff9622d0efed15dafe09a969c7ef8a26e1ed59b9baa06eae5d4",
+      "original_case_source_sha256": "2a46b1871fadaff9622d0efed15dafe09a969c7ef8a26e1ed59b9baa06eae5d4",
+      "gtest_body_sha256": "98fdf3fd910fd5815fb27aba6b92999466b8c0c9e4f2e84601c075508c71a02b"
+    },
+    {
+      "name": "ordered-map-iterator-const-iterator-traverses-bounds-and-decrements-end",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapIteratorConstIteratorTraversesBoundsAndDecrementsEndRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4e7accd0d479b805f6eab2326289749c30843e078acd1ea26931fb4dd1eba462",
+      "original_case_source_sha256": "4e7accd0d479b805f6eab2326289749c30843e078acd1ea26931fb4dd1eba462",
+      "gtest_body_sha256": "e3fedf52397cd278cb81e2e164242460e914277da1306e90c6aa018d72e883ac"
+    },
+    {
+      "name": "ordered-map-iterator-multimap-equal-range-preserves-mapped-duplicate-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapIteratorMultimapEqualRangePreservesMappedDuplicateOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "75fd33453f401d47622766c2057bf1ba31cc8ee0c446894ee77a3bfcd78efc82",
+      "original_case_source_sha256": "75fd33453f401d47622766c2057bf1ba31cc8ee0c446894ee77a3bfcd78efc82",
+      "gtest_body_sha256": "42af1dfa2dcd0b4cc15b7c43420791deee5523cf709164c147435e177b34cc0e"
+    },
+    {
+      "name": "ordered-map-erasure-key-erase-keeps-the-mapped-address-of-another-node",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapErasureKeyEraseKeepsTheMappedAddressOfAnotherNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "10dffa39bd19dfa7a62a2a2ca05b6caeaf8c4052b72dd257a50de8d11d95ed90",
+      "original_case_source_sha256": "10dffa39bd19dfa7a62a2a2ca05b6caeaf8c4052b72dd257a50de8d11d95ed90",
+      "gtest_body_sha256": "03bfd9c089868152e6db3c5b77364171e1cff0f874221687d36bfccdfd502654"
+    },
+    {
+      "name": "ordered-map-erasure-erase-const-iterator-span-returns-mutable-successor",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapErasureEraseConstIteratorSpanReturnsMutableSuccessorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1e8c0350bb7332de6023dc41a503d3299f62ca2f2ff04c5d165cf0766f59656e",
+      "original_case_source_sha256": "1e8c0350bb7332de6023dc41a503d3299f62ca2f2ff04c5d165cf0766f59656e",
+      "gtest_body_sha256": "7108ebd71c8d3b1be96def2663783ae258744300ce904ce271a72f372967d276"
+    },
+    {
+      "name": "ordered-map-erasure-multimap-erases-every-duplicate-and-clear-reseats-sentinel",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapErasureMultimapErasesEveryDuplicateAndClearReseatsSentinelRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9b5083f90b8e7549c74c31d481e4f779ee9d0c1c7f2a2f34b252520dbfe8ad6b",
+      "original_case_source_sha256": "9b5083f90b8e7549c74c31d481e4f779ee9d0c1c7f2a2f34b252520dbfe8ad6b",
+      "gtest_body_sha256": "71269d98557001e49c6c8db6ad09164474d5b98ce8548546ad9c12cf708fa35f"
+    },
+    {
+      "name": "ordered-map-insertion-map-insert-result-keeps-first-value-on-a-duplicate",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapInsertionMapInsertResultKeepsFirstValueOnADuplicateRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "01abdbd5ceeb429fdcfc07c75d5719585d2d449d0620174c7fafe49c616901d5",
+      "original_case_source_sha256": "01abdbd5ceeb429fdcfc07c75d5719585d2d449d0620174c7fafe49c616901d5",
+      "gtest_body_sha256": "84e869a6ad426a97da82f39ae59e20db4f6a84e7af1df6e05da3076c292cfb31"
+    },
+    {
+      "name": "ordered-map-insertion-multimap-insert-returns-mapped-node-in-duplicate-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapInsertionMultimapInsertReturnsMappedNodeInDuplicateOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5f8ad60b124e9ee18205e6ede58cde6fdbeaf64b9ad2323dc7274d9eaf47e59d",
+      "original_case_source_sha256": "5f8ad60b124e9ee18205e6ede58cde6fdbeaf64b9ad2323dc7274d9eaf47e59d",
+      "gtest_body_sha256": "a6c484ea4a627f4c2b4186cef47b5dcfdada0f97833be265eeb3a8d9aba6f6d7"
+    },
+    {
+      "name": "ordered-map-insertion-map-pointer-call-evaluates-owner-and-input-once",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapInsertionMapPointerCallEvaluatesOwnerAndInputOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e7e48479bca8855e040c3620d36a00aea82a98b7a864ca05505ac74ebdd5a0ff",
+      "original_case_source_sha256": "e7e48479bca8855e040c3620d36a00aea82a98b7a864ca05505ac74ebdd5a0ff",
+      "gtest_body_sha256": "68e58a579c079eb4294c986011d55d1bbd4101569916b0900eae70a435040724"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-try-emplace-keeps-existing-value-and-defaults-a-new-node",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapScalarEmplacementTryEmplaceKeepsExistingValueAndDefaultsANewNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1e71fd50de0322d680059abedfb4ec510edd018168f61aed58adecf494586ecc",
+      "original_case_source_sha256": "1e71fd50de0322d680059abedfb4ec510edd018168f61aed58adecf494586ecc",
+      "gtest_body_sha256": "7e4b6f181b18ee17dbaa9d89962ac875dcf8f5e2136fa733760ca14179a21301"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-insert-or-assign-reuses-node-and-reports-insertion",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapScalarEmplacementInsertOrAssignReusesNodeAndReportsInsertionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "815e23d004376a8dbb3e204eb2d1b4ee5d0072667271d00737526cd140169ebd",
+      "original_case_source_sha256": "815e23d004376a8dbb3e204eb2d1b4ee5d0072667271d00737526cd140169ebd",
+      "gtest_body_sha256": "8c038e00109cba48a9a9dffd637692036286d8241148193021f0240fc14604a1"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-try-emplace-evaluates-arguments-on-a-duplicate",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapScalarEmplacementTryEmplaceEvaluatesArgumentsOnADuplicateRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a2593a8c81dfd2e4010abaf1af541289a19f9b8b75f892aa1b703336cfa2448c",
+      "original_case_source_sha256": "a2593a8c81dfd2e4010abaf1af541289a19f9b8b75f892aa1b703336cfa2448c",
+      "gtest_body_sha256": "4ec0985776fc63721fc89fc6f0a8b70a49f8c3942826f101d4117445da81b907"
+    },
+    {
+      "name": "ordered-map-transfer-map-copy-creates-independent-mapped-objects",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTransferMapCopyCreatesIndependentMappedObjectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6ae1cde152c19ad2d753aa4f07be3774fbdb72dc8066d26e18b12fb268b983c3",
+      "original_case_source_sha256": "6ae1cde152c19ad2d753aa4f07be3774fbdb72dc8066d26e18b12fb268b983c3",
+      "gtest_body_sha256": "706045d624357972a365dadab08eeef1d8b92aa1deceff7ce9d9f673257a892e"
+    },
+    {
+      "name": "ordered-map-transfer-map-move-keeps-references-and-traverses-new-sentinel",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTransferMapMoveKeepsReferencesAndTraversesNewSentinelRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "839876a52d790c1b41854060070cb7436aacd09a98dce2b3c32f876623a0fa3f",
+      "original_case_source_sha256": "839876a52d790c1b41854060070cb7436aacd09a98dce2b3c32f876623a0fa3f",
+      "gtest_body_sha256": "c6f2f3a4e6f18303b649d023714cf59e8584efc0556447fba08da4c471c41514"
+    },
+    {
+      "name": "ordered-map-transfer-multimap-swap-preserves-equivalent-node-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTransferMultimapSwapPreservesEquivalentNodeOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f0aec4974e435a94fde476f3cb30e805682ee267d8aa07ae3cbfdab4fcbf2ef6",
+      "original_case_source_sha256": "f0aec4974e435a94fde476f3cb30e805682ee267d8aa07ae3cbfdab4fcbf2ef6",
+      "gtest_body_sha256": "ee8403d32131cd7ebee65f2d6a4865b5b4fdd2deebddc635f8d9a359580265be"
+    },
+    {
+      "name": "ordered-map-copy-assignment-replaces-and-owns-mapped-values",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapCopyAssignmentReplacesAndOwnsMappedValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e863aeaae754e334d7c537eee11bbb2c6de0de9f2a56179fe706cd4a528af898",
+      "original_case_source_sha256": "e863aeaae754e334d7c537eee11bbb2c6de0de9f2a56179fe706cd4a528af898",
+      "gtest_body_sha256": "3b8630fa579aee15591c32df58443b7edd71cf1bde7c179849b664e2b66edfac"
+    },
+    {
+      "name": "ordered-map-copy-assignment-multimap-retains-duplicates-and-clears-old-nodes",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapCopyAssignmentMultimapRetainsDuplicatesAndClearsOldNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "74ef7c56bff9dd7a89e8cc555c583981a814e4766220c664a4af9a335e3f7d56",
+      "original_case_source_sha256": "74ef7c56bff9dd7a89e8cc555c583981a814e4766220c664a4af9a335e3f7d56",
+      "gtest_body_sha256": "3cac025d8c72c38da2b30435320f0165ddd6cdc65071604425e706240735468f"
+    },
+    {
+      "name": "ordered-map-copy-assignment-preserves-operand-evaluation-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapCopyAssignmentPreservesOperandEvaluationOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5e0cbb079935a6e863d23e2ccb6aadf54edd4cf15a63a5115b0ee1244b512320",
+      "original_case_source_sha256": "5e0cbb079935a6e863d23e2ccb6aadf54edd4cf15a63a5115b0ee1244b512320",
+      "gtest_body_sha256": "953e19aae3626d8c30ad767bd8f5d2ac58e1bf6b3f40d4bbf2308eb2ffae1740"
+    },
+    {
+      "name": "ordered-map-and-set-cursors-keep-independent-sentinels",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAndSetCursorsKeepIndependentSentinelsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1eb19a7277c3dfdf2af604c0872411f0c4e9f3e04daa5b4ba877836df22bd61e",
+      "original_case_source_sha256": "1eb19a7277c3dfdf2af604c0872411f0c4e9f3e04daa5b4ba877836df22bd61e",
+      "gtest_body_sha256": "3faa18362c299b24df8ae2aa4ced6e6e34b913c01d4ffa5c0655138c04aa02bb"
+    },
+    {
+      "name": "ordered-map-iterator-conversion-keeps-node-and-const-view",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapIteratorConversionKeepsNodeAndConstViewRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8320dd27245ea26a2f9ff81f52dff78b257f3097350a05480f799cf042895181",
+      "original_case_source_sha256": "8320dd27245ea26a2f9ff81f52dff78b257f3097350a05480f799cf042895181",
+      "gtest_body_sha256": "d8a12a1f7f029be61ca778ba71af636cbef40aaeb39df13167f27173254681c1"
+    },
+    {
+      "name": "ordered-map-iterator-conversion-multimap-matches-duplicate-position",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapIteratorConversionMultimapMatchesDuplicatePositionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "459522fe9efa200d9f0f96888e7ad09281b0d5aafa99049774674c7d43937ce5",
+      "original_case_source_sha256": "459522fe9efa200d9f0f96888e7ad09281b0d5aafa99049774674c7d43937ce5",
+      "gtest_body_sha256": "7a0e4c3bc9166cbed939cb4a667fcae844f44ab5154e64d164900dc54bbaf3a5"
+    },
+    {
+      "name": "ordered-map-iterator-conversion-mixed-equality-sees-owner-end",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapIteratorConversionMixedEqualitySeesOwnerEndRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "03d550923393c544ef49cf3ac1eed374f2eedb43f5c9fc319472fac5141f490d",
+      "original_case_source_sha256": "03d550923393c544ef49cf3ac1eed374f2eedb43f5c9fc319472fac5141f490d",
+      "gtest_body_sha256": "8ee8905bf858f3cea16dfa9aeb36b1a2fbf86acd64bf2b5c0517c148b96ef8d8"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapScalarEmplacementMappedConversionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
+      "original_case_source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
+      "gtest_body_sha256": "f4be2e0598a0f3ea5eb7490c149977249545ab9f937453c6feb7c70eca7a3d72"
+    },
+    {
+      "name": "ordered-map-unsupported-mapped-type-does-not-admit-count",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapCountsWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
+      "original_case_source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
+      "gtest_body_sha256": "c398a599ac491cc315f13b81057ca652f5484405fdc96a40b73ccfbc5324f652"
+    },
+    {
+      "name": "ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapErasesWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
+      "original_case_source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
+      "gtest_body_sha256": "fd779d0f6b4ab4bbdeecb45aed6511fdeae5d5d3a0c9af8d3192cd76e3602678"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-map-non-default-key-order-remains-outside-checked-subscript",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapNonDefaultKeyOrderRemainsOutsideCheckedSubscriptRejected",
+      "expected": "reject",
+      "source_sha256": "ae4217f653892f9d1e17a2cb405d5df4d44fc499515f5570ea1616c2d44f46cd",
+      "original_case_source_sha256": "ae4217f653892f9d1e17a2cb405d5df4d44fc499515f5570ea1616c2d44f46cd",
+      "gtest_body_sha256": "866131a09c7b250648bd9b9472d8390e8aee7abbe0b5f5f873ea6a039c062117"
+    },
+    {
+      "name": "ordered-map-stateful-policy-remains-outside-checked-mapped-owner",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapStatefulPolicyRemainsOutsideCheckedMappedOwnerRejected",
+      "expected": "reject",
+      "source_sha256": "5341fe5540d93fd8b4d573be4dc400c3f00ee0ff8277f9e0590bceac755b58ed",
+      "original_case_source_sha256": "5341fe5540d93fd8b4d573be4dc400c3f00ee0ff8277f9e0590bceac755b58ed",
+      "gtest_body_sha256": "a86521a431c59e36ecd7d0fb5feea20b5b3545012a1c6ca3f4fbed66d44fc79f"
+    },
+    {
+      "name": "ordered-map-iterator-custom-map-iterator-receiver-keeps-source-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapIteratorCustomMapIteratorReceiverKeepsSourceGuardRejected",
+      "expected": "reject",
+      "source_sha256": "45e12e63762a3ffae000241a7fe1ae89bab736ba906d678105fd0bcc72fef6a9",
+      "original_case_source_sha256": "45e12e63762a3ffae000241a7fe1ae89bab736ba906d678105fd0bcc72fef6a9",
+      "gtest_body_sha256": "e8ac3f8da9f6aed67a808d3659015ea43e4bafea08546f74072cc4a5f4228569"
+    },
+    {
+      "name": "ordered-map-insertion-stateful-comparator-insertion-remains-outside-checked-layout",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapInsertionStatefulComparatorInsertionRemainsOutsideCheckedLayoutRejected",
+      "expected": "reject",
+      "source_sha256": "3b6c4db345d47cb158772729aed5a7d3a7f971755accbe9b202961ba04c8bba1",
+      "original_case_source_sha256": "3b6c4db345d47cb158772729aed5a7d3a7f971755accbe9b202961ba04c8bba1",
+      "gtest_body_sha256": "661ca04ca9e729ac6357ce6a459ed6b2592d95a19648b8728efa7cc4d53ef63c"
+    },
+    {
+      "name": "ordered-map-transfer-stateful-ordered-map-comparator-has-separate-transfer-semantics",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTransferStatefulOrderedMapComparatorHasSeparateTransferSemanticsRejected",
+      "expected": "reject",
+      "source_sha256": "065b8a19342e9924c27c68680a659ecefc4c58ca7327518badc6876de24415d5",
+      "original_case_source_sha256": "065b8a19342e9924c27c68680a659ecefc4c58ca7327518badc6876de24415d5",
+      "gtest_body_sha256": "7bf82f2b31dbb3e8a3d90679ed9c6e5da5e5a9231e502aabbabfeac126ce6aa6"
+    },
+    {
+      "name": "ordered-map-copy-assignment-custom-comparator-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapCopyAssignmentCustomComparatorRemainsUnsupportedRejected",
+      "expected": "reject",
+      "source_sha256": "3a79332a0f568ed28cfc19b0e02c8bbf62ddbe0ada318e73ce7e6792402d556e",
+      "original_case_source_sha256": "3a79332a0f568ed28cfc19b0e02c8bbf62ddbe0ada318e73ce7e6792402d556e",
+      "gtest_body_sha256": "be0cb28d746290ba7a1899f42af864f931df6f4d641a3da096657781a1e65347"
+    },
+    {
+      "name": "ordered-map-iterator-conversion-custom-comparator-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapIteratorConversionCustomComparatorRemainsUnsupportedRejected",
+      "expected": "reject",
+      "source_sha256": "b840336e0581469c7eaac12214e6786de853c51b130e5b3aee6238debaeabf1f",
+      "original_case_source_sha256": "b840336e0581469c7eaac12214e6786de853c51b130e5b3aee6238debaeabf1f",
+      "gtest_body_sha256": "0d2840cbecc594e5d35e0dd0bd880150152acba147ed6e847ca65d836cfb8056"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-map-default-mapped-value-and-stable-reference",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  const int key = -13;\n  int& original = values[key];\n  if (original != 0 || values.size() != 1) return 1;\n  original = 29;\n  values[81] = 17;\n  values[23] = 5;\n  values[-40] = -8;\n  values[-7] = 88;\n  return values.size() != 5 || &values[key] != &original ||\n         values[key] != 29 || values[23] != 5 || values[-7] != 88;\n}\n",
+      "source_sha256": "1f3f950ffe7d7433331cf412dbcc9c1feb6679d0e376bdd173686a42168279e3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-pointer-receiver-and-key-evaluated-once-in-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Map = std::map<int, int>;\nint trace;\nMap* select(Map& value) { trace = 10 * trace + 2; return &value; }\nint key() { trace = 10 * trace + 1; return -18; }\nint main() {\n  Map map;\n  int& value = select(map)->operator[](key());\n  value = 19;\n  return trace != 21 || map.size() != 1 || map[-18] != 19;\n}\n",
+      "source_sha256": "c4bad64f3b68f18d695ca36318f3294cbafc2ccd5e9c63e6252abd2fe5b36dab",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-repeated-subscript-allocates-and-destroys-one-node-per-key",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <cstddef>\n#include <cstdlib>\n#include <map>\nunsigned allocations, releases;\nvoid* operator new(std::size_t bytes) { ++allocations; return std::malloc(bytes); }\nvoid operator delete(void* value) noexcept { ++releases; std::free(value); }\nvoid operator delete(void* value, std::size_t) noexcept { ++releases; std::free(value); }\nint main() {\n  {\n    std::map<int, int> map;\n    map[8] = 63;\n    map[-6] = 11;\n    map[8] = 29;\n    if (allocations != 2 || releases != 0 || map[8] != 29 || map[-6] != 11) return 1;\n  }\n  return releases != 2;\n}\n",
+      "source_sha256": "21a19ebb67fd8c82e01c77692cc4c12796d8cf38ccec6fca1187dd089930a0ba",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-non-default-key-order-remains-outside-checked-subscript",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::map<int, int, Descending> map;\n  map[3] = 12;\n  return map[3] != 12;\n}\n",
+      "source_sha256": "ae4217f653892f9d1e17a2cb405d5df4d44fc499515f5570ea1616c2d44f46cd",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-contains-integer-keys-after-insertion-and-preserves-size",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> map;\n  map[-2147483647 - 1] = 1;\n  map[-14] = 2;\n  map[17] = 3;\n  map[2147483647] = 4;\n  const auto& view = map;\n  return view.count(-2147483647 - 1) != 1 || view.count(-14) != 1 ||\n         view.count(0) != 0 || view.count(2147483647) != 1 || view.size() != 4;\n}\n",
+      "source_sha256": "88cbe75e765c6e6219d2ec5d50e30e982d7e46d41bb57932407525b54423682f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-const-pointer-count-evaluates-receiver-and-key-once",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Map = std::map<int, int>;\nint trace;\nconst Map* get(const Map& map) { trace = trace * 10 + 4; return &map; }\nint key() { trace = trace * 10 + 7; return -11; }\nint main() {\n  Map values;\n  if (get(values)->count(key()) != 0 || trace != 47) return 1;\n  trace = 0;\n  values[-11] = 38;\n  return get(values)->count(key()) != 1 || trace != 47 || values.size() != 1;\n}\n",
+      "source_sha256": "d05e696ec337a85a3dae0b348643cdeb5ad4e6df3b03b07330e46f7a8a3c2d1d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-unsupported-mapped-type-does-not-admit-count",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, long> map;\n  return map.count(7) != 0;\n}\n",
+      "source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-initializer-list-constructs-ordered-map-with-first-mapped-value",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{8, 71}, {-5, 9}, {8, 91}, {13, 23}, {-5, 11}};\n  if (values.size() != 3 || values.count(-5) != 1 || values.count(0) != 0) return 1;\n  return values[8] != 71 || values[-5] != 9 || values[13] != 23 || values.size() != 3;\n}\n",
+      "source_sha256": "45f62f392acda7911f980fbd14ef9b5e9976efea7799cc25a3d0e67c0a9754f0",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-multimap-initializer-list-keeps-duplicates",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::multimap<int, int> values{{9, 22}, {-7, 11}, {9, 17}, {9, 36}, {-7, 57}};\n  return values.size() != 5 || values.count(9) != 3 || values.count(-7) != 2 || values.count(0) != 0;\n}\n",
+      "source_sha256": "57e93749bdd42895ffa10a9a6e1375b64ddec28b855010849b4017e1d26048ef",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-initializer-list-destroys-each-mapped-node-only-once",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <cstddef>\n#include <cstdlib>\n#include <map>\nunsigned allocations, releases;\nvoid* operator new(std::size_t bytes) { ++allocations; return std::malloc(bytes); }\nvoid operator delete(void* value) noexcept { ++releases; std::free(value); }\nvoid operator delete(void* value, std::size_t) noexcept { ++releases; std::free(value); }\nint main() {\n  {\n    std::multimap<int, int> values{{6, 19}, {7, 21}, {6, 47}};\n    if (values.size() != 3 || allocations != 3 || releases != 0) return 1;\n  }\n  return releases != 3;\n}\n",
+      "source_sha256": "d24062de3e3fbb73d1b53136b3f0683d81a9631871664cfdbf8061f7ab945c6d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-stateful-policy-remains-outside-checked-mapped-owner",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Comparator {\n  bool reverse;\n  bool operator()(int a, int b) const { return reverse ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Comparator> values({{4, 17}, {7, 13}}, Comparator{true});\n  return values.count(4) != 1;\n}\n",
+      "source_sha256": "5341fe5540d93fd8b4d573be4dc400c3f00ee0ff8277f9e0590bceac755b58ed",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-iterator-find-returns-a-mutable-mapped-lvalue",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{17, 3}, {-8, 29}, {5, 51}};\n  auto node = values.find(-8);\n  auto end = values.end();\n  if (node == end || node->first != -8 || node->second != 29) return 1;\n  auto& pair = *node;\n  pair.second = 39;\n  values[23] = 41;\n  auto missing = values.find(0);\n  return values[-8] != 39 || &pair.second != &values[-8] || missing != end;\n}\n",
+      "source_sha256": "2a46b1871fadaff9622d0efed15dafe09a969c7ef8a26e1ed59b9baa06eae5d4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-iterator-const-iterator-traverses-bounds-and-decrements-end",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Map = std::map<int, int>;\nint main() {\n  const Map values{{-3, 4}, {0, 12}, {18, 21}, {81, 42}};\n  const Map* view = &values;\n  auto gap = view->lower_bound(-2);\n  auto upper = view->upper_bound(18);\n  auto last = view->cend();\n  --last;\n  if (gap->first != 0 || gap->second != 12 || upper != last || (*last).second != 42) return 1;\n  auto previous = last--;\n  auto first = view->cbegin();\n  return previous->first != 81 || last->first != 18 || first->second != 4;\n}\n",
+      "source_sha256": "4e7accd0d479b805f6eab2326289749c30843e078acd1ea26931fb4dd1eba462",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-iterator-multimap-equal-range-preserves-mapped-duplicate-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::multimap<int, int> values{{6, 3}, {4, 7}, {6, 8}, {8, 5}, {6, 12}};\n  auto range = values.equal_range(6);\n  int seen = 0;\n  for (auto item = range.first; item != range.second; ++item) {\n    if (item->first != 6) return 1;\n    seen = 100 * seen + item->second;\n  }\n  return seen != 30812 || range.second->first != 8;\n}\n",
+      "source_sha256": "75fd33453f401d47622766c2057bf1ba31cc8ee0c446894ee77a3bfcd78efc82",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-iterator-custom-map-iterator-receiver-keeps-source-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::map<int, int, Descending> values{{2, 5}, {6, 7}};\n  auto position = values.begin();\n  return position->first != 6;\n}\n",
+      "source_sha256": "45e12e63762a3ffae000241a7fe1ae89bab736ba906d678105fd0bcc72fef6a9",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-erasure-key-erase-keeps-the-mapped-address-of-another-node",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{4, 51}, {8, 23}, {1, 11}, {6, 77}, {13, 2}};\n  auto stable = values.find(6);\n  int* address = &stable->second;\n  if (values.erase(4) != 1 || values.erase(4) != 0 || values.size() != 4) return 1;\n  auto again = values.find(6);\n  return stable != again || &again->second != address || *address != 77;\n}\n",
+      "source_sha256": "10dffa39bd19dfa7a62a2a2ca05b6caeaf8c4052b72dd257a50de8d11d95ed90",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-erasure-erase-const-iterator-span-returns-mutable-successor",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{8, 1}, {2, 5}, {5, 9}, {14, 11}};\n  auto first = values.cbegin();\n  const auto& view = values;\n  auto last = view.lower_bound(8);\n  auto next = values.erase(first, last);\n  next->second = 22;\n  auto after = values.erase(next);\n  return values.size() != 1 || after->first != 14 || after->second != 11;\n}\n",
+      "source_sha256": "1e8c0350bb7332de6023dc41a503d3299f62ca2f2ff04c5d165cf0766f59656e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-erasure-multimap-erases-every-duplicate-and-clear-reseats-sentinel",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values{{7, 14}, {8, 16}, {7, 29}, {9, 2}, {7, 36}};\n  auto keep = values.find(8);\n  int* stable = &keep->second;\n  if (values.erase(7) != 3 || values.count(7) != 0 || values.size() != 2 ||\n      &keep->second != stable || *stable != 16) return 1;\n  values.clear();\n  auto first = values.begin();\n  auto end = values.end();\n  return first != end || !values.empty();\n}\n",
+      "source_sha256": "9b5083f90b8e7549c74c31d481e4f779ee9d0c1c7f2a2f34b252520dbfe8ad6b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, long> values;\n  values.clear();\n  return values.erase(7) != 0;\n}\n",
+      "source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-insertion-map-insert-result-keeps-first-value-on-a-duplicate",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nint main() {\n  std::map<int, int> values;\n  const std::pair<const int, int> one{19, 7};\n  auto inserted = values.insert(one);\n  auto duplicate = values.insert(std::pair<const int, int>{19, 71});\n  auto other = values.insert(std::pair<const int, int>{-5, 33});\n  return !inserted.second || duplicate.second || !other.second || inserted.first != duplicate.first ||\n         inserted.first->second != 7 || other.first->first != -5 || values.size() != 2;\n}\n",
+      "source_sha256": "01abdbd5ceeb429fdcfc07c75d5719585d2d449d0620174c7fafe49c616901d5",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-insertion-multimap-insert-returns-mapped-node-in-duplicate-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> values{{7, 13}, {9, 1}};\n  const std::pair<const int, int> payload{7, 17};\n  auto inserted = values.insert(payload);\n  auto bound = values.equal_range(7);\n  ++bound.first;\n  if (bound.first != inserted || inserted->second != 17) return 1;\n  inserted->second = 31;\n  auto next = inserted;\n  ++next;\n  return next != bound.second || inserted->second != 31 || values.count(7) != 2;\n}\n",
+      "source_sha256": "5f8ad60b124e9ee18205e6ede58cde6fdbeaf64b9ad2323dc7274d9eaf47e59d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-insertion-map-pointer-call-evaluates-owner-and-input-once",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nusing Map = std::map<int, int>;\nusing Pair = std::pair<const int, int>;\nint trace;\nMap* owner(Map& map) { trace = trace * 10 + 1; return &map; }\nconst Pair& input(const Pair& pair) { trace = trace * 10 + 2; return pair; }\nint main() {\n  Map values;\n  const Pair pair{8, 20};\n  auto result = owner(values)->insert(input(pair));\n  return trace != 12 || !result.second || result.first->second != 20 || values.size() != 1;\n}\n",
+      "source_sha256": "e7e48479bca8855e040c3620d36a00aea82a98b7a864ca05505ac74ebdd5a0ff",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-insertion-stateful-comparator-insertion-remains-outside-checked-layout",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nstruct Descending {\n  bool active;\n  bool operator()(int a, int b) const { return active ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Descending> values(Descending{true});\n  const std::pair<const int, int> payload{7, 12};\n  return !values.insert(payload).second;\n}\n",
+      "source_sha256": "3b6c4db345d47cb158772729aed5a7d3a7f971755accbe9b202961ba04c8bba1",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-try-emplace-keeps-existing-value-and-defaults-a-new-node",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  const int key = 19;\n  const int value = 47;\n  auto first = values.try_emplace(key, value);\n  auto duplicate = values.try_emplace(19, 5);\n  auto zero = values.try_emplace(-4);\n  return !first.second || duplicate.second || !zero.second || first.first != duplicate.first ||\n         first.first->second != 47 || zero.first->first != -4 || zero.first->second != 0 || values.size() != 2;\n}\n",
+      "source_sha256": "1e71fd50de0322d680059abedfb4ec510edd018168f61aed58adecf494586ecc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-insert-or-assign-reuses-node-and-reports-insertion",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  int key = 7;\n  int value = 15;\n  auto first = values.insert_or_assign(key, value);\n  const int* const address = &first.first->second;\n  auto existing = values.insert_or_assign(7, 31);\n  auto second = values.insert_or_assign(-5, *address);\n  return !first.second || existing.second || !second.second || first.first != existing.first ||\n         address != &existing.first->second || *address != 31 || second.first->second != 31 || values.size() != 2;\n}\n",
+      "source_sha256": "815e23d004376a8dbb3e204eb2d1b4ee5d0072667271d00737526cd140169ebd",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-try-emplace-evaluates-arguments-on-a-duplicate",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint calls;\nint& observe(int& value) {\n  ++calls;\n  return value;\n}\nint main() {\n  std::map<int, int> values{{4, 17}};\n  int key = 4;\n  int value = 21;\n  auto result = values.try_emplace(observe(key), observe(value));\n  return calls != 2 || result.second || result.first->second != 17 || values.size() != 1;\n}\n",
+      "source_sha256": "a2593a8c81dfd2e4010abaf1af541289a19f9b8b75f892aa1b703336cfa2448c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  short value = 41;\n  return !values.try_emplace(5, value).second;\n}\n",
+      "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-transfer-map-copy-creates-independent-mapped-objects",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{7, 21}, {3, 14}, {-1, 6}};\n  const std::map<int, int>& view = values;\n  std::map<int, int> copy(view);\n  auto first = copy.begin();\n  auto node = copy.find(3);\n  if (copy.size() != 3 || first->first != -1 || first->second != 6 ||\n      node->second != 14 || &node->second == &values.find(3)->second) return 1;\n  node->second = 19;\n  values.clear();\n  return !values.empty() || copy.size() != 3 || node->second != 19;\n}\n",
+      "source_sha256": "6ae1cde152c19ad2d753aa4f07be3774fbdb72dc8066d26e18b12fb268b983c3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-transfer-map-move-keeps-references-and-traverses-new-sentinel",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nint main() {\n  std::map<int, int> source{{7, 21}, {3, 14}, {-1, 6}};\n  auto saved = source.find(3);\n  int* address = &saved->second;\n  std::map<int, int> dest(std::move(source));\n  if (!source.empty() || dest.size() != 3 || &saved->second != address) return 1;\n  ++saved;\n  if (saved->first != 7 || saved->second != 21) return 2;\n  ++saved;\n  return saved != dest.end();\n}\n",
+      "source_sha256": "839876a52d790c1b41854060070cb7436aacd09a98dce2b3c32f876623a0fa3f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-transfer-multimap-swap-preserves-equivalent-node-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> left{{5, 10}, {5, 11}, {9, 90}};\n  std::multimap<int, int> right;\n  auto saved = left.begin();\n  int* address = &saved->second;\n  left.swap(right);\n  right.swap(right);\n  if (!left.empty() || right.count(5) != 2 || &saved->second != address) return 1;\n  ++saved;\n  return saved->first != 5 || saved->second != 11;\n}\n",
+      "source_sha256": "f0aec4974e435a94fde476f3cb30e805682ee267d8aa07ae3cbfdab4fcbf2ef6",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-transfer-stateful-ordered-map-comparator-has-separate-transfer-semantics",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Compare {\n  bool reverse;\n  bool operator()(int left, int right) const {\n    return reverse ? right < left : left < right;\n  }\n};\nint main() {\n  std::map<int, int, Compare> left(Compare{true});\n  std::map<int, int, Compare> right(Compare{false});\n  left.swap(right);\n  return left.size();\n}\n",
+      "source_sha256": "065b8a19342e9924c27c68680a659ecefc4c58ca7327518badc6876de24415d5",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-copy-assignment-replaces-and-owns-mapped-values",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> input{{4, 44}, {1, 11}};\n  std::map<int, int> output{{9, 90}, {5, 50}, {2, 20}};\n  auto *receiver = &output;\n  auto &result = receiver->operator=(input);\n  if (&result != receiver || output.size() != 2 || output.begin()->first != 1 ||\n      output.find(4)->second != 44 || output.count(9) != 0)\n    return 1;\n  auto *value = &output.find(4)->second;\n  auto &same = output;\n  output = same;\n  if (&output.find(4)->second != value)\n    return 2;\n  *value = 77;\n  return input.find(4)->second == 44 && output.find(4)->second == 77 ? 0 : 3;\n}\n",
+      "source_sha256": "e863aeaae754e334d7c537eee11bbb2c6de0de9f2a56179fe706cd4a528af898",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-copy-assignment-multimap-retains-duplicates-and-clears-old-nodes",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> input{{2, 20}, {1, 10}, {2, 21}, {2, 22}};\n  std::multimap<int, int> output{{7, 70}};\n  output = input;\n  auto range = output.equal_range(2);\n  auto it = range.first;\n  if (it == range.second || it->second != 20)\n    return 1;\n  ++it;\n  if (it == range.second || it->second != 21)\n    return 2;\n  ++it;\n  if (it == range.second || it->second != 22)\n    return 3;\n  ++it;\n  if (it != range.second || output.size() != 4 || output.count(7) != 0)\n    return 4;\n  std::multimap<int, int> empty;\n  output = empty;\n  return output.empty() && output.begin() == output.end() && input.count(2) == 3 ? 0 : 5;\n}\n",
+      "source_sha256": "74ef7c56bff9dd7a89e8cc555c583981a814e4766220c664a4af9a335e3f7d56",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-copy-assignment-preserves-operand-evaluation-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Table = std::map<int, int>;\nTable &source(Table *value, int *state) {\n  *state = *state * 10 + 1;\n  return *value;\n}\nTable &target(Table *value, int *state) {\n  *state = *state * 10 + 2;\n  return *value;\n}\nint main() {\n  Table input{{1, 17}};\n  Table output;\n  int order = 0;\n  target(&output, &order) = source(&input, &order);\n  return order == 12 && output.size() == 1 && output.begin()->second == 17 ? 0 : 1;\n}\n",
+      "source_sha256": "5e0cbb079935a6e863d23e2ccb6aadf54edd4cf15a63a5115b0ee1244b512320",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-copy-assignment-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nusing Table = std::map<int, int, Reverse>;\nvoid copy_map(Table *output, const Table *input) { *output = *input; }\n",
+      "source_sha256": "3a79332a0f568ed28cfc19b0e02c8bbf62ddbe0ada318e73ce7e6792402d556e",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-and-set-cursors-keep-independent-sentinels",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <set>\nint main() {\n  std::map<int, int> mapped{{1, 9}, {3, 7}};\n  std::set<int> values{1, 4};\n  const auto &map_view = mapped;\n  const auto &set_view = values;\n  auto map_it = map_view.end();\n  auto set_it = set_view.end();\n  --map_it;\n  --set_it;\n  return map_it->first == 3 && map_it->second == 7 && *set_it == 4 ? 0 : 1;\n}\n",
+      "source_sha256": "1eb19a7277c3dfdf2af604c0872411f0c4e9f3e04daa5b4ba877836df22bd61e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-iterator-conversion-keeps-node-and-const-view",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{4, 40}, {1, 10}};\n  auto mutable_cursor = values.find(4);\n  std::map<int, int>::const_iterator read_cursor = mutable_cursor;\n  mutable_cursor->second = 44;\n  const auto &view = values;\n  if (read_cursor != view.find(4) || read_cursor->second != 44)\n    return 1;\n  ++read_cursor;\n  return read_cursor == view.end() ? 0 : 2;\n}\n",
+      "source_sha256": "8320dd27245ea26a2f9ff81f52dff78b257f3097350a05480f799cf042895181",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-iterator-conversion-multimap-matches-duplicate-position",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values{{2, 17}, {2, 19}, {6, 31}};\n  auto mutable_cursor = values.begin();\n  ++mutable_cursor;\n  std::multimap<int, int>::const_iterator read_cursor(mutable_cursor);\n  if (read_cursor->first != 2 || read_cursor->second != 19)\n    return 1;\n  ++read_cursor;\n  return read_cursor->first == 6 && read_cursor->second == 31 ? 0 : 2;\n}\n",
+      "source_sha256": "459522fe9efa200d9f0f96888e7ad09281b0d5aafa99049774674c7d43937ce5",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-iterator-conversion-mixed-equality-sees-owner-end",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{1, 21}, {5, 25}};\n  const auto &view = values;\n  if (values.begin() != view.begin() || view.end() != values.end())\n    return 1;\n  auto cursor = values.begin();\n  ++cursor;\n  return cursor == view.find(5) && view.find(1) != cursor ? 0 : 2;\n}\n",
+      "source_sha256": "03d550923393c544ef49cf3ac1eed374f2eedb43f5c9fc319472fac5141f490d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-iterator-conversion-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nusing Table = std::map<int, int, Reverse>;\nbool copy_cursor(Table *values) {\n  Table::const_iterator read_cursor = values->begin();\n  return read_cursor == values->cend();\n}\n",
+      "source_sha256": "b840336e0581469c7eaac12214e6786de853c51b130e5b3aee6238debaeabf1f",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedMapDefaultMappedValueAndStableReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapPointerReceiverAndKeyEvaluatedOnceInOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapRepeatedSubscriptAllocatesAndDestroysOneNodePerKeyRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapContainsIntegerKeysAfterInsertionAndPreservesSizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapConstPointerCountEvaluatesReceiverAndKeyOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapInitializerListConstructsOrderedMapWithFirstMappedValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapMultimapInitializerListKeepsDuplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapInitializerListDestroysEachMappedNodeOnlyOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapIteratorFindReturnsAMutableMappedLvalueRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapIteratorConstIteratorTraversesBoundsAndDecrementsEndRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapIteratorMultimapEqualRangePreservesMappedDuplicateOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapErasureKeyEraseKeepsTheMappedAddressOfAnotherNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapErasureEraseConstIteratorSpanReturnsMutableSuccessorRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapErasureMultimapErasesEveryDuplicateAndClearReseatsSentinelRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapInsertionMapInsertResultKeepsFirstValueOnADuplicateRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapInsertionMultimapInsertReturnsMappedNodeInDuplicateOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapInsertionMapPointerCallEvaluatesOwnerAndInputOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapScalarEmplacementTryEmplaceKeepsExistingValueAndDefaultsANewNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapScalarEmplacementInsertOrAssignReusesNodeAndReportsInsertionRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapScalarEmplacementTryEmplaceEvaluatesArgumentsOnADuplicateRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapTransferMapCopyCreatesIndependentMappedObjectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapTransferMapMoveKeepsReferencesAndTraversesNewSentinelRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapTransferMultimapSwapPreservesEquivalentNodeOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapCopyAssignmentReplacesAndOwnsMappedValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapCopyAssignmentMultimapRetainsDuplicatesAndClearsOldNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapCopyAssignmentPreservesOperandEvaluationOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapAndSetCursorsKeepIndependentSentinelsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapIteratorConversionKeepsNodeAndConstViewRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapIteratorConversionMultimapMatchesDuplicatePositionRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapIteratorConversionMixedEqualitySeesOwnerEndRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapScalarEmplacementMappedConversionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapCountsWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedMapErasesWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedMapNonDefaultKeyOrderRemainsOutsideCheckedSubscriptRejected",
+    "TranslateTest.CoreV2OrderedMapStatefulPolicyRemainsOutsideCheckedMappedOwnerRejected",
+    "TranslateTest.CoreV2OrderedMapIteratorCustomMapIteratorReceiverKeepsSourceGuardRejected",
+    "TranslateTest.CoreV2OrderedMapInsertionStatefulComparatorInsertionRemainsOutsideCheckedLayoutRejected",
+    "TranslateTest.CoreV2OrderedMapTransferStatefulOrderedMapComparatorHasSeparateTransferSemanticsRejected",
+    "TranslateTest.CoreV2OrderedMapCopyAssignmentCustomComparatorRemainsUnsupportedRejected",
+    "TranslateTest.CoreV2OrderedMapIteratorConversionCustomComparatorRemainsUnsupportedRejected"
+  ],
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "32075ed5590611d862e4bd001e979b72fd0989115ffd0a18586f2ba71a590624",
+  "maintained_original_sha256": "2780fb91a65d18cf4059ff79ac2436884aa57f420b42296c99f3f0b80b69ebd7",
+  "previous_registered_source_sha256": "643ddb45cd6010873abc4cd9d0c3d804173e062a6310a96347abffd990ec2068",
+  "previous_maintained_original_sha256": "44d47c10a82a3d2ef973db9f9a87c2b5cce5389141a648093a5939e4bcf1d926",
+  "restorer_sha256": "c58afed011fc97fe6fa4696f439a426669f71021f4c1d8b6614d4e466e6f581b",
+  "extractor_sha256": "66921aebb956c2847a31fda969915c6a265abee618faf2618fd17e74f60b20e4",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8734,
+  "current_python_registry_tests": 252,
+  "native_reference_selected_executions": 66,
+  "planned_generated_c23_executions": 66
+}
