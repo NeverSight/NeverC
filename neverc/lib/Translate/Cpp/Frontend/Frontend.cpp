@@ -31012,7 +31012,7 @@ public:
         }
       if (VariantComparison) {
         for (const auto *Operand : C->arguments())
-          checkBinding(Operand, false);
+          checkBinding(Operand, true);
         A.type(A.Context.getRecordType(VariantComparison->Variant.Record), L);
         return true;
       }
