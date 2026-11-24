@@ -18280,6 +18280,21 @@ class FunctionLowering {
     case UtilityOperation::IteratorEmpty:
     case UtilityOperation::IteratorData: {
       const auto *Source = Call->getArg(0);
+      if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, Source->getType()->getAsCXXRecordDecl(), A.Context)) {
+        const auto Parameter = Call->getDirectCallee()->getParamDecl(0)->getType();
+        auto Place = dereference(argument(Source, Parameter), L);
+        if (Operation == UtilityOperation::IteratorSize || Operation == UtilityOperation::IteratorEmpty) {
+          auto Size = orderedContainerMember(std::move(Place), "nct_ordered_size", L);
+          if (Operation == UtilityOperation::IteratorSize) return Size;
+          return binary("==", std::move(Size), A.zero(A.Context.getSizeType(), L), "bool", L);
+        }
+        auto Node = Operation == UtilityOperation::IteratorEnd
+            ? orderedTreeSentinel(std::move(Place), L)
+            : orderedContainerMember(std::move(Place), "nct_ordered_begin", L);
+        auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        assign(orderedIteratorCursor(Output, L), std::move(Node), L);
+        return Output;
+      }
       const auto *Native = A.Context.getAsConstantArrayType(Source->getType());
       auto Array = ArrayFor(Source->getType());
       if (!Native && !Array)
@@ -18412,6 +18427,22 @@ class FunctionLowering {
       const bool Member = Operation == UtilityOperation::ArrayRBegin ||
                           Operation == UtilityOperation::ArrayREnd;
       const auto *Source = Member ? MemberObject() : Call->getArg(0);
+      if (!Member &&
+          approvedOrderedContainerRuntimeRecord(A.S, A.Sources, Source->getType()->getAsCXXRecordDecl(), A.Context)) {
+        const auto Reverse = approvedUtilityReverseIteratorRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context, true);
+        if (!Reverse || Reverse->OrderedElementType.isNull())
+          reject(L, "ordered reverse access", "The checked reverse cursor layout is required.");
+        const auto Parameter = Call->getDirectCallee()->getParamDecl(0)->getType();
+        auto Place = dereference(argument(Source, Parameter), L);
+        auto Node = Operation == UtilityOperation::IteratorRBegin
+            ? orderedTreeSentinel(std::move(Place), L)
+            : orderedContainerMember(std::move(Place), "nct_ordered_begin", L);
+        auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        assign(reverseIteratorSlot(Output, Reverse->Legacy, *Reverse, L), Node, L);
+        assign(reverseIteratorSlot(Output, Reverse->Current, *Reverse, L), std::move(Node), L);
+        return Output;
+      }
       const auto *Native =
           Source ? A.Context.getAsConstantArrayType(Source->getType())
                  : nullptr;

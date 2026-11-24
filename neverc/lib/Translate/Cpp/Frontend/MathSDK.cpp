@@ -134581,6 +134581,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return std::nullopt;
     return std::pair{Array->ElementType, Array->Size};
   };
+  auto OrderedOwner = [&](QualType Parameter) -> std::optional<UtilityOrderedSetStorage> {
+    if (!Parameter->isLValueReferenceType()) return std::nullopt;
+    const auto Type = Parameter->getPointeeType();
+    const auto *Record = Type->getAsCXXRecordDecl();
+    if (!Record || !Record->getIdentifier() || Type.isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Type))
+      return std::nullopt;
+    const auto Name = Record->getName();
+    if (Name == "map" || Name == "multimap")
+      return approvedUtilityOrderedMapStorage(S, SM, Record, Context);
+    return approvedUtilityOrderedSetStorage(S, SM, Record, Context);
+  };
   if ((Origin->Path == "__iterator/access.h" ||
        Origin->Path == "__iterator/data.h" ||
        Origin->Path == "__iterator/size.h" ||
@@ -134588,6 +134600,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 1 && Function->getNumParams() == 1) {
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
+    if (const auto Owner = OrderedOwner(Parameter); Owner && Call->isPRValue() && Same(Call->getType(), Result)) {
+      if (Origin->Path == "__iterator/access.h" &&
+          (Name == "begin" || Name == "cbegin" || Name == "end" || Name == "cend") &&
+          approvedOrderedSetIteratorRecord(S, SM, Result->getAsCXXRecordDecl(), Context, &*Owner))
+        return Name == "end" || Name == "cend" ? UtilityOperation::IteratorEnd : UtilityOperation::IteratorBegin;
+      if (Origin->Path == "__iterator/size.h" && Name == "size" && Same(Result, Context.getSizeType()))
+        return UtilityOperation::IteratorSize;
+      if (Origin->Path == "__iterator/empty.h" && Name == "empty" && Result->isBooleanType())
+        return UtilityOperation::IteratorEmpty;
+    }
     const auto Range =
         IteratorRange(Parameter->isReferenceType() ? Parameter->getPointeeType()
                                                    : QualType());
@@ -134623,6 +134645,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->isPRValue()) {
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
+    if (const auto Owner = OrderedOwner(Parameter); Owner && Same(Call->getType(), Result)) {
+      const auto Reverse = ReverseFor(Result, true);
+      if (Reverse && !Reverse->OrderedElementType.isNull() &&
+          approvedOrderedSetIteratorRecord(S, SM, Reverse->IteratorType->getAsCXXRecordDecl(), Context, &*Owner))
+        return Name == "rend" || Name == "crend" ? UtilityOperation::IteratorREnd : UtilityOperation::IteratorRBegin;
+    }
     const auto Range =
         IteratorRange(Parameter->isReferenceType() ? Parameter->getPointeeType()
                                                    : QualType());
