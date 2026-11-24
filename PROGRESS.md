@@ -1,5 +1,14 @@
 # NeverC Progress
 
+## Current snapshot — 2026-11-24T00:58:16Z
+
+- Reviewed source: [52787bfb…61fceebd](https://github.com/NeverSight/NeverC/compare/52787bfb3902fc8a5caf8896cf4c17a3a5021ca1...61fceebd499465a97c74ba3bfe46345b3d86e3e5) (27 commits ahead, 112 changed paths; only a selected slice reviewed). Read default unordered set/multiset unsigned-key translation and workflow trust/pinned action changes. The canonical key type is used in node store, extraction and bucket lookup; static inspection covered high-bit key, range/copy and node-transfer fixture source and the rejection boundary for unsupported types.
+- Project activity: 10 open issues and 0 open PRs (both unchanged); no issues opened or closed and no product PR openings, merges, or unmerged closures since 2026-11-23T01:05:00Z. The progress-only [#35](https://github.com/NeverSight/NeverC/pull/35) is excluded. Counts reflect GitHub indexed search, not individual review.
+- The reviewed product change includes the unsigned-key translation merge [61fceebd](https://github.com/NeverSight/NeverC/commit/61fceebd499465a97c74ba3bfe46345b3d86e3e5). No open product PR was waiting for review at the snapshot.
+- Validation: No new confirmed source defect or code change in this report. No exact-tip check run returned. No build, test, benchmark, or workflow dispatch; native toolchain/parity, full translation and runtime paths unverified.
+- Suggested next steps: (1) Run unsigned-key translation at O0/O2 with high-bit bucket, range/copy, node transfer and rejection controls; (2) confirm workflow trust for the reviewed paths, including immutable action pins and default-branch provenance, through authorized existing checks; (3) qualify production-size Windows x64 COFF with LTO disabled and the Python lifecycle, then run native-width type-identity fixtures.
+
+
 ## Current snapshot — 2026-11-23T01:05:00Z
 
 - Reviewed source: [52787bfb](https://github.com/NeverSight/NeverC/commit/52787bfb3902fc8a5caf8896cf4c17a3a5021ca1). Scope: C++ translation of unordered multiset insert-list and erase-by-key, including collision chains, node sequencing, rehash, and freeing. No new confirmed bug or source change; this is not a full translator audit.
@@ -1660,3 +1669,12 @@ Bounded static check of TranslateIR and variant source changes. No source change
 ## Daily log — 2026-11-23T01:05:00Z
 
 Bounded static review of unordered multiset modifier lowering and documented support. No source change or execution. Full-size Windows COFF and native-width correctness remain open verification items.
+
+
+## 2026-11-24 — static review
+
+- 2026-11-24T00:58:16Z: [52787bfb…61fceebd](https://github.com/NeverSight/NeverC/compare/52787bfb3902fc8a5caf8896cf4c17a3a5021ca1...61fceebd499465a97c74ba3bfe46345b3d86e3e5) (27 commits ahead, 112 changed paths; only a selected slice reviewed). Read default unordered set/multiset unsigned-key translation and workflow trust/pinned action changes. The canonical key type is used in node store, extraction and bucket lookup; static inspection covered high-bit key, range/copy and node-transfer fixture source and the rejection boundary for unsupported types.
+- 10 open issues and 0 open PRs (both unchanged); no issues opened or closed and no product PR openings, merges, or unmerged closures since 2026-11-23T01:05:00Z. The progress-only [#35](https://github.com/NeverSight/NeverC/pull/35) is excluded. Counts reflect GitHub indexed search, not individual review.
+- The reviewed product change includes the unsigned-key translation merge [61fceebd](https://github.com/NeverSight/NeverC/commit/61fceebd499465a97c74ba3bfe46345b3d86e3e5). No open product PR was waiting for review at the snapshot.
+- No new confirmed source defect or code change in this report. No exact-tip check run returned. No build, test, benchmark, or workflow dispatch; native toolchain/parity, full translation and runtime paths unverified.
+- Suggested validation: (1) Run unsigned-key translation at O0/O2 with high-bit bucket, range/copy, node transfer and rejection controls; (2) confirm workflow trust for the reviewed paths, including immutable action pins and default-branch provenance, through authorized existing checks; (3) qualify production-size Windows x64 COFF with LTO disabled and the Python lifecycle, then run native-width type-identity fixtures.
