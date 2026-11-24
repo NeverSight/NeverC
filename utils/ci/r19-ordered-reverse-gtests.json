@@ -173,22 +173,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-reverse-cursor-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n",
-      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-reverse-range-uses-half-open-endpoints",
       "expected": "accept",
       "public_header": "set",
@@ -221,14 +205,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-reverse-range-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-reverse-cursor-converts-to-const",
       "expected": "accept",
       "public_header": "map",
@@ -259,6 +235,30 @@
       "source": "#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map values;\n  auto mutable_end = values.rend();\n  const Map::const_reverse_iterator end(mutable_end);\n  return end == values.crend() && end == values.rbegin() &&\n         end.base() == values.cbegin() ? 0 : 1;\n}\n",
       "source_sha256": "0e444f007bca1efaeb7ecc224d36d338630a381f3dd8e81a96db9b061c8ef110",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-reverse-cursor-custom-policy-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n",
+      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-reverse-range-custom-policy-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
+      "kind": "source-body-guard"
     },
     {
       "name": "ordered-mapped-reverse-conversion-custom-order-guard",
@@ -296,7 +296,7 @@
     "TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRejected",
     "TranslateTest.CoreV2OrderedMappedReverseConversionOtherMappedStorageGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "88d1667c3c35a1a79ea0af997d34035ba7434b3f6fc53fd0b36ab02cd847edd1",
   "maintained_original_sha256": "71f05eab5c997e801174b09b261db0752041dcd4a7a19e10b805af00a9568b0f",
@@ -308,5 +308,10 @@
   "current_registry_count": 8837,
   "current_python_registry_tests": 266,
   "native_reference_selected_executions": 24,
-  "planned_generated_c23_executions": 24
+  "planned_generated_c23_executions": 24,
+  "native_reference_proofs": {
+    "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd"
+  },
+  "native_reference_authentication_sha256": "5d0a3e4ac0cc950697a01d58ca5263c0af391c5716d136b3e1b8d64d6db1ce45",
+  "source_proof_sha256": "35d4084e6ea23958d6a5f59e8ed2c6616075394d26c7de8f6b9adda15aa062d5"
 }
