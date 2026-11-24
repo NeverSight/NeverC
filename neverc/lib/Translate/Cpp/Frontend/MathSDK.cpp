@@ -136044,8 +136044,10 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
   if (!Map || (Map->getSpecializationKind() != TSK_ImplicitInstantiation &&
                Map->getSpecializationKind() != TSK_Undeclared)) return false;
   const auto &Arguments = Map->getTemplateArgs();
+  const auto Mapped = Arguments[1].getAsType();
   if (!Context.hasSameType(Arguments[0].getAsType(), Context.IntTy) ||
-      !Context.hasSameType(Arguments[1].getAsType(), Context.IntTy)) return false;
+      !(Context.hasSameType(Mapped, Context.IntTy) || Context.hasSameType(Mapped, Context.LongTy) ||
+        Context.hasSameType(Mapped, Context.LongLongTy))) return false;
   const auto *Hash = associativeTypeIdentity(S, SM, Arguments[2].getAsType()->getAsCXXRecordDecl(),
       "hash", "__functional/hash.h", "__fwd/functional.h", 1);
   const auto *Equal = associativeTypeIdentity(S, SM, Arguments[3].getAsType()->getAsCXXRecordDecl(),
@@ -136058,7 +136060,7 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
   const auto *Pair = associativeTypeIdentity(S, SM, Allocator->getTemplateArgs()[0].getAsType()->getAsCXXRecordDecl(),
       "pair", "__utility/pair.h", "__fwd/pair.h", 2);
   return Pair && Context.hasSameType(Pair->getTemplateArgs()[0].getAsType(), Context.IntTy.withConst()) &&
-         Context.hasSameType(Pair->getTemplateArgs()[1].getAsType(), Context.IntTy);
+         Context.hasSameType(Pair->getTemplateArgs()[1].getAsType(), Mapped);
 }
 
 static llvm::StringRef associativeContainerHeader(llvm::StringRef Name) {
@@ -139070,7 +139072,9 @@ static std::optional<UtilityUnorderedTableRecord> approvedUnorderedStorage(
   if (!Map || !Admitted(Map) ||
       Map->isInvalidDecl() || Map->isDynamicClass() || Map->getNumBases())
     return std::nullopt;
-  const auto Key = cast<ClassTemplateSpecializationDecl>(Map)->getTemplateArgs().get(0).getAsType();
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Map)->getTemplateArgs();
+  const auto Key = Arguments.get(0).getAsType();
+  const auto MappedType = Mapped ? Arguments.get(1).getAsType() : QualType();
   auto Pinned = [&](const Decl *D) { return associativeStorageDeclaration(S, SM, D, false); };
   if (!approvedAssociativeStorageGraph(S, SM, Context.getRecordType(Map), Context, false))
     return std::nullopt;
@@ -139153,14 +139157,35 @@ static std::optional<UtilityUnorderedTableRecord> approvedUnorderedStorage(
       Offset(Node, Hash) != P || !Payload || Offset(Node, Payload) != 2 * P ||
       Offset(PayloadRecord, Value) ||
       !Context.hasSameType(Hash->getType(), Context.getSizeType()) ||
-      (Mapped ? Context.getTypeSize(Value->getType()) != 2 * Context.getTypeSize(Context.IntTy)
-              : !Context.hasSameType(Value->getType(), Key)) ||
-      Context.getTypeSize(NodeType) != 2 * P + 2 * Context.getTypeSize(Key) ||
       Context.getTypeAlign(NodeType) != Context.getTypeAlign(Context.VoidPtrTy))
     return std::nullopt;
+  const auto PayloadOffset = Offset(Node, Payload);
+  const auto Byte = Context.getCharWidth();
+  uint64_t MappedOffset = 0;
+  if (Mapped) {
+    const auto *Wrapper = Child(Value);
+    const auto *PairField = Field(Wrapper, "__cc_");
+    const auto Pair = PairField ? approvedUtilityPairRecord(S, SM,
+        PairField->getType()->getAsCXXRecordDecl(), Context) : std::nullopt;
+    if (!Pair || !Pair->Record->hasTrivialDestructor() || Offset(Wrapper, PairField) ||
+        !Context.hasSameType(Pair->First->getType(), Key.withConst()) ||
+        !Context.hasSameType(Pair->Second->getType(), MappedType) ||
+        Offset(Pair->Record, Pair->First) ||
+        Context.getTypeSize(Value->getType()) != Context.getTypeSize(PairField->getType()) ||
+        Context.getTypeSize(NodeType) != PayloadOffset + Context.getTypeSize(Value->getType()))
+      return std::nullopt;
+    MappedOffset = PayloadOffset + Offset(Pair->Record, Pair->Second);
+    if (MappedOffset < PayloadOffset + Context.getTypeSize(Key) ||
+        MappedOffset % Byte || MappedOffset % Context.getTypeAlign(MappedType) ||
+        MappedOffset + Context.getTypeSize(MappedType) > Context.getTypeSize(NodeType))
+      return std::nullopt;
+  } else if (!Context.hasSameType(Value->getType(), Key) ||
+             Context.getTypeSize(NodeType) != 2 * P + 2 * Context.getTypeSize(Key)) {
+    return std::nullopt;
+  }
   return UtilityUnorderedTableRecord{Map, Context.getPointerType(Context.VoidPtrTy),
       Context.VoidPtrTy, NodeType, Key, uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()),
-      uint64_t(Offset(Node, Payload) / Context.getCharWidth()), Mapped};
+      PayloadOffset / Byte, Mapped, MappedType, MappedOffset / Byte};
 }
 
 std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedMapRecord(
@@ -139893,7 +139918,7 @@ static std::optional<UtilityUnorderedMapRangeInsertion> unorderedMapRangeParamet
   const auto Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
   if (!Pair || !Pair->Record->hasTrivialDestructor() ||
       !Context.hasSameUnqualifiedType(Pair->First->getType(), Context.IntTy) ||
-      !Context.hasSameUnqualifiedType(Pair->Second->getType(), Context.IntTy) ||
+      !Context.hasSameUnqualifiedType(Pair->Second->getType(), Map.MappedType) ||
       Pair->First->getType().isVolatileQualified() || Pair->Second->getType().isVolatileQualified())
     return std::nullopt;
   return UtilityUnorderedMapRangeInsertion{Map, *Pair, Iterator, List, Pointer, Kind};
@@ -140363,7 +140388,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedMapOperation(
     if (Mutable && Name == "erase") return UtilityOperation::UnorderedMapEraseKey;
   }
   if (Mutable && Method->isOverloadedOperator() && Method->getOverloadedOperator() == OO_Subscript &&
-      Context.hasSameType(Result, Context.getLValueReferenceType(Context.IntTy)) && Call->isLValue() &&
+      Context.hasSameType(Result, Context.getLValueReferenceType(Info->MappedType)) && Call->isLValue() &&
       (Key || (Context.hasSameType(Parameter, Context.getRValueReferenceType(Context.IntTy)) &&
                Context.hasSameType(Call->getArg(Offset)->getType(), Context.IntTy) &&
                Call->getArg(Offset)->isXValue())))
@@ -140472,13 +140497,13 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   if ((Name == "emplace_hint") != bool(Offset) &&
       (Name == "emplace" || Name == "emplace_hint")) return std::nullopt;
   const unsigned Count = Method->getNumParams() - Offset;
-  auto IntReference = [&](unsigned Index) {
+  auto ScalarReference = [&](unsigned Index, QualType Target) {
     const auto Parameter = Method->getParamDecl(Index)->getType();
     const auto Value = Parameter.getNonReferenceType();
     return Parameter->isReferenceType() && !Value.isVolatileQualified() &&
         !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
-        Context.hasSameUnqualifiedType(Value, Context.IntTy) &&
-        Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Context.IntTy);
+        Context.hasSameUnqualifiedType(Value, Target) &&
+        Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Target);
   };
   UnorderedMapInsertionKind Kind;
   std::optional<UtilityTupleRecord> KeyTuple, ValueTuple;
@@ -140486,7 +140511,7 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   if ((Name == "emplace" || Name == "emplace_hint") && Count == 0) {
     Kind = UnorderedMapInsertionKind::Default;
   } else if ((Name == "emplace" || Name == "emplace_hint") && Count == 3) {
-    const auto Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Context.IntTy, Context);
+    const auto Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Map->MappedType, Context);
     if (!Piecewise) return std::nullopt;
     KeyTuple = Piecewise->Key;
     ValueTuple = Piecewise->Value;
@@ -140501,14 +140526,14 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
         !Argument->Record->hasTrivialDestructor() ||
         !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), Parameter) ||
         !Context.hasSameUnqualifiedType(Argument->First->getType(), Context.IntTy) ||
-        !Context.hasSameUnqualifiedType(Argument->Second->getType(), Context.IntTy) ||
+        !Context.hasSameUnqualifiedType(Argument->Second->getType(), Map->MappedType) ||
         Argument->First->getType().isVolatileQualified() ||
         Argument->Second->getType().isVolatileQualified()) return std::nullopt;
     Kind = UnorderedMapInsertionKind::Pair;
   } else {
     if (Count != 2 && !(Count == 1 && Name == "try_emplace")) return std::nullopt;
     for (unsigned I = Offset; I != Method->getNumParams(); ++I)
-      if (!IntReference(I)) return std::nullopt;
+      if (!ScalarReference(I, I == Offset ? Map->KeyType : Map->MappedType)) return std::nullopt;
     if (Name == "try_emplace" || Name == "insert_or_assign") {
       const auto Key = Method->getParamDecl(Offset)->getType();
       if (!Context.hasSameType(Key, Context.getLValueReferenceType(Context.getConstType(Context.IntTy))) &&
@@ -141327,7 +141352,8 @@ std::optional<AssociativeNodeCall> associativeNodeCall(
         Conversion&&Context.hasSameType(Conversion->getConversionType(),Context.BoolTy)&&Call->isPRValue())return Return(AssociativeNodeOperation::Boolean);
     const bool ValueAccess = Info->HasMappedValue ? Name == "key" || Name == "mapped" : Name == "value";
     const auto *Tree = std::get_if<UtilityOrderedSetStorage>(&Info->Owner);
-    const auto MappedType = Tree ? Tree->MappedValueType : Context.IntTy;
+    const auto MappedType = Tree ? Tree->MappedValueType
+                                 : std::get<UtilityUnorderedTableRecord>(Info->Owner).MappedType;
     const auto Value = Name == "mapped" ? MappedType : Info->KeyType;
     if (ValueAccess && Parent == Info->Specifics->getCanonicalDecl() && Call->isLValue() &&
         Context.hasSameType(Result, Context.getLValueReferenceType(Value)))

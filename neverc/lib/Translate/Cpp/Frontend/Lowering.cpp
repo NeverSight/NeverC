@@ -1220,8 +1220,7 @@ class FunctionLowering {
   }
   Expression unorderedNodeValue(Expression Node, const UtilityUnorderedTableRecord &Info,
                                  SourceLocation L) {
-    return nodeFieldAt(std::move(Node), A.Context.IntTy,
-        Info.ValueOffsetBytes + A.Context.getTypeSizeInChars(A.Context.IntTy).getQuantity(), L);
+    return nodeFieldAt(std::move(Node), Info.MappedType, Info.MappedOffsetBytes, L);
   }
   Expression unorderedSentinel(Expression Place, const UtilityUnorderedTableRecord &Info,
                                  SourceLocation L) {
@@ -1655,7 +1654,7 @@ class FunctionLowering {
     auto Result = snapshot(Multi ? A.zero(Info.NodePointerType, L) :
         unorderedFindNode(Place, Info, Key, Hash, L), L);
     auto InsertedValue = snapshot(boolean(false, L), L);
-    auto InitialValue = [&] { return Mapped ? Expression(*Mapped) : A.zero(A.Context.IntTy, L); };
+    auto InitialValue = [&] { return Mapped ? Expression(*Mapped) : A.zero(Info.MappedType, L); };
     const auto Existing = labelName();
     const auto Allocate = labelName(), Capacity = labelName(), NeedCapacity = labelName();
     const auto Grow = labelName(), Desired = labelName(), SelectMinimum = labelName(), Rehash = labelName();
@@ -31432,8 +31431,8 @@ class FunctionLowering {
         // The SDK copies tuple parameters while constructing the pair, after
         // node allocation. Reference elements still read their live referents.
         assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
-        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), readMappedPiecewiseValue(std::move(Keys), *Info->KeyTuple, A.Context.IntTy, L), L);
-        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), readMappedPiecewiseValue(std::move(Values), *Info->ValueTuple, A.Context.IntTy, L), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), readMappedPiecewiseValue(std::move(Keys), *Info->KeyTuple, Info->Map.KeyType, L), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), readMappedPiecewiseValue(std::move(Values), *Info->ValueTuple, Info->Map.MappedType, L), L);
         Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
         Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
       } else if (Info->Kind == UnorderedMapInsertionKind::Default) {
@@ -31442,8 +31441,8 @@ class FunctionLowering {
             quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
             type(Info->Map.NodePointerType, L), L), L);
         assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
-        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
-        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), A.zero(Info->Map.KeyType, L), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), A.zero(Info->Map.MappedType, L), L);
         Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
         Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
       } else if (Info->Kind == UnorderedMapInsertionKind::Pair) {

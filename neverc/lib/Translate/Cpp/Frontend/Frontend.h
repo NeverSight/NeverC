@@ -4463,6 +4463,8 @@ struct UtilityUnorderedTableRecord {
   clang::QualType BucketPointerType, NodePointerType, NodeType, KeyType;
   uint64_t NodeBytes, ValueOffsetBytes;
   bool HasMappedValue = true;
+  clang::QualType MappedType;
+  uint64_t MappedOffsetBytes = 0;
 };
 std::optional<UtilityUnorderedTableRecord> approvedUtilityUnorderedMapRecord(
     const State &S, const clang::SourceManager &SM,
