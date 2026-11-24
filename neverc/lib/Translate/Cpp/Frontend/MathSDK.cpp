@@ -10741,6 +10741,11 @@ static constexpr VariantComparisonOperator VariantComparisonOperators[] = {
     {OO_GreaterEqual, BO_GE, "operator>=", "greater_equal"},
 };
 
+static bool builtinVariantComparisonType(QualType Type) {
+  return Type->isIntegerType() || Type->isSpecificBuiltinType(BuiltinType::Float) ||
+         Type->isSpecificBuiltinType(BuiltinType::Double);
+}
+
 static bool variantComparisonQuery(const State &S, const SourceManager &SM,
     const Expr *Test, const ParmVarDecl *Operand, const UtilityVariantRecord &V, bool Valueless,
     const ASTContext &Context) {
@@ -10858,7 +10863,7 @@ static bool variantComparisonLeaf(const State &S, const SourceManager &SM, const
       return false;
   }
   const auto *Value = variantReturned(Policy);
-  if (Element->isIntegerType()) {
+  if (builtinVariantComparisonType(Element)) {
     const auto *Compare = Value ? dyn_cast<BinaryOperator>(Value->IgnoreParenImpCasts()) : nullptr;
     return Compare && Compare->getOpcode() == Relation.Operation &&
            variantForward(S, SM, Compare->getLHS(), Policy->getParamDecl(0), Context) &&
@@ -10944,7 +10949,7 @@ std::optional<UtilityVariantComparison> approvedUtilityVariantComparison(const S
       llvm::any_of(V->Alternatives, [&](const FieldDecl *Field) {
         const auto Alternative = Field->getType();
         return Alternative.isVolatileQualified() ||
-               (!Alternative->isIntegerType() &&
+               (!builtinVariantComparisonType(Alternative) &&
                 !approvedUtilityMonostateMetadata(S, SM, Alternative->getAsCXXRecordDecl(), Context));
       }))
     return std::nullopt;

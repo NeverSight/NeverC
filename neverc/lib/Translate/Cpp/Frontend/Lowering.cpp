@@ -34841,7 +34841,7 @@ class FunctionLowering {
         for (unsigned I = 0; I < V.Alternatives.size(); ++I) {
           A.chargeExpansion(1, L);
           // The proven monostate comparison already agrees with the equal indexes.
-          if (!V.Alternatives[I]->getType()->isIntegerType())
+          if (V.Alternatives[I]->getType()->isRecordType())
             continue;
           const auto Selected = labelName(), Next = labelName();
           branch(binary("==", LeftIndex, quantity(I, IndexType, L), "bool", L), Selected, Next, L);
