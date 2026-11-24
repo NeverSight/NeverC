@@ -32799,7 +32799,7 @@ public:
       }
       if (S.owns(SM, L) &&
           (!Angled ||
-           (Name != "type_traits" && Name != "cstdint" && Name != "limits" &&
+           (Name != "type_traits" && Name != "cstdint" && Name != "limits" && Name != "climits" &&
             Name != "cstddef" && Name != "utility" && Name != "array" &&
             Name != "tuple" && Name != "iterator" && Name != "algorithm" &&
             Name != "numeric" && Name != "random" && Name != "initializer_list" &&
@@ -32814,7 +32814,7 @@ public:
              Name != "valarray" && Name != "scoped_allocator"))) {
         reject(L, "include",
                "Only exact #include <type_traits>, #include <cstdint> and "
-               "#include <limits>, #include <cstddef>, #include <utility> and "
+               "#include <limits>, #include <climits>, #include <cstddef>, #include <utility> and "
                "#include <array>, #include <tuple>, #include <iterator>, "
                "#include <algorithm>, #include <numeric>, #include <random>, "
                "#include <initializer_list>, #include <optional> and "
