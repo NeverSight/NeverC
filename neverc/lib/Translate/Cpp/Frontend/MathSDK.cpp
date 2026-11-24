@@ -10625,15 +10625,15 @@ static bool variantVisitMatrix(const State &S, const SourceManager &SM,
 
 std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
-  if (!S.coreV2() || !Call || Call->getNumArgs() < 2 || Call->getNumArgs() > 4 ||
-      !directFunctionReference(Call))
+  constexpr unsigned MaxMatrixEntries = 64;
+  if (!S.coreV2() || !Call || Call->getNumArgs() < 2 ||
+      Call->getNumArgs() - 1 > MaxMatrixEntries || !directFunctionReference(Call))
     return std::nullopt;
   const unsigned Count = Call->getNumArgs() - 1;
   const auto *Visit = variantVisitDefinition(S, SM, Call->getDirectCallee(), "visit", Count + 1);
   if (!Visit)
     return std::nullopt;
   std::vector<UtilityVariantRecord> Variants;
-  constexpr unsigned MaxMatrixEntries = 64;
   std::size_t MatrixEntries = 1;
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Operand = Call->getArg(I + 1);
