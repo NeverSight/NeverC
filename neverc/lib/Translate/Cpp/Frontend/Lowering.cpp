@@ -30899,6 +30899,24 @@ class FunctionLowering {
         Operation == UtilityOperation::BitsetResetAll || Operation == UtilityOperation::BitsetFlipAll ||
         Operation == UtilityOperation::BitsetAssign)
       return utilityBitsetOperation(Call, Operation);
+    if (Operation == UtilityOperation::OrderedMapValueComparator) {
+      const auto *Member = approvedOrderedValueComparatorFactory(A.S, A.Sources, Call, A.Context);
+      if (!Member) reject(L, "ordered value comparator", "The checked comparator factory is required.");
+      unorderedSetReceiverPointer(Member, L);
+      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      assign(Output, A.zero(Call->getType(), L), L);
+      return Output;
+    }
+    if (Operation == UtilityOperation::OrderedMapCompareValues) {
+      const auto Pair = approvedOrderedValueComparatorCall(A.S, A.Sources, Call, A.Context);
+      if (!Pair) reject(L, "ordered value comparator", "The checked pair-key comparison is required.");
+      lvalue(Call->getArg(0));
+      const auto *Method = Call->getDirectCallee();
+      auto Left = dereference(snapshot(argument(Call->getArg(1), Method->getParamDecl(0)->getType()), L), L);
+      auto Right = dereference(snapshot(argument(Call->getArg(2), Method->getParamDecl(1)->getType()), L), L);
+      return binary("<", fieldStorage(std::move(Left), Pair->First, L),
+                    fieldStorage(std::move(Right), Pair->First, L), "bool", L);
+    }
     if (Operation == UtilityOperation::UnorderedTableGetAllocator ||
         Operation == UtilityOperation::AssociativePolicy) {
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
