@@ -101,6 +101,22 @@
       "source_sha256": "0e0622d95993de087ed2850db140e579db8e4f4f6a8959b2744e2ad414d1b1d3"
     },
     {
+      "name": "unordered-empty-capacity-nonempty-owner",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n",
+      "source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb"
+    },
+    {
+      "name": "unordered-empty-capacity-arrow-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return pointer->max_bucket_count() == 0;\n}\n",
+      "source_sha256": "ef89b1775b5c94bcbe0242b039a33e5a73872a7804e572f78132ea04bd45e5e6"
+    },
+    {
       "name": "unordered-empty-capacity-custom-hash",
       "expected": "reject",
       "public_header": "unordered_set",
@@ -115,22 +131,6 @@
       "kind": "source-body-guard",
       "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<long> values;\n  return values.max_bucket_count() == 0;\n}\n",
       "source_sha256": "1ebaad715446205bb332c29929ab9102b705850154923f5d984d57e0904762ef"
-    },
-    {
-      "name": "unordered-empty-capacity-arrow-receiver",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "kind": "cpp17-operation",
-      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return pointer->max_bucket_count() == 0;\n}\n",
-      "source_sha256": "ef89b1775b5c94bcbe0242b039a33e5a73872a7804e572f78132ea04bd45e5e6"
-    },
-    {
-      "name": "unordered-empty-capacity-nonempty-owner",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "kind": "cpp17-operation",
-      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n",
-      "source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedEmptyCapacityCustomHashRejected",
     "TranslateTest.CoreV2UnorderedEmptyCapacityNonIntKeyRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96",
   "maintained_original_sha256": "97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6",
@@ -155,5 +155,12 @@
   "current_registry_count": 8350,
   "current_python_registry_tests": 174,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-empty-capacity": "0446aea757fd87d3b273bff57e5facec4230938419deb59350d2ac5199a83ba8",
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a",
+    "unordered-set-bucket-receivers": "1a0de477baf71caf287cb98e07a1017a3c2a3df8497717c62c00fa1dfc95ed03"
+  },
+  "native_reference_authentication_sha256": "11e8e7b28b4f27563ffc8f37f6f772a5b0bb48a6f1fdba6b3619bacb43d96266",
+  "source_proof_sha256": "b3e31219c00223fba4dae1e1e48cb0bb61e9ca992160c294c6b04eb5f6db20bd"
 }
