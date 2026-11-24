@@ -3611,6 +3611,8 @@ struct UtilityAnyIntegerConstruction {
   const clang::Expr *Input;
   clang::QualType Parameter;
 };
+bool approvedUtilityAnySizeofConstruction(const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
 std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);

@@ -9011,28 +9011,37 @@ std::optional<UtilityAnyTransfer> approvedUtilityAnyTransfer(
   return UtilityAnyTransfer{Any, Receiver, Input, Arrow, InputFirst, Operation, QualType()};
 }
 
-static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
+static bool anyPinnedSignature(const State &S, const SourceManager &SM,
     const FunctionDecl *F, llvm::StringRef Name, unsigned Arity,
-    llvm::StringRef Path = "any") {
+    llvm::StringRef Path) {
   if (!F || F->getNameAsString() != Name || F->isInvalidDecl() || F->isDeleted() ||
       F->isVariadic() || F->getNumParams() != Arity)
-    return nullptr;
+    return false;
   auto IsPinned = [&](const Decl *D) {
     return approvedStandardSDKDeclaration(S, SM, D) &&
            cstddefOrigin(S, SM, D->getLocation(), "libcxx", Path);
   };
   for (const auto *D : F->redecls())
     if (!IsPinned(D))
-      return nullptr;
+      return false;
   if (const auto *Primary = F->getPrimaryTemplate()) {
     if (F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
-      return nullptr;
+      return false;
     for (const auto *D : Primary->redecls())
       if (!IsPinned(D) || !IsPinned(D->getTemplatedDecl()))
-        return nullptr;
+        return false;
   }
+  return true;
+}
+
+static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
+    const FunctionDecl *F, llvm::StringRef Name, unsigned Arity,
+    llvm::StringRef Path = "any") {
+  if (!anyPinnedSignature(S, SM, F, Name, Arity, Path))
+    return nullptr;
   const auto *Definition = F->getDefinition();
-  return IsPinned(Definition) ? Definition : nullptr;
+  return approvedStandardSDKDeclaration(S, SM, Definition) &&
+         cstddefOrigin(S, SM, Definition->getLocation(), "libcxx", Path) ? Definition : nullptr;
 }
 
 static const DeclRefExpr *anyReference(const Expr *E) {
@@ -9453,6 +9462,32 @@ static bool anyIntegerInput(const Expr *Input, QualType Parameter, QualType Payl
          Context.hasSameUnqualifiedType(Parameter.getNonReferenceType(), Payload) &&
          Context.hasSameUnqualifiedType(Input->getType(), Payload) &&
          !Input->getType().isVolatileQualified());
+}
+
+bool approvedUtilityAnySizeofConstruction(const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, const ASTContext &Context) {
+  if (!S.coreV2() || !Construction || Construction->getNumArgs() != 1 ||
+      Construction->isInstantiationDependent() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete)
+    return false;
+  const auto *Constructor = Construction->getConstructor();
+  if (!anyPinnedSignature(S, SM, Constructor, "any", 1, "any") ||
+      !Constructor->getPrimaryTemplate() || Constructor->isExplicit())
+    return false;
+  const auto *Any = Constructor->getParent()->getDefinition();
+  const auto *Args = Constructor->getTemplateSpecializationArgs();
+  if (!Any || !Context.hasSameUnqualifiedType(Construction->getType(), Context.getRecordType(Any)) ||
+      !approvedUtilityAnyRecord(S, SM, Any, Context) || !Args || Args->size() != 3 ||
+      Args->get(0).getKind() != TemplateArgument::Type ||
+      Args->get(1).getKind() != TemplateArgument::Type ||
+      Args->get(2).getKind() != TemplateArgument::Type ||
+      !Args->get(2).getAsType()->isVoidType())
+    return false;
+  const auto Payload = Args->get(1).getAsType();
+  const auto Parameter = Constructor->getParamDecl(0)->getType();
+  return utilityAnyInlineScalar(Payload, Context) &&
+      Context.hasSameUnqualifiedType(Args->get(0).getAsType().getNonReferenceType(), Payload) &&
+      anyIntegerInput(Construction->getArg(0), Parameter, Payload, Context);
 }
 
 static bool anyIntegerInstallThis(const State &S, const SourceManager &SM,
