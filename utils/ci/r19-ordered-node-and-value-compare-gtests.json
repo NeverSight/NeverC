@@ -165,14 +165,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-extraction-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Compare {\n  bool descending;\n  bool operator()(int a, int b) const { return descending ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Compare> map({{1, 5}, {3, 7}}, Compare{true});\n  auto node = map.extract(3);\n  return node.key() == 3 && node.mapped() == 7 && map.size() == 1 ? 0 : 1;\n}\n",
-      "source_sha256": "e94867acffd285de6f0eb8632bf3c2ed508b3e9921173d3fea9a59a49c42ce53",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-node-insertion-keeps-address-and-returns-end-for-empty",
       "expected": "accept",
       "public_header": "set",
@@ -202,14 +194,6 @@
       "public_header": "map",
       "source": "#include <map>\n#include <utility>\nint main() {\n  std::map<int, int> source{{2, 42}};\n  std::multimap<int, int> destination{{2, 40}, {2, 41}};\n  auto node = source.extract(2);\n  auto position = destination.insert(std::move(node));\n  auto first = destination.begin();\n  if (!node.empty() || !source.empty() || first->second != 40)\n    return 1;\n  ++first;\n  if (first->second != 41)\n    return 2;\n  ++first;\n  return first == position && first->second == 42 && destination.count(2) == 3 ? 0 : 3;\n}\n",
       "source_sha256": "cae166048c0a21f75d18792a55804787418637a66be8d113e862229247a1f0a7",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-node-hinted-insertion-guard",
-      "expected": "accept",
-      "public_header": "map",
-      "source": "#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> source{{2, 10}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto inserted = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;\n}\n",
-      "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
       "kind": "cpp17-operation"
     },
     {
@@ -245,11 +229,11 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-value-compare-custom-policy-guard",
+      "name": "ordered-node-hinted-insertion-guard",
       "expected": "accept",
       "public_header": "map",
-      "source": "#include <map>\n#include <functional>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  const Map values;\n  auto compare = values.value_comp();\n  return compare(Map::value_type{2, 10}, Map::value_type{1, 20}) ? 0 : 1;\n}\n",
-      "source_sha256": "fe03261d983c89f2580fc863446ab214309e62b4bdc34532f3289a9fcbc585b0",
+      "source": "#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> source{{2, 10}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto inserted = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;\n}\n",
+      "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
       "kind": "cpp17-operation"
     },
     {
@@ -259,6 +243,22 @@
       "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values;\n  return values.value_comp()(Map::value_type{1, 100L}, Map::value_type{2, -100L}) ? 0 : 1;\n}\n",
       "source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-value-compare-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <functional>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  const Map values;\n  auto compare = values.value_comp();\n  return compare(Map::value_type{2, 10}, Map::value_type{1, 20}) ? 0 : 1;\n}\n",
+      "source_sha256": "fe03261d983c89f2580fc863446ab214309e62b4bdc34532f3289a9fcbc585b0",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-extraction-custom-policy-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Compare {\n  bool descending;\n  bool operator()(int a, int b) const { return descending ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Compare> map({{1, 5}, {3, 7}}, Compare{true});\n  auto node = map.extract(3);\n  return node.key() == 3 && node.mapped() == 7 && map.size() == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "e94867acffd285de6f0eb8632bf3c2ed508b3e9921173d3fea9a59a49c42ce53",
+      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -279,7 +279,7 @@
     "TranslateTest.CoreV2OrderedMapValueCompareCustomPolicyGuardRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedExtractionCustomPolicyGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "11794ebcf2e0af2b1fca673c0549041f72c3bd56634cccc8dd8f3912cab9ace2",
   "maintained_original_sha256": "4e44a789e4a9597fca5fb62d252ce9290b7d018e019bda016525ba9641f98da5",
@@ -291,5 +291,13 @@
   "current_registry_count": 8804,
   "current_python_registry_tests": 262,
   "native_reference_selected_executions": 30,
-  "planned_generated_c23_executions": 30
+  "planned_generated_c23_executions": 30,
+  "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
+    "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c",
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
+    "ordered-node-and-value-compare": "9f688edfd1ca4e2fceb07c51e787e299665a0488a58c4ecb6c377980d0cd41cc"
+  },
+  "native_reference_authentication_sha256": "a3ff04f4fa706a107867ea915400c67798c1eb472fe6cfac29ba36fa68733e0d",
+  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
 }

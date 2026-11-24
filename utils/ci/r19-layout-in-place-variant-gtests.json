@@ -271,6 +271,14 @@
       "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
       "original_case_source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
       "gtest_body_sha256": "e005d7446163b0567a864b6f2a5a5e1f31c1e33d0e99da2ce99c5a91001a3da5"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "original_case_source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "gtest_body_sha256": "439acaabe9d4aec876f102c4d551ba25c13319b61ba0de0d836955351bfce5c7"
     }
   ],
   "negative_cases": [
@@ -297,14 +305,6 @@
       "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
       "original_case_source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
       "gtest_body_sha256": "13b3f15901461b080b4c298532d43864515a132a41af9ed067aa842f5120afda"
-    },
-    {
-      "name": "any-layout-runtime-construction",
-      "formal_test_name": "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected",
-      "expected": "reject",
-      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
-      "original_case_source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
-      "gtest_body_sha256": "3adf6e457e78ddfb8770de5f6febb1d5fd7edbc370dfe53785f0844d06c6e3ba"
     },
     {
       "name": "any-layout-unevaluated-object",
@@ -470,10 +470,10 @@
     "TranslateTest.CoreV2VariantTypeConstructionZeroIndexRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapStoresFloatMappedValues",
     "TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected",
     "TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected",
     "TranslateTest.CoreV2AnyLayoutVolatileTypeRejected",
-    "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected",
     "TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected",
     "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected",
     "TranslateTest.CoreV2AssociativeMapRenamedContainerStorageRejected",
@@ -749,6 +749,30 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "associative-map-custom-type-or-policy",
+      "expected": "accept",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, double>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "map",
+      "source_sha256": "88bf568067fdfc57040ec38c85093d93836588f77865df73aef3e7e044027736",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-set-custom-type-or-policy",
+      "expected": "accept",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "set",
+      "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "source": "#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "variant-monostate-source-redeclaration",
       "source": "#include <variant>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct monostate;\n_LIBCPP_END_NAMESPACE_STD\nusing V = std::variant<std::monostate, int>;\nint main() { return sizeof(V) == 0; }\n",
       "source_sha256": "dbbbe7f8e323793aca965ec0869fb6c63bb16dc1508eeb952bcebba76171280f",
@@ -773,14 +797,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "any-layout-runtime-construction",
-      "source": "#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n",
-      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
-      "public_header": "any",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "any-layout-unevaluated-object",
       "source": "#include <any>\nint main() { return sizeof(std::any{}) == 0; }\n",
       "source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
@@ -797,14 +813,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "associative-map-custom-type-or-policy",
-      "expected": "accept",
-      "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, double>;\nint main() { return sizeof(Container) == 0; }\n",
-      "public_header": "map",
-      "source_sha256": "88bf568067fdfc57040ec38c85093d93836588f77865df73aef3e7e044027736",
-      "kind": "cpp17-operation"
-    },
-    {
       "name": "associative-map-renamed-container-storage",
       "expected": "reject",
       "source": "#define __tree_ altered_owner_storage\n#include <map>\n#include <type_traits>\n#undef __tree_\nusing Container = std::map<int, int>;\nint main() { return sizeof(Container) == 0; }\n",
@@ -819,14 +827,6 @@
       "public_header": "map",
       "source_sha256": "5174929925c12414408c4aa1d12b6af448a77b0b559ed3ee7bb1c84965e9bd3d",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "associative-set-custom-type-or-policy",
-      "expected": "accept",
-      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n",
-      "public_header": "set",
-      "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
-      "kind": "cpp17-operation"
     },
     {
       "name": "associative-set-renamed-container-storage",
@@ -933,7 +933,7 @@
     "variant-monostate-variant-layout",
     "variant-monostate-volatile-layout"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29",
   "maintained_original_sha256": "71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947",
@@ -945,5 +945,13 @@
   "current_registry_count": 8097,
   "current_python_registry_tests": 120,
   "native_reference_selected_executions": 68,
-  "planned_generated_c23_executions": 68
+  "planned_generated_c23_executions": 68,
+  "native_reference_proofs": {
+    "any-layout": "d89e6931c9771241a94eaf5f31750e55821fa0ad1d094572d74c24deb800234a",
+    "associative-metadata": "c2b4b1e86ecb64c73bdaec0c5c07756cbad3a260c465a48f1a9676bcdbc13572",
+    "monostate-layout": "bf435677f94f07928028e6b92e80db3e9b2a9e6b6d6d34849af06d12675501d6",
+    "variant-in-place-runtime": "bd90cf05c8c2a12d4d00b5759d5195f30114f5f455e69bb3142e391e6e176475"
+  },
+  "native_reference_authentication_sha256": "7252dc627daa9c512c414f006584a89ad165af708373991926d444d7e11d3bcf",
+  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
 }
