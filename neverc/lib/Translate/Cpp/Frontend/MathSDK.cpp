@@ -123998,6 +123998,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedOrderedSetAssignment(S, SM, Call, Context, true)) return UtilityOperation::OrderedSetMoveAssign;
   if (approvedOrderedSetInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsert;
   if (approvedOrderedSetListInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertList;
+  if (approvedOrderedSetListAssignment(S, SM, Call, Context)) return UtilityOperation::OrderedSetListAssign;
   if (approvedOrderedSetRangeInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertRange;
   if (approvedOrderedSetIteratorCall(S, SM, Call, Context)) return UtilityOperation::OrderedSetIterator;
   if (approvedOrderedSetMutation(S, SM, Call, Context)) return UtilityOperation::OrderedSetMutation;
@@ -137468,6 +137469,22 @@ static bool approvedOrderedSetListDefault(const State &S, const SourceManager &S
          orderedPolicyInit(S, SM, Init, nullptr);
 }
 
+static bool orderedSetListEndpoints(const FunctionDecl *Function, const CallExpr *Call,
+    const FunctionDecl *Method, const UtilityInitializerListRecord &List, const ASTContext &Context) {
+  if (!Call || !Method || Call->getNumArgs() != 2 || Method->getNumParams() != 2) return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Endpoint = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Call->getArg(I)));
+    const auto *Observer = Endpoint ? Endpoint->getMethodDecl() : nullptr;
+    if (!Observer || !Observer->getIdentifier() || Observer->getName() != (I ? "end" : "begin") ||
+        Observer->getParent()->getCanonicalDecl() != List.Record->getCanonicalDecl() ||
+        !Observer->isConst() || Endpoint->getNumArgs() ||
+        !orderedParameter(Endpoint->getImplicitObjectArgument(), Function->getParamDecl(0)) ||
+        !Context.hasSameType(Method->getParamDecl(I)->getType(), List.Begin->getType()))
+      return false;
+  }
+  return true;
+}
+
 static bool orderedSetListRange(const FunctionDecl *Function, const CXXRecordDecl *Record,
     const UtilityInitializerListRecord &List, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody());
@@ -137479,17 +137496,7 @@ static bool orderedSetListRange(const FunctionDecl *Function, const CXXRecordDec
       !Insert->getPrimaryTemplate() || Insert->getNumParams() != 2 || Range->getNumArgs() != 2 ||
       !Insert->getReturnType()->isVoidType() || !orderedReceiver(Range))
     return false;
-  for (unsigned I = 0; I != 2; ++I) {
-    const auto *Endpoint = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Range->getArg(I)));
-    const auto *Method = Endpoint ? Endpoint->getMethodDecl() : nullptr;
-    if (!Method || !Method->getIdentifier() || Method->getName() != (I ? "end" : "begin") ||
-        Method->getParent()->getCanonicalDecl() != List.Record->getCanonicalDecl() ||
-        !Method->isConst() || Endpoint->getNumArgs() ||
-        !orderedParameter(Endpoint->getImplicitObjectArgument(), Function->getParamDecl(0)) ||
-        !Context.hasSameType(Insert->getParamDecl(I)->getType(), List.Begin->getType()))
-      return false;
-  }
-  return true;
+  return orderedSetListEndpoints(Function, Range, Insert, List, Context);
 }
 
 std::optional<UtilityOrderedSetListInput> approvedOrderedSetListConstruction(
@@ -137534,34 +137541,23 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListConstruction(
   return UtilityOrderedSetListInput{*Table, *List, Pair};
 }
 
-std::optional<UtilityOrderedSetListInput> approvedOrderedSetListInsertion(
-    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
-  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
-  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
-  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
-      Method->isStatic() || Method->isConst() || Method->isVolatile() || Method->isVirtual() ||
-      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
-      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType())
-    return std::nullopt;
+static std::optional<UtilityOrderedSetListInput> orderedSetMemberListInput(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method, const Expr *Argument,
+    const ASTContext &Context) {
   const auto Parameter = Method->getParamDecl(0)->getType();
   if (Parameter.hasQualifiers() || Parameter->isReferenceType() ||
-      !Context.hasSameType(Parameter, Call->getArg(0)->getType()))
+      !Context.hasSameType(Parameter, Argument->getType()))
     return std::nullopt;
   const auto List = approvedUtilityInitializerListRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context);
-  const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
-  const auto Receiver = associativeMemberReceiverType(Reference);
   const auto *Record = Method->getParent();
-  if (!List || !Record->getIdentifier() || Receiver.isNull() ||
-      !Context.hasSameType(Receiver, Context.getRecordType(Record)) ||
-      !S.owns(SM, Reference->getMemberLoc()))
-    return std::nullopt;
+  if (!List || !Record->getIdentifier()) return std::nullopt;
   const auto Header = associativeContainerHeader(Record->getName());
   const bool Mapped = Header == "map";
   if ((!Mapped && Header != "set") || !orderedPinnedFunction(S, SM, Method, Header))
     return std::nullopt;
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
-  if (!Storage || !orderedSetListRange(Method, Record, *List, Context) ||
+  if (!Storage ||
       !Context.hasSameType(List->ElementType, Mapped ? Storage->MappedPairType : Context.IntTy))
     return std::nullopt;
   std::optional<UtilityPairRecord> Pair;
@@ -137576,6 +137572,67 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListInsertion(
       !SelectedBody(S, SM, Destructor, Record, Context) || !SelectedBody(S, SM, Method, Record, Context))
     return std::nullopt;
   return UtilityOrderedSetListInput{*Storage, *List, Pair};
+}
+
+std::optional<UtilityOrderedSetListInput> approvedOrderedSetListInsertion(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
+      Method->isStatic() || Method->isConst() || Method->isVolatile() || Method->isVirtual() ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType())
+    return std::nullopt;
+  const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Reference);
+  const auto *Record = Method->getParent();
+  if (!Record->getIdentifier() || Receiver.isNull() ||
+      !Context.hasSameType(Receiver, Context.getRecordType(Record)) ||
+      !S.owns(SM, Reference->getMemberLoc()))
+    return std::nullopt;
+  const auto Info = orderedSetMemberListInput(S, SM, Method, Call->getArg(0), Context);
+  return Info && orderedSetListRange(Method, Record, Info->List, Context) ? Info : std::nullopt;
+}
+
+std::optional<UtilityOrderedSetListInput> approvedOrderedSetListAssignment(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
+  if (!Method || Method->getOverloadedOperator() != OO_Equal || Method->isStatic() ||
+      Method->isConst() || Method->isVolatile() || Method->isVirtual() ||
+      Method->getNumParams() != 1 || Method->getPrimaryTemplate() || !Call->isLValue())
+    return std::nullopt;
+  const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
+  const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+  const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
+  const unsigned Offset = Operator ? 1 : 0;
+  if (Call->getNumArgs() != Offset + 1) return std::nullopt;
+  const auto Site = Reference ? Reference->getMemberLoc()
+      : Operator ? Operator->getOperatorLoc() : SourceLocation();
+  if (!S.owns(SM, Site)) return std::nullopt;
+  const auto Type = Context.getRecordType(Method->getParent());
+  const auto Receiver = Operator && Operator->getArg(0)->isLValue() ? Operator->getArg(0)->getType()
+      : associativeMemberReceiverType(Reference);
+  if (Receiver.isNull() || !Context.hasSameType(Receiver, Type) ||
+      !Context.hasSameType(Call->getType(), Type) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)))
+    return std::nullopt;
+  const auto Info = orderedSetMemberListInput(S, SM, Method, Call->getArg(Offset), Context);
+  if (!Info) return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 2) return std::nullopt;
+  const auto *Assign = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(dyn_cast<Expr>(Body->body_front())));
+  const auto *Storage = Assign ? dyn_cast_or_null<MemberExpr>(
+      orderedExpression(Assign->getImplicitObjectArgument())) : nullptr;
+  const auto *Tree = orderedTreeMethod(S, SM, Assign, Info->Storage.Tree,
+      Info->Storage.Multi ? "__assign_multi" : "__assign_unique", 2);
+  if (!Tree || !Storage || Storage->getMemberDecl() != orderedTreeField(Method->getParent(), "__tree_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Storage->getBase())) ||
+      !orderedSetListEndpoints(Method, Assign, Tree, Info->List, Context))
+    return std::nullopt;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Self = Return ? dyn_cast_or_null<UnaryOperator>(orderedExpression(Return->getRetValue())) : nullptr;
+  return Self && Self->getOpcode() == UO_Deref &&
+      isa_and_nonnull<CXXThisExpr>(orderedExpression(Self->getSubExpr())) ? Info : std::nullopt;
 }
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
