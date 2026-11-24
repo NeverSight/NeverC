@@ -18821,6 +18821,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
          approvedOrderedSetCopyConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedSetMoveConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
+         approvedOrderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
          approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
          approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
          (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||
@@ -21534,6 +21535,7 @@ bool pairPiecewiseLifetime(const CXXConstructExpr *Construction,
             approvedOrderedSetCopyConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedSetMoveConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
+            approvedOrderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
             approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context).has_value() ||
             (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, Construction, A.Context).has_value()) ||
@@ -24342,6 +24344,7 @@ public:
            approvedOrderedSetCopyConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedSetMoveConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedSetListConstruction(A.S, A.Sources, Construction, A.Context) ||
+           approvedOrderedSetRangeConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedOrderedContainerDefaultConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityListConstruction(A.S, A.Sources, Construction, A.Context) ||
            approvedUtilityPriorityQueueConstruction(A.S, A.Sources, Construction, A.Context) ||
@@ -31517,6 +31520,7 @@ public:
                    approvedOrderedSetCopyConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedSetMoveConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context) ||
+                   approvedOrderedSetRangeConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context) ||
                    approvedUtilityListConstruction(A.S, A.Sources, C, A.Context) ||
                    (approvedUtilityPriorityQueueConstruction(A.S, A.Sources, C, A.Context) || approvedUtilityDequeConstruction(A.S, A.Sources, C, A.Context)) ||

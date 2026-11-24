@@ -1313,7 +1313,10 @@ enum class UtilityOperation {
   OrderedSetCount,
   OrderedMapSubscript,
   OrderedSetCopyAssign,
+  OrderedSetMoveAssign,
   OrderedSetInsert,
+  OrderedSetInsertList,
+  OrderedSetInsertRange,
   OrderedSetIterator,
   OrderedSetMutation,
   OrderedSetSwap,
@@ -4692,8 +4695,8 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const State &S,
-    const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context, bool Move);
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
@@ -4710,12 +4713,26 @@ bool approvedOrderedSetMoveConstruction(const State &S, const clang::SourceManag
 const clang::MemberExpr *approvedOrderedSetSwap(const State &S, const clang::SourceManager &SM,
     const clang::CallExpr *Call, const clang::ASTContext &Context);
 
-struct UtilityOrderedSetListConstruction {
+struct UtilityOrderedSetListInput {
   UtilityOrderedSetStorage Storage;
   UtilityInitializerListRecord List;
   std::optional<UtilityPairRecord> Pair;
 };
-std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruction(
+std::optional<UtilityOrderedSetListInput> approvedOrderedSetListConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetListInput> approvedOrderedSetListInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityOrderedSetRangeInput {
+  UtilityOrderedSetStorage Storage;
+  clang::QualType PointerType;
+  std::optional<UtilityPairRecord> Pair;
+};
+std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 bool approvedOrderedSetSelectedBody(const State &S,
