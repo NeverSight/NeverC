@@ -3548,6 +3548,15 @@ struct UtilityVariantAssignment {
 std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityVariantSwap {
+  const clang::Expr *Left;
+  const clang::Expr *Right;
+  clang::QualType Type;
+  bool Arrow;
+};
+std::optional<UtilityVariantSwap> approvedUtilityVariantSwap(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 inline constexpr llvm::StringLiteral UtilityAnyTag = "nct_any_tag";
 inline constexpr llvm::StringLiteral UtilityAnyStorage = "nct_any_storage";
 inline constexpr llvm::StringLiteral UtilityAnyWords = "nct_any_words";
