@@ -8774,9 +8774,8 @@ static bool anySwapBody(const State &S, const SourceManager &SM,
          anyMoveBranch(S, SM, anySingleBranch(Right->getThen()), Any, Input, nullptr, Context);
 }
 
-static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *E,
-                           const ParmVarDecl *Input, QualType Any, const ASTContext &Context) {
-  const auto *Call = E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+static bool anyLvalueMove(const State &S, const SourceManager &SM, const CallExpr *Call,
+                         QualType Any, const ASTContext &Context) {
   const auto *Move = Call ? Call->getDirectCallee() : nullptr;
   const auto *Primary = Move ? Move->getPrimaryTemplate() : nullptr;
   auto Pinned = [&](const Decl *D) {
@@ -8787,7 +8786,8 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
       Call->getNumArgs() != 1 || !Call->isXValue() ||
       Move->getNumParams() != 1 || Move->isDeleted() ||
       Move->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-      !Pinned(Primary) || !anyParameter(Call->getArg(0), Input) ||
+      !Pinned(Primary) || !Call->getArg(0)->isLValue() ||
+      !Context.hasSameType(Call->getArg(0)->getType(), Any) ||
       !Context.hasSameType(Move->getReturnType(), Context.getRValueReferenceType(Any)))
     return false;
   const auto *Type = Move->getType()->getAs<FunctionProtoType>();
@@ -8817,6 +8817,12 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
   return Cast && Cast->getCastKind() == CK_NoOp && Cast->isXValue() &&
          Context.hasSameType(Cast->getType(), Any) &&
          anyParameter(Cast->getSubExpr(), Definition->getParamDecl(0));
+}
+
+static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *E,
+                           const ParmVarDecl *Input, QualType Any, const ASTContext &Context) {
+  const auto *Call = E ? dyn_cast<CallExpr>(E->IgnoreParenImpCasts()) : nullptr;
+  return anyLvalueMove(S, SM, Call, Any, Context) && anyParameter(Call->getArg(0), Input);
 }
 
 static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
@@ -9723,7 +9729,24 @@ const CXXRecordDecl *approvedUtilityAnyPointerCast(const State &S, const SourceM
   return anyPointerCast(S, SM, Call->getDirectCallee(), Context, true);
 }
 
-static const CXXRecordDecl *checkedAnyActiveValueCast(
+static const DeclRefExpr *anyValueCastOwner(
+    const State &S, const SourceManager &SM, const Expr *E, const ASTContext &Context) {
+  if (const auto *Read = anyReference(E))
+    return Read;
+  if (!E || !E->isXValue() || !E->getType()->isRecordType())
+    return nullptr;
+  const auto *Receiver = E->IgnoreParenImpCasts();
+  if (const auto *Move = dyn_cast<CallExpr>(Receiver);
+      anyLvalueMove(S, SM, Move, E->getType(), Context))
+    return anyReference(Move->getArg(0));
+  const auto *Cast = dyn_cast<CXXStaticCastExpr>(Receiver);
+  if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->getSubExpr()->isLValue() ||
+      !Context.hasSameType(Cast->getSubExpr()->getType(), E->getType()))
+    return nullptr;
+  return anyReference(Cast->getSubExpr());
+}
+
+static std::optional<UtilityAnyActiveCast> checkedAnyActiveValueCast(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool CheckOwnerUses);
 
@@ -9743,7 +9766,9 @@ static bool anyCastsKeepActiveLocal(const State &S, const SourceManager &SM,
     if (!Statement) return true;
     if (Depth >= 64 || ++Nodes > 200000) return false;
     if (const auto *Call = dyn_cast<CallExpr>(Statement); Call && Call->getNumArgs() == 1) {
-      const auto *Read = anyReference(Call->getArg(0));
+      const auto *Callee = Call->getDirectCallee();
+      const auto *Read = Callee && Callee->getIdentifier() && Callee->getName() == "any_cast"
+          ? anyValueCastOwner(S, SM, Call->getArg(0), Context) : nullptr;
       if (Read && Read->getDecl()->getCanonicalDecl() == Identity) {
         const auto Location = SM.getExpansionLoc(Read->getExprLoc());
         if (Location.isInvalid() || !SM.isBeforeInTranslationUnit(AfterInitializer, Location) ||
@@ -9767,52 +9792,59 @@ static bool anyCastsKeepActiveLocal(const State &S, const SourceManager &SM,
   return Scan(Scan, Body, 0) && Found;
 }
 
-static const CXXRecordDecl *checkedAnyActiveValueCast(
+static std::optional<UtilityAnyActiveCast> checkedAnyActiveValueCast(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context, bool CheckOwnerUses) {
   if (!S.coreV2() || !Call || Call->getNumArgs() != 1)
-    return nullptr;
+    return std::nullopt;
   const auto *Original = Call->getDirectCallee();
   const auto *F = anyPinnedDefinition(S, SM, Original, "any_cast", 1);
   const auto *Use = F ? dyn_cast_or_null<DeclRefExpr>(directFunctionReference(Call)) : nullptr;
   const auto *Args = Use ? Original->getTemplateSpecializationArgs() : nullptr;
   if (!Use || Use->getDecl() != Original || !S.owns(SM, Use->getExprLoc()) ||
       !Args || Args->size() != 1 || Args->get(0).getKind() != TemplateArgument::Type)
-    return nullptr;
+    return std::nullopt;
   const auto Result = F->getReturnType();
   const auto Payload = Result.getNonReferenceType().getUnqualifiedType();
   if (!utilityAnyInlineScalar(Payload, Context))
-    return nullptr;
+    return std::nullopt;
   const auto ConstValue = Payload.withConst();
-  const bool MutableReference = Context.hasSameType(Result, Context.getLValueReferenceType(Payload));
+  const bool RvalueOwner = F->getParamDecl(0)->getType()->isRValueReferenceType();
+  const bool MutableReference = Context.hasSameType(Result, Context.getLValueReferenceType(Payload)) ||
+      (RvalueOwner && Context.hasSameType(Result, Context.getRValueReferenceType(Payload)));
   const bool Reference = MutableReference ||
-      Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue));
+      Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue)) ||
+      (RvalueOwner && Context.hasSameType(Result, Context.getRValueReferenceType(ConstValue)));
   if (!Context.hasSameType(Result, Args->get(0).getAsType()) ||
       (!Reference && !Context.hasSameType(Result, Payload)) ||
-      Call->isLValue() != Reference || !Context.hasSameType(Call->getType(), Result.getNonReferenceType()))
-    return nullptr;
+      Call->isLValue() != Result->isLValueReferenceType() ||
+      Call->isXValue() != Result->isRValueReferenceType() ||
+      !Context.hasSameType(Call->getType(), Result.getNonReferenceType()))
+    return std::nullopt;
 
-  const auto *Receiver = anyReference(Call->getArg(0));
+  const auto *Receiver = anyValueCastOwner(S, SM, Call->getArg(0), Context);
   const auto *Local = Receiver ? dyn_cast<VarDecl>(Receiver->getDecl()) : nullptr;
   const auto *Any = Local ? Local->getType()->getAsCXXRecordDecl() : nullptr;
   Any = Any ? Any->getDefinition() : nullptr;
   if (!Any || !Local->hasLocalStorage() || Local->getType()->isReferenceType() ||
       Local->getType().isVolatileQualified() || !S.owns(SM, Local->getLocation()))
-    return nullptr;
+    return std::nullopt;
   const bool Const = Local->getType().isConstQualified();
   const auto Owner = Context.getRecordType(Any);
-  if ((Const && MutableReference) ||
-      (!Const && CheckOwnerUses && !anyCastsKeepActiveLocal(S, SM, Local, Receiver, Context)) ||
-      !Context.hasSameType(F->getParamDecl(0)->getType(),
-                           Context.getLValueReferenceType(Const ? Owner.withConst() : Owner)))
-    return nullptr;
+  const auto Parameter = RvalueOwner ? Context.getRValueReferenceType(Owner) :
+      Context.getLValueReferenceType(Const ? Owner.withConst() : Owner);
+  if ((Const && (MutableReference || RvalueOwner)) ||
+      (RvalueOwner && !Call->getArg(0)->isXValue()) ||
+      !Context.hasSameType(F->getParamDecl(0)->getType(), Parameter) ||
+      (!Const && CheckOwnerUses && !anyCastsKeepActiveLocal(S, SM, Local, Receiver, Context)))
+    return std::nullopt;
   const auto Initial = approvedUtilityAnyIntegerConstruction(S, SM, variantConstruct(Local->getInit()), Context);
   if (!Initial || Initial->Record != Any || !Context.hasSameType(Initial->ValueType, Payload))
-    return nullptr;
+    return std::nullopt;
 
   const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
   if (!Body || Body->size() != 5)
-    return nullptr;
+    return std::nullopt;
   auto Position = Body->body_begin();
   const auto *AliasStatement = dyn_cast<DeclStmt>(*Position++);
   const auto *Alias = AliasStatement && AliasStatement->isSingleDecl()
@@ -9823,7 +9855,7 @@ static const CXXRecordDecl *checkedAnyActiveValueCast(
   if (!Alias || Alias->getName() != "_RawValueType" ||
       !Context.hasSameType(Alias->getUnderlyingType(), Payload) || !anyDeclaration(S, SM, Alias) ||
       !Requirement || Requirement->isFailed() || !anyDeclaration(S, SM, Requirement))
-    return nullptr;
+    return std::nullopt;
   const auto *Pointer = anySelectedLocal(*Position++);
   const auto *Cast = Pointer ? dyn_cast_or_null<CallExpr>(anySelectedExpression(Pointer->getInit())) : nullptr;
   const auto *PointerFunction = Cast ? Cast->getDirectCallee() : nullptr;
@@ -9833,7 +9865,7 @@ static const CXXRecordDecl *checkedAnyActiveValueCast(
       !Context.hasSameType(Pointer->getType(), Context.getPointerType(Const ? ConstValue : Payload)) ||
       !PointerFunction || anyPointerCast(S, SM, PointerFunction, Context, true) != Any ||
       !Address || Address->getOpcode() != UO_AddrOf || !anyParameter(Address->getSubExpr(), F->getParamDecl(0)))
-    return nullptr;
+    return std::nullopt;
   const auto *Guard = dyn_cast<IfStmt>(*Position++);
   const auto *Condition = Guard ? dyn_cast<BinaryOperator>(Guard->getCond()->IgnoreParenImpCasts()) : nullptr;
   const auto *Fail = Guard ? anyIntegerStatementCall(anySingleBranch(Guard->getThen())) : nullptr;
@@ -9843,18 +9875,27 @@ static const CXXRecordDecl *checkedAnyActiveValueCast(
       !Condition || Condition->getOpcode() != BO_EQ ||
       !anySelectedVariable(Condition->getLHS(), Pointer) || !anyNull(Condition->getRHS()) ||
       !Throw || !Throw->isNoReturn() || !Throw->getReturnType()->isVoidType())
-    return nullptr;
+    return std::nullopt;
   const auto *Return = dyn_cast<ReturnStmt>(*Position);
   const auto *Value = Return && Return->getRetValue()
       ? dyn_cast<CXXStaticCastExpr>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
-  const auto *Access = Value ? dyn_cast<UnaryOperator>(Value->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
-  return Access && Access->getOpcode() == UO_Deref &&
-         anySelectedVariable(Access->getSubExpr(), Pointer) &&
-         Context.hasSameType(Value->getType(), Call->getType()) && Value->isLValue() == Reference
-      ? Any : nullptr;
+  if (!Value || !Context.hasSameType(Value->getType(), Call->getType()) ||
+      Value->getValueKind() != Call->getValueKind())
+    return std::nullopt;
+  const auto *Operand = Value->getSubExpr()->IgnoreParenImpCasts();
+  if (RvalueOwner) {
+    const auto *Move = dyn_cast<CallExpr>(Operand);
+    if (!anyLvalueMove(S, SM, Move, Payload, Context))
+      return std::nullopt;
+    Operand = Move->getArg(0)->IgnoreParenImpCasts();
+  }
+  const auto *Access = dyn_cast<UnaryOperator>(Operand);
+  if (!Access || Access->getOpcode() != UO_Deref || !anySelectedVariable(Access->getSubExpr(), Pointer))
+    return std::nullopt;
+  return UtilityAnyActiveCast{Any, Receiver};
 }
 
-const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
+std::optional<UtilityAnyActiveCast> approvedUtilityAnyActiveValueCast(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   return checkedAnyActiveValueCast(S, SM, Call, Context, true);
 }

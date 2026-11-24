@@ -31145,9 +31145,9 @@ public:
         A.type(C->getType(), L);
         return true;
       }
-      if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, C, A.Context)) {
-        checkBinding(C->getArg(0), false);
-        A.type(A.Context.getRecordType(Any), L);
+      if (const auto Active = approvedUtilityAnyActiveValueCast(A.S, A.Sources, C, A.Context)) {
+        checkBinding(Active->Owner, false);
+        A.type(A.Context.getRecordType(Active->Record), L);
         A.type(C->getType(), L);
         return true;
       }

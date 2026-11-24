@@ -3652,7 +3652,12 @@ std::optional<UtilityAnyCall> approvedUtilityAnyCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-const clang::CXXRecordDecl *approvedUtilityAnyActiveValueCast(
+struct UtilityAnyActiveCast {
+  const clang::CXXRecordDecl *Record;
+  const clang::DeclRefExpr *Owner;
+};
+
+std::optional<UtilityAnyActiveCast> approvedUtilityAnyActiveValueCast(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 const clang::CXXRecordDecl *approvedUtilityAnyPointerCast(
