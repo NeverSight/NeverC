@@ -22395,10 +22395,19 @@ public:
   bool templateSource(const TemplateUseSource &Source,
                       const CXXConstructorDecl *Constructor,
                       bool OwnerDefault = false) {
+    auto FloatPairFailure = [&](unsigned Line) {
+      const auto *PairConstructor = Constructor;
+      if (PairConstructor && llvm::any_of(PairConstructor->getParent()->fields(), [](const FieldDecl *Field) {
+            return Field->getType()->isRealFloatingType();
+          }))
+        llvm::errs() << "ordered floating pair " << "template" << ':' << Line << '\n';
+      return false;
+    };
+
     if (OwnerDefault &&
         (Mode != UtilityTupleQueryMode::PairConstruction || !PairDefaultOwnerSignature ||
          PairDefaultOwnerSignature->getConstructor() != Constructor ||
-         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return false;
+         !utilityUniquePtrRecord(S, SM, Constructor->getParent(), Context, false, false))) return FloatPairFailure(__LINE__);
     const auto *Primary = Constructor->getPrimaryTemplate();
     if (!Primary || Source.Kind != TemplateSourceKind::Function ||
         Source.Type || Source.Underlying || Source.Selection || Source.Instantiation ||
@@ -22408,16 +22417,16 @@ public:
         Source.Defaults.size() > 64 || Source.ParameterTypes.size() > 4096 ||
         Source.Canonical->size() != Source.Sugared->size() ||
         Source.Canonical->size() != Primary->getTemplateParameters()->size())
-      return false;
+      return FloatPairFailure(__LINE__);
     const auto *Selected = Constructor->getTemplateSpecializationArgs();
-    if (!Selected || Selected->size() != Source.Canonical->size()) return false;
+    if (!Selected || Selected->size() != Source.Canonical->size()) return FloatPairFailure(__LINE__);
     for (unsigned I = 0; I < Selected->size(); ++I)
       if (!Selected->get(I).structurallyEquals(Source.Canonical->get(I)) ||
           !Source.Canonical->get(I).structurallyEquals(
-              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return false;
+              Context.getCanonicalTemplateArgument(Source.Sugared->get(I)))) return FloatPairFailure(__LINE__);
     for (const auto *Arguments : {Source.Canonical, Source.Sugared})
       for (const auto &Argument : Arguments->asArray())
-        if (!TraverseTemplateArgument(Argument)) return false;
+        if (!TraverseTemplateArgument(Argument)) return FloatPairFailure(__LINE__);
     std::set<unsigned> Defaults, Parameters;
     const auto *Owners = Primary->getTemplateParameters();
     for (const auto &Default : Source.Defaults) {
@@ -22432,8 +22441,8 @@ public:
             !Defaults.insert(1).second || !Original || !Written ||
             Converted.getKind() != TemplateArgument::Type ||
             Source.Canonical->get(1).getKind() != TemplateArgument::Type ||
-            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return false;
-        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return false;
+            !Context.hasSameType(Converted.getAsType(), Source.Canonical->get(1).getAsType())) return FloatPairFailure(__LINE__);
+        if (!pairDefaultOwnerTypeSource(Parameter, Default.Written, Default.Converted)) return FloatPairFailure(__LINE__);
         continue;
       }
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(Default.Parameter);
@@ -22447,7 +22456,7 @@ public:
           Default.Written.getArgument().getAsExpr() !=
               Parameter->getDefaultArgument().getArgument().getAsExpr() ||
           !TraverseTemplateArgument(Default.Written.getArgument()) ||
-          !TraverseTemplateArgument(Default.Converted.getArgument())) return false;
+          !TraverseTemplateArgument(Default.Converted.getArgument())) return FloatPairFailure(__LINE__);
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       const auto *Converted = Default.Converted.getArgument().getKind() == TemplateArgument::Expression
           ? dyn_cast<ConstantExpr>(Default.Converted.getArgument().getAsExpr()) : nullptr;
@@ -22455,7 +22464,7 @@ public:
           !Context.hasSameType(Converted->getType(), Canonical.getIntegralType()) ||
           Converted->getResultAsAPSInt() != Canonical.getAsIntegral() ||
           Converted->getSubExpr()->IgnoreParens() != Default.Written.getArgument().getAsExpr())
-        return false;
+        return FloatPairFailure(__LINE__);
     }
     for (const auto &ParameterType : Source.ParameterTypes) {
       const auto *Parameter = dyn_cast_or_null<NonTypeTemplateParmDecl>(ParameterType.Parameter);
@@ -22464,17 +22473,17 @@ public:
           Owners->getParam(Parameter->getIndex()) != Parameter ||
           ParameterType.PackIndex != 0 || !ParameterType.Type ||
           !Parameters.insert(Parameter->getIndex()).second ||
-          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return false;
+          !TraverseTypeLoc(ParameterType.Type->getTypeLoc())) return FloatPairFailure(__LINE__);
       const auto &Canonical = Source.Canonical->get(Parameter->getIndex());
       if (Canonical.getKind() != TemplateArgument::Integral ||
           !Context.hasSameType(ParameterType.Type->getType(), Canonical.getIntegralType()))
-        return false;
+        return FloatPairFailure(__LINE__);
     }
     for (unsigned I = 0; I < Owners->size(); ++I) {
       const auto *Declaration = Owners->getParam(I);
       if (const auto *Parameter = dyn_cast<NonTypeTemplateParmDecl>(Declaration)) {
         if (!Parameters.count(I) ||
-            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return false;
+            (Parameter->hasDefaultArgument() && !Defaults.count(I))) return FloatPairFailure(__LINE__);
       } else if (const auto *Parameter = dyn_cast<TemplateTemplateParmDecl>(Declaration)) {
         const auto &Argument = Source.Canonical->get(I);
         if (Parameter->isParameterPack() || !Parameter->hasDefaultArgument() ||
@@ -22482,12 +22491,12 @@ public:
             Parameter->getDefaultArgument().getArgument().getKind() != TemplateArgument::Template ||
             !Context.hasSameTemplateName(Argument.getAsTemplate(),
                 Parameter->getDefaultArgument().getArgument().getAsTemplate()) ||
-            !TraverseTemplateName(Argument.getAsTemplate())) return false;
+            !TraverseTemplateName(Argument.getAsTemplate())) return FloatPairFailure(__LINE__);
       } else if (const auto *Parameter = dyn_cast<TemplateTypeParmDecl>(Declaration)) {
-        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return false;
-      } else return false;
+        if (OwnerDefault && Parameter->hasDefaultArgument() && !Defaults.count(I)) return FloatPairFailure(__LINE__);
+      } else return FloatPairFailure(__LINE__);
     }
-    return function(Constructor);
+    return function(Constructor) || FloatPairFailure(__LINE__);
   }
   bool pairTemplateSource(const CXXConstructExpr *Construction,
                           const TemplateUseSource &Source,
@@ -22498,6 +22507,15 @@ public:
                           const UtilityPairSelectionSources &Selections,
                           const CallExpr *Factory) {
     const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+    auto FloatPairFailure = [&](unsigned Line) {
+      const auto *PairConstructor = Constructor;
+      if (PairConstructor && llvm::any_of(PairConstructor->getParent()->fields(), [](const FieldDecl *Field) {
+            return Field->getType()->isRealFloatingType();
+          }))
+        llvm::errs() << "ordered floating pair " << "graph" << ':' << Line << '\n';
+      return false;
+    };
+
     if (Mode != UtilityTupleQueryMode::PairConstruction || !Constructor ||
         Constructor->isInvalidDecl() || Constructor->isDeleted() ||
         Constructor->isVariadic() || Constructor->getAccess() != AS_public ||
@@ -22507,38 +22525,38 @@ public:
                  : !S.owns(SM, Source.Location)) ||
         !approvedUtilityPairMetadata(S, SM, Constructor->getParent()) ||
         !Context.hasSameUnqualifiedType(Construction->getType(),
-            Context.getRecordType(Constructor->getParent()))) return false;
+            Context.getRecordType(Constructor->getParent()))) return FloatPairFailure(__LINE__);
     // A piecewise use binds its exact public/private constructor descriptor.
     // This still grants signature source only; runtime admission requires the
     // separate outer-source, child-operation, lifetime and deferred checks.
     if (!approvedUtilityPairConstruction(S, SM, Construction, Context) &&
         (Factory || !approvedUtilityPairPiecewiseConstruction(
                          S, SM, Construction, Context)))
-      return false;
+      return FloatPairFailure(__LINE__);
     PairConstructor = Constructor;
     PairFunctions = &Functions;
     PairSelections = &Selections;
     for (const auto *Field : Constructor->getParent()->fields())
-      if (!bindPairInput(Field->getType())) return false;
+      if (!bindPairInput(Field->getType())) return FloatPairFailure(__LINE__);
     const auto Arguments = Factory ? Factory->arguments() : Construction->arguments();
     for (const auto *Argument : Arguments)
-      if (!bindPairInput(Argument->getType())) return false;
+      if (!bindPairInput(Argument->getType())) return FloatPairFailure(__LINE__);
     for (const auto *Argument : Arguments)
-      if (!bindPairReferenceFactory(Argument)) return false;
+      if (!bindPairReferenceFactory(Argument)) return FloatPairFailure(__LINE__);
     for (const auto *Argument : Arguments)
       if (!bindPairCallerTupleSource(Argument) ||
-          !bindPairCallerValueAdapter(Argument)) return false;
+          !bindPairCallerValueAdapter(Argument)) return FloatPairFailure(__LINE__);
     if (Factory) {
       // Only this authenticated factory's substitutions join this fresh graph.
       // The caller's actual template use and arguments still complete ordinarily.
       std::vector<const Decl *> Pending{Factory->getDirectCallee()};
       while (!Pending.empty()) {
         const auto *Declaration = Pending.back(); Pending.pop_back();
-        if (!Declaration || !step()) return false;
+        if (!Declaration || !step()) return FloatPairFailure(__LINE__);
         if (!PairInputFamilies.insert(Declaration).second) continue;
         if (!approvedStandardSDKDeclaration(S, SM, Declaration) ||
             !cstddefOrigin(S, SM, Declaration->getLocation(), "libcxx", "__utility/pair.h"))
-          return false;
+          return FloatPairFailure(__LINE__);
         if (const auto *Function = dyn_cast<FunctionDecl>(Declaration)) {
           for (const auto *Redeclaration : Function->redecls()) Pending.push_back(Redeclaration);
           if (const auto *Primary = Function->getPrimaryTemplate()) Pending.push_back(Primary);
@@ -22547,7 +22565,7 @@ public:
           for (const auto *Redeclaration : Template->redecls()) Pending.push_back(Redeclaration);
           Pending.push_back(Template->getTemplatedDecl());
           for (const auto *Parameter : *Template->getTemplateParameters()) Pending.push_back(Parameter);
-        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return false;
+        } else if (!isa<TemplateTypeParmDecl>(Declaration)) return FloatPairFailure(__LINE__);
       }
       // These are the exact two SDK forwarding uses already authenticated by
       // the public factory descriptor. Bind their substitutions, not their bodies.
@@ -22555,7 +22573,7 @@ public:
         if (!bindPairInput(Construction->getArg(I)->getType()) ||
             !bindPairCallerValueAdapter(Construction->getArg(I),
                                        Factory->getDirectCallee()->getParamDecl(I)))
-          return false;
+          return FloatPairFailure(__LINE__);
     }
     std::function<bool(unsigned)> Complete = [&](unsigned I) {
       if (I < PairCallerTupleProjections.size()) {
@@ -22567,8 +22585,8 @@ public:
       // bounds assertions before granting the builtin projection any purpose.
       // No getter body or caller expression is admitted by this metadata proof.
       for (const auto &Projection : PairCallerTupleProjections)
-        if (!TraverseBindTupleElementProjectionSource(Projection)) return false;
-      if (!templateSource(Source, Constructor) || Failed) return false;
+        if (!TraverseBindTupleElementProjectionSource(Projection)) return FloatPairFailure(__LINE__);
+      if (!templateSource(Source, Constructor) || Failed) return FloatPairFailure(__LINE__);
       for (std::size_t I = 0; I < PairConstructionSources.size(); ++I) {
         // Copy the item: its source can append more work to this same vector.
         const auto Work = PairConstructionSources[I];
@@ -22576,21 +22594,21 @@ public:
         if (!step() || Work.Ancestors.empty() || Work.Ancestors.size() > 64 ||
             Work.Ancestors.back() != Work.Construction || !Selected ||
             !PairInputRecords.count(Selected->getParent()->getCanonicalDecl()) ||
-            PendingPairConstructions[Work.Construction] != Work.Query) return false;
+            PendingPairConstructions[Work.Construction] != Work.Query) return FloatPairFailure(__LINE__);
         PairConstructor = Selected;
         PairConstructionAncestors = Work.Ancestors;
         for (const auto *Field : Selected->getParent()->fields())
-          if (!bindPairInput(Field->getType())) return false;
+          if (!bindPairInput(Field->getType())) return FloatPairFailure(__LINE__);
         const auto Events = PairSelections->find(Work.Construction);
-        if (Events == PairSelections->end() || Events->second.empty()) return false;
+        if (Events == PairSelections->end() || Events->second.empty()) return FloatPairFailure(__LINE__);
         for (const auto *Event : Events->second) {
           if (!Event || Event->Expression != Work.Construction || Event->Function != Selected ||
-              Event->Location != Work.Query->getExprLoc()) return false;
+              Event->Location != Work.Query->getExprLoc()) return FloatPairFailure(__LINE__);
           const auto Sources = PairFunctions->find({Selected, Event->Location.getRawEncoding()});
-          if (Sources == PairFunctions->end() || Sources->second.empty()) return false;
+          if (Sources == PairFunctions->end() || Sources->second.empty()) return FloatPairFailure(__LINE__);
           for (const auto *Use : Sources->second)
             if (!Use || Use->Location != Event->Location || Use->Written ||
-                !templateSource(*Use, Selected) || Failed) return false;
+                !templateSource(*Use, Selected) || Failed) return FloatPairFailure(__LINE__);
         }
       }
       Queries.assign(PairSourceQueries.begin(), PairSourceQueries.end());
@@ -136100,6 +136118,8 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
 }
 
 static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
+  if (Context.hasSameType(Type, Context.FloatTy) || Context.hasSameType(Type, Context.DoubleTy))
+    return true;
   return Context.hasSameType(Type, Context.IntTy) ||
          Context.hasSameType(Type, Context.LongTy) ||
          Context.hasSameType(Type, Context.LongLongTy) ||
@@ -137119,10 +137139,10 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
-  auto MatchesInteger = [&](QualType Type, QualType Target) {
-    return Hinted ? (Context.hasSameType(Type, Target) ||
-                     Context.hasSameType(Type, Target.withConst()))
-                  : orderedIntegerEmplacementArgument(Context, Type, Target);
+  auto MatchesScalar = [&](QualType Type, QualType Target) {
+    if (Hinted || Target->isRealFloatingType())
+      return Context.hasSameType(Type, Target) || Context.hasSameType(Type, Target.withConst());
+    return orderedIntegerEmplacementArgument(Context, Type, Target);
   };
   std::optional<UtilityPairRecord> Input;
   std::optional<UtilityMapPiecewiseArguments> Piecewise;
@@ -137156,7 +137176,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          (!Input && !Piecewise && !MatchesInteger(Referred, I ? Table->MappedValueType : Context.IntTy)))
+          (!Input && !Piecewise && !MatchesScalar(Referred, I ? Table->MappedValueType : Context.IntTy)))
         return std::nullopt;
     }
   } else {
@@ -137189,7 +137209,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const auto MappedType = Argument->getPointeeType();
     if (!Argument->isReferenceType() ||
         !Context.hasSameUnqualifiedType(MappedType, Call->getArg(Offset + 1)->getType()) ||
-        !MatchesInteger(MappedType, Table->MappedValueType))
+        !MatchesScalar(MappedType, Table->MappedValueType))
       return std::nullopt;
   }
   if (Mapped && Insertion == Kind::Insert) {

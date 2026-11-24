@@ -23504,12 +23504,21 @@ public:
     const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Selection.Expression);
     const auto *Function = Selection.Function;
     const auto Location = Selection.Location;
+    auto FloatPairFailure = [&](unsigned Line) {
+      const auto *PairConstructor = Construction ? Construction->getConstructor() : nullptr;
+      if (PairConstructor && llvm::any_of(PairConstructor->getParent()->fields(), [](const FieldDecl *Field) {
+            return Field->getType()->isRealFloatingType();
+          }))
+        llvm::errs() << "ordered floating pair " << "selection" << ':' << Line << '\n';
+      return false;
+    };
+
     const PairConstructorSourceKey Key{Construction, Factory};
     if (Factory && approvedUtilityMakePairConstruction(A.S, A.Sources, Factory, A.Context) != Construction)
-      return false;
+      return FloatPairFailure(__LINE__);
     const auto Found = FunctionSources.find({Function, Location.getRawEncoding()});
     if (!Construction || Construction->getConstructor() != Function ||
-        Found == FunctionSources.end() || Found->second.empty()) return false;
+        Found == FunctionSources.end() || Found->second.empty()) return FloatPairFailure(__LINE__);
     const TemplateUseSource *First = nullptr;
     std::set<const TypeTraitExpr *> Queries;
     std::set<const Type *> TypeSpellings;
@@ -23523,7 +23532,7 @@ public:
           !approvedUtilityPairConstructorTemplateSource(A.S, A.Sources,
               Construction, *Source, A.Context, A.SpecialMembers, A.OperationTraits,
               Local, LocalTypes, LocalMembers, FunctionSources, PairTraitSelections, Factory))
-        return false;
+        return FloatPairFailure(__LINE__);
       Queries.insert(Local.begin(), Local.end());
       TypeSpellings.insert(LocalTypes.begin(), LocalTypes.end());
       Members.insert(LocalMembers.begin(), LocalMembers.end());
@@ -23561,7 +23570,7 @@ public:
       (void)A.typeClassificationValue(Query);
       queueConsumedOperationSignatures(Query);
     }
-    return A.S.Diagnostics.empty();
+    return A.S.Diagnostics.empty() || FloatPairFailure(__LINE__);
   }
   bool pairConstructorSourceIdentity(
       PairConstructorSourceKey Key, const SelectedTemplateCallSource *Selection) const {
