@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_reverse_registered = cls.registered
+        cls.ordered_reverse_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_reverse_original = cls.adapter.restore_original_gtests(cls.ordered_reverse_registered,
+                                                                        cls.ordered_reverse_suffix)
+        cls.registered = cls.adapter.restore_ordered_reverse_history(cls.ordered_reverse_registered)
         cls.ordered_hints_allocator_ownership_registered = cls.registered
         cls.ordered_hints_allocator_ownership_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_hints_allocator_ownership_original = cls.adapter.restore_original_gtests(cls.ordered_hints_allocator_ownership_registered,
@@ -3475,6 +3480,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_hints_allocator_ownership_history(self.ordered_hints_allocator_ownership_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_hints_allocator_ownership_registered, self.ordered_hints_allocator_ownership_suffix + b' ')
+
+
+    def test_ordered_reverse_retains_published_bodies(self):
+        self.assertEqual(self.ordered_reverse_original + self.ordered_reverse_suffix, self.ordered_reverse_registered)
+        self.assertEqual(self.adapter.restore_ordered_reverse_history(self.ordered_reverse_original),
+                         self.ordered_hints_allocator_ownership_original)
+        output, evidence = self.extractor.extract(self.ordered_reverse_original, ['TranslateTest.CoreV2OrderedSetReverseEndpointsAndPostfixStepRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetConstReverseTraversalCountsEquivalentsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseArrowMutatesSelectedNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapReverseFactoryAndConstEndpointRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetReverseRangeUsesHalfOpenEndpointsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetReverseRangeInsertionKeepsEquivalentEntriesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseRangeRetainsExistingMappedValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapReverseRangePresentsEquivalentsInReverseOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseCursorConvertsToConstRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMixedReverseCursorsComparePositionsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapAssignsMutableReversePositionToConstRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapCopiesConstReverseEndFromMutableRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedReverseCursorCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedMapReverseCursorDifferentMappedStorageGuardRejected', 'TranslateTest.CoreV2OrderedReverseRangeCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRejected', 'TranslateTest.CoreV2OrderedMappedReverseConversionOtherMappedStorageGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8837)
+        self.assertEqual(evidence['selected_count'], 17)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-reverse-range-uses-half-open-endpoints', output)
+        self.assertIn(b'ordered-reverse-range-custom-policy-guard', output)
+
+    def test_ordered_reverse_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_reverse_history(self.ordered_reverse_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_reverse_registered, self.ordered_reverse_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -2514,6 +2514,32 @@ def restore_ordered_hints_allocator_ownership_history(source):
     return restored
 
 
+R19_ORDERED_REVERSE_REGISTERED_SHA256 = '88d1667c3c35a1a79ea0af997d34035ba7434b3f6fc53fd0b36ab02cd847edd1'
+R19_ORDERED_REVERSE_MAINTAINED_SHA256 = '71f05eab5c997e801174b09b261db0752041dcd4a7a19e10b805af00a9568b0f'
+R19_ORDERED_REVERSE_PREVIOUS_REGISTERED_SHA256 = 'a2e809fc19bef83ca9c2c6534bacccc64ec0ecba8d0349098f54e78129ece6af'
+R19_ORDERED_REVERSE_PREVIOUS_MAINTAINED_SHA256 = 'b18ee73fa062befcb4f029a8c1e076be476d306a8567dc8f01e56b7386944094'
+R19_ORDERED_REVERSE_ADDITIONS_SHA256 = '2968c1f8d4645947b344b9a6d9340082a721116c2ab8992dae70b72b79998ffe'
+R19_ORDERED_REVERSE_MAINTAINED_SIZE = 20561150
+R19_ORDERED_REVERSE_ADDITIONS_SIZE = 18836
+
+
+def restore_ordered_reverse_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_REVERSE_REGISTERED_SHA256, R19_ORDERED_REVERSE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_REVERSE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_REVERSE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_REVERSE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedRangeReverseIteratorRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-range-reverse-iterator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-range-reverse-iterator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-range-reverse-iterator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedRangeReverseIteratorRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-range-reverse-iterator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-range-reverse-iterator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-range-reverse-iterator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedRangeReverseIteratorGuardRejected) {\n  const auto Source = tmpFile("ordered-range-reverse-iterator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_REVERSE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_REVERSE_REGISTERED_SHA256
+             else R19_ORDERED_REVERSE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -3073,6 +3099,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_REVERSE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_REVERSE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_REVERSE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

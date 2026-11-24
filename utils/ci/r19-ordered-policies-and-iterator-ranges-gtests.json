@@ -103,17 +103,17 @@
       "source_sha256": "edf19973a7f75d150c08221c24672b74eff36e3bc51aa262b6d435d26d359395",
       "original_case_source_sha256": "edf19973a7f75d150c08221c24672b74eff36e3bc51aa262b6d435d26d359395",
       "gtest_body_sha256": "20588df7902427ae3df100f75b6b4d52ca0ca9d10793a12eebc2a7c1b9b3c6ca"
+    },
+    {
+      "name": "ordered-range-reverse-iterator-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedRangeReverseIteratorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4e81aefa2b585ad79d336d8ffde7ab174bed4ea020736deb046cae8db5a070e8",
+      "original_case_source_sha256": "4e81aefa2b585ad79d336d8ffde7ab174bed4ea020736deb046cae8db5a070e8",
+      "gtest_body_sha256": "b83bacbeab348ab06f56a61193fda48204e73e94f79f4b36158a0a6e2d691432"
     }
   ],
   "negative_cases": [
-    {
-      "name": "ordered-range-reverse-iterator-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedRangeReverseIteratorGuardRejected",
-      "expected": "reject",
-      "source_sha256": "4e81aefa2b585ad79d336d8ffde7ab174bed4ea020736deb046cae8db5a070e8",
-      "original_case_source_sha256": "4e81aefa2b585ad79d336d8ffde7ab174bed4ea020736deb046cae8db5a070e8",
-      "gtest_body_sha256": "363a5f9cd378623ea2536c3c7ca2b0cdfba4a1225d858d2c464c58ece160ac84"
-    },
     {
       "name": "ordered-range-foreign-cursor-guard",
       "formal_test_name": "TranslateTest.CoreV2OrderedRangeForeignCursorGuardRejected",
@@ -254,11 +254,11 @@
     },
     {
       "name": "ordered-range-reverse-iterator-guard",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "set",
       "source": "#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n",
       "source_sha256": "4e81aefa2b585ad79d336d8ffde7ab174bed4ea020736deb046cae8db5a070e8",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "ordered-range-foreign-cursor-guard",
@@ -307,7 +307,7 @@
     "TranslateTest.CoreV2OrderedMapAllocatorObserverRebindsToPublicValueRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMultimapAllocatorObserverOnConstOwnerRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedAllocatorCopyConstructionRunAtBothOptimizations",
-    "TranslateTest.CoreV2OrderedRangeReverseIteratorGuardRejected",
+    "TranslateTest.CoreV2OrderedRangeReverseIteratorRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedRangeForeignCursorGuardRejected",
     "TranslateTest.CoreV2OrderedExplicitStatefulPolicyGuardRejected",
     "TranslateTest.CoreV2OrderedAllocatorObserverCustomPolicyGuardRejected",
@@ -324,12 +324,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8788,
   "current_python_registry_tests": 260,
-  "native_reference_selected_executions": 26,
-  "planned_generated_c23_executions": 26,
+  "native_reference_selected_executions": 28,
+  "planned_generated_c23_executions": 28,
   "native_reference_proofs": {
     "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c",
-    "ordered-policies-and-iterator-ranges": "e18fa9b070d855db549dc7598c7e0e04cf32debea3025ba99cf1e9da7e71504f"
+    "ordered-policies-and-iterator-ranges": "e18fa9b070d855db549dc7598c7e0e04cf32debea3025ba99cf1e9da7e71504f",
+    "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd"
   },
-  "native_reference_authentication_sha256": "35e4d2c0daf7ce9130fd8d6a34e92ce97535a687cd90e6b85561ed75c47d642b",
-  "source_proof_sha256": "6a89b4d134035217aa54d5a4b59883be7d0f8ec8bccdf9dfc05bec269669cbad"
+  "native_reference_authentication_sha256": "ba8b6ab807f0f1e1a8fab2b00c94b1241793e0e389b8987d241ca36303d21efb",
+  "source_proof_sha256": "35d4084e6ea23958d6a5f59e8ed2c6616075394d26c7de8f6b9adda15aa062d5"
 }

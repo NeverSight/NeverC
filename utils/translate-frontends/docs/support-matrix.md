@@ -948,3 +948,10 @@ The combined compiler passes 5,568 source requests across six 64-bit targets
 and 1032 formal tests on Linux x86-64. All 640 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Reverse iterators and ranges for ordered containers
+
+The combined compiler passes 5,670 source requests across six 64-bit targets
+and 1049 formal tests on Linux x86-64. All 653 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

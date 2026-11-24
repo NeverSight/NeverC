@@ -18456,3 +18456,11 @@ The checked integer ordered containers support compatible insertion hints for
 values and node handles. An unusable hint falls back to the tree search.
 The supported allocator-extended copy and move constructors preserve stored
 values, equivalent-key order, and the selected ownership semantics.
+
+## Reverse iterators and ranges for ordered containers
+
+Checked sets, multisets, maps, and multimaps support reverse endpoints,
+dereferencing, traversal, and conversion from mutable to const mapped
+iterators. The supported range constructors and modifiers consume half-open
+reverse ranges, including equivalent-key entries. The underlying cursor
+returned by `base()` follows the standard reverse-iterator convention.
