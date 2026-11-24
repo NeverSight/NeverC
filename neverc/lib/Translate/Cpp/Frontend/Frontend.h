@@ -4738,7 +4738,7 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListAssignment(
     const clang::ASTContext &Context);
 struct UtilityOrderedSetRangeInput {
   UtilityOrderedSetStorage Storage;
-  clang::QualType PointerType;
+  clang::QualType IteratorType;
   std::optional<UtilityPairRecord> Pair;
 };
 std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
