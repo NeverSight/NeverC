@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.associative_cursor_and_value_registered = cls.registered
+        cls.associative_cursor_and_value_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.associative_cursor_and_value_original = cls.adapter.restore_original_gtests(cls.associative_cursor_and_value_registered,
+                                                                        cls.associative_cursor_and_value_suffix)
+        cls.registered = cls.adapter.restore_associative_cursor_and_value_history(cls.associative_cursor_and_value_registered)
         cls.associative_signed_wide_registered = cls.registered
         cls.associative_signed_wide_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.associative_signed_wide_original = cls.adapter.restore_original_gtests(cls.associative_signed_wide_registered,
@@ -3590,6 +3595,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_associative_signed_wide_history(self.associative_signed_wide_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.associative_signed_wide_registered, self.associative_signed_wide_suffix + b' ')
+
+
+    def test_associative_cursor_and_value_retains_published_bodies(self):
+        self.assertEqual(self.associative_cursor_and_value_original + self.associative_cursor_and_value_suffix, self.associative_cursor_and_value_registered)
+        self.assertEqual(self.adapter.restore_associative_cursor_and_value_history(self.associative_cursor_and_value_original),
+                         self.associative_signed_wide_original)
+        output, evidence = self.extractor.extract(self.associative_cursor_and_value_original, ['TranslateTest.CoreV2UnorderedMapFloatInsertionZeroAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapDoubleMappedPermutationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapUnsignedLongLongNodeRoundTripRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapShortAndBoolMappedStorageRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetForwardRangeBetweenStandardOrdersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseRangeBetweenStandardOrdersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapSharedCursorAcrossComparatorSpecializationsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetUnsignedFromSignedShortRangeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLongRangeInsertionWithDuplicateNegativeKeyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapConstDoubleMappedPayloadGuardRejected', 'TranslateTest.CoreV2UnorderedMapLongDoubleMappedPayloadGuardRejected', 'TranslateTest.CoreV2UnorderedSetUncheckedFloatPointerRangeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8962)
+        self.assertEqual(evidence['selected_count'], 12)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-map-float-insertion-zero-and-copy', output)
+        self.assertIn(b'unordered-set-unchecked-float-pointer-range-guard', output)
+
+    def test_associative_cursor_and_value_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_associative_cursor_and_value_history(self.associative_cursor_and_value_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.associative_cursor_and_value_registered, self.associative_cursor_and_value_suffix + b' ')
 
 
 if __name__ == '__main__':

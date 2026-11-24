@@ -39,17 +39,17 @@
       "source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
       "original_case_source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
       "gtest_body_sha256": "46ccb9c6f0674b9ed0cff7faccf23e45d484293a460e8c319fdb7d882c3dd796"
+    },
+    {
+      "name": "unordered-set-pointer-construction-converted-short-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetConvertsShortConstructionRange",
+      "expected": "accept",
+      "source_sha256": "a363e0a7e844f8834e76ab9c712fb453fe056c9fb1ee9ef28770acd7e5a5cef0",
+      "original_case_source_sha256": "a363e0a7e844f8834e76ab9c712fb453fe056c9fb1ee9ef28770acd7e5a5cef0",
+      "gtest_body_sha256": "e7c8f90857321e364929720957ef5a0fc166701ef44e2362f125704715322a01"
     }
   ],
   "negative_cases": [
-    {
-      "name": "unordered-set-pointer-construction-converted-short-range",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionConvertedShortRangeRejected",
-      "expected": "reject",
-      "source_sha256": "a363e0a7e844f8834e76ab9c712fb453fe056c9fb1ee9ef28770acd7e5a5cef0",
-      "original_case_source_sha256": "a363e0a7e844f8834e76ab9c712fb453fe056c9fb1ee9ef28770acd7e5a5cef0",
-      "gtest_body_sha256": "eaab5e155575b216a0311388c5f33bc40af9932321165e9c47fe3f49409af598"
-    },
     {
       "name": "unordered-set-pointer-construction-custom-hash-range",
       "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionCustomHashRangeRejected",
@@ -110,11 +110,11 @@
     },
     {
       "name": "unordered-set-pointer-construction-converted-short-range",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "unordered_set",
       "source": "#include <unordered_set>\nint main() { short data[] = {1, 2}; std::unordered_multiset<int> bag(data, data + 2); return bag.empty(); }\n",
       "source_sha256": "a363e0a7e844f8834e76ab9c712fb453fe056c9fb1ee9ef28770acd7e5a5cef0",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "unordered-set-pointer-construction-custom-hash-range",
@@ -139,7 +139,7 @@
     "TranslateTest.CoreV2UnorderedSetPointerConstructionEmptyRangeUsesEmptyDefaultStateRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionRangeArgumentsAreEvaluatedOnceRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetOriginalBucketedPointerRangeConstructionRunsAtBothOptimizations",
-    "TranslateTest.CoreV2UnorderedSetPointerConstructionConvertedShortRangeRejected",
+    "TranslateTest.CoreV2UnorderedMultisetConvertsShortConstructionRange",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionCustomHashRangeRejected",
     "TranslateTest.CoreV2UnorderedSetPointerConstructionClassIteratorRangeRejected"
   ],
@@ -154,12 +154,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8520,
   "current_python_registry_tests": 216,
-  "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
   "native_reference_proofs": {
+    "unordered-set-converted-input": "a1e2ec71a39a7abb4a49a0250b68e068892b32b04057b3ceaf963d94a2abd4ee",
     "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
     "unordered-set-pointer-construction": "2e9180690029cb6d6117a8018ed9fcfe78668647ece9486f2bea6b464f33a74e"
   },
-  "native_reference_authentication_sha256": "fcf8f4de3aab9f04025c8d9d83eff9c8da882ccf3863b4d580c41358a743f666",
-  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
+  "native_reference_authentication_sha256": "9dc61a8bcc953f831e4de5ae6434ee112952a2212eb0dbf6e33ce5beba3d97ec",
+  "source_proof_sha256": "7f57d82cbb91272569973ec064d194105f1096b650f29ec1f22e7ef598355394"
 }

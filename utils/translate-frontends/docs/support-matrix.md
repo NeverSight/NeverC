@@ -983,3 +983,10 @@ The combined compiler passes 6,348 source requests across six 64-bit targets
 and 1162 formal tests on Linux x86-64. All 762 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Ordered cursor ranges and scalar unordered values
+
+The combined compiler passes 6,420 source requests across six 64-bit targets
+and 1174 formal tests on Linux x86-64. All 774 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

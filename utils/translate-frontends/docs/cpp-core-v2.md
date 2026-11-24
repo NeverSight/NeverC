@@ -18501,3 +18501,12 @@ pinned descending and transparent standard comparators. Transparent
 lookup preserves the width of signed long and long long probes.
 Unordered maps and multimaps use the target-specific mapped field
 type and offset for long and long long values.
+
+## Ordered cursor ranges and scalar unordered values
+
+Checked ordered range construction accepts cursors from equivalent
+node and sentinel layouts across standard comparator specializations.
+Checked hash set pointer ranges load signed short and long elements
+before converting them to the stored integer key. Checked unordered
+maps and multimaps preserve the target field layout of scalar mapped
+values, including float, double, short, bool and unsigned long long.

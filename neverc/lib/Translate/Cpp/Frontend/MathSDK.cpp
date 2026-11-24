@@ -136071,6 +136071,17 @@ static const ClassTemplateSpecializationDecl *associativeTypeIdentity(
   return R;
 }
 
+static bool associativeMappedValueType(const ASTContext &Context, QualType Type) {
+  if (Context.hasSameType(Type, Context.FloatTy) || Context.hasSameType(Type, Context.DoubleTy))
+    return true;
+  const QualType IntegralTypes[] = {
+      Context.BoolTy, Context.CharTy, Context.SignedCharTy, Context.UnsignedCharTy,
+      Context.ShortTy, Context.UnsignedShortTy, Context.IntTy, Context.UnsignedIntTy,
+      Context.LongTy, Context.UnsignedLongTy, Context.LongLongTy, Context.UnsignedLongLongTy,
+  };
+  return llvm::is_contained(IntegralTypes, Type.getCanonicalType());
+}
+
 bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
     const CXXRecordDecl *Record, const ASTContext &Context) {
   if (!S.coreV2() || !Record || !Record->getIdentifier()) return false;
@@ -136082,8 +136093,7 @@ bool approvedUnorderedMapMetadataRecord(const State &S, const SourceManager &SM,
   const auto &Arguments = Map->getTemplateArgs();
   const auto Mapped = Arguments[1].getAsType();
   if (!Context.hasSameType(Arguments[0].getAsType(), Context.IntTy) ||
-      !(Context.hasSameType(Mapped, Context.IntTy) || Context.hasSameType(Mapped, Context.LongTy) ||
-        Context.hasSameType(Mapped, Context.LongLongTy))) return false;
+      !associativeMappedValueType(Context, Mapped)) return false;
   const auto *Hash = associativeTypeIdentity(S, SM, Arguments[2].getAsType()->getAsCXXRecordDecl(),
       "hash", "__functional/hash.h", "__fwd/functional.h", 1);
   const auto *Equal = associativeTypeIdentity(S, SM, Arguments[3].getAsType()->getAsCXXRecordDecl(),
@@ -136138,17 +136148,6 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
   });
 }
 
-static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
-  if (Context.hasSameType(Type, Context.FloatTy) || Context.hasSameType(Type, Context.DoubleTy))
-    return true;
-  const QualType IntegralTypes[] = {
-      Context.BoolTy, Context.CharTy, Context.SignedCharTy, Context.UnsignedCharTy,
-      Context.ShortTy, Context.UnsignedShortTy, Context.IntTy, Context.UnsignedIntTy,
-      Context.LongTy, Context.UnsignedLongTy, Context.LongLongTy, Context.UnsignedLongLongTy,
-  };
-  return llvm::is_contained(IntegralTypes, Type.getCanonicalType());
-}
-
 static std::optional<bool> orderedComparatorDirection(const State &S,
     const SourceManager &SM, QualType Type, QualType Key, const ASTContext &Context) {
   const auto *Record = Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
@@ -136186,7 +136185,7 @@ bool approvedAssociativeContainerMetadataRecord(
   const auto Mapped = Map ? Args.get(1).getAsType() : QualType();
   if ((!Context.hasSameType(Key, Context.IntTy) &&
        !(HashTable && Context.hasSameType(Key, Context.UnsignedIntTy))) ||
-      (Map && !orderedMappedValueType(Context, Mapped)))
+      (Map && !associativeMappedValueType(Context, Mapped)))
     return false;
   auto PolicyFor = [&](unsigned I, llvm::StringRef Policy, llvm::StringRef Header) {
     const auto *Spec = associativeTypeIdentity(S, SM, Args.get(I).getAsType()->getAsCXXRecordDecl(),
@@ -136889,7 +136888,7 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
                             : std::nullopt;
     if (!Wrapper || Wrapper->getNumBases() || !Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->First->getType(), Context.IntTy.withConst()) ||
-        !orderedMappedValueType(Context, Pair->Second->getType()))
+        !associativeMappedValueType(Context, Pair->Second->getType()))
       return std::nullopt;
     MappedValueType = Pair->Second->getType();
     const auto &WrapperLayout = Context.getASTRecordLayout(Wrapper);
@@ -136927,6 +136926,20 @@ std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record, const ASTContext &Context) {
   return checkedOrderedTreeStorage(S, SM, Record, Context, {}, true);
+}
+
+static bool compatibleOrderedCursorLayout(const ASTContext &Context,
+    const UtilityOrderedSetStorage &Left, const UtilityOrderedSetStorage &Right) {
+  if (!Context.hasSameType(Left.NodeType, Right.NodeType) ||
+      !Context.hasSameType(Left.LinkType, Right.LinkType) ||
+      !Context.hasSameType(Left.SentinelType, Right.SentinelType) ||
+      Left.NodeBytes != Right.NodeBytes ||
+      Left.ValueOffsetBytes != Right.ValueOffsetBytes || Left.MappedOffsetBytes != Right.MappedOffsetBytes ||
+      Left.MappedPairType.isNull() != Right.MappedPairType.isNull())
+    return false;
+  return Left.MappedPairType.isNull() ||
+      (Context.hasSameType(Left.MappedPairType, Right.MappedPairType) &&
+       Context.hasSameType(Left.MappedValueType, Right.MappedValueType));
 }
 
 static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
@@ -136973,7 +136986,8 @@ static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
           const auto Storage = approvedUtilityOrderedMapStorage(S, SM, Declaration, Context);
           if (!Storage || !Context.hasSameType(Storage->NodeType, Node)) continue;
           if (!LocalOwner) LocalOwner = Storage;
-          else if (LocalOwner->Tree->getCanonicalDecl() != Storage->Tree->getCanonicalDecl()) return nullptr;
+          else if (!compatibleOrderedCursorLayout(Context, *LocalOwner, *Storage))
+            return nullptr;
         }
       }
     }
@@ -137032,7 +137046,8 @@ const CXXRecordDecl *approvedOrderedSetIteratorRecord(
           const auto Storage = approvedUtilityOrderedSetStorage(S, SM, Declaration, Context);
           if (!Storage || !Context.hasSameType(Storage->NodeType, Node)) continue;
           if (!LocalOwner) LocalOwner = Storage;
-          else if (LocalOwner->Tree->getCanonicalDecl() != Storage->Tree->getCanonicalDecl()) return nullptr;
+          else if (!compatibleOrderedCursorLayout(Context, *LocalOwner, *Storage))
+            return nullptr;
         }
       }
     }
@@ -139508,8 +139523,12 @@ static bool unorderedSetInputPointer(QualType Type, QualType Key, const ASTConte
   const auto *Pointer = Type->getAs<PointerType>();
   if (!Pointer || Type.hasQualifiers()) return false;
   const auto Element = Pointer->getPointeeType();
-  return !Element.isVolatileQualified() && Element.getAddressSpace() == LangAS::Default &&
-         Context.hasSameUnqualifiedType(Element, Key);
+  if (Element.isVolatileQualified() || Element.getAddressSpace() != LangAS::Default)
+    return false;
+  if (Context.hasSameUnqualifiedType(Element, Key)) return true;
+  return (Context.hasSameType(Key, Context.IntTy) || Context.hasSameType(Key, Context.UnsignedIntTy)) &&
+      (Context.hasSameUnqualifiedType(Element, Context.ShortTy) ||
+       Context.hasSameUnqualifiedType(Element, Context.LongTy));
 }
 
 static bool unorderedSetRangeIterator(const State &S, const SourceManager &SM,

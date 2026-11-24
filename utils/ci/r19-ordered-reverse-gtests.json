@@ -127,18 +127,17 @@
       "source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
       "original_case_source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
       "gtest_body_sha256": "b8f8cd86f3313078eb53b117397783bb93599f5b195111e67e6f009af7229999"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "ordered-reverse-range-custom-policy-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedReverseRangeCustomPolicyGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2OrderedReverseRangeAcrossStandardComparators",
+      "expected": "accept",
       "source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
       "original_case_source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
-      "gtest_body_sha256": "a9a4acc0eaf7eaf77e6a10b8ab3dd11ee76be2d15c3d4158c082dd0987ea93a3"
+      "gtest_body_sha256": "06ffeccb5cb6f9bf80ab4fba2596c3433ca53644c11b0322b3d80028f67e26c1"
     }
   ],
+  "negative_cases": [],
   "source_cases": [
     {
       "name": "ordered-set-reverse-endpoints-and-postfix-step",
@@ -270,11 +269,11 @@
     },
     {
       "name": "ordered-reverse-range-custom-policy-guard",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "set",
       "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n",
       "source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -294,7 +293,7 @@
     "TranslateTest.CoreV2OrderedMapConvertsReverseIteratorWithLongMappedValues",
     "TranslateTest.CoreV2OrderedReverseCursorCustomPolicyGuardRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRunAtBothOptimizations",
-    "TranslateTest.CoreV2OrderedReverseRangeCustomPolicyGuardRejected"
+    "TranslateTest.CoreV2OrderedReverseRangeAcrossStandardComparators"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -307,13 +306,14 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8837,
   "current_python_registry_tests": 266,
-  "native_reference_selected_executions": 32,
-  "planned_generated_c23_executions": 32,
+  "native_reference_selected_executions": 34,
+  "planned_generated_c23_executions": 34,
   "native_reference_proofs": {
     "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
     "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
-    "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd"
+    "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd",
+    "ordered-shared-cursor": "109121d160959c31c4b776897084dbde4c3a7a2312db9721fbff0b2cbee95a36"
   },
-  "native_reference_authentication_sha256": "fe205987c0a857e861da52086f1f8a093b58802f745e87a8d241aeb789a3d5ef",
-  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
+  "native_reference_authentication_sha256": "d522ab2ad8c6c7cccd05d0c0c50302ec79096f22d2d0d9585be2f885dad076a3",
+  "source_proof_sha256": "7f57d82cbb91272569973ec064d194105f1096b650f29ec1f22e7ef598355394"
 }
