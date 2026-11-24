@@ -126,7 +126,7 @@
     "TranslateTest.CoreV2MonostateAdapterHashRenamedSdkMonostateRejected",
     "TranslateTest.CoreV2MonostateAdapterHashMemberAddressThroughInvokeRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a",
   "maintained_original_sha256": "1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462",
@@ -138,5 +138,10 @@
   "current_registry_count": 8270,
   "current_python_registry_tests": 154,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "monostate-adapter-hash": "b9c94c8bc596267e18165da8b586203189d7592fa595b1a2b7834cc8b1a33179"
+  },
+  "native_reference_authentication_sha256": "3ac079fc76fe08a4c43a0189842aa1e05c4e2386125dc24fa0780c0f42d14fbd",
+  "source_proof_sha256": "58de74c11b2fbd82e4e99cb87766737f2f352d108854ef9d3bba0412e2479916"
 }

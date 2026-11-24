@@ -349,14 +349,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-non-default-key-order-remains-outside-checked-subscript",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::map<int, int, Descending> map;\n  map[3] = 12;\n  return map[3] != 12;\n}\n",
-      "source_sha256": "ae4217f653892f9d1e17a2cb405d5df4d44fc499515f5570ea1616c2d44f46cd",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-contains-integer-keys-after-insertion-and-preserves-size",
       "expected": "accept",
       "public_header": "map",
@@ -371,14 +363,6 @@
       "source": "#include <map>\nusing Map = std::map<int, int>;\nint trace;\nconst Map* get(const Map& map) { trace = trace * 10 + 4; return &map; }\nint key() { trace = trace * 10 + 7; return -11; }\nint main() {\n  Map values;\n  if (get(values)->count(key()) != 0 || trace != 47) return 1;\n  trace = 0;\n  values[-11] = 38;\n  return get(values)->count(key()) != 1 || trace != 47 || values.size() != 1;\n}\n",
       "source_sha256": "d05e696ec337a85a3dae0b348643cdeb5ad4e6df3b03b07330e46f7a8a3c2d1d",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-unsupported-mapped-type-does-not-admit-count",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, long> map;\n  return map.count(7) != 0;\n}\n",
-      "source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-map-initializer-list-constructs-ordered-map-with-first-mapped-value",
@@ -405,14 +389,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-stateful-policy-remains-outside-checked-mapped-owner",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Comparator {\n  bool reverse;\n  bool operator()(int a, int b) const { return reverse ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Comparator> values({{4, 17}, {7, 13}}, Comparator{true});\n  return values.count(4) != 1;\n}\n",
-      "source_sha256": "5341fe5540d93fd8b4d573be4dc400c3f00ee0ff8277f9e0590bceac755b58ed",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-iterator-find-returns-a-mutable-mapped-lvalue",
       "expected": "accept",
       "public_header": "map",
@@ -435,14 +411,6 @@
       "source": "#include <map>\nint main() {\n  const std::multimap<int, int> values{{6, 3}, {4, 7}, {6, 8}, {8, 5}, {6, 12}};\n  auto range = values.equal_range(6);\n  int seen = 0;\n  for (auto item = range.first; item != range.second; ++item) {\n    if (item->first != 6) return 1;\n    seen = 100 * seen + item->second;\n  }\n  return seen != 30812 || range.second->first != 8;\n}\n",
       "source_sha256": "75fd33453f401d47622766c2057bf1ba31cc8ee0c446894ee77a3bfcd78efc82",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-iterator-custom-map-iterator-receiver-keeps-source-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::map<int, int, Descending> values{{2, 5}, {6, 7}};\n  auto position = values.begin();\n  return position->first != 6;\n}\n",
-      "source_sha256": "45e12e63762a3ffae000241a7fe1ae89bab736ba906d678105fd0bcc72fef6a9",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-map-erasure-key-erase-keeps-the-mapped-address-of-another-node",
@@ -469,14 +437,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, long> values;\n  values.clear();\n  return values.erase(7) != 0;\n}\n",
-      "source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-insertion-map-insert-result-keeps-first-value-on-a-duplicate",
       "expected": "accept",
       "public_header": "map",
@@ -501,14 +461,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-insertion-stateful-comparator-insertion-remains-outside-checked-layout",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\n#include <utility>\nstruct Descending {\n  bool active;\n  bool operator()(int a, int b) const { return active ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Descending> values(Descending{true});\n  const std::pair<const int, int> payload{7, 12};\n  return !values.insert(payload).second;\n}\n",
-      "source_sha256": "3b6c4db345d47cb158772729aed5a7d3a7f971755accbe9b202961ba04c8bba1",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-scalar-emplacement-try-emplace-keeps-existing-value-and-defaults-a-new-node",
       "expected": "accept",
       "public_header": "map",
@@ -530,14 +482,6 @@
       "public_header": "map",
       "source": "#include <map>\nint calls;\nint& observe(int& value) {\n  ++calls;\n  return value;\n}\nint main() {\n  std::map<int, int> values{{4, 17}};\n  int key = 4;\n  int value = 21;\n  auto result = values.try_emplace(observe(key), observe(value));\n  return calls != 2 || result.second || result.first->second != 17 || values.size() != 1;\n}\n",
       "source_sha256": "a2593a8c81dfd2e4010abaf1af541289a19f9b8b75f892aa1b703336cfa2448c",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof",
-      "expected": "accept",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  short value = 41;\n  return !values.try_emplace(5, value).second;\n}\n",
-      "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
       "kind": "cpp17-operation"
     },
     {
@@ -565,14 +509,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-transfer-stateful-ordered-map-comparator-has-separate-transfer-semantics",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Compare {\n  bool reverse;\n  bool operator()(int left, int right) const {\n    return reverse ? right < left : left < right;\n  }\n};\nint main() {\n  std::map<int, int, Compare> left(Compare{true});\n  std::map<int, int, Compare> right(Compare{false});\n  left.swap(right);\n  return left.size();\n}\n",
-      "source_sha256": "065b8a19342e9924c27c68680a659ecefc4c58ca7327518badc6876de24415d5",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-copy-assignment-replaces-and-owns-mapped-values",
       "expected": "accept",
       "public_header": "map",
@@ -595,14 +531,6 @@
       "source": "#include <map>\nusing Table = std::map<int, int>;\nTable &source(Table *value, int *state) {\n  *state = *state * 10 + 1;\n  return *value;\n}\nTable &target(Table *value, int *state) {\n  *state = *state * 10 + 2;\n  return *value;\n}\nint main() {\n  Table input{{1, 17}};\n  Table output;\n  int order = 0;\n  target(&output, &order) = source(&input, &order);\n  return order == 12 && output.size() == 1 && output.begin()->second == 17 ? 0 : 1;\n}\n",
       "source_sha256": "5e0cbb079935a6e863d23e2ccb6aadf54edd4cf15a63a5115b0ee1244b512320",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-copy-assignment-custom-comparator-remains-unsupported",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nusing Table = std::map<int, int, Reverse>;\nvoid copy_map(Table *output, const Table *input) { *output = *input; }\n",
-      "source_sha256": "3a79332a0f568ed28cfc19b0e02c8bbf62ddbe0ada318e73ce7e6792402d556e",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-map-and-set-cursors-keep-independent-sentinels",
@@ -635,6 +563,78 @@
       "source": "#include <map>\nint main() {\n  std::map<int, int> values{{1, 21}, {5, 25}};\n  const auto &view = values;\n  if (values.begin() != view.begin() || view.end() != values.end())\n    return 1;\n  auto cursor = values.begin();\n  ++cursor;\n  return cursor == view.find(5) && view.find(1) != cursor ? 0 : 2;\n}\n",
       "source_sha256": "03d550923393c544ef49cf3ac1eed374f2eedb43f5c9fc319472fac5141f490d",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  short value = 41;\n  return !values.try_emplace(5, value).second;\n}\n",
+      "source_sha256": "c63ba045b4496ac334844cda4d5ff55a3feb59a23528cba9f5e9824a1105c666",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-non-default-key-order-remains-outside-checked-subscript",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::map<int, int, Descending> map;\n  map[3] = 12;\n  return map[3] != 12;\n}\n",
+      "source_sha256": "ae4217f653892f9d1e17a2cb405d5df4d44fc499515f5570ea1616c2d44f46cd",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-unsupported-mapped-type-does-not-admit-count",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, long> map;\n  return map.count(7) != 0;\n}\n",
+      "source_sha256": "7fa339a8a7e55bc846b573a43c948389587d656f2d0bc5c892e1b1740027e62d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-stateful-policy-remains-outside-checked-mapped-owner",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Comparator {\n  bool reverse;\n  bool operator()(int a, int b) const { return reverse ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Comparator> values({{4, 17}, {7, 13}}, Comparator{true});\n  return values.count(4) != 1;\n}\n",
+      "source_sha256": "5341fe5540d93fd8b4d573be4dc400c3f00ee0ff8277f9e0590bceac755b58ed",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-iterator-custom-map-iterator-receiver-keeps-source-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::map<int, int, Descending> values{{2, 5}, {6, 7}};\n  auto position = values.begin();\n  return position->first != 6;\n}\n",
+      "source_sha256": "45e12e63762a3ffae000241a7fe1ae89bab736ba906d678105fd0bcc72fef6a9",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, long> values;\n  values.clear();\n  return values.erase(7) != 0;\n}\n",
+      "source_sha256": "4aa2ed98973ec998ecafff2a108433b3a9a46725e1a2847c1d9edc9aed46883b",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-insertion-stateful-comparator-insertion-remains-outside-checked-layout",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nstruct Descending {\n  bool active;\n  bool operator()(int a, int b) const { return active ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Descending> values(Descending{true});\n  const std::pair<const int, int> payload{7, 12};\n  return !values.insert(payload).second;\n}\n",
+      "source_sha256": "3b6c4db345d47cb158772729aed5a7d3a7f971755accbe9b202961ba04c8bba1",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-transfer-stateful-ordered-map-comparator-has-separate-transfer-semantics",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Compare {\n  bool reverse;\n  bool operator()(int left, int right) const {\n    return reverse ? right < left : left < right;\n  }\n};\nint main() {\n  std::map<int, int, Compare> left(Compare{true});\n  std::map<int, int, Compare> right(Compare{false});\n  left.swap(right);\n  return left.size();\n}\n",
+      "source_sha256": "065b8a19342e9924c27c68680a659ecefc4c58ca7327518badc6876de24415d5",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-copy-assignment-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nusing Table = std::map<int, int, Reverse>;\nvoid copy_map(Table *output, const Table *input) { *output = *input; }\n",
+      "source_sha256": "3a79332a0f568ed28cfc19b0e02c8bbf62ddbe0ada318e73ce7e6792402d556e",
+      "kind": "source-body-guard"
     },
     {
       "name": "ordered-map-iterator-conversion-custom-comparator-remains-unsupported",
@@ -687,7 +687,7 @@
     "TranslateTest.CoreV2OrderedMapCopyAssignmentCustomComparatorRemainsUnsupportedRejected",
     "TranslateTest.CoreV2OrderedMapIteratorConversionCustomComparatorRemainsUnsupportedRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "32075ed5590611d862e4bd001e979b72fd0989115ffd0a18586f2ba71a590624",
   "maintained_original_sha256": "2780fb91a65d18cf4059ff79ac2436884aa57f420b42296c99f3f0b80b69ebd7",
@@ -699,5 +699,11 @@
   "current_registry_count": 8734,
   "current_python_registry_tests": 252,
   "native_reference_selected_executions": 62,
-  "planned_generated_c23_executions": 62
+  "planned_generated_c23_executions": 62,
+  "native_reference_proofs": {
+    "ordered-maps-with-mixed-cursors": "270ad4645a1f52c6327fd1ce4d683c4c13395b88f2647d000a6355a72d3d88ad",
+    "ordered-value-input": "b9b293f9b1ce126fa9c711ec5be48f05d87960878036f2b61436023a654b4e4c"
+  },
+  "native_reference_authentication_sha256": "48128d79c42ca43a9d5b802b0173d7d23ab32eae8b4060d679dd15438611532a",
+  "source_proof_sha256": "58de74c11b2fbd82e4e99cb87766737f2f352d108854ef9d3bba0412e2479916"
 }
