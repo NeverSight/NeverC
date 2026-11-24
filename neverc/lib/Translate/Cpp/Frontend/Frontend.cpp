@@ -13974,7 +13974,7 @@ std::string Adapter::type(QualType T, SourceLocation L, bool AllowVoid,
         if (!Variant || llvm::any_of(Variant->Alternatives,
                 [](const FieldDecl *F) { return F->getType().isConstQualified(); })) {
           reject(L, "variant object layout",
-                 "Expected the pinned variant layout with mutable scalar or monostate alternatives.", "TR0203");
+                 "Expected a checked variant layout with mutable alternatives.", "TR0203");
           return {};
         }
         if (RequiredUtilityVariants.insert(D->getCanonicalDecl()).second) {
@@ -31040,7 +31040,7 @@ public:
           checkBinding(C->getArg(0), true);
         }
         for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
-          checkBinding(C->getArg(I + 1), /*AllowFullExpression=*/true);
+          checkBinding(C->getArg(I + 1), !Visit->Result->isReferenceType());
           A.type(A.Context.getRecordType(Visit->Variants[I].Record), L);
         }
         for (const auto Argument : Visit->Arguments)
