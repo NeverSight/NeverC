@@ -18534,3 +18534,11 @@ preserve the active payload address when the tag stays the same. Visitation
 accepts more operands within the existing 64-entry dispatch limit. The inline
 any carrier preserves distinct payload types for void pointers, pointers to
 const void, and std::nullptr_t.
+
+## Variant and any operations on typed pointers
+
+Variant swap handles monostate, fundamental pointer values and the null
+pointer type. Checked in-place construction verifies the selected implicit
+object-to-void pointer conversion before storing the payload. The inline any
+carrier retains distinct bool pointer, int pointer and const int pointer
+payload types and the address of the matching slot.

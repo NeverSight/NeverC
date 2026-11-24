@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_swap_and_any_typed_pointers_registered = cls.registered
+        cls.variant_swap_and_any_typed_pointers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_swap_and_any_typed_pointers_original = cls.adapter.restore_original_gtests(cls.variant_swap_and_any_typed_pointers_registered,
+                                                                        cls.variant_swap_and_any_typed_pointers_suffix)
+        cls.registered = cls.adapter.restore_variant_swap_and_any_typed_pointers_history(cls.variant_swap_and_any_typed_pointers_registered)
         cls.variant_swap_visit_and_any_registered = cls.registered
         cls.variant_swap_visit_and_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_swap_visit_and_any_original = cls.adapter.restore_original_gtests(cls.variant_swap_visit_and_any_registered,
@@ -3682,6 +3687,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_swap_visit_and_any_history(self.variant_swap_visit_and_any_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_swap_visit_and_any_registered, self.variant_swap_visit_and_any_suffix + b' ')
+
+
+    def test_variant_swap_and_any_typed_pointers_retains_published_bodies(self):
+        self.assertEqual(self.variant_swap_and_any_typed_pointers_original + self.variant_swap_and_any_typed_pointers_suffix, self.variant_swap_and_any_typed_pointers_registered)
+        self.assertEqual(self.adapter.restore_variant_swap_and_any_typed_pointers_history(self.variant_swap_and_any_typed_pointers_original),
+                         self.variant_swap_visit_and_any_original)
+        output, evidence = self.extractor.extract(self.variant_swap_and_any_typed_pointers_original, ['TranslateTest.CoreV2VariantSwapMonostateAndIntegerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapBuiltInPointerWithNullRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapNullptrAndVoidPointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapSelfWithDuplicateMonostateRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntPointerMutableSlotAndCvIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AnyConstIntAndBoolPointersSwapRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapUncheckedAssociatedPointerGuardRejected', 'TranslateTest.CoreV2VariantSwapUncheckedAssociatedEnumGuardRejected', 'TranslateTest.CoreV2AnyUncheckedRecordPointerPayloadGuardRejected', 'TranslateTest.CoreV2AnyUncheckedVolatileIntPointerPayloadGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9008)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-swap-monostate-and-integer', output)
+        self.assertIn(b'any-unchecked-volatile-int-pointer-payload-guard', output)
+
+    def test_variant_swap_and_any_typed_pointers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_swap_and_any_typed_pointers_history(self.variant_swap_and_any_typed_pointers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_swap_and_any_typed_pointers_registered, self.variant_swap_and_any_typed_pointers_suffix + b' ')
 
 
 if __name__ == '__main__':

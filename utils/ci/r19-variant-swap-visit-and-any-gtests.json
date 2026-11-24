@@ -87,6 +87,15 @@
       "source_sha256": "27cbb86b7489738578004e3944897eef16a5c576f6584ac16b04af9067214418",
       "original_case_source_sha256": "27cbb86b7489738578004e3944897eef16a5c576f6584ac16b04af9067214418",
       "gtest_body_sha256": "c8f9813a43d226219b9d599f9b35d5e80718a4acee664f69993de3f4e2e281a6"
+    },
+    {
+      "name": "any-unchecked-object-pointer-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntPointerPayloadAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a",
+      "original_case_source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a",
+      "gtest_body_sha256": "ab26953f20b7b100b6fa5dee939ef3ee1834193f7e8e4cade77ca0eb82621bcd",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -113,14 +122,6 @@
       "source_sha256": "bf445fcefbaec837d6bcb61d489d174e3c7c93c4a035320d4094c205e4dfeadc",
       "original_case_source_sha256": "bf445fcefbaec837d6bcb61d489d174e3c7c93c4a035320d4094c205e4dfeadc",
       "gtest_body_sha256": "634816c597479afd908cf2f43b45a43b6d7881bb5f81f2193c02f3703991ac88"
-    },
-    {
-      "name": "any-unchecked-object-pointer-payload-guard",
-      "formal_test_name": "TranslateTest.CoreV2AnyUncheckedObjectPointerPayloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a",
-      "original_case_source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a",
-      "gtest_body_sha256": "f79282a64f5fd0d76f521708264f3c5ca2ae9ab655323c361ff96046f3e7ab5c"
     },
     {
       "name": "any-unchecked-function-pointer-payload-guard",
@@ -221,6 +222,14 @@
       "source_sha256": "27cbb86b7489738578004e3944897eef16a5c576f6584ac16b04af9067214418"
     },
     {
+      "name": "any-unchecked-object-pointer-payload-guard",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nvoid hold(int* input) { std::any value{input}; }\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a"
+    },
+    {
       "name": "variant-swap-unsupported-custom-alternative-guard",
       "public_header": "variant",
       "expected": "reject",
@@ -245,14 +254,6 @@
       "source_sha256": "bf445fcefbaec837d6bcb61d489d174e3c7c93c4a035320d4094c205e4dfeadc"
     },
     {
-      "name": "any-unchecked-object-pointer-payload-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\nvoid hold(int* input) { std::any value{input}; }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a"
-    },
-    {
       "name": "any-unchecked-function-pointer-payload-guard",
       "public_header": "any",
       "expected": "reject",
@@ -273,10 +274,10 @@
     "TranslateTest.CoreV2AnyConstVoidPointerMutableSlotRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyNullptrPayloadAndNullVoidPointerRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyVoidPointerAssignmentAndSwapTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntPointerPayloadAcceptsFunctionBody",
     "TranslateTest.CoreV2VariantSwapUnsupportedCustomAlternativeGuardRejected",
     "TranslateTest.CoreV2VariantSwapStandaloneSdkAddressGuardRejected",
     "TranslateTest.CoreV2VariantVisitFourAboveMatrixEntryLimitRejected",
-    "TranslateTest.CoreV2AnyUncheckedObjectPointerPayloadGuardRejected",
     "TranslateTest.CoreV2AnyUncheckedFunctionPointerPayloadGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -298,5 +299,5 @@
     "variant-trivial-swap-replay": "05e9985fdbb71cd096abddf95179d114fe15ef71c369bdf4562fef402c6fcfbb"
   },
   "native_reference_authentication_sha256": "64c284ff75a3643e5301312476f11d77a7143576828d1802b2642b58e9ce415c",
-  "source_proof_sha256": "36243595af48114e1e67566e20cdb5d76e810da3be321d6fe7d05893900bb5cf"
+  "source_proof_sha256": "f6927d39d36f8cfdcd39f96ac393d2f4b9252a47df36a53a452a862548657f05"
 }
