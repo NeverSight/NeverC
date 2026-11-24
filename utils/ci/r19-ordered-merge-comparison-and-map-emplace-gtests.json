@@ -141,14 +141,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-merge-custom-comparator-remains-unsupported",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int a, int b) const { return a > b; }\n};\nvoid merge(std::map<int, int> &output, std::map<int, int, Reverse> &input) { output.merge(input); }\n",
-      "source_sha256": "e03e6b35362b23e4acdd1074148a3a6084193c9bab1f559ee9a7c6ba468b585e",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-comparison-const-prefix-and-all-relations",
       "expected": "accept",
       "public_header": "set",
@@ -181,14 +173,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-comparison-custom-comparator-remains-unsupported",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nbool equal(const std::set<int, Reverse> &a, const std::set<int, Reverse> &b) { return a == b; }\n",
-      "source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-emplace-int-does-not-replace-an-existing-value",
       "expected": "accept",
       "public_header": "map",
@@ -203,6 +187,22 @@
       "source": "#include <map>\nint bounded(int value, int &calls) { ++calls; return value; }\nint main() {\n  std::multimap<int, int> values{{2, 20}, {-1, 11}};\n  int key_calls = 0;\n  int mapped_calls = 0;\n  auto added = values.emplace(bounded(2, key_calls), bounded(21, mapped_calls));\n  auto next = values.emplace(2, 22);\n  auto range = values.equal_range(2);\n  auto cursor = range.first;\n  if (key_calls != 1 || mapped_calls != 1 || cursor->second != 20) return 1;\n  if (++cursor != added || cursor->second != 21) return 2;\n  if (++cursor != next || cursor->second != 22) return 3;\n  return ++cursor == range.second && values.size() == 4 ? 0 : 4;\n}\n",
       "source_sha256": "cec3455990acfa9e00e151dc509c50c0e752be79ea056cf70a0649925e302547",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-merge-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int a, int b) const { return a > b; }\n};\nvoid merge(std::map<int, int> &output, std::map<int, int, Reverse> &input) { output.merge(input); }\n",
+      "source_sha256": "e03e6b35362b23e4acdd1074148a3a6084193c9bab1f559ee9a7c6ba468b585e",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-comparison-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nbool equal(const std::set<int, Reverse> &a, const std::set<int, Reverse> &b) { return a == b; }\n",
+      "source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
+      "kind": "source-body-guard"
     },
     {
       "name": "ordered-map-emplace-converting-mapped-argument-remains-unsupported",
@@ -228,7 +228,7 @@
     "TranslateTest.CoreV2OrderedComparisonCustomComparatorRemainsUnsupportedRejected",
     "TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentRemainsUnsupportedRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "87d62b8ae6d3cd26907c1cb089fed8be44025c7a302565fd0aa4e15ec2e58955",
   "maintained_original_sha256": "8807f2fc6c47f571b715521d18d1c2f1aca6885e38b2de6260559ec67831e18d",
@@ -240,5 +240,11 @@
   "current_registry_count": 8770,
   "current_python_registry_tests": 258,
   "native_reference_selected_executions": 20,
-  "planned_generated_c23_executions": 20
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "ordered-map-emplace": "455c13bdffa150a07ed7e139b48f0c20510a556dadc74d8481344537d5a058c1",
+    "ordered-merge-and-comparison": "f90cc9fb8817a57ef3b8bfb7c3ba12ecd7e55e185b95f3ab6bd37265264b1794"
+  },
+  "native_reference_authentication_sha256": "a8426f4bff1fa7c2ee342d56db6b358a520c8ed92494f19d293a67a8ce37484d",
+  "source_proof_sha256": "838246acd03b39f750614aa652dfe4ace00028902c9fe2b763be40beae6b0983"
 }

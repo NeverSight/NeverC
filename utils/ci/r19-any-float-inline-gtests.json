@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2AnyFloatInlineUnknownActiveValueRejected",
     "TranslateTest.CoreV2AnyFloatInlineMismatchedImmutableValueRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "c36266a7928342a5d83595fd908886b67fb1cbb2748be1f9299b981d25b866b2",
   "maintained_original_sha256": "5ef4d0491c68e82841467b5fd534a89ec5330e0220fc1c33babab7cf342c9e37",
@@ -155,5 +155,10 @@
   "current_registry_count": 8334,
   "current_python_registry_tests": 170,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "any-float-inline": "a2fa22dff59b7ddf67741d9437a84a047d379e615608ca024fa55c2d78bfcf66"
+  },
+  "native_reference_authentication_sha256": "2c8942cc7af5a4014d7d85f45df4376e75873cf53387c9874671b84082a2f315",
+  "source_proof_sha256": "838246acd03b39f750614aa652dfe4ace00028902c9fe2b763be40beae6b0983"
 }

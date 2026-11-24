@@ -109,7 +109,7 @@
     "TranslateTest.CoreV2VariantTwoVisitRenamedMatrixDispatchRejected",
     "TranslateTest.CoreV2VariantTwoVisitGenericVisitorRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "db4b815bb0310f32f1577df59ad0601008e7339bc4805d1c7b2cedf55bf554f0",
   "maintained_original_sha256": "5ea4dd16eb081c1ae850c9041998ca7c81b9520eb9e68cdfd75b76fe06c7c215",
@@ -121,5 +121,10 @@
   "current_registry_count": 8191,
   "current_python_registry_tests": 134,
   "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "variant-two-operand-visit": "6df3ff5f32a6aefd59d674e4995f1ee301617c2c173aa9cd61844737a6f88398"
+  },
+  "native_reference_authentication_sha256": "1e0d40a335099597144bb8e9e0dd74310af6f9080b6d1871c92ff195bf8361d8",
+  "source_proof_sha256": "838246acd03b39f750614aa652dfe4ace00028902c9fe2b763be40beae6b0983"
 }

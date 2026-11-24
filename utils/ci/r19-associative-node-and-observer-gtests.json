@@ -93,14 +93,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "unordered-multimap-node-handles-mapped-node-with-unapproved-value-type",
-      "expected": "reject",
-      "public_header": "unordered_map",
-      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> values{{3, 11L}};\n  auto node = values.extract(3);\n  return node.mapped() != 11L;\n}\n",
-      "source_sha256": "f920b619c93b14e14234adf89b5718c506cf3a4a3e3838d23ba17d4b7d51536c",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-pointer-observers-map-size-empty-and-maximum",
       "expected": "accept",
       "public_header": "map",
@@ -125,6 +117,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-multimap-node-handles-mapped-node-with-unapproved-value-type",
+      "expected": "reject",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> values{{3, 11L}};\n  auto node = values.extract(3);\n  return node.mapped() != 11L;\n}\n",
+      "source_sha256": "f920b619c93b14e14234adf89b5718c506cf3a4a3e3838d23ba17d4b7d51536c",
+      "kind": "source-body-guard"
+    },
+    {
       "name": "ordered-pointer-observers-custom-ordered-compare-pointer",
       "expected": "reject",
       "public_header": "map",
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRejected",
     "TranslateTest.CoreV2OrderedPointerObserversCustomOrderedComparePointerRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "a2e8418b1982b3a0c7696e11137caf0e7a8aa7e01dbb12bd86f4bb35d003ee49",
   "maintained_original_sha256": "92b5b5e9b171ff0c9f887fe4669f900809ff206624fc5e08df2c516d5dd33175",
@@ -155,5 +155,10 @@
   "current_registry_count": 8651,
   "current_python_registry_tests": 244,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "associative-node-and-observer": "01a51550b23988021155c9e25097f908e2e9eaa0e96593d5ac4a97c116f7a759"
+  },
+  "native_reference_authentication_sha256": "ef013e89ef5ba7759dc80bad6d4fdc48b487165060ae8002d455833efa46ae1e",
+  "source_proof_sha256": "838246acd03b39f750614aa652dfe4ace00028902c9fe2b763be40beae6b0983"
 }
