@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_assignment_and_pointer_registered = cls.registered
+        cls.variant_assignment_and_pointer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_assignment_and_pointer_original = cls.adapter.restore_original_gtests(cls.variant_assignment_and_pointer_registered,
+                                                                        cls.variant_assignment_and_pointer_suffix)
+        cls.registered = cls.adapter.restore_variant_assignment_and_pointer_history(cls.variant_assignment_and_pointer_registered)
         cls.variant_comparisons_registered = cls.registered
         cls.variant_comparisons_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_comparisons_original = cls.adapter.restore_original_gtests(cls.variant_comparisons_registered,
@@ -3636,6 +3641,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_comparisons_history(self.variant_comparisons_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_comparisons_registered, self.variant_comparisons_suffix + b' ')
+
+
+    def test_variant_assignment_and_pointer_retains_published_bodies(self):
+        self.assertEqual(self.variant_assignment_and_pointer_original + self.variant_assignment_and_pointer_suffix, self.variant_assignment_and_pointer_registered)
+        self.assertEqual(self.adapter.restore_variant_assignment_and_pointer_history(self.variant_assignment_and_pointer_original),
+                         self.variant_comparisons_original)
+        output, evidence = self.extractor.extract(self.variant_assignment_and_pointer_original, ['TranslateTest.CoreV2VariantMonostateAssignmentSelectsAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateAssignmentFromActiveAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateAssignmentObeysOperandSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateAssignmentPointerReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2VariantPointerEqualityDistinctObjectsAndNullRunAtBothOptimizations', 'TranslateTest.CoreV2VariantPointerEqualityComparesTheActiveIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantPointerAndFloatEqualityPreservesPayloadTypesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVoidPointerEqualityRunAtBothOptimizations', 'TranslateTest.CoreV2VariantUncheckedPointerOrderingGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8982)
+        self.assertEqual(evidence['selected_count'], 9)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-pointer-equality-distinct-objects-and-null', output)
+        self.assertIn(b'variant-unchecked-pointer-ordering-guard', output)
+
+    def test_variant_assignment_and_pointer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_assignment_and_pointer_history(self.variant_assignment_and_pointer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_assignment_and_pointer_registered, self.variant_assignment_and_pointer_suffix + b' ')
 
 
 if __name__ == '__main__':

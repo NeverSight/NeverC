@@ -18518,3 +18518,11 @@ at their stored width, preserving NaN behavior and equality of signed
 zeros. Comparisons accept temporaries with a verified full-expression
 lifetime. Checked converting and in-place constructors and emplace accept
 std::monostate inputs and evaluate each supplied initializer once.
+
+## Variant assignment and pointer equality
+
+Checked assignment accepts exact monostate operands and returns the
+original variant lvalue. Operator syntax and named member calls preserve
+their respective operand evaluation order. Checked equality and inequality
+compare active object pointers, including null and const cases, and compare
+the active index before reading a matching pointer alternative.

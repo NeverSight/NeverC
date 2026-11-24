@@ -997,3 +997,10 @@ The combined compiler passes 6,486 source requests across six 64-bit targets
 and 1185 formal tests on Linux x86-64. All 783 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Variant assignment and pointer equality
+
+The combined compiler passes 6,540 source requests across six 64-bit targets
+and 1194 formal tests on Linux x86-64. All 791 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

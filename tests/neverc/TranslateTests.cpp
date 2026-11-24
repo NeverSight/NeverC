@@ -403754,6 +403754,226 @@ int main() {
   }
 }
 
+TEST_F(TranslateTest, CoreV2VariantMonostateAssignmentSelectsAlternativeRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-monostate-assignment-selects-alternative.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  using Value = std::variant<int, std::monostate>;
+  Value value{45};
+  Value& result = (value = std::monostate{});
+  return &result != &value || value.index() != 1 || std::get_if<1>(&value) == nullptr;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-monostate-assignment-selects-alternative.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-monostate-assignment-selects-alternative" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateAssignmentFromActiveAlternativeRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-monostate-assignment-from-active-alternative.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  using Value = std::variant<int, std::monostate>;
+  Value value{std::in_place_index<1>};
+  const auto* item = std::get_if<1>(&value);
+  if (!item) return 1;
+  value = *item;
+  return value.index() != 1 || std::get_if<1>(&value) != item;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-monostate-assignment-from-active-alternative.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-monostate-assignment-from-active-alternative" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateAssignmentObeysOperandSequencingRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-monostate-assignment-obeys-operand-sequencing.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, std::monostate>;
+Value& receiver(Value& value, int& trace) {
+  trace = trace * 10 + 1;
+  return value;
+}
+const std::monostate& operand(const std::monostate& value, int& trace) {
+  trace = trace * 10 + 2;
+  return value;
+}
+int main() {
+  Value value{5};
+  const std::monostate item{};
+  int trace = 0;
+  receiver(value, trace) = operand(item, trace);
+  if (trace != 21 || value.index() != 1) return 1;
+  trace = 0;
+  receiver(value, trace).operator=(operand(item, trace));
+  return trace != 12 || value.index() != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-monostate-assignment-obeys-operand-sequencing.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-monostate-assignment-obeys-operand-sequencing" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantMonostateAssignmentPointerReceiverRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-monostate-assignment-pointer-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, std::monostate>;
+Value& assign(Value* value, const std::monostate& input) {
+  return value->operator=(input);
+}
+int main() {
+  Value value{6};
+  const std::monostate input{};
+  return &assign(&value, input) != &value || !std::holds_alternative<std::monostate>(value);
+}
+)r19containers");
+  const auto Output = tmpFile("variant-monostate-assignment-pointer-receiver.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-monostate-assignment-pointer-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantPointerEqualityDistinctObjectsAndNullRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-pointer-equality-distinct-objects-and-null.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, int*>;
+int main() {
+  int left = 3, right = 3;
+  const Value a{&left}, alias{&left}, b{&right}, nil{static_cast<int*>(nullptr)}, scalar{0};
+  return a != alias || !(a == alias) || b == a || nil == a || nil != nil || nil == scalar;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-pointer-equality-distinct-objects-and-null.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-pointer-equality-distinct-objects-and-null" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantPointerEqualityComparesTheActiveIndexRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-pointer-equality-compares-the-active-index.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<short, const int*, const int*>;
+int main() {
+  const int value = 7;
+  const Value a{std::in_place_index<1>, &value};
+  const Value b{std::in_place_index<2>, &value};
+  const Value alias{std::in_place_index<2>, &value};
+  return a == b || !(a != b) || b != alias;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-pointer-equality-compares-the-active-index.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-pointer-equality-compares-the-active-index" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantPointerAndFloatEqualityPreservesPayloadTypesRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-pointer-and-float-equality-preserves-payload-types.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<float, const int*>;
+bool equal(const Value& a, const Value& b) { return a == b && !(b != a); }
+int main() {
+  const int a = 8, b = 8;
+  const Value first{&a}, alias{&a}, second{&b}, negative{-0.0f}, positive{0.0f};
+  return !equal(first, alias) || equal(first, second) || !equal(negative, positive) || equal(first, positive);
+}
+)r19containers");
+  const auto Output = tmpFile("variant-pointer-and-float-equality-preserves-payload-types.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-pointer-and-float-equality-preserves-payload-types" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVoidPointerEqualityRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-void-pointer-equality.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, void*>;
+bool compare(const Value& left, const Value& right) {
+  return std::operator==(left, right) && !std::operator!=(right, left);
+}
+int main() {
+  int first = 0, second = 0;
+  const Value a{static_cast<void*>(&first)}, b{static_cast<void*>(&first)}, c{static_cast<void*>(&second)};
+  return !compare(a, b) || compare(a, c);
+}
+)r19containers");
+  const auto Output = tmpFile("variant-void-pointer-equality.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-void-pointer-equality" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantUncheckedPointerOrderingGuardRejected) {
+  const auto Source = tmpFile("variant-unchecked-pointer-ordering-guard.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, int*>;
+bool less(const Value& a, const Value& b) { return a < b; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

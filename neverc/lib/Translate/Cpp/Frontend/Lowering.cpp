@@ -35014,25 +35014,36 @@ class FunctionLowering {
         return Place;
       }
       if (const auto Value = approvedUtilityVariantValueAssignment(A.S, A.Sources, Call, A.Context)) {
+        const auto &V = Value->Variant;
+        const auto *Field = V.Alternatives[Value->Index];
+        const bool Monostate = Field->getType()->isRecordType();
         Expression Input;
+        auto ReadInput = [&] {
+          if (Monostate)
+            discard(Value->Input);
+          else
+            Input = argument(Value->Input, Value->Parameter);
+        };
         if (Value->InputFirst)
-          Input = argument(Value->Input, Value->Parameter);
+          ReadInput();
         const auto *Base = Value->Receiver;
         auto Receiver = Value->Arrow ? snapshot(expression(Base), L)
             : snapshot(address(lvalue(Base), Base->getType(), L), L);
         if (!Value->InputFirst)
-          Input = argument(Value->Input, Value->Parameter);
-        const auto &V = Value->Variant;
+          ReadInput();
         auto Place = dereference(std::move(Receiver), L);
         auto Index = fieldStorage(Place, V.Index, L);
         const auto IndexType = type(V.Index->getType(), L);
         auto Selected = quantity(Value->Index, IndexType, L);
         auto ChangesAlternative = snapshot(binary("!=", Index, Selected, "bool", L), L);
-        auto Slot = fieldStorage(variantStorage(Place, V, L), V.Alternatives[Value->Index], L);
-        assign(Slot, cast(dereference(std::move(Input), L), type(V.Alternatives[Value->Index]->getType(), L), L), L);
+        auto Slot = fieldStorage(variantStorage(Place, V, L), Field, L);
+        if (!Monostate)
+          assign(Slot, cast(dereference(std::move(Input), L), type(Field->getType(), L), L), L);
         const auto Set = labelName(), Done = labelName();
         branch(std::move(ChangesAlternative), Set, Done, L);
         label(Set, L);
+        if (Monostate)
+          initializeZero(std::move(Slot), Field->getType(), L);
         assign(std::move(Index), std::move(Selected), L);
         jump(Done, L);
         label(Done, L);
