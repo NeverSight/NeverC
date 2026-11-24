@@ -52779,22 +52779,44 @@ static std::optional<UtilityBitsetCall> bitsetStringResultCall(
   return UtilityBitsetCall{UtilityOperation::BitsetToString, 0, Receiver, 0, M->getParent()};
 }
 
-static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
-                                        const Expr *Receiver, QualType Result,
-                                        const ASTContext &Context) {
-  if (!Receiver) return false;
+static bool bitsetUnsignedSourceFits(const State &S, const SourceManager &SM,
+                                     const Expr *Receiver, QualType Result, const ASTContext &Context,
+                                     unsigned Depth, unsigned &Nodes) {
+  if (!Receiver || Depth >= 16 || ++Nodes > 64)
+    return false;
   const Expr *Value = Receiver->IgnoreParenImpCasts();
+  if (const auto *Conditional = dyn_cast<ConditionalOperator>(Value)) {
+    if (!Conditional->isGLValue() || !Conditional->getType().isConstQualified())
+      return false;
+    return bitsetUnsignedSourceFits(S, SM, Conditional->getTrueExpr(), Result, Context, Depth + 1, Nodes) &&
+           bitsetUnsignedSourceFits(S, SM, Conditional->getFalseExpr(), Result, Context, Depth + 1, Nodes);
+  }
   if (const auto *Reference = dyn_cast<DeclRefExpr>(Value)) {
     const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
     if (!Variable || isa<ParmVarDecl>(Variable) || Variable->isImplicit() ||
         !Variable->hasLocalStorage() || !Variable->hasInit() || !S.owns(SM, Variable->getLocation()))
       return false;
-    const auto Type = Variable->getType();
-    if (Type->isReferenceType() || !Type.isConstQualified() || Type.isVolatileQualified() ||
+    const auto Binding = Variable->getType();
+    const auto Type = Binding.getNonReferenceType();
+    if (Binding->isRValueReferenceType() || !Type.isConstQualified() || Type.isVolatileQualified() ||
         Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
       return false;
     const auto Bitset = approvedUtilityBitsetRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
-    if (!Bitset || (Bitset->Storage && Bitset->Storage->isMutable())) return false;
+    if (!Bitset || (Bitset->Storage && Bitset->Storage->isMutable()))
+      return false;
+    if (Binding->isLValueReferenceType()) {
+      const auto *Init = Variable->getInit()->IgnoreParenImpCasts();
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Init))
+        Init = Cleanup->getSubExpr()->IgnoreParenImpCasts();
+      if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Init)) {
+        if (Temporary->getExtendingDecl() != Variable || Temporary->getStorageDuration() != SD_Automatic ||
+            !Context.hasSameType(Temporary->getType(), Type))
+          return false;
+      } else if (!isa<DeclRefExpr, ConditionalOperator>(Init)) {
+        return false;
+      }
+      return bitsetUnsignedSourceFits(S, SM, Init, Result, Context, Depth + 1, Nodes);
+    }
     Value = Variable->getInit()->IgnoreImplicit()->IgnoreParens();
   }
   if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Value))
@@ -52824,8 +52846,12 @@ static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
     return true;
   }
   const auto Construction = approvedUtilityBitsetConstruction(S, SM, Constructor, Context);
-  if (Construction == UtilityBitsetConstruction::Default) return true;
-  if (Construction != UtilityBitsetConstruction::UnsignedValue) return false;
+  if (Construction == UtilityBitsetConstruction::Default)
+    return true;
+  if (Construction == UtilityBitsetConstruction::Copy)
+    return bitsetUnsignedSourceFits(S, SM, Constructor->getArg(0), Result, Context, Depth + 1, Nodes);
+  if (Construction != UtilityBitsetConstruction::UnsignedValue)
+    return false;
   // The pinned constructor clears all bits above the converted unsigned operand.
   // A const local with the same non-mutable layout retains that bound.
   if (Width >= Context.getTypeSize(Context.UnsignedLongLongTy)) return true;
@@ -52836,6 +52862,13 @@ static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
       Evaluated.Val.getInt().getActiveBits() <= Width)
     return true;
   return bitsetBoundedPosition(Argument, Context, uint64_t(1) << Width);
+}
+
+static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
+                                        const Expr *Receiver, QualType Result,
+                                        const ASTContext &Context) {
+  unsigned Nodes = 0;
+  return bitsetUnsignedSourceFits(S, SM, Receiver, Result, Context, 0, Nodes);
 }
 
 std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
