@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2AnyLongInlineMutableLongReferenceCastRejected",
     "TranslateTest.CoreV2AnyLongInlineVolatileNativeLongAccessRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "53e99dffe80159aa038982885bbfee7f1754826e1bdee52379334e31896f7e8b",
   "maintained_original_sha256": "af6ac408f8952c76df507ba8cd681bc37e8caac5a6d4929a123187b498967475",
@@ -155,5 +155,10 @@
   "current_registry_count": 8424,
   "current_python_registry_tests": 192,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "any-long-inline": "2b933e9d9a0ead958777527d3c269d679640bb100e0f9d75ff780a4225fe911b"
+  },
+  "native_reference_authentication_sha256": "9a09d6c25dc60cf78b3bde3f8678f700e6fa8279e284bee779813c645cd80ece",
+  "source_proof_sha256": "f6927d39d36f8cfdcd39f96ac393d2f4b9252a47df36a53a452a862548657f05"
 }

@@ -101,6 +101,14 @@
       "source_sha256": "f3eb968ca25957f91a4aeed5b938dee7d5e69bce5aa693f0e36eede807333195"
     },
     {
+      "name": "any-bool-inline-pointer-payload",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  bool truth = true;\n  const std::any value{&truth};\n  return !value.has_value();\n}\n",
+      "source_sha256": "6be35615008b714f6548af6634b6357546de635e3421b29ad5ff11d945a8be60"
+    },
+    {
       "name": "any-bool-inline-value-mismatch",
       "expected": "reject",
       "public_header": "any",
@@ -115,14 +123,6 @@
       "kind": "source-body-guard",
       "source": "#include <any>\nbool read(const std::any& value) { return std::any_cast<bool>(value); }\n",
       "source_sha256": "b0cb54c44350fb4ee1931b49fca503a2fc34d84ad94d9fd968536686d1e3517e"
-    },
-    {
-      "name": "any-bool-inline-pointer-payload",
-      "expected": "accept",
-      "public_header": "any",
-      "kind": "cpp17-operation",
-      "source": "#include <any>\nint main() {\n  bool truth = true;\n  const std::any value{&truth};\n  return !value.has_value();\n}\n",
-      "source_sha256": "6be35615008b714f6548af6634b6357546de635e3421b29ad5ff11d945a8be60"
     },
     {
       "name": "any-bool-inline-mutable-reference-cast",
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2AnyBoolInlineDynamicValueTagRejected",
     "TranslateTest.CoreV2AnyBoolInlineMutableReferenceCastRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf",
   "maintained_original_sha256": "bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e",
@@ -155,5 +155,11 @@
   "current_registry_count": 8318,
   "current_python_registry_tests": 166,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "any-bool-inline": "044bf8aa978cbd0f4b8836a804d995d7647cbd9684e816714ade71c239445bb0",
+    "any-integer-pointer-values": "3cc63e628ea4625533ed2535b5a93c89b4d29439f9d68843e90ac9a2c66c9348"
+  },
+  "native_reference_authentication_sha256": "0fa935199c7f92985cab8152b6c63018ed85a5b4ff6bf7b22501d6c9f8840879",
+  "source_proof_sha256": "f6927d39d36f8cfdcd39f96ac393d2f4b9252a47df36a53a452a862548657f05"
 }
