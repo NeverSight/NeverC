@@ -75,7 +75,7 @@
     "TranslateTest.CoreV2VariantMonostateComparisonReplacementEmptyClassRejected",
     "TranslateTest.CoreV2VariantMonostateComparisonRenamedSdkMonostateRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "a3158aff714f9c7210acd778f40955583603c761d9a34cd95890a2cf28b231e4",
   "maintained_original_sha256": "079938a41465897ea07a93d6707738c9173278fee37980e4ee3757da699028eb",
@@ -87,5 +87,10 @@
   "current_registry_count": 8244,
   "current_python_registry_tests": 146,
   "native_reference_selected_executions": 4,
-  "planned_generated_c23_executions": 4
+  "planned_generated_c23_executions": 4,
+  "native_reference_proofs": {
+    "variant-monostate-comparison": "1075e17f4c7d244de59a2c1512119dabdfe252e99720098b0d3b25db93f0ee96"
+  },
+  "native_reference_authentication_sha256": "4447816e58e7695bf95ee8585f7294cda63e377cbe7dd6fb1f1e7b4ac52c4db1",
+  "source_proof_sha256": "36243595af48114e1e67566e20cdb5d76e810da3be321d6fe7d05893900bb5cf"
 }

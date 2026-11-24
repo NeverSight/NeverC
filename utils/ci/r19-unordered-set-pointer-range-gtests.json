@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-set-pointer-range-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { const int data[] = {3, 3}; std::unordered_multiset<int> bag; auto* ptr=&bag; ptr->insert(data, data + 2); return bag.empty(); }\n",
+      "source_sha256": "649214658a809dfb8f15db45a26b43e7d9a61f6d967958ae148a8900f4d4d103",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-set-pointer-range-converted-long-range",
       "expected": "accept",
       "public_header": "unordered_set",
@@ -123,14 +131,6 @@
       "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned long>(key); } };\nint main() { int data[] = {3, 5}; std::unordered_set<int, Hash> set; set.insert(data, data + 2); return set.empty(); }\n",
       "source_sha256": "1992ab7929f090c29df6b632aac76e3d37907cbe9c4fedd8ba5c39287526c757",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-set-pointer-range-pointer-receiver",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { const int data[] = {3, 3}; std::unordered_multiset<int> bag; auto* ptr=&bag; ptr->insert(data, data + 2); return bag.empty(); }\n",
-      "source_sha256": "649214658a809dfb8f15db45a26b43e7d9a61f6d967958ae148a8900f4d4d103",
-      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetPointerRangeClassIteratorRangeRejected",
     "TranslateTest.CoreV2UnorderedSetPointerRangeCustomPolicyRangeRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "47d55896696dc2a7f80d29c0cf075f63e4e251eef3aab7eacad4ef14e1358fbb",
   "maintained_original_sha256": "0a65cf385c60ea9997fa815565a9cb56465fffddae54c41396bf63707b83fc46",
@@ -155,5 +155,12 @@
   "current_registry_count": 8512,
   "current_python_registry_tests": 214,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-converted-input": "a1e2ec71a39a7abb4a49a0250b68e068892b32b04057b3ceaf963d94a2abd4ee",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
+    "unordered-set-pointer-range": "15b9aedc554160d61bf802f609d42876d6f5a6df1125db6f029af2d2a81966b7"
+  },
+  "native_reference_authentication_sha256": "f972d2ba1146ef151d8a65eb172a6761cf1e6c28c51efe886f6bcb7e7a0807a2",
+  "source_proof_sha256": "36243595af48114e1e67566e20cdb5d76e810da3be321d6fe7d05893900bb5cf"
 }

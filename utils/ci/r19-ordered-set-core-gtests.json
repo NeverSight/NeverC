@@ -149,14 +149,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-set-list-and-lookup-custom-order-keeps-existing-source-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::set<int, Descending> values{2, 4};\n  return values.count(2) != 1;\n}\n",
-      "source_sha256": "81be77494dfe18f68c1ed4880f55c5bfecf4875798a07d33a398838c4fb7568f",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-insert-result-insertion-result-distinguishes-a-duplicate-key",
       "expected": "accept",
       "public_header": "set",
@@ -171,14 +163,6 @@
       "source": "#include <set>\nusing Set = std::set<int>;\nSet* receiver(Set& values, int& calls) { ++calls; return &values; }\nint main() {\n  Set values{9, 7, 3};\n  int calls = 0;\n  auto result = receiver(values, calls)->insert(-6);\n  return calls != 1 || !result.second || values.count(-6) != 1 || values.size() != 4;\n}\n",
       "source_sha256": "566aa51301b9b4509ef506c76637dd8696f4e00c087d89dc2a5705ff84a03f80",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-set-insert-result-unapproved-custom-comparator-for-scalar-insertion",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Descending { bool operator()(int l, int r) const { return l > r; } };\nint main() {\n  std::set<int, Descending> values;\n  return !values.insert(3).second;\n}\n",
-      "source_sha256": "3d6d12d8bf2bdec0c1f745457907c6dc24ce70ee364f07306672d6f50f591533",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-set-iterator-ordered-range-and-insertion-preserve-existing-position",
@@ -205,14 +189,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-set-iterator-stateful-ordering-remains-outside-the-checked-iterator-type",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Comparator { int delta; bool operator()(int a, int b) const { return a + delta < b; } };\nint main() {\n  const std::set<int, Comparator> values({1, 2}, Comparator{0});\n  return *values.begin() != 1;\n}\n",
-      "source_sha256": "6a48fba93d53d0adf275f5d0a0c2ca560bc65c6cf4056eb7aae06d500a776347",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-bounds-bounds-on-keys-and-gaps",
       "expected": "accept",
       "public_header": "set",
@@ -235,6 +211,30 @@
       "source": "#include <set>\nusing Set = std::set<int>;\nconst Set* receiver(const Set& values, int& n) { ++n; return &values; }\nint key(int& n) { ++n; return 4; }\nint main() {\n  const Set values;\n  int owners = 0, keys = 0;\n  auto result = receiver(values, owners)->lower_bound(key(keys));\n  auto end = values.end();\n  return result != end || owners != 1 || keys != 1;\n}\n",
       "source_sha256": "287a8cbd710658b09f7ac1c6b75e57c73fd9fe908de41b2f4d513477d0d5f384",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-list-and-lookup-custom-order-keeps-existing-source-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::set<int, Descending> values{2, 4};\n  return values.count(2) != 1;\n}\n",
+      "source_sha256": "81be77494dfe18f68c1ed4880f55c5bfecf4875798a07d33a398838c4fb7568f",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-set-insert-result-unapproved-custom-comparator-for-scalar-insertion",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Descending { bool operator()(int l, int r) const { return l > r; } };\nint main() {\n  std::set<int, Descending> values;\n  return !values.insert(3).second;\n}\n",
+      "source_sha256": "3d6d12d8bf2bdec0c1f745457907c6dc24ce70ee364f07306672d6f50f591533",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-set-iterator-stateful-ordering-remains-outside-the-checked-iterator-type",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Comparator { int delta; bool operator()(int a, int b) const { return a + delta < b; } };\nint main() {\n  const std::set<int, Comparator> values({1, 2}, Comparator{0});\n  return *values.begin() != 1;\n}\n",
+      "source_sha256": "6a48fba93d53d0adf275f5d0a0c2ca560bc65c6cf4056eb7aae06d500a776347",
+      "kind": "source-body-guard"
     },
     {
       "name": "ordered-set-bounds-custom-ordering-does-not-use-integer-bounds",
@@ -262,7 +262,7 @@
     "TranslateTest.CoreV2OrderedSetIteratorStatefulOrderingRemainsOutsideTheCheckedIteratorTypeRejected",
     "TranslateTest.CoreV2OrderedSetBoundsCustomOrderingDoesNotUseIntegerBoundsRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "ec78979a7b483ff52b14ef27db1472a179c41c7649741f7a166ce73b0e62cfaa",
   "maintained_original_sha256": "b0ebfd804a188b3740667ec710c8b116ed96e8924a57a6f66882051165586f48",
@@ -274,5 +274,10 @@
   "current_registry_count": 8670,
   "current_python_registry_tests": 248,
   "native_reference_selected_executions": 22,
-  "planned_generated_c23_executions": 22
+  "planned_generated_c23_executions": 22,
+  "native_reference_proofs": {
+    "ordered-set-core": "1c2f471258c24fa552d0702893167e6543b8e3a6e6be5d499e9e0f6be5786d4e"
+  },
+  "native_reference_authentication_sha256": "3980698b9765befec2fe4c8be88855a65c8f717574eb0c78c4233e54316f50d4",
+  "source_proof_sha256": "36243595af48114e1e67566e20cdb5d76e810da3be321d6fe7d05893900bb5cf"
 }
