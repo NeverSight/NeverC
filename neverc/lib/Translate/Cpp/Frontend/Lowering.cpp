@@ -18447,11 +18447,13 @@ class FunctionLowering {
       return ReverseValue(std::move(Pointer), *Reverse);
     }
     case UtilityOperation::MakeReverseIterator: {
-      auto Reverse = ReverseFor(Call->getType());
+      auto Reverse = ReverseFor(Call->getType(), true);
       if (!Reverse)
         reject(L, "make reverse iterator",
                "The selected reverse iterator layout is unavailable.");
       auto Iterator = snapshot(expression(Call->getArg(0)), L);
+      if (!Reverse->OrderedElementType.isNull())
+        return ReverseValue(orderedIteratorCursor(std::move(Iterator), L), *Reverse);
       return ReverseValue(
           Reverse->WrappedCurrent
               ? fieldStorage(std::move(Iterator), Reverse->WrappedCurrent, L)
@@ -18462,14 +18464,14 @@ class FunctionLowering {
     case UtilityOperation::ReverseDereference:
     case UtilityOperation::ReverseArrow: {
       const auto *Object = MemberObject();
-      auto Reverse = Object ? ReverseFor(Object->getType())
+      auto Reverse = Object ? ReverseFor(Object->getType(), true)
                             : std::optional<UtilityReverseIteratorRecord>();
       if (!Object || !Reverse)
         reject(L, "reverse iterator access",
                "The selected reverse iterator layout is unavailable.");
       if (Operation == UtilityOperation::ReverseBase) {
         auto Current = fieldStorage(lvalue(Object), Reverse->Current, L);
-        if (!Reverse->WrappedCurrent)
+        if (!Reverse->WrappedCurrent && Reverse->OrderedElementType.isNull())
           return snapshot(std::move(Current), L);
         auto Place = Destination ? std::move(*Destination)
                                  : objectTemporary(Call->getType(), L);
@@ -18481,6 +18483,12 @@ class FunctionLowering {
         return Place;
       }
       auto Current = snapshot(ReverseCurrent(lvalue(Object), *Reverse), L);
+      if (!Reverse->OrderedElementType.isNull()) {
+        auto Node = stepOrderedIterator(std::move(Current), false, L);
+        auto Element = nodeFieldAt(std::move(Node), Reverse->OrderedElementType, Reverse->OrderedValueOffset, L);
+        return Operation == UtilityOperation::ReverseArrow
+            ? address(std::move(Element), Reverse->OrderedElementType, L) : Element;
+      }
       auto Previous =
           binary("-", std::move(Current),
                  quantity(1, type(A.Context.getPointerDiffType(), L), L),
@@ -18494,7 +18502,7 @@ class FunctionLowering {
     case UtilityOperation::ReversePreDecrement:
     case UtilityOperation::ReversePostDecrement: {
       const auto *Object = MemberObject();
-      auto Reverse = Object ? ReverseFor(Object->getType())
+      auto Reverse = Object ? ReverseFor(Object->getType(), true)
                             : std::optional<UtilityReverseIteratorRecord>();
       if (!Object || !Reverse)
         reject(L, "reverse iterator update",
@@ -18517,11 +18525,12 @@ class FunctionLowering {
       const bool Increment =
           Operation == UtilityOperation::ReversePreIncrement ||
           Operation == UtilityOperation::ReversePostIncrement;
-      assign(Current,
-             binary(Increment ? "-" : "+", std::move(Value),
-                    quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                    type(Reverse->PointerType, L), L),
-             L);
+      auto Next = !Reverse->OrderedElementType.isNull()
+          ? stepOrderedIterator(std::move(Value), !Increment, L)
+          : binary(Increment ? "-" : "+", std::move(Value),
+                   quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                   type(Reverse->PointerType, L), L);
+      assign(Current, std::move(Next), L);
       return Post ? std::move(Result) : std::move(Stored);
     }
     case UtilityOperation::ReverseAdd:
@@ -18573,8 +18582,8 @@ class FunctionLowering {
     case UtilityOperation::ReverseLessEqual:
     case UtilityOperation::ReverseGreaterEqual:
     case UtilityOperation::ReverseDifference: {
-      auto LeftReverse = ReverseFor(Call->getArg(0)->getType());
-      auto RightReverse = ReverseFor(Call->getArg(1)->getType());
+      auto LeftReverse = ReverseFor(Call->getArg(0)->getType(), true);
+      auto RightReverse = ReverseFor(Call->getArg(1)->getType(), true);
       if (!LeftReverse || !RightReverse)
         reject(L, "reverse iterator comparison",
                "The selected reverse iterator layouts are unavailable.");
@@ -27242,6 +27251,13 @@ class FunctionLowering {
         {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
   }
 
+  Expression reverseIteratorSlot(Expression Place, const FieldDecl *Field,
+      const UtilityReverseIteratorRecord &Info, SourceLocation L) {
+    auto Stored = fieldStorage(std::move(Place), Field, L);
+    if (!Info.OrderedElementType.isNull()) return orderedIteratorCursor(std::move(Stored), L);
+    return Info.WrappedCurrent ? fieldStorage(std::move(Stored), Info.WrappedCurrent, L) : Stored;
+  }
+
   Expression stepOrderedIterator(Expression Node, bool Forward, SourceLocation L) {
     auto Current = snapshot(std::move(Node), L);
     auto Child = snapshot(orderedNodeChild(Current, Forward, L), L);
@@ -27558,19 +27574,24 @@ class FunctionLowering {
     return {std::move(Search.Node), std::move(Inserted)};
   }
 
-  OrderedSetInserted emplaceOrderedSetDefault(Expression Place,
+  Expression readMappedPiecewiseInteger(Expression Tuple,
+      const UtilityTupleRecord &Shape, SourceLocation L) {
+    if (Shape.Elements.empty()) return A.zero(A.Context.IntTy, L);
+    const auto &Element = Shape.Elements.front();
+    auto Value = fieldStorage(dereference(std::move(Tuple), L), Element, L);
+    return Element.getType()->isReferenceType() ? dereference(std::move(Value), L) : Value;
+  }
+
+  OrderedSetInserted emplaceOrderedSetCandidate(Expression Place, Expression Candidate,
       const UtilityOrderedSetStorage &Info, SourceLocation L, std::optional<Expression> Hint) {
-    // Empty emplacement constructs a node before searching, even for an
-    // existing unique key. Destroy that candidate if the tree rejects it.
-    auto Candidate = allocateOrderedSetNode(Info, L);
-    auto Key = A.zero(A.Context.IntTy, L);
+    auto Key = snapshot(orderedSetKey(Candidate, Info, L), L);
     auto Search = Hint ? searchOrderedSetWithHint(Place, Key, std::move(*Hint), Info, L)
                        : searchOrderedSet(Place, Key, Info, L, Info.Multi);
     auto Inserted = snapshot(binary("==", Search.Node, A.zero(A.Context.VoidPtrTy, L), "bool", L), L);
     const auto Insert = labelName(), Destroy = labelName(), Done = labelName();
     branch(Inserted, Insert, Destroy, L);
     label(Insert, L);
-    linkOrderedSetKey(Place, Candidate, std::move(Key), std::move(Search.Parent), std::move(Search.Slot), Info, L);
+    linkOrderedSetNode(Place, Candidate, std::move(Search.Parent), std::move(Search.Slot), L);
     assign(Search.Node, Candidate, L);
     jump(Done, L);
     label(Destroy, L);
@@ -27579,6 +27600,17 @@ class FunctionLowering {
     jump(Done, L);
     label(Done, L);
     return {std::move(Search.Node), std::move(Inserted)};
+  }
+
+  OrderedSetInserted emplaceOrderedSetDefault(Expression Place,
+      const UtilityOrderedSetStorage &Info, SourceLocation L, std::optional<Expression> Hint) {
+    // The selected emplacement constructs a candidate before the search.
+    auto Candidate = allocateOrderedSetNode(Info, L);
+    assign(orderedSetKey(Candidate, Info, L), A.zero(A.Context.IntTy, L), L);
+    if (!Info.MappedPairType.isNull())
+      assign(nodeFieldAt(Candidate, A.Context.IntTy, Info.MappedOffsetBytes, L),
+             A.zero(A.Context.IntTy, L), L);
+    return emplaceOrderedSetCandidate(std::move(Place), std::move(Candidate), Info, L, std::move(Hint));
   }
 
   Expression orderedNodeIsRed(Expression Node, SourceLocation L) {
@@ -27864,8 +27896,10 @@ class FunctionLowering {
   void insertOrderedSetRange(Expression Place, Expression Current, Expression End,
       const UtilityOrderedSetRangeInput &Info, SourceLocation L) {
     const bool TreeCursor = !Info.IteratorType->isPointerType();
-    if (TreeCursor) {
-      // A by-value iterator argument is passed as the address of its copy.
+    if (Info.Reverse) {
+      Current = snapshot(reverseIteratorSlot(dereference(std::move(Current), L), Info.Reverse->Current, *Info.Reverse, L), L);
+      End = snapshot(reverseIteratorSlot(dereference(std::move(End), L), Info.Reverse->Current, *Info.Reverse, L), L);
+    } else if (TreeCursor) {
       Current = snapshot(orderedIteratorCursor(dereference(std::move(Current), L), L), L);
       End = snapshot(orderedIteratorCursor(dereference(std::move(End), L), L), L);
     }
@@ -27875,12 +27909,13 @@ class FunctionLowering {
     branch(binary("!=", Current, std::move(End), "bool", L), Read, Done, L);
     label(Read, L);
     const auto Value = (Info.Pair ? Info.Storage.MappedPairType : A.Context.IntTy).withConst();
-    auto Element = TreeCursor ? nodeFieldAt(Current, Value, Info.Storage.ValueOffsetBytes, L)
-                              : dereference(Current, L);
+    auto ElementPosition = Info.Reverse ? stepOrderedIterator(Current, false, L) : Current;
+    auto Element = TreeCursor ? nodeFieldAt(ElementPosition, Value, Info.Storage.ValueOffsetBytes, L)
+                              : dereference(ElementPosition, L);
     insertOrderedSetElement(Place, std::move(Element), Info.Storage, Info.Pair, L);
-    auto Next = TreeCursor ? stepOrderedIterator(Current, true, L)
-                           : binary("+", Current, one(type(A.Context.getPointerDiffType(), L), L),
-                                    type(Info.IteratorType, L), L);
+    auto Next = Info.Reverse ? std::move(ElementPosition)
+        : TreeCursor ? stepOrderedIterator(Current, true, L)
+        : binary("+", Current, one(type(A.Context.getPointerDiffType(), L), L), type(Info.IteratorType, L), L);
     assign(Current, std::move(Next), L);
     jump(Check, L);
     label(Done, L);
@@ -30729,22 +30764,35 @@ class FunctionLowering {
       auto Insert = [&]() {
         if (!Values)
           return emplaceOrderedSetDefault(std::move(Place), Info->Storage, L, std::move(Hint));
+        if (Info->Piecewise) {
+          auto Keys = Capture(Offset + 1);
+          auto Values = Capture(Offset + 2);
+          auto Candidate = allocateOrderedSetNode(Info->Storage, L);
+          assign(orderedSetKey(Candidate, Info->Storage, L),
+                 readMappedPiecewiseInteger(std::move(Keys), Info->Piecewise->Key, L), L);
+          assign(nodeFieldAt(Candidate, A.Context.IntTy, Info->Storage.MappedOffsetBytes, L),
+                 readMappedPiecewiseInteger(std::move(Values), Info->Piecewise->Value, L), L);
+          return emplaceOrderedSetCandidate(std::move(Place), std::move(Candidate), Info->Storage, L, std::move(Hint));
+        }
         auto Input = Capture(Offset);
         std::optional<Expression> MappedArgument;
         if (Values == 2)
           MappedArgument = Capture(Offset + 1);
         auto Value = dereference(std::move(Input), L);
-        auto Key = Info->Input ? fieldStorage(Value, Info->Input->First, L) : std::move(Value);
+        const auto Integer = type(A.Context.IntTy, L);
+        auto Key = Info->Input ? fieldStorage(Value, Info->Input->First, L)
+                               : cast(std::move(Value), Integer, L);
         auto Result = insertOrderedSetKey(std::move(Place), std::move(Key), Info->Storage, L, nullptr, std::move(Hint));
         using Kind = OrderedInsertionKind;
         if (Info->Input) {
           initializeOrderedMappedValue(Result, fieldStorage(std::move(Value), Info->Input->Second, L), Info->Storage, L);
         } else if (Info->Kind == Kind::TryEmplace || (Info->Kind == Kind::Emplace && MappedArgument)) {
-          auto Mapped = MappedArgument ? dereference(std::move(*MappedArgument), L) : A.zero(A.Context.IntTy, L);
+          auto Mapped = MappedArgument ? cast(dereference(std::move(*MappedArgument), L), Integer, L)
+                                       : A.zero(A.Context.IntTy, L);
           initializeOrderedMappedValue(Result, std::move(Mapped), Info->Storage, L);
         } else if (Info->Kind == Kind::InsertOrAssign) {
           auto Mapped = nodeFieldAt(Result.Node, A.Context.IntTy, Info->Storage.MappedOffsetBytes, L);
-          assign(std::move(Mapped), dereference(std::move(*MappedArgument), L), L);
+          assign(std::move(Mapped), cast(dereference(std::move(*MappedArgument), L), Integer, L), L);
         }
         return Result;
       }();
@@ -30779,10 +30827,21 @@ class FunctionLowering {
           }
           Node = orderedSetBoundary(std::move(Place), std::move(Key), Info->Storage, Kind, L);
         } else {
-          Node = Kind == Op::Begin ? orderedContainerMember(std::move(Place), "nct_ordered_begin", L)
-                                  : orderedTreeSentinel(std::move(Place), L);
+          Node = Kind == Op::Begin || Kind == Op::ReverseEnd
+              ? orderedContainerMember(std::move(Place), "nct_ordered_begin", L)
+              : orderedTreeSentinel(std::move(Place), L);
         }
-        assign(orderedIteratorCursor(Result, L), std::move(Node), L);
+        if (Kind == Op::ReverseBegin || Kind == Op::ReverseEnd) {
+          const auto Reverse = approvedUtilityReverseIteratorRecord(
+              A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context, true);
+          if (!Reverse || Reverse->OrderedElementType.isNull())
+            reject(L, "reverse iterator endpoint", "The checked ordered reverse layout is required.");
+          auto Cursor = snapshot(std::move(Node), L);
+          assign(reverseIteratorSlot(Result, Reverse->Legacy, *Reverse, L), Cursor, L);
+          assign(reverseIteratorSlot(Result, Reverse->Current, *Reverse, L), std::move(Cursor), L);
+        } else {
+          assign(orderedIteratorCursor(Result, L), std::move(Node), L);
+        }
         return Result;
       }
       auto Place = lvalue(Info->First);
@@ -31245,17 +31304,11 @@ class FunctionLowering {
         PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
             quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
             type(Info->Map.NodePointerType, L), L), L);
-        auto Read = [&](Expression Tuple, const UtilityTupleRecord &Shape) {
-          if (Shape.Elements.empty()) return A.zero(A.Context.IntTy, L);
-          const auto &Element = Shape.Elements.front();
-          auto Value = fieldStorage(dereference(Tuple, L), Element, L);
-          return Element.getType()->isReferenceType() ? dereference(Value, L) : Value;
-        };
         // The SDK copies tuple parameters while constructing the pair, after
         // node allocation. Reference elements still read their live referents.
         assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
-        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), Read(Keys, *Info->KeyTuple), L);
-        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), Read(Values, *Info->ValueTuple), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), readMappedPiecewiseInteger(std::move(Keys), *Info->KeyTuple, L), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), readMappedPiecewiseInteger(std::move(Values), *Info->ValueTuple, L), L);
         Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
         Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
       } else if (Info->Kind == UnorderedMapInsertionKind::Default) {
@@ -32906,17 +32959,14 @@ class FunctionLowering {
       return Wrapped ? fieldStorage(std::move(Member), Wrapped->Current, L)
                      : Member;
     };
-    auto ReverseFor = [&](QualType Type) {
+    auto ReverseFor = [&](QualType Type, bool AllowOrdered = false) {
       return approvedUtilityReverseIteratorRecord(
           A.S, A.Sources, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(),
-          A.Context);
+          A.Context, AllowOrdered);
     };
     auto ReverseCurrent = [&](Expression Base,
                               const UtilityReverseIteratorRecord &Reverse) {
-      auto Current = fieldStorage(std::move(Base), Reverse.Current, L);
-      return Reverse.WrappedCurrent
-                 ? fieldStorage(std::move(Current), Reverse.WrappedCurrent, L)
-                 : Current;
+      return reverseIteratorSlot(std::move(Base), Reverse.Current, Reverse, L);
     };
     auto ReverseValue = [&](Expression Pointer,
                             const UtilityReverseIteratorRecord &Reverse) {
@@ -32931,10 +32981,7 @@ class FunctionLowering {
       auto Value = snapshot(
           cast(std::move(Pointer), type(Reverse.PointerType, L), L), L);
       auto MemberPointer = [&](const FieldDecl *Field) {
-        auto Member = fieldStorage(json::Object(Place), Field, L);
-        return Reverse.WrappedCurrent
-                   ? fieldStorage(std::move(Member), Reverse.WrappedCurrent, L)
-                   : Member;
+        return reverseIteratorSlot(Place, Field, Reverse, L);
       };
       assign(MemberPointer(Reverse.Legacy), json::Object(Value), L);
       assign(MemberPointer(Reverse.Current), std::move(Value), L);
@@ -35589,11 +35636,7 @@ class FunctionLowering {
         Expression Converted;
         if (Assignment->Converting) {
           auto Right = dereference(json::Object(RightAddress), L);
-          auto Current =
-              fieldStorage(std::move(Right), Assignment->Source.Current, L);
-          if (Assignment->Source.WrappedCurrent)
-            Current = fieldStorage(std::move(Current),
-                                   Assignment->Source.WrappedCurrent, L);
+          auto Current = reverseIteratorSlot(std::move(Right), Assignment->Source.Current, Assignment->Source, L);
           Converted = snapshot(
               cast(std::move(Current),
                    type(Assignment->Destination.PointerType, L), L),
@@ -35606,12 +35649,7 @@ class FunctionLowering {
           assign(Left, dereference(std::move(RightAddress), L), L);
         } else {
           auto MemberPointer = [&](const FieldDecl *Field) {
-            auto Member = fieldStorage(json::Object(Left), Field, L);
-            return Assignment->Destination.WrappedCurrent
-                       ? fieldStorage(std::move(Member),
-                                      Assignment->Destination.WrappedCurrent,
-                                      L)
-                       : Member;
+            return reverseIteratorSlot(Left, Field, Assignment->Destination, L);
           };
           assign(MemberPointer(Assignment->Destination.Legacy),
                  json::Object(Converted), L);
@@ -41549,18 +41587,12 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
     if (auto Kind = approvedUtilityReverseIteratorConstruction(A.S, A.Sources,
                                                                C, A.Context)) {
       auto Reverse = approvedUtilityReverseIteratorRecord(
-          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context);
+          A.S, A.Sources, T->getAsCXXRecordDecl(), A.Context, true);
       if (!Reverse)
         reject(L, "reverse iterator construction",
                "The selected std::reverse_iterator layout is unavailable.");
-      auto Member = [&](const FieldDecl *Field) {
-        return fieldStorage(json::Object(Place), Field, L);
-      };
       auto MemberPointer = [&](const FieldDecl *Field) {
-        auto Stored = Member(Field);
-        return Reverse->WrappedCurrent
-                   ? fieldStorage(std::move(Stored), Reverse->WrappedCurrent, L)
-                   : Stored;
+        return reverseIteratorSlot(Place, Field, *Reverse, L);
       };
       auto InitializePointer = [&](Expression Pointer) {
         auto Value = snapshot(
@@ -41576,6 +41608,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return;
       case UtilityReverseIteratorConstruction::Iterator: {
         auto Iterator = snapshot(expression(C->getArg(0)), L);
+        if (!Reverse->OrderedElementType.isNull()) {
+          InitializePointer(orderedIteratorCursor(std::move(Iterator), L));
+          return;
+        }
         InitializePointer(
             Reverse->WrappedCurrent
                 ? fieldStorage(std::move(Iterator), Reverse->WrappedCurrent, L)
@@ -41588,15 +41624,11 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       case UtilityReverseIteratorConstruction::Converting: {
         auto Source = approvedUtilityReverseIteratorRecord(
             A.S, A.Sources, C->getArg(0)->getType()->getAsCXXRecordDecl(),
-            A.Context);
+            A.Context, true);
         if (!Source)
           reject(L, "reverse iterator conversion",
                  "The source std::reverse_iterator layout is unavailable.");
-        auto Current = fieldStorage(lvalue(C->getArg(0)), Source->Current, L);
-        InitializePointer(
-            Source->WrappedCurrent
-                ? fieldStorage(std::move(Current), Source->WrappedCurrent, L)
-                : std::move(Current));
+        InitializePointer(reverseIteratorSlot(lvalue(C->getArg(0)), Source->Current, *Source, L));
         return;
       }
       }

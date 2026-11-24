@@ -49405,7 +49405,7 @@ bool approvedUtilityReverseIteratorMetadata(const State &S,
 std::optional<UtilityReverseIteratorRecord>
 approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
                                      const CXXRecordDecl *Record,
-                                     const ASTContext &Context) {
+                                     const ASTContext &Context, bool AllowOrdered) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -49438,8 +49438,16 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
   const auto Iterator = Arguments.get(0).getAsType();
   const auto Wrapped = approvedUtilityWrapIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
-  const auto Pointer = Wrapped ? Wrapped->IteratorType : Iterator;
-  if (!utilityObjectPointer(Context, Pointer) ||
+  UtilityOrderedSetStorage Tree{};
+  const auto *Ordered = AllowOrdered && !Wrapped
+      ? approvedOrderedSetIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, nullptr, &Tree)
+      : nullptr;
+  auto OrderedElement = !Ordered ? QualType() : Tree.MappedPairType.isNull()
+      ? Context.IntTy.withConst() : Tree.MappedPairType;
+  if (Ordered && Ordered->getName() == "__map_const_iterator")
+    OrderedElement = OrderedElement.withConst();
+  const auto Pointer = Ordered ? Context.VoidPtrTy : Wrapped ? Wrapped->IteratorType : Iterator;
+  if ((!Ordered && !utilityObjectPointer(Context, Pointer)) ||
       Context.getTypeSize(Iterator) != Context.getTypeSize(Pointer) ||
       Context.getTypeAlign(Iterator) != Context.getTypeAlign(Pointer))
     return std::nullopt;
@@ -49516,7 +49524,31 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
   return UtilityReverseIteratorRecord{Specialization, Legacy, Current,
                                       Iterator,
                                       Wrapped ? Wrapped->Current : nullptr,
-                                      Pointer};
+                                      Pointer, OrderedElement, Ordered ? Tree.ValueOffsetBytes : 0};
+}
+
+static bool approvedOrderedReverseQualification(const State &S, const SourceManager &SM,
+    const UtilityReverseIteratorRecord &Source, const UtilityReverseIteratorRecord &Destination,
+    const ASTContext &Context) {
+  if (Source.OrderedElementType.isNull() || Destination.OrderedElementType.isNull() ||
+      !Context.hasSameType(Source.OrderedElementType.withConst(), Destination.OrderedElementType))
+    return false;
+  UtilityOrderedSetStorage Owner{};
+  const auto *From = approvedOrderedSetIteratorRecord(S, SM,
+      Source.IteratorType->getAsCXXRecordDecl(), Context, nullptr, &Owner);
+  if (!From || From->getName() != "__map_iterator") return false;
+  const auto *To = approvedOrderedSetIteratorRecord(S, SM,
+      Destination.IteratorType->getAsCXXRecordDecl(), Context, &Owner);
+  return To && To->getName() == "__map_const_iterator";
+}
+
+static bool approvedReverseIteratorConversion(const State &S, const SourceManager &SM,
+    const UtilityReverseIteratorRecord &Source, const UtilityReverseIteratorRecord &Destination,
+    const ASTContext &Context) {
+  if (!Source.OrderedElementType.isNull() || !Destination.OrderedElementType.isNull())
+    return approvedOrderedReverseQualification(S, SM, Source, Destination, Context);
+  return bool(Source.WrappedCurrent) == bool(Destination.WrappedCurrent) &&
+      utilityPointerConversion(Context, Source.PointerType, Destination.PointerType);
 }
 
 std::optional<UtilityReverseIteratorConstruction>
@@ -49531,7 +49563,7 @@ approvedUtilityReverseIteratorConstruction(const State &S,
     return std::nullopt;
   const auto *Constructor = Construction->getConstructor();
   const auto Destination = approvedUtilityReverseIteratorRecord(
-      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, Construction->getType()->getAsCXXRecordDecl(), Context, true);
   if (!Constructor || !Destination || Constructor->isVariadic() ||
       Constructor->getParent()->getCanonicalDecl() !=
           Destination->Record->getCanonicalDecl() ||
@@ -49563,7 +49595,7 @@ approvedUtilityReverseIteratorConstruction(const State &S,
   const auto *Primary = Constructor->getPrimaryTemplate();
   auto Parameter = Constructor->getParamDecl(0)->getType();
   const auto Source = approvedUtilityReverseIteratorRecord(
-      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, Construction->getArg(0)->getType()->getAsCXXRecordDecl(), Context, true);
   if (!Primary || !Source || !Parameter->isLValueReferenceType() ||
       !Parameter->getPointeeType().isConstQualified() ||
       !Context.hasSameUnqualifiedType(Parameter->getPointeeType(),
@@ -49571,9 +49603,7 @@ approvedUtilityReverseIteratorConstruction(const State &S,
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__iterator/reverse_iterator.h") ||
-      bool(Source->WrappedCurrent) != bool(Destination->WrappedCurrent) ||
-      !utilityPointerConversion(Context, Source->PointerType,
-                                Destination->PointerType))
+      !approvedReverseIteratorConversion(S, SM, *Source, *Destination, Context))
     return std::nullopt;
   return UtilityReverseIteratorConstruction::Converting;
 }
@@ -49592,9 +49622,9 @@ approvedUtilityReverseIteratorAssignment(const State &S,
   const auto *Method =
       dyn_cast_or_null<CXXMethodDecl>(Assignment->getDirectCallee());
   const auto Destination = approvedUtilityReverseIteratorRecord(
-      S, SM, Method ? Method->getParent() : nullptr, Context);
+      S, SM, Method ? Method->getParent() : nullptr, Context, true);
   const auto Source = approvedUtilityReverseIteratorRecord(
-      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context);
+      S, SM, Assignment->getArg(1)->getType()->getAsCXXRecordDecl(), Context, true);
   if (!Method || !Destination || !Source || Method->isStatic() ||
       Method->isVariadic() || Method->getNumParams() != 1 ||
       Method->getOverloadedOperator() != OO_Equal ||
@@ -49627,9 +49657,7 @@ approvedUtilityReverseIteratorAssignment(const State &S,
                      "__iterator/reverse_iterator.h") ||
       !cstddefOrigin(S, SM, Primary->getLocation(), "libcxx",
                      "__iterator/reverse_iterator.h") ||
-      bool(Source->WrappedCurrent) != bool(Destination->WrappedCurrent) ||
-      !utilityPointerConversion(Context, Source->PointerType,
-                                Destination->PointerType))
+      !approvedReverseIteratorConversion(S, SM, *Source, *Destination, Context))
     return std::nullopt;
   return UtilityReverseIteratorAssignment{*Destination, *Source, true};
 }
@@ -126471,8 +126499,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     }
   }
   const auto Reverse = approvedUtilityReverseIteratorRecord(
-      S, SM, Method ? Method->getParent() : nullptr, Context);
+      S, SM, Method ? Method->getParent() : nullptr, Context, true);
   if (Method && Reverse) {
+    const bool Ordered = !Reverse->OrderedElementType.isNull();
+    const auto Pointer = Ordered ? Context.getPointerType(Reverse->OrderedElementType) : Reverse->PointerType;
     const auto *Reference = directMethodReference(Call);
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
@@ -126517,14 +126547,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
           Same(Call->getType(), Reverse->IteratorType))
         return UtilityOperation::ReverseBase;
       if (Method->getOverloadedOperator() == OO_Arrow && Call->isPRValue() &&
-          Same(Method->getReturnType(), Reverse->PointerType) &&
-          Same(Call->getType(), Reverse->PointerType))
+          Same(Method->getReturnType(), Pointer) &&
+          Same(Call->getType(), Pointer))
         return UtilityOperation::ReverseArrow;
     }
     if (!Operator)
       return std::nullopt;
     const auto Kind = Operator->getOperator();
-    const auto Pointee = Reverse->PointerType->getPointeeType();
+    const auto Pointee = Pointer->getPointeeType();
     if (Kind == OO_Star && !Method->getNumParams() && Method->isConst() &&
         Method->getReturnType()->isLValueReferenceType() && Call->isLValue() &&
         Same(Method->getReturnType()->getPointeeType(), Pointee) &&
@@ -126532,8 +126562,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return UtilityOperation::ReverseDereference;
     if (Kind == OO_Arrow && !Method->getNumParams() && Method->isConst() &&
         Call->isPRValue() &&
-        Same(Method->getReturnType(), Reverse->PointerType) &&
-        Same(Call->getType(), Reverse->PointerType))
+        Same(Method->getReturnType(), Pointer) &&
+        Same(Call->getType(), Pointer))
       return UtilityOperation::ReverseArrow;
     if ((Kind == OO_PlusPlus || Kind == OO_MinusMinus) &&
         !Object->getType().isConstQualified()) {
@@ -126558,6 +126588,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::ReversePostDecrement;
       }
     }
+    if (Ordered) return std::nullopt;
     if ((Kind == OO_Plus || Kind == OO_Minus) && Method->isConst() &&
         DifferenceParameter() && Call->isPRValue() &&
         SameReverse(Method->getReturnType()) && SameReverse(Call->getType()))
@@ -127385,9 +127416,9 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       (Origin->Path == "__functional/invoke.h" && Name == "invoke");
   if (!Function->isInlined() && !ApprovedNonInlineOperation)
     return std::nullopt;
-  auto ReverseFor = [&](QualType Type) {
+  auto ReverseFor = [&](QualType Type, bool AllowOrdered = false) {
     return approvedUtilityReverseIteratorRecord(
-        S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context);
+        S, SM, Type.isNull() ? nullptr : Type->getAsCXXRecordDecl(), Context, AllowOrdered);
   };
   auto ReverseParameter = [&](unsigned Index,
                               const UtilityReverseIteratorRecord &Record) {
@@ -134491,11 +134522,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Name == "make_reverse_iterator" && Call->getNumArgs() == 1 &&
       Function->getNumParams() == 1 && Call->isPRValue()) {
-    const auto Result = ReverseFor(Function->getReturnType());
+    const auto Result = ReverseFor(Function->getReturnType(), true);
     auto Parameter = Function->getParamDecl(0)->getType();
     if (Result &&
         (utilityObjectPointer(Context, Parameter) ||
-         Result->WrappedCurrent) &&
+         Result->WrappedCurrent || !Result->OrderedElementType.isNull()) &&
         Same(Parameter, Result->IteratorType) &&
         Same(Call->getArg(0)->getType(), Parameter) &&
         Same(Call->getType(), Function->getReturnType()))
@@ -134504,8 +134535,14 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (Origin->Path == "__iterator/reverse_iterator.h" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2) {
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
-    const auto Left = ReverseFor(Call->getArg(0)->getType());
-    const auto Right = ReverseFor(Call->getArg(1)->getType());
+    const auto Left = ReverseFor(Call->getArg(0)->getType(), true);
+    const auto Right = ReverseFor(Call->getArg(1)->getType(), true);
+    if (Left && Right && (!Left->OrderedElementType.isNull() || !Right->OrderedElementType.isNull()) &&
+        (!(Context.hasSameType(Left->IteratorType, Right->IteratorType) ||
+           approvedOrderedReverseQualification(S, SM, *Left, *Right, Context) ||
+           approvedOrderedReverseQualification(S, SM, *Right, *Left, Context)) ||
+         !Operator || (Operator->getOperator() != OO_EqualEqual && Operator->getOperator() != OO_ExclaimEqual)))
+      return std::nullopt;
     if (Operator && Left && Right && ReverseParameter(0, *Left) &&
         ReverseParameter(1, *Right) &&
         Context.hasSameUnqualifiedType(Left->PointerType->getPointeeType(),
@@ -136955,6 +136992,44 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
          approvedOrderedSetIteratorRecord(S, SM, Record, Context);
 }
 
+static bool orderedIntegerEmplacementArgument(const ASTContext &Context, QualType Type) {
+  return !Type.isNull() && !Type.isVolatileQualified() && Type->isIntegerType() &&
+      utilityScalarDirectConversion(Context, Type, Context.IntTy);
+}
+
+static std::optional<UtilityMapPiecewiseArguments> approvedMappedPiecewiseArguments(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const CXXMethodDecl *Method,
+    unsigned Offset, const ASTContext &Context) {
+  if (!Method->getParamDecl(Offset)->getType()->isReferenceType() ||
+      !approvedUtilityPiecewiseConstructType(S, SM,
+          Method->getParamDecl(Offset)->getType().getNonReferenceType(), Context) ||
+      !approvedUtilityPiecewiseConstructExpression(S, SM, Call->getArg(Offset), Context))
+    return std::nullopt;
+  auto TupleArgument = [&](unsigned Index) -> std::optional<UtilityTupleRecord> {
+    const auto Parameter = Method->getParamDecl(Index)->getType();
+    const auto Value = Parameter.getNonReferenceType();
+    if (!Parameter->isReferenceType() || Value.isVolatileQualified() ||
+        Value.isRestrictQualified() || Value.getAddressSpace() != LangAS::Default ||
+        !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Value))
+      return std::nullopt;
+    auto Tuple = approvedUtilityTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
+    if (!Tuple) Tuple = approvedUtilityReferenceTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
+    if (!Tuple || !Tuple->Record->hasTrivialDestructor() || Tuple->Elements.size() > 1)
+      return std::nullopt;
+    if (!Tuple->Elements.empty()) {
+      const auto Element = Tuple->Elements.front().getType().getNonReferenceType();
+      if (Element.isVolatileQualified() || Element.isRestrictQualified() ||
+          Element.getAddressSpace() != LangAS::Default ||
+          !Context.hasSameUnqualifiedType(Element, Context.IntTy)) return std::nullopt;
+    }
+    return Tuple;
+  };
+  auto Key = TupleArgument(Offset + 1);
+  auto Value = TupleArgument(Offset + 2);
+  if (!Key || !Value) return std::nullopt;
+  return UtilityMapPiecewiseArguments{std::move(*Key), std::move(*Value)};
+}
+
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -136974,7 +137049,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   Kind Insertion;
   if (Name == "insert" && Values == 1)
     Insertion = Kind::Insert;
-  else if (Name == (Hinted ? "emplace_hint" : "emplace") && Template && Values <= 2)
+  else if (Name == (Hinted ? "emplace_hint" : "emplace") && Template && Values <= 3)
     Insertion = Kind::Emplace;
   else if (Name == "try_emplace" && Template && (Values == 1 || Values == 2))
     Insertion = Kind::TryEmplace;
@@ -137005,9 +137080,29 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
+  auto MatchesInteger = [&](QualType Type) {
+    return Hinted ? (Context.hasSameType(Type, Context.IntTy) ||
+                     Context.hasSameType(Type, Context.IntTy.withConst()))
+                  : orderedIntegerEmplacementArgument(Context, Type);
+  };
+  std::optional<UtilityPairRecord> Input;
+  std::optional<UtilityMapPiecewiseArguments> Piecewise;
   if (Insertion == Kind::Emplace) {
+    if (Mapped && Values == 3) {
+      Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Context);
+      if (!Piecewise) return std::nullopt;
+    }
+    if (Mapped && Values == 1) {
+      const auto PairType = Method->getParamDecl(Offset)->getType().getNonReferenceType();
+      Input = approvedUtilityPairRecord(S, SM, PairType->getAsCXXRecordDecl(), Context);
+      if (!Input || PairType.isVolatileQualified() || !Input->Record->hasTrivialDestructor() ||
+          (!Context.hasSameType(Input->First->getType(), Context.IntTy) &&
+           !Context.hasSameType(Input->First->getType(), Context.IntTy.withConst())) ||
+          !Context.hasSameType(Input->Second->getType(), Context.IntTy))
+        return std::nullopt;
+    }
     const auto *Deduced = Method->getTemplateSpecializationArgs();
-    if ((Mapped ? Values != 2 : Values > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+    if ((!Mapped && Values > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         !Deduced || Deduced->size() != 1 || Deduced->get(0).getKind() != TemplateArgument::Pack)
       return std::nullopt;
     const auto Pack = Deduced->get(0).getPackAsArray();
@@ -137022,7 +137117,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          (!Context.hasSameType(Referred, Value) && !Context.hasSameType(Referred, Value.withConst())))
+          (!Input && !Piecewise && !MatchesInteger(Referred)))
         return std::nullopt;
     }
   } else {
@@ -137053,12 +137148,11 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   if (Values == 2) {
     const auto Argument = Method->getParamDecl(Offset + 1)->getType();
     const auto MappedType = Argument->getPointeeType();
-    if (!Argument->isReferenceType() || MappedType.isVolatileQualified() ||
-        !Context.hasSameUnqualifiedType(MappedType, Context.IntTy) ||
-        !Context.hasSameUnqualifiedType(Call->getArg(Offset + 1)->getType(), Context.IntTy))
+    if (!Argument->isReferenceType() ||
+        !Context.hasSameUnqualifiedType(MappedType, Call->getArg(Offset + 1)->getType()) ||
+        !MatchesInteger(MappedType))
       return std::nullopt;
   }
-  std::optional<UtilityPairRecord> Input;
   if (Mapped && Insertion == Kind::Insert) {
     Input = approvedUtilityPairRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
     if (!Input) return std::nullopt;
@@ -137074,11 +137168,17 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   }
   const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   if (!approvedOrderedSetIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, &*Table) ||
-      !SelectedBody(S, SM, Method, Record, Context) ||
-      !approvedOrderedContainerDestructor(S, SM, Record->getDestructor(), Context) ||
-      !SelectedBody(S, SM, Record->getDestructor(), Record, Context))
+      !SelectedBody(S, SM, Method, Record, Context))
     return std::nullopt;
-  return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion, Hinted};
+  const auto *Destructor = Record->getDestructor();
+  if (!orderedPinnedFunction(S, SM, Destructor, Header) || Destructor->isVirtual())
+    return std::nullopt;
+  // Inserting into a borrowed owner does not instantiate its destructor.
+  if (Destructor->hasBody() &&
+      (!approvedOrderedContainerDestructor(S, SM, Destructor, Context) ||
+       !SelectedBody(S, SM, Destructor, Record, Context)))
+    return std::nullopt;
+  return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion, std::move(Piecewise), Hinted};
 }
 
 static std::optional<UtilityOrderedSetIteratorCall> checkedOrderedIteratorOperator(
@@ -137163,7 +137263,9 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     const auto Name = Method->getName();
     const bool Begin = Name == "begin" || Name == "cbegin";
     const bool End = Name == "end" || Name == "cend";
-    if (!Begin && !End) return std::nullopt;
+    const bool ReverseBegin = Name == "rbegin" || Name == "crbegin";
+    const bool ReverseEnd = Name == "rend" || Name == "crend";
+    if (!(Begin || End || ReverseBegin || ReverseEnd)) return std::nullopt;
     const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
     const auto Receiver = associativeMemberReceiverType(Reference);
     const auto *Owner = Method->getParent();
@@ -137181,11 +137283,18 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
       return std::nullopt;
     const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
-    if (!Table || !approvedOrderedSetIteratorRecord(
-            S, SM, Call->getType()->getAsCXXRecordDecl(), Context, &*Table) ||
-        !SelectedBody(S, SM, Method, Owner, Context))
+    if (!Table || !SelectedBody(S, SM, Method, Owner, Context))
       return std::nullopt;
-    return UtilityOrderedSetIteratorCall{Begin ? Op::Begin : Op::End, *Table, Reference, nullptr, nullptr};
+    auto Type = Call->getType();
+    if (ReverseBegin || ReverseEnd) {
+      const auto Reverse = approvedUtilityReverseIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context, true);
+      if (!Reverse || Reverse->OrderedElementType.isNull()) return std::nullopt;
+      Type = Reverse->IteratorType;
+    }
+    if (!approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context, &*Table))
+      return std::nullopt;
+    const auto Operation = ReverseBegin ? Op::ReverseBegin : ReverseEnd ? Op::ReverseEnd : Begin ? Op::Begin : Op::End;
+    return UtilityOrderedSetIteratorCall{Operation, *Table, Reference, nullptr, nullptr};
   }
 
   if (Method && Method->getIdentifier() && Method->getNumParams() == 1 && Call->getNumArgs() == 1) {
@@ -137903,22 +138012,36 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Storage) return std::nullopt;
+  std::optional<UtilityPairRecord> Pair;
+  std::optional<UtilityReverseIteratorRecord> Reverse;
   if (Iterator->isPointerType()) {
     const auto Element = Iterator->getPointeeType();
     const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
-    if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
+    if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst())) {
+      if (!Mapped) return std::nullopt;
+      Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
+      if (!Pair || !Context.hasSameType(Pair->First->getType(), Context.IntTy) ||
+          !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
+        return std::nullopt;
+      const auto Input = Context.getRecordType(Pair->Record);
+      if (!Context.hasSameType(Element, Input) && !Context.hasSameType(Element, Input.withConst()))
+        return std::nullopt;
+    }
+  } else {
+    auto Base = Iterator;
+    Reverse = approvedUtilityReverseIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, true);
+    if (Reverse) {
+      if (Reverse->OrderedElementType.isNull()) return std::nullopt;
+      Base = Reverse->IteratorType;
+    }
+    if (!approvedOrderedSetIteratorRecord(S, SM, Base->getAsCXXRecordDecl(), Context, &*Storage))
       return std::nullopt;
-  } else if (!approvedOrderedSetIteratorRecord(
-                 S, SM, Iterator->getAsCXXRecordDecl(), Context, &*Storage)) {
-    return std::nullopt;
   }
-  std::optional<UtilityPairRecord> Pair;
-  if (Mapped) {
+  if (Mapped && !Pair)
     Pair = approvedUtilityPairRecord(S, SM, Storage->MappedPairType->getAsCXXRecordDecl(), Context);
-    if (!Pair || !Pair->Record->hasTrivialDestructor())
-      return std::nullopt;
-  }
-  return UtilityOrderedSetRangeInput{*Storage, Iterator, Pair};
+  if (Mapped && (!Pair || !Pair->Record->hasTrivialDestructor()))
+    return std::nullopt;
+  return UtilityOrderedSetRangeInput{*Storage, Iterator, Pair, Reverse};
 }
 
 static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
@@ -137943,6 +138066,43 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
     if (!Compare || Compare->getOpcode() != BO_NE ||
         !orderedParameter(Compare->getLHS(), First) || !orderedParameter(Compare->getRHS(), Last) ||
         !Step || Step->getOpcode() != UO_PreInc || !orderedParameter(Step->getSubExpr(), First))
+      return std::nullopt;
+    if (Input->Pair && Context.hasSameType(Input->Pair->First->getType(), Context.IntTy)) {
+      const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(
+          orderedExpression(dyn_cast<Expr>(Loop->getBody())));
+      const auto *Element = Insert && Insert->getNumArgs() == 2
+          ? dyn_cast_or_null<UnaryOperator>(orderedExpression(Insert->getArg(1))) : nullptr;
+      if (!Element || Element->getOpcode() != UO_Deref ||
+          !Context.hasSameType(Element->getType(), Input->IteratorType->getPointeeType()) ||
+          !orderedParameter(Element->getSubExpr(), First))
+        return std::nullopt;
+    }
+  } else if (Input->Reverse) {
+    auto Check = [&](const Expr *E, OverloadedOperatorKind Kind, const ParmVarDecl *Second = nullptr) {
+      const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(E);
+      const auto *Function = Operation ? Operation->getDirectCallee() : nullptr;
+      const unsigned Count = Second ? 2 : 1;
+      if (!Function || Operation->getOperator() != Kind || Operation->getNumArgs() != Count ||
+          !orderedPinnedFunction(S, SM, Function, "__iterator/reverse_iterator.h") ||
+          !Context.hasSameUnqualifiedType(Operation->getArg(0)->getType(), Input->IteratorType) ||
+          !orderedParameter(Operation->getArg(0), First))
+        return false;
+      if (Second)
+        return !isa<CXXMethodDecl>(Function) && Function->getNumParams() == 2 &&
+            Operation->isPRValue() && Context.hasSameType(Operation->getType(), Context.BoolTy) &&
+            Context.hasSameUnqualifiedType(Operation->getArg(1)->getType(), Input->IteratorType) &&
+            orderedParameter(Operation->getArg(1), Second);
+      const auto *Member = dyn_cast<CXXMethodDecl>(Function);
+      const auto Type = Kind == OO_Star ? Input->Reverse->OrderedElementType : Input->IteratorType;
+      return Member && !Member->getNumParams() && Member->isConst() == (Kind == OO_Star) &&
+          Member->getParent()->getCanonicalDecl() == Input->Reverse->Record->getCanonicalDecl() &&
+          Operation->isLValue() && Context.hasSameType(Operation->getType(), Type);
+    };
+    const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(
+        orderedExpression(dyn_cast<Expr>(Loop->getBody())));
+    if (!Insert || Insert->getNumArgs() != 2 ||
+        !Check(Condition, OO_ExclaimEqual, Last) || !Check(Advance, OO_PlusPlus) ||
+        !Check(orderedExpression(Insert->getArg(1)), OO_Star))
       return std::nullopt;
   } else {
     auto Check = [&](const Expr *E) {
@@ -140178,33 +140338,10 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   if ((Name == "emplace" || Name == "emplace_hint") && Count == 0) {
     Kind = UnorderedMapInsertionKind::Default;
   } else if ((Name == "emplace" || Name == "emplace_hint") && Count == 3) {
-    if (!Method->getParamDecl(Offset)->getType()->isReferenceType() ||
-        !approvedUtilityPiecewiseConstructType(S, SM,
-            Method->getParamDecl(Offset)->getType().getNonReferenceType(), Context) ||
-        !approvedUtilityPiecewiseConstructExpression(S, SM, Call->getArg(Offset), Context))
-      return std::nullopt;
-    auto TupleArgument = [&](unsigned Index) -> std::optional<UtilityTupleRecord> {
-      const auto Parameter = Method->getParamDecl(Index)->getType();
-      const auto Value = Parameter.getNonReferenceType();
-      if (!Parameter->isReferenceType() || Value.isVolatileQualified() ||
-          Value.isRestrictQualified() || Value.getAddressSpace() != LangAS::Default ||
-          !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Value))
-        return std::nullopt;
-      auto Tuple = approvedUtilityTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
-      if (!Tuple) Tuple = approvedUtilityReferenceTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
-      if (!Tuple || !Tuple->Record->hasTrivialDestructor() || Tuple->Elements.size() > 1)
-        return std::nullopt;
-      if (!Tuple->Elements.empty()) {
-        const auto Element = Tuple->Elements.front().getType().getNonReferenceType();
-        if (Element.isVolatileQualified() || Element.isRestrictQualified() ||
-            Element.getAddressSpace() != LangAS::Default ||
-            !Context.hasSameUnqualifiedType(Element, Context.IntTy)) return std::nullopt;
-      }
-      return Tuple;
-    };
-    KeyTuple = TupleArgument(Offset + 1);
-    ValueTuple = TupleArgument(Offset + 2);
-    if (!KeyTuple || !ValueTuple) return std::nullopt;
+    const auto Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Context);
+    if (!Piecewise) return std::nullopt;
+    KeyTuple = Piecewise->Key;
+    ValueTuple = Piecewise->Value;
     Kind = UnorderedMapInsertionKind::Piecewise;
   } else if (Name == "insert" || ((Name == "emplace" || Name == "emplace_hint") && Count == 1)) {
     if (Count != 1 || !Method->getParamDecl(Offset)->getType()->isReferenceType())

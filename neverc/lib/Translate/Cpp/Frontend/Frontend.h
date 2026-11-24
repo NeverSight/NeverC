@@ -4377,7 +4377,8 @@ struct UtilityReverseIteratorRecord {
   const clang::FieldDecl *Legacy, *Current;
   clang::QualType IteratorType;
   const clang::FieldDecl *WrappedCurrent;
-  clang::QualType PointerType;
+  clang::QualType PointerType, OrderedElementType;
+  uint64_t OrderedValueOffset;
 };
 struct UtilityWrapIteratorRecord {
   const clang::CXXRecordDecl *Record;
@@ -4409,7 +4410,7 @@ std::optional<UtilityReverseIteratorRecord>
 approvedUtilityReverseIteratorRecord(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CXXRecordDecl *Record,
-                                     const clang::ASTContext &Context);
+                                     const clang::ASTContext &Context, bool AllowOrdered = false);
 enum class UtilityReverseIteratorConstruction {
   Default,
   Iterator,
@@ -4666,7 +4667,7 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
     const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 enum class OrderedSetIteratorOperation {
-  Begin, End, Find, LowerBound, UpperBound, EqualRange, Dereference, Arrow,
+  Begin, End, ReverseBegin, ReverseEnd, Find, LowerBound, UpperBound, EqualRange, Dereference, Arrow,
   Increment, PostIncrement, Decrement, PostDecrement, Equal, NotEqual
 };
 struct UtilityOrderedSetIteratorCall {
@@ -4690,12 +4691,17 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+struct UtilityMapPiecewiseArguments {
+  UtilityTupleRecord Key, Value;
+};
+
 enum class OrderedInsertionKind { Insert, Emplace, TryEmplace, InsertOrAssign };
 
 struct UtilityOrderedSetInsertion {
   UtilityOrderedSetStorage Storage;
   std::optional<UtilityPairRecord> Result, Input;
   OrderedInsertionKind Kind;
+  std::optional<UtilityMapPiecewiseArguments> Piecewise;
   bool Hinted;
 };
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
@@ -4744,6 +4750,7 @@ struct UtilityOrderedSetRangeInput {
   UtilityOrderedSetStorage Storage;
   clang::QualType IteratorType;
   std::optional<UtilityPairRecord> Pair;
+  std::optional<UtilityReverseIteratorRecord> Reverse;
 };
 std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
