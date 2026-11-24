@@ -136775,7 +136775,7 @@ static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
   const auto CursorType = Wrapper->getTemplateArgs().get(0).getAsType();
   if (!Context.hasSameType(Field->getType(), CursorType)) return nullptr;
   const auto *Cursor = associativeTypeIdentity(S, SM, CursorType->getAsCXXRecordDecl(),
-      Const ? "__tree_const_iterator" : "__tree_iterator", "__tree", {}, 3);
+      Const ? "__tree_const_iterator" : "__tree_iterator", "__tree", Const ? "map" : "", 3);
   const auto *CursorRecord = Cursor ? Cursor->getDefinition() : nullptr;
   const auto *Link = orderedTreeField(CursorRecord, "__ptr_");
   if (!CursorRecord || !Link || !CursorRecord->isStandardLayout() || !CursorRecord->isTriviallyCopyable() ||

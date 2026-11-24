@@ -525,7 +525,7 @@ public:
   const CXXMethodDecl *WeightMethod = nullptr;
   const CXXConstructExpr *WeightCopy = nullptr;
   uint64_t MinimumValue = 0, MaximumValue = 0;
-  QualType OrderedSentinelType;
+  QualType OrderedSentinelType, OrderedMapElementType, OrderedMapPairType;
 
   RandomSelection(const State &S, const SourceManager &SM,
                   const ASTContext &Context, const CXXRecordDecl *Generator,
@@ -623,11 +623,20 @@ public:
           if (isUnorderedTableOwner())
             return true;
           const auto *Traits = dyn_cast<ClassTemplateSpecializationDecl>(Parent);
-          if (Traits && Traits->getTemplateArgs().size() == 1 &&
-              Traits->getTemplateArgs().get(0).getKind() == TemplateArgument::Type &&
-              Context.hasSameType(Traits->getTemplateArgs().get(0).getAsType(),
-                                  Context.getPointerType(OrderedSentinelType)))
-            return true;
+          if (Traits && Traits->getSpecializationKind() != TSK_ExplicitSpecialization &&
+              Traits->getTemplateArgs().size() == 1 &&
+              Traits->getTemplateArgs().get(0).getKind() == TemplateArgument::Type) {
+            const auto Pointer = Traits->getTemplateArgs().get(0).getAsType();
+            if (Context.hasSameType(Pointer, Context.getPointerType(OrderedSentinelType)))
+              return true;
+            // Map cursors address the tree value and its public pair. The
+            // unused void branch also appears for the const cursor's pointer.
+            for (const auto Element : {OrderedMapElementType, OrderedMapPairType})
+              if (!Element.isNull() &&
+                  (Context.hasSameType(Pointer, Context.getPointerType(Element)) ||
+                   Context.hasSameType(Pointer, Context.getPointerType(Element.withConst()))))
+                return true;
+          }
         }
       }
       if (!Definition || !origin(Definition))
@@ -2675,6 +2684,9 @@ bool approvedOrderedMapSelectedBody(const State &S, const SourceManager &SM,
     return false;
   RandomSelection Selection(S, SM, Context, Record, Context.getSizeType(), Context.DoubleTy);
   Selection.OrderedSentinelType = Storage->SentinelType;
+  Selection.OrderedMapElementType =
+      cast<ClassTemplateSpecializationDecl>(Storage->Tree)->getTemplateArgs().get(0).getAsType();
+  Selection.OrderedMapPairType = Storage->MappedPairType;
   return Selection.retain(Function);
 }
 
