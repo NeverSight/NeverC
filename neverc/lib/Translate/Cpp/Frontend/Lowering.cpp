@@ -27534,8 +27534,11 @@ class FunctionLowering {
   };
 
   OrderedSetInserted insertOrderedSetKey(Expression Place, Expression KeyStorage,
-      const UtilityOrderedSetStorage &Info, SourceLocation L, const OrderedSetReuse *Cache = nullptr) {
-    auto Search = searchOrderedSet(Place, snapshot(KeyStorage, L), Info, L, Info.Multi);
+      const UtilityOrderedSetStorage &Info, SourceLocation L, const OrderedSetReuse *Cache = nullptr,
+      std::optional<Expression> Hint = std::nullopt) {
+    auto Key = snapshot(KeyStorage, L);
+    auto Search = Hint ? searchOrderedSetWithHint(Place, Key, std::move(*Hint), Info, L)
+                       : searchOrderedSet(Place, Key, Info, L, Info.Multi);
     auto Inserted = snapshot(binary("==", Search.Node, A.zero(A.Context.VoidPtrTy, L), "bool", L), L);
     const auto Insert = labelName(), Done = labelName();
     branch(Inserted, Insert, Done, L);
@@ -27550,12 +27553,13 @@ class FunctionLowering {
   }
 
   OrderedSetInserted emplaceOrderedSetDefault(Expression Place,
-      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+      const UtilityOrderedSetStorage &Info, SourceLocation L, std::optional<Expression> Hint) {
     // Empty emplacement constructs a node before searching, even for an
     // existing unique key. Destroy that candidate if the tree rejects it.
     auto Candidate = allocateOrderedSetNode(Info, L);
     auto Key = A.zero(A.Context.IntTy, L);
-    auto Search = searchOrderedSet(Place, Key, Info, L, Info.Multi);
+    auto Search = Hint ? searchOrderedSetWithHint(Place, Key, std::move(*Hint), Info, L)
+                       : searchOrderedSet(Place, Key, Info, L, Info.Multi);
     auto Inserted = snapshot(binary("==", Search.Node, A.zero(A.Context.VoidPtrTy, L), "bool", L), L);
     const auto Insert = labelName(), Destroy = labelName(), Done = labelName();
     branch(Inserted, Insert, Destroy, L);
@@ -30701,15 +30705,24 @@ class FunctionLowering {
       const auto *Method = clang::cast<CXXMemberCallExpr>(Call)->getMethodDecl();
       const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
       auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
+      const unsigned Offset = Info->Hinted ? 1u : 0u;
+      const unsigned Values = Call->getNumArgs() - Offset;
+      auto Capture = [&](unsigned Index) {
+        return snapshot(argument(Call->getArg(Index), Method->getParamDecl(Index)->getType()), L);
+      };
+      std::optional<Expression> Hint;
+      if (Info->Hinted)
+        Hint = snapshot(orderedIteratorCursor(dereference(Capture(0), L), L), L);
       auto Insert = [&]() {
-        if (!Call->getNumArgs()) return emplaceOrderedSetDefault(std::move(Place), Info->Storage, L);
-        auto Input = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
+        if (!Values)
+          return emplaceOrderedSetDefault(std::move(Place), Info->Storage, L, std::move(Hint));
+        auto Input = Capture(Offset);
         std::optional<Expression> MappedArgument;
-        if (Call->getNumArgs() == 2)
-          MappedArgument = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
+        if (Values == 2)
+          MappedArgument = Capture(Offset + 1);
         auto Value = dereference(std::move(Input), L);
         auto Key = Info->Input ? fieldStorage(Value, Info->Input->First, L) : std::move(Value);
-        auto Result = insertOrderedSetKey(std::move(Place), std::move(Key), Info->Storage, L);
+        auto Result = insertOrderedSetKey(std::move(Place), std::move(Key), Info->Storage, L, nullptr, std::move(Hint));
         using Kind = OrderedInsertionKind;
         if (Info->Input) {
           initializeOrderedMappedValue(Result, fieldStorage(std::move(Value), Info->Input->Second, L), Info->Storage, L);

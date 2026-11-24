@@ -136944,14 +136944,17 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   const auto Name = Method->getName();
   const auto *Template = Method->getPrimaryTemplate();
   const auto Args = Call->getNumArgs();
+  const bool Hinted = Args && !Method->getParamDecl(0)->getType()->isReferenceType();
+  const unsigned Offset = Hinted ? 1u : 0u;
+  const unsigned Values = Args - Offset;
   Kind Insertion;
-  if (Name == "insert" && Args == 1)
+  if (Name == "insert" && Values == 1)
     Insertion = Kind::Insert;
-  else if (Name == "emplace" && Template && Args <= 2)
+  else if (Name == (Hinted ? "emplace_hint" : "emplace") && Template && Values <= 2)
     Insertion = Kind::Emplace;
-  else if (Name == "try_emplace" && Template && (Args == 1 || Args == 2))
+  else if (Name == "try_emplace" && Template && (Values == 1 || Values == 2))
     Insertion = Kind::TryEmplace;
-  else if (Name == "insert_or_assign" && Template && Args == 2)
+  else if (Name == "insert_or_assign" && Template && Values == 2)
     Insertion = Kind::InsertOrAssign;
   else
     return std::nullopt;
@@ -136968,19 +136971,26 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                             : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Table) return std::nullopt;
+  if (Hinted) {
+    const auto Type = Method->getParamDecl(0)->getType();
+    const auto *Cursor = approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context, &*Table);
+    if (!Cursor || (Mapped && Cursor->getName() != "__map_const_iterator") ||
+        !Context.hasSameType(Call->getArg(0)->getType(), Type))
+      return std::nullopt;
+  }
   if (Template && !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header))
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
   if (Insertion == Kind::Emplace) {
     const auto *Deduced = Method->getTemplateSpecializationArgs();
-    if ((Mapped ? Args != 2 : Args > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+    if ((Mapped ? Values != 2 : Values > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         !Deduced || Deduced->size() != 1 || Deduced->get(0).getKind() != TemplateArgument::Pack)
       return std::nullopt;
     const auto Pack = Deduced->get(0).getPackAsArray();
-    if (Pack.size() != Args) return std::nullopt;
-    for (unsigned I = 0; I != Args; ++I) {
-      const auto *Element = Call->getArg(I);
-      const auto Parameter = Method->getParamDecl(I)->getType();
+    if (Pack.size() != Values) return std::nullopt;
+    for (unsigned I = 0; I != Values; ++I) {
+      const auto *Element = Call->getArg(Offset + I);
+      const auto Parameter = Method->getParamDecl(Offset + I)->getType();
       if (Pack[I].getKind() != TemplateArgument::Type || !Parameter->isReferenceType() ||
           Parameter->isLValueReferenceType() != Element->isLValue())
         return std::nullopt;
@@ -136994,8 +137004,8 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   } else {
     if (Template && (!Mapped || (Insertion != Kind::Insert && Table->Multi)))
       return std::nullopt;
-    const auto Parameter = Method->getParamDecl(0)->getType();
-    const auto *Element = Call->getArg(0);
+    const auto Parameter = Method->getParamDecl(Offset)->getType();
+    const auto *Element = Call->getArg(Offset);
     if (!Context.hasSameUnqualifiedType(Element->getType(), Value))
       return std::nullopt;
     if (Insertion == Kind::Insert && Template) {
@@ -137016,12 +137026,12 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       return std::nullopt;
     }
   }
-  if (Args == 2) {
-    const auto Argument = Method->getParamDecl(1)->getType();
+  if (Values == 2) {
+    const auto Argument = Method->getParamDecl(Offset + 1)->getType();
     const auto MappedType = Argument->getPointeeType();
     if (!Argument->isReferenceType() || MappedType.isVolatileQualified() ||
         !Context.hasSameUnqualifiedType(MappedType, Context.IntTy) ||
-        !Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Context.IntTy))
+        !Context.hasSameUnqualifiedType(Call->getArg(Offset + 1)->getType(), Context.IntTy))
       return std::nullopt;
   }
   std::optional<UtilityPairRecord> Input;
@@ -137031,7 +137041,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   }
   auto Iterator = Call->getType();
   std::optional<UtilityPairRecord> Pair;
-  if (!Table->Multi) {
+  if (!Table->Multi && !Hinted) {
     Pair = approvedUtilityPairRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context);
     if (!Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->Second->getType(), Context.BoolTy))
@@ -137044,7 +137054,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       !approvedOrderedContainerDestructor(S, SM, Record->getDestructor(), Context) ||
       !SelectedBody(S, SM, Record->getDestructor(), Record, Context))
     return std::nullopt;
-  return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion};
+  return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion, Hinted};
 }
 
 std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(

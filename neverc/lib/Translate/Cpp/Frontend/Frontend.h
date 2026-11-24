@@ -4694,6 +4694,7 @@ struct UtilityOrderedSetInsertion {
   UtilityOrderedSetStorage Storage;
   std::optional<UtilityPairRecord> Result, Input;
   OrderedInsertionKind Kind;
+  bool Hinted;
 };
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
