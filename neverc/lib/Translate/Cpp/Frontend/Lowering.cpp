@@ -27710,7 +27710,10 @@ class FunctionLowering {
   void insertOrderedSetRange(Expression Place, Expression Current, Expression End,
       const UtilityOrderedSetRangeInput &Info, SourceLocation L) {
     const bool TreeCursor = !Info.IteratorType->isPointerType();
-    if (TreeCursor) {
+    if (Info.Reverse) {
+      Current = snapshot(reverseIteratorSlot(std::move(Current), Info.Reverse->Current, *Info.Reverse, L), L);
+      End = snapshot(reverseIteratorSlot(std::move(End), Info.Reverse->Current, *Info.Reverse, L), L);
+    } else if (TreeCursor) {
       Current = snapshot(orderedIteratorCursor(std::move(Current), L), L);
       End = snapshot(orderedIteratorCursor(std::move(End), L), L);
     }
@@ -27720,12 +27723,13 @@ class FunctionLowering {
     branch(binary("!=", Current, std::move(End), "bool", L), Read, Done, L);
     label(Read, L);
     const auto Value = (Info.Pair ? Info.Storage.MappedPairType : A.Context.IntTy).withConst();
-    auto Element = TreeCursor ? nodeFieldAt(Current, Value, Info.Storage.ValueOffsetBytes, L)
-                              : dereference(Current, L);
+    auto ElementPosition = Info.Reverse ? stepOrderedIterator(Current, false, L) : Current;
+    auto Element = TreeCursor ? nodeFieldAt(ElementPosition, Value, Info.Storage.ValueOffsetBytes, L)
+                              : dereference(ElementPosition, L);
     insertOrderedSetElement(Place, std::move(Element), Info.Storage, Info.Pair, L);
-    auto Next = TreeCursor ? stepOrderedIterator(Current, true, L)
-                           : binary("+", Current, one(type(A.Context.getPointerDiffType(), L), L),
-                                    type(Info.IteratorType, L), L);
+    auto Next = Info.Reverse ? std::move(ElementPosition)
+        : TreeCursor ? stepOrderedIterator(Current, true, L)
+        : binary("+", Current, one(type(A.Context.getPointerDiffType(), L), L), type(Info.IteratorType, L), L);
     assign(Current, std::move(Next), L);
     jump(Check, L);
     label(Done, L);

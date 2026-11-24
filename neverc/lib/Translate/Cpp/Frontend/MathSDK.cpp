@@ -137896,14 +137896,21 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Storage) return std::nullopt;
+  std::optional<UtilityReverseIteratorRecord> Reverse;
   if (Iterator->isPointerType()) {
     const auto Element = Iterator->getPointeeType();
     const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
     if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
       return std::nullopt;
-  } else if (!approvedOrderedSetIteratorRecord(
-                 S, SM, Iterator->getAsCXXRecordDecl(), Context, &*Storage)) {
-    return std::nullopt;
+  } else {
+    auto Base = Iterator;
+    Reverse = approvedUtilityReverseIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, true);
+    if (Reverse) {
+      if (Reverse->OrderedElementType.isNull()) return std::nullopt;
+      Base = Reverse->IteratorType;
+    }
+    if (!approvedOrderedSetIteratorRecord(S, SM, Base->getAsCXXRecordDecl(), Context, &*Storage))
+      return std::nullopt;
   }
   std::optional<UtilityPairRecord> Pair;
   if (Mapped) {
@@ -137911,7 +137918,7 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
     if (!Pair || !Pair->Record->hasTrivialDestructor())
       return std::nullopt;
   }
-  return UtilityOrderedSetRangeInput{*Storage, Iterator, Pair};
+  return UtilityOrderedSetRangeInput{*Storage, Iterator, Pair, Reverse};
 }
 
 static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
@@ -137936,6 +137943,33 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
     if (!Compare || Compare->getOpcode() != BO_NE ||
         !orderedParameter(Compare->getLHS(), First) || !orderedParameter(Compare->getRHS(), Last) ||
         !Step || Step->getOpcode() != UO_PreInc || !orderedParameter(Step->getSubExpr(), First))
+      return std::nullopt;
+  } else if (Input->Reverse) {
+    auto Check = [&](const Expr *E, OverloadedOperatorKind Kind, const ParmVarDecl *Second = nullptr) {
+      const auto *Operation = dyn_cast_or_null<CXXOperatorCallExpr>(E);
+      const auto *Function = Operation ? Operation->getDirectCallee() : nullptr;
+      const unsigned Count = Second ? 2 : 1;
+      if (!Function || Operation->getOperator() != Kind || Operation->getNumArgs() != Count ||
+          !orderedPinnedFunction(S, SM, Function, "__iterator/reverse_iterator.h") ||
+          !Context.hasSameUnqualifiedType(Operation->getArg(0)->getType(), Input->IteratorType) ||
+          !orderedParameter(Operation->getArg(0), First))
+        return false;
+      if (Second)
+        return !isa<CXXMethodDecl>(Function) && Function->getNumParams() == 2 &&
+            Operation->isPRValue() && Context.hasSameType(Operation->getType(), Context.BoolTy) &&
+            Context.hasSameUnqualifiedType(Operation->getArg(1)->getType(), Input->IteratorType) &&
+            orderedParameter(Operation->getArg(1), Second);
+      const auto *Member = dyn_cast<CXXMethodDecl>(Function);
+      const auto Type = Kind == OO_Star ? Input->Reverse->OrderedElementType : Input->IteratorType;
+      return Member && !Member->getNumParams() && Member->isConst() == (Kind == OO_Star) &&
+          Member->getParent()->getCanonicalDecl() == Input->Reverse->Record->getCanonicalDecl() &&
+          Operation->isLValue() && Context.hasSameType(Operation->getType(), Type);
+    };
+    const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(
+        orderedExpression(dyn_cast<Expr>(Loop->getBody())));
+    if (!Insert || Insert->getNumArgs() != 2 ||
+        !Check(Condition, OO_ExclaimEqual, Last) || !Check(Advance, OO_PlusPlus) ||
+        !Check(orderedExpression(Insert->getArg(1)), OO_Star))
       return std::nullopt;
   } else {
     auto Check = [&](const Expr *E) {

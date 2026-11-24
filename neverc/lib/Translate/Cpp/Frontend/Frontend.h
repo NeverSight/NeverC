@@ -4741,6 +4741,7 @@ struct UtilityOrderedSetRangeInput {
   UtilityOrderedSetStorage Storage;
   clang::QualType IteratorType;
   std::optional<UtilityPairRecord> Pair;
+  std::optional<UtilityReverseIteratorRecord> Reverse;
 };
 std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
