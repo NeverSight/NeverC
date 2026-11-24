@@ -30753,22 +30753,21 @@ public:
                      "Expected a type-form query using the authenticated SDK layout.", "TR0203");
         }
         else if (pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
-          if (Query->isArgumentType() &&
-              approvedUtilityVariantRecord(A.S, A.Sources, Value, A.Context))
+          if (approvedUtilityVariantRecord(A.S, A.Sources, Value, A.Context))
             A.checkQueryType(Operand, Query->getExprLoc(), true, true);
           else
             A.reject(Query->getExprLoc(), "variant size and alignment",
-                     "Expected a type-form query using the authenticated SDK variant layout.",
+                     "Expected a query using the authenticated SDK variant layout.",
                      "TR0203");
         }
         else if (pinnedUtilityAnyType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
-          if (Query->isArgumentType() && !Value.isVolatileQualified() && !Value.isRestrictQualified() &&
+          if (!Value.isVolatileQualified() && !Value.isRestrictQualified() &&
               Value.getAddressSpace() == LangAS::Default &&
               approvedUtilityAnyMetadata(A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context))
             A.checkQueryType(Operand, Query->getExprLoc(), true, true);
           else
             A.reject(Query->getExprLoc(), "any size and alignment",
-                     "Expected a type-form query using the authenticated SDK layout.", "TR0203");
+                     "Expected a query using the authenticated SDK any layout.", "TR0203");
         }
         else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
                  pinnedAssociativeContainerType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
