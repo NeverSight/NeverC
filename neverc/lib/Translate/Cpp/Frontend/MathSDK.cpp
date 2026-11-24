@@ -8158,7 +8158,8 @@ std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
   return UtilityVariantAssignment{Receiver,Input,Arrow,isa<CXXOperatorCallExpr>(Call)};
 }
 
-// A variant swap with arithmetic alternatives cannot select a user ADL swap.
+// Fundamental values, pointers to fundamental types, and pinned monostate
+// cannot select a user ADL swap.
 // Authenticate both wrappers and their exact pinned, instantiated implementation.
 static const FunctionDecl *variantSwapDefinition(
     const State &S, const SourceManager &SM, const FunctionDecl *F,
@@ -8214,10 +8215,18 @@ std::optional<UtilityVariantSwap> approvedUtilityVariantSwap(
       !Context.hasSameType(Type, Right->getType()) ||
       Swap->getParent()->getCanonicalDecl() != V->Record->getCanonicalDecl() ||
       !V->Record->isTriviallyCopyable() ||
-      llvm::any_of(V->Alternatives, [](const FieldDecl *Field) {
+      llvm::any_of(V->Alternatives, [&](const FieldDecl *Field) {
         const auto Element = Field->getType();
-        return Element.isConstQualified() || !Element->isArithmeticType() ||
-               !isa<BuiltinType>(Element.getCanonicalType().getTypePtr());
+        if (Element.isConstQualified())
+          return true;
+        if (const auto *Pointer = Element->getAs<PointerType>()) {
+          const auto Pointee = Pointer->getPointeeType();
+          return Pointee.getAddressSpace() != LangAS::Default ||
+                 !isa<BuiltinType>(Pointee.getCanonicalType().getTypePtr());
+        }
+        if (isa<BuiltinType>(Element.getCanonicalType().getTypePtr()))
+          return !Element->isArithmeticType() && !Element->isNullPtrType();
+        return !approvedUtilityMonostateMetadata(S, SM, Element->getAsCXXRecordDecl(), Context);
       }))
     return std::nullopt;
   const auto Reference = Context.getLValueReferenceType(Type);
