@@ -3589,6 +3589,12 @@ struct UtilityAnyScalar {
   unsigned Tag;
   llvm::StringLiteral Field;
 };
+struct UtilityAnyPointerScalar {
+  clang::QualType Type;
+  UtilityAnyScalar Scalar;
+};
+llvm::SmallVector<UtilityAnyPointerScalar, 6> utilityAnyPointerScalars(
+    const clang::ASTContext &Context);
 std::optional<UtilityAnyScalar> utilityAnyInlineScalar(clang::QualType Type,
     const clang::ASTContext &Context);
 enum class UtilityAnyOperation { HasValue, Reset };

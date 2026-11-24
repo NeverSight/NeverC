@@ -8757,6 +8757,17 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
 static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
     const FunctionDecl *F, llvm::StringRef Name, unsigned Arity, llvm::StringRef Path);
 
+llvm::SmallVector<UtilityAnyPointerScalar, 6> utilityAnyPointerScalars(const ASTContext &Context) {
+  return {
+      {Context.VoidPtrTy, {18, UtilityAnyVoidPointer}},
+      {Context.getPointerType(Context.VoidTy.withConst()), {19, UtilityAnyConstVoidPointer}},
+      {Context.NullPtrTy, {20, UtilityAnyNullPointer}},
+      {Context.getPointerType(Context.BoolTy), {21, "nct_any_bool_pointer"}},
+      {Context.getPointerType(Context.IntTy), {22, "nct_any_int_pointer"}},
+      {Context.getPointerType(Context.IntTy.withConst()), {23, "nct_any_const_int_pointer"}},
+  };
+}
+
 std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
     const ASTContext &Context) {
   if (Type.isNull())
@@ -8814,16 +8825,11 @@ std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
   if (Context.hasSameType(Type, Context.Char32Ty) &&
       Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32)
     return UtilityAnyScalar{17, UtilityAnyChar32};
-  const auto ConstVoidPointer = Context.getPointerType(Context.VoidTy.withConst());
-  if ((Context.hasSameType(Type, Context.VoidPtrTy) || Context.hasSameType(Type, ConstVoidPointer) ||
-       Context.hasSameType(Type, Context.NullPtrTy)) &&
-      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64) {
-    if (Context.hasSameType(Type, Context.VoidPtrTy))
-      return UtilityAnyScalar{18, UtilityAnyVoidPointer};
-    if (Context.hasSameType(Type, ConstVoidPointer))
-      return UtilityAnyScalar{19, UtilityAnyConstVoidPointer};
-    return UtilityAnyScalar{20, UtilityAnyNullPointer};
-  }
+  if ((Type->isPointerType() || Type->isNullPtrType()) &&
+      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64)
+    for (const auto &[Candidate, Scalar] : utilityAnyPointerScalars(Context))
+      if (Context.hasSameType(Type, Candidate))
+        return Scalar;
   return std::nullopt;
 }
 
