@@ -913,3 +913,10 @@ The combined compiler passes 4,578 source requests across six 64-bit targets
 and 867 formal tests on Linux x86-64. All 512 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Default integer ordered set and map operations
+
+The combined compiler passes 5,052 source requests across six 64-bit targets
+and 946 formal tests on Linux x86-64. All 573 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

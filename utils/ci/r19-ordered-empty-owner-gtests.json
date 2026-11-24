@@ -31,6 +31,22 @@
       "source_sha256": "093ef3d483f885e7639eb5ab779c3f50993ef6408d1f368124376be48622fdbf",
       "original_case_source_sha256": "093ef3d483f885e7639eb5ab779c3f50993ef6408d1f368124376be48622fdbf",
       "gtest_body_sha256": "56df8bd8e0d79339a7f610c49422cea5aa570a169cf0fefcc20ce965c6d75fc1"
+    },
+    {
+      "name": "ordered-empty-owner-set-insert",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetOriginalInsertionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7",
+      "original_case_source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7",
+      "gtest_body_sha256": "f60b4028a2e96ab2a4b7355c99ab2a6f7924f89b4f0e1655087764ccb7bc7e9c"
+    },
+    {
+      "name": "ordered-empty-owner-map-copy",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerMapCopyRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378",
+      "original_case_source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378",
+      "gtest_body_sha256": "94e391c4a6b2cf9a1cfa6b4fc3f000141567d19bb1b129769eb97c57bdc437e7"
     }
   ],
   "negative_cases": [
@@ -49,22 +65,6 @@
       "source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250",
       "original_case_source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250",
       "gtest_body_sha256": "71fdae62c7f8197346af5b0a02e051377f728863e079607789ca2d38e8a037ea"
-    },
-    {
-      "name": "ordered-empty-owner-set-insert",
-      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerSetInsertRejected",
-      "expected": "reject",
-      "source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7",
-      "original_case_source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7",
-      "gtest_body_sha256": "dc6ba88dd9dbe58a474bba0c2ef6cbf3e3bff24d27637ea2c9dd46f11b06affa"
-    },
-    {
-      "name": "ordered-empty-owner-map-copy",
-      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerMapCopyRejected",
-      "expected": "reject",
-      "source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378",
-      "original_case_source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378",
-      "gtest_body_sha256": "255fb70927538864b0728214a96e971746acace197fe78ea79e32b14c551e822"
     }
   ],
   "source_cases": [
@@ -101,6 +101,22 @@
       "source_sha256": "093ef3d483f885e7639eb5ab779c3f50993ef6408d1f368124376be48622fdbf"
     },
     {
+      "name": "ordered-empty-owner-set-insert",
+      "expected": "accept",
+      "public_header": "set",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n",
+      "source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7"
+    },
+    {
+      "name": "ordered-empty-owner-map-copy",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n",
+      "source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378"
+    },
+    {
       "name": "ordered-empty-owner-custom-comparator",
       "expected": "reject",
       "public_header": "set",
@@ -115,22 +131,6 @@
       "kind": "source-body-guard",
       "source": "#include <map>\nint main() {\n  std::map<long long, int> values;\n  return values.size() != 0;\n}\n",
       "source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250"
-    },
-    {
-      "name": "ordered-empty-owner-set-insert",
-      "expected": "reject",
-      "public_header": "set",
-      "kind": "source-body-guard",
-      "source": "#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n",
-      "source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7"
-    },
-    {
-      "name": "ordered-empty-owner-map-copy",
-      "expected": "reject",
-      "public_header": "map",
-      "kind": "source-body-guard",
-      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n",
-      "source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378"
     }
   ],
   "new_gtest_names": [
@@ -138,10 +138,10 @@
     "TranslateTest.CoreV2OrderedEmptyOwnerConstMultimapRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedEmptyOwnerSetReceiverOnceRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedEmptyOwnerMultisetScopedOwnersRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetOriginalInsertionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedEmptyOwnerMapCopyRunsAtBothOptimizations",
     "TranslateTest.CoreV2OrderedEmptyOwnerCustomComparatorRejected",
-    "TranslateTest.CoreV2OrderedEmptyOwnerDifferentKeyRejected",
-    "TranslateTest.CoreV2OrderedEmptyOwnerSetInsertRejected",
-    "TranslateTest.CoreV2OrderedEmptyOwnerMapCopyRejected"
+    "TranslateTest.CoreV2OrderedEmptyOwnerDifferentKeyRejected"
   ],
   "prior_construction_guard": {
     "name": "ordered-observer-query-observer-does-not-admit-storage",
@@ -178,11 +178,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8302,
   "current_python_registry_tests": 162,
-  "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
   "native_reference_proofs": {
-    "ordered-empty-owner": "5924748fdcb2ab437464396281f9dbebaa6383a04af842824749d3299a793fc9"
+    "ordered-empty-owner": "5924748fdcb2ab437464396281f9dbebaa6383a04af842824749d3299a793fc9",
+    "ordered-empty-owner-map-copy": "48d3c1d73a8b4a81781036ffe09637fae86c63c8a972d5e6ba55732a60c067fb",
+    "ordered-set-core": "1c2f471258c24fa552d0702893167e6543b8e3a6e6be5d499e9e0f6be5786d4e"
   },
-  "native_reference_authentication_sha256": "c61f4398139b4500b9f153ff781744d0ac5692ad414b47ca17cbd657b4a97168",
-  "source_proof_sha256": "f53f1845135bc7a688700422f1154afeda25c270e5072c3705106a7385792a4e"
+  "native_reference_authentication_sha256": "3994a56820662632ed0070abac004038796fd20d49b4e529bd4a2a3b46f6caa6",
+  "source_proof_sha256": "f4f0846a59afae9fe5ba80c3556d373177d602d0e72182a1a87bcd914ddb89da"
 }

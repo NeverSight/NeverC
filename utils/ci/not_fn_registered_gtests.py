@@ -2286,6 +2286,82 @@ def restore_unordered_set_unsigned_key_history(source):
     return restored
 
 
+R19_ORDERED_SET_CORE_REGISTERED_SHA256 = 'ec78979a7b483ff52b14ef27db1472a179c41c7649741f7a166ce73b0e62cfaa'
+R19_ORDERED_SET_CORE_MAINTAINED_SHA256 = 'b0ebfd804a188b3740667ec710c8b116ed96e8924a57a6f66882051165586f48'
+R19_ORDERED_SET_CORE_PREVIOUS_REGISTERED_SHA256 = 'a5ddd1fe6e53f82facecbd1237242b0926e8170a3a5aa4c6dae75302b9027724'
+R19_ORDERED_SET_CORE_PREVIOUS_MAINTAINED_SHA256 = 'b537c8295007d1c8b9bef82c985bc3b7db2f5701d9b9b24e3650c6a0d456962e'
+R19_ORDERED_SET_CORE_ADDITIONS_SHA256 = 'e6e6e0d53b880a0392f28b388572e58a944edb5df05935115613200ff9c0a39e'
+R19_ORDERED_SET_CORE_MAINTAINED_SIZE = 20351673
+R19_ORDERED_SET_CORE_ADDITIONS_SIZE = 17646
+
+
+def restore_ordered_set_core_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_SET_CORE_REGISTERED_SHA256, R19_ORDERED_SET_CORE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_SET_CORE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_SET_CORE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_SET_CORE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedSetOriginalInsertionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-empty-owner-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-empty-owner-set-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-empty-owner-set-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedSetOriginalInsertionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-empty-owner-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-empty-owner-set-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-empty-owner-set-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerSetInsertRejected) {\n  const auto Source = tmpFile("ordered-empty-owner-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_SET_CORE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_SET_CORE_REGISTERED_SHA256
+             else R19_ORDERED_SET_CORE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_OWNER_OPERATIONS_REGISTERED_SHA256 = '643ddb45cd6010873abc4cd9d0c3d804173e062a6310a96347abffd990ec2068'
+R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SHA256 = '44d47c10a82a3d2ef973db9f9a87c2b5cce5389141a648093a5939e4bcf1d926'
+R19_ORDERED_OWNER_OPERATIONS_PREVIOUS_REGISTERED_SHA256 = 'ec78979a7b483ff52b14ef27db1472a179c41c7649741f7a166ce73b0e62cfaa'
+R19_ORDERED_OWNER_OPERATIONS_PREVIOUS_MAINTAINED_SHA256 = 'b0ebfd804a188b3740667ec710c8b116ed96e8924a57a6f66882051165586f48'
+R19_ORDERED_OWNER_OPERATIONS_ADDITIONS_SHA256 = '42c627a0239a0964e72923ac0a93b2975ad065ec9327d8f952161efe6a2bec77'
+R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SIZE = 20382548
+R19_ORDERED_OWNER_OPERATIONS_ADDITIONS_SIZE = 30875
+
+
+def restore_ordered_owner_operations_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_OWNER_OPERATIONS_REGISTERED_SHA256, R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SHA256}
+    stop = R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_OWNER_OPERATIONS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_OWNER_OPERATIONS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_OWNER_OPERATIONS_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_OWNER_OPERATIONS_REGISTERED_SHA256
+             else R19_ORDERED_OWNER_OPERATIONS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_REGISTERED_SHA256 = '32075ed5590611d862e4bd001e979b72fd0989115ffd0a18586f2ba71a590624'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256 = '2780fb91a65d18cf4059ff79ac2436884aa57f420b42296c99f3f0b80b69ebd7'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_PREVIOUS_REGISTERED_SHA256 = '643ddb45cd6010873abc4cd9d0c3d804173e062a6310a96347abffd990ec2068'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_PREVIOUS_MAINTAINED_SHA256 = '44d47c10a82a3d2ef973db9f9a87c2b5cce5389141a648093a5939e4bcf1d926'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_ADDITIONS_SHA256 = '7d9ce184d756319a175036b324e06417fcf24f85a105e028ea39573ac76a9223'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SIZE = 20432448
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_ADDITIONS_SIZE = 49532
+
+
+def restore_ordered_maps_with_mixed_cursors_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MAPS_WITH_MIXED_CURSORS_REGISTERED_SHA256, R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MAPS_WITH_MIXED_CURSORS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMapCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-empty-owner-map-copy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-empty-owner-map-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-empty-owner-map-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMapCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-empty-owner-map-copy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-empty-owner-map-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-empty-owner-map-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMapCopyRejected) {\n  const auto Source = tmpFile("ordered-empty-owner-map-copy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_MAPS_WITH_MIXED_CURSORS_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_REGISTERED_SHA256
+             else R19_ORDERED_MAPS_WITH_MIXED_CURSORS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2782,6 +2858,27 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_UNORDERED_SET_UNSIGNED_KEY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_SET_CORE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_SET_CORE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_SET_CORE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_OWNER_OPERATIONS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

@@ -43,6 +43,21 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_maps_with_mixed_cursors_registered = cls.registered
+        cls.ordered_maps_with_mixed_cursors_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_maps_with_mixed_cursors_original = cls.adapter.restore_original_gtests(cls.ordered_maps_with_mixed_cursors_registered,
+                                                                        cls.ordered_maps_with_mixed_cursors_suffix)
+        cls.registered = cls.adapter.restore_ordered_maps_with_mixed_cursors_history(cls.ordered_maps_with_mixed_cursors_registered)
+        cls.ordered_owner_operations_registered = cls.registered
+        cls.ordered_owner_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_owner_operations_original = cls.adapter.restore_original_gtests(cls.ordered_owner_operations_registered,
+                                                                        cls.ordered_owner_operations_suffix)
+        cls.registered = cls.adapter.restore_ordered_owner_operations_history(cls.ordered_owner_operations_registered)
+        cls.ordered_set_core_registered = cls.registered
+        cls.ordered_set_core_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_set_core_original = cls.adapter.restore_original_gtests(cls.ordered_set_core_registered,
+                                                                        cls.ordered_set_core_suffix)
+        cls.registered = cls.adapter.restore_ordered_set_core_history(cls.ordered_set_core_registered)
         cls.unordered_set_unsigned_key_registered = cls.registered
         cls.unordered_set_unsigned_key_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.unordered_set_unsigned_key_original = cls.adapter.restore_original_gtests(cls.unordered_set_unsigned_key_registered,
@@ -3268,6 +3283,60 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_unordered_set_unsigned_key_history(self.unordered_set_unsigned_key_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.unordered_set_unsigned_key_registered, self.unordered_set_unsigned_key_suffix + b' ')
+
+
+    def test_ordered_set_core_retains_published_bodies(self):
+        self.assertEqual(self.ordered_set_core_original + self.ordered_set_core_suffix, self.ordered_set_core_registered)
+        self.assertEqual(self.adapter.restore_ordered_set_core_history(self.ordered_set_core_original),
+                         self.unordered_set_unsigned_key_original)
+        output, evidence = self.extractor.extract(self.ordered_set_core_original, ['TranslateTest.CoreV2OrderedSetListAndLookupListBalancesSortedKeysAndDeduplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetListAndLookupPointerCountAfterLeftAndRightRotationsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetListAndLookupListDuplicatesReleaseEachOwnedNodeOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetInsertResultInsertionResultDistinguishesADuplicateKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetInsertResultPointerInsertionUsesTheCheckedReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetIteratorOrderedRangeAndInsertionPreserveExistingPositionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetIteratorPointerEndpointsAndPostfixTraversalRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetIteratorEmptyIteratorsUseTheSameOwnerSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetBoundsBoundsOnKeysAndGapsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetBoundsConstPointerLookupMatchesExtremeKeysRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetBoundsEmptyLookupEvaluatesReceiverAndKeyOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetListAndLookupCustomOrderKeepsExistingSourceGuardRejected', 'TranslateTest.CoreV2OrderedSetInsertResultUnapprovedCustomComparatorForScalarInsertionRejected', 'TranslateTest.CoreV2OrderedSetIteratorStatefulOrderingRemainsOutsideTheCheckedIteratorTypeRejected', 'TranslateTest.CoreV2OrderedSetBoundsCustomOrderingDoesNotUseIntegerBoundsRejected'])
+        self.assertEqual(evidence['original_test_names'], 8670)
+        self.assertEqual(evidence['selected_count'], 15)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-list-and-lookup-list-balances-sorted-keys-and-deduplicates', output)
+        self.assertIn(b'ordered-set-bounds-bounds-on-keys-and-gaps', output)
+
+    def test_ordered_set_core_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_set_core_history(self.ordered_set_core_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_set_core_registered, self.ordered_set_core_suffix + b' ')
+
+
+    def test_ordered_owner_operations_retains_published_bodies(self):
+        self.assertEqual(self.ordered_owner_operations_original + self.ordered_owner_operations_suffix, self.ordered_owner_operations_registered)
+        self.assertEqual(self.adapter.restore_ordered_owner_operations_history(self.ordered_owner_operations_original),
+                         self.ordered_set_core_original)
+        output, evidence = self.extractor.extract(self.ordered_owner_operations_original, ['TranslateTest.CoreV2OrderedSetErasureKeyEraseKeepsOtherNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetErasurePointerPositionAndRangeReturnTheRetainedSuccessorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetErasureClearResetsOwnershipForReinsertionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransferMoveConstructionReparentsTheRootAndKeepsNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransferSwapThroughPointerRebindsEmptyAndNonemptySentinelsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransferSwapTwoLiveTreesPreservesTheirNodeOrderAndIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEqualRangeFoundAndAbsentKeysUseTheSameTreeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEqualRangeConstPointerEqualRangeEvaluatesTheKeyOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEqualRangeEmptyEqualRangeUsesBothOwnerSentinelsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetEquivalentInsertionFollowsExistingNodesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetKeyErasureRemovesAllMatchesAndPreservesOtherNodesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetSwapWithASetIteratorInTheSameTranslationRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyConstructionSetIndependentNodesAndSortedCopyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyConstructionMultisetDuplicatesAndIndependentLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyConstructionEmptyOwnersGetDistinctSentinelsAndNoAllocationsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyAssignmentSetReusesOldNodeAllocationsAndReleasesOnlySurplusRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyAssignmentMultisetReplacesEmptyAndShorterInputsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyAssignmentAssignmentNotationAndExplicitMemberSequenceBothSidesOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetErasureCustomOrderingDoesNotUseIntegerErasureRejected', 'TranslateTest.CoreV2OrderedSetTransferTransparentComparatorDoesNotUseTheDefaultTransferRejected', 'TranslateTest.CoreV2OrderedSetEqualRangeTransparentComparatorOverloadRemainsGuardedRejected', 'TranslateTest.CoreV2OrderedMultisetCustomOrderingRemainsGuardedRejected', 'TranslateTest.CoreV2OrderedSetCopyConstructionCustomComparatorRemainsOutsideCheckedCopyRejected', 'TranslateTest.CoreV2OrderedSetCopyAssignmentCustomComparatorRemainsOutsideCheckedAssignmentRejected'])
+        self.assertEqual(evidence['original_test_names'], 8694)
+        self.assertEqual(evidence['selected_count'], 24)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-erasure-key-erase-keeps-other-node-addresses', output)
+        self.assertIn(b'ordered-set-copy-assignment-multiset-replaces-empty-and-shorter-inputs', output)
+
+    def test_ordered_owner_operations_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_owner_operations_history(self.ordered_owner_operations_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_owner_operations_registered, self.ordered_owner_operations_suffix + b' ')
+
+
+    def test_ordered_maps_with_mixed_cursors_retains_published_bodies(self):
+        self.assertEqual(self.ordered_maps_with_mixed_cursors_original + self.ordered_maps_with_mixed_cursors_suffix, self.ordered_maps_with_mixed_cursors_registered)
+        self.assertEqual(self.adapter.restore_ordered_maps_with_mixed_cursors_history(self.ordered_maps_with_mixed_cursors_original),
+                         self.ordered_owner_operations_original)
+        output, evidence = self.extractor.extract(self.ordered_maps_with_mixed_cursors_original, ['TranslateTest.CoreV2OrderedMapDefaultMappedValueAndStableReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPointerReceiverAndKeyEvaluatedOnceInOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapRepeatedSubscriptAllocatesAndDestroysOneNodePerKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapContainsIntegerKeysAfterInsertionAndPreservesSizeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapConstPointerCountEvaluatesReceiverAndKeyOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInitializerListConstructsOrderedMapWithFirstMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMultimapInitializerListKeepsDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInitializerListDestroysEachMappedNodeOnlyOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorFindReturnsAMutableMappedLvalueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorConstIteratorTraversesBoundsAndDecrementsEndRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorMultimapEqualRangePreservesMappedDuplicateOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapErasureKeyEraseKeepsTheMappedAddressOfAnotherNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapErasureEraseConstIteratorSpanReturnsMutableSuccessorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapErasureMultimapErasesEveryDuplicateAndClearReseatsSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertionMapInsertResultKeepsFirstValueOnADuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertionMultimapInsertReturnsMappedNodeInDuplicateOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertionMapPointerCallEvaluatesOwnerAndInputOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapScalarEmplacementTryEmplaceKeepsExistingValueAndDefaultsANewNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapScalarEmplacementInsertOrAssignReusesNodeAndReportsInsertionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapScalarEmplacementTryEmplaceEvaluatesArgumentsOnADuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransferMapCopyCreatesIndependentMappedObjectsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransferMapMoveKeepsReferencesAndTraversesNewSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransferMultimapSwapPreservesEquivalentNodeOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapCopyAssignmentReplacesAndOwnsMappedValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapCopyAssignmentMultimapRetainsDuplicatesAndClearsOldNodesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapCopyAssignmentPreservesOperandEvaluationOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAndSetCursorsKeepIndependentSentinelsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorConversionKeepsNodeAndConstViewRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorConversionMultimapMatchesDuplicatePositionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorConversionMixedEqualitySeesOwnerEndRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapNonDefaultKeyOrderRemainsOutsideCheckedSubscriptRejected', 'TranslateTest.CoreV2OrderedMapUnsupportedMappedTypeDoesNotAdmitCountRejected', 'TranslateTest.CoreV2OrderedMapStatefulPolicyRemainsOutsideCheckedMappedOwnerRejected', 'TranslateTest.CoreV2OrderedMapIteratorCustomMapIteratorReceiverKeepsSourceGuardRejected', 'TranslateTest.CoreV2OrderedMapErasureUnsupportedMappedStorageKeepsMutationGuardRejected', 'TranslateTest.CoreV2OrderedMapInsertionStatefulComparatorInsertionRemainsOutsideCheckedLayoutRejected', 'TranslateTest.CoreV2OrderedMapScalarEmplacementMappedForwardingConversionsRequireTheirOwnProofRejected', 'TranslateTest.CoreV2OrderedMapTransferStatefulOrderedMapComparatorHasSeparateTransferSemanticsRejected', 'TranslateTest.CoreV2OrderedMapCopyAssignmentCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedMapIteratorConversionCustomComparatorRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8734)
+        self.assertEqual(evidence['selected_count'], 40)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-default-mapped-value-and-stable-reference', output)
+        self.assertIn(b'ordered-map-iterator-conversion-mixed-equality-sees-owner-end', output)
+
+    def test_ordered_maps_with_mixed_cursors_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_maps_with_mixed_cursors_history(self.ordered_maps_with_mixed_cursors_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_maps_with_mixed_cursors_registered, self.ordered_maps_with_mixed_cursors_suffix + b' ')
 
 
 if __name__ == '__main__':

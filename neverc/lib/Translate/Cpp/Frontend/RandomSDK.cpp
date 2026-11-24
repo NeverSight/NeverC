@@ -104,21 +104,24 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
       return false;
     }
   }
-  bool isUnorderedMappedOwner() const {
+  bool isMappedOwner() const {
     if (!SDKGenerator || !Generator->getIdentifier()) return false;
     const auto Name = Generator->getName();
-    return Name == "unordered_map" || Name == "unordered_multimap";
+    return Name == "unordered_map" || Name == "unordered_multimap" ||
+           Name == "map" || Name == "multimap";
   }
 
-  bool isUnorderedSetElement(QualType Type) const {
+  bool isAssociativeSetElement(QualType Type) const {
     if (!SDKGenerator || !Generator->getIdentifier()) return false;
     const auto Name = Generator->getName();
-    if (Name != "unordered_set" && Name != "unordered_multiset") return false;
+    const bool Ordered = Name == "set" || Name == "multiset";
+    if (!Ordered && Name != "unordered_set" && Name != "unordered_multiset") return false;
     const auto *Owner = dyn_cast<ClassTemplateSpecializationDecl>(Generator);
-    if (!Owner || Owner->getTemplateArgs().size() != 4 ||
+    if (!Owner || Owner->getTemplateArgs().size() != (Ordered ? 3u : 4u) ||
         Owner->getTemplateArgs().get(0).getKind() != TemplateArgument::Type) return false;
     const auto Key = Owner->getTemplateArgs().get(0).getAsType();
-    return (Context.hasSameType(Key, Context.IntTy) || Context.hasSameType(Key, Context.UnsignedIntTy)) &&
+    return (Context.hasSameType(Key, Context.IntTy) ||
+            (!Ordered && Context.hasSameType(Key, Context.UnsignedIntTy))) &&
            Context.hasSameType(Type, Key);
   }
 
@@ -126,7 +129,8 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     if (!SDKGenerator || !Generator->getIdentifier())
       return false;
     const auto Name = Generator->getName();
-    return isUnorderedMappedOwner() || Name == "unordered_set" || Name == "unordered_multiset";
+    return Name == "unordered_map" || Name == "unordered_multimap" ||
+           Name == "unordered_set" || Name == "unordered_multiset";
   }
 
   bool engineIntrinsic(const FunctionDecl *F, SourceLocation Location) const {
@@ -150,7 +154,7 @@ class RandomSelection : public RecursiveASTVisitor<RandomSelection> {
     }
     if (F->getBuiltinID() == Builtin::BI__builtin_launder) {
       const auto Site = S.sdkFile(SM, Location);
-      if (!isUnorderedMappedOwner() || !Site ||
+      if (!isMappedOwner() || !Site ||
           Site->Root != "libcxx" || Site->Path != "__new/launder.h" ||
           F->isVariadic() || F->getNumParams() != 1 ||
           !Context.hasSameType(F->getReturnType(), Context.VoidPtrTy) ||
@@ -521,6 +525,7 @@ public:
   const CXXMethodDecl *WeightMethod = nullptr;
   const CXXConstructExpr *WeightCopy = nullptr;
   uint64_t MinimumValue = 0, MaximumValue = 0;
+  QualType OrderedSentinelType, OrderedMapElementType, OrderedMapPairType;
 
   RandomSelection(const State &S, const SourceManager &SM,
                   const ASTContext &Context, const CXXRecordDecl *Generator,
@@ -590,7 +595,7 @@ public:
     if (const auto *Builtin = dyn_cast<BuiltinTemplateDecl>(D))
       return Builtin->isImplicit() && Builtin->getLocation().isInvalid() &&
              (Builtin->getBuiltinTemplateKind() == BTK__builtin_common_type ||
-              (isUnorderedMappedOwner() &&
+              (isMappedOwner() &&
                Builtin->getBuiltinTemplateKind() == BTK__type_pack_element));
     if (++Nodes > 4096 || !origin(D))
       return false;
@@ -609,12 +614,30 @@ public:
       const auto *Definition = R->getDefinition();
       // pointer_traits keeps an intentionally incomplete tag in an unselected
       // conditional type. It is a proof dependency, never runtime storage.
-      if (!Definition && isUnorderedTableOwner() && R->getName() == "__nat") {
+      if (!Definition && (isUnorderedTableOwner() || !OrderedSentinelType.isNull()) &&
+          R->getIdentifier() && R->getName() == "__nat") {
         const auto *Parent = dyn_cast<CXXRecordDecl>(R->getDeclContext());
         const auto File = S.sdkFile(SM, R->getLocation());
-        if (Parent && Parent->getName() == "pointer_traits" && File &&
-            File->Root == "libcxx" && File->Path == "__memory/pointer_traits.h")
-          return true;
+        if (Parent && Parent->getIdentifier() && Parent->getName() == "pointer_traits" && File &&
+            File->Root == "libcxx" && File->Path == "__memory/pointer_traits.h") {
+          if (isUnorderedTableOwner())
+            return true;
+          const auto *Traits = dyn_cast<ClassTemplateSpecializationDecl>(Parent);
+          if (Traits && Traits->getSpecializationKind() != TSK_ExplicitSpecialization &&
+              Traits->getTemplateArgs().size() == 1 &&
+              Traits->getTemplateArgs().get(0).getKind() == TemplateArgument::Type) {
+            const auto Pointer = Traits->getTemplateArgs().get(0).getAsType();
+            if (Context.hasSameType(Pointer, Context.getPointerType(OrderedSentinelType)))
+              return true;
+            // Map cursors address the tree value and its public pair. The
+            // unused void branch also appears for the const cursor's pointer.
+            for (const auto Element : {OrderedMapElementType, OrderedMapPairType})
+              if (!Element.isNull() &&
+                  (Context.hasSameType(Pointer, Context.getPointerType(Element)) ||
+                   Context.hasSameType(Pointer, Context.getPointerType(Element.withConst()))))
+                return true;
+          }
+        }
       }
       if (!Definition || !origin(Definition))
         return false;
@@ -737,7 +760,7 @@ public:
              Context.hasSameType(Destructor->getDestroyedType(), Context.DoubleTy) ||
              Context.hasSameType(Destructor->getDestroyedType(), Context.FloatTy))) ||
            (File->Path == "__memory/construct_at.h" &&
-            isUnorderedSetElement(Destructor->getDestroyedType()))) &&
+            isAssociativeSetElement(Destructor->getDestroyedType()))) &&
           Context.hasSameUnqualifiedType(Destructor->getDestroyedType(),
               Destructor->getBase()->getType()->getPointeeType()))
         return true;
@@ -2652,6 +2675,33 @@ approvedUtilityAlgorithmRandomCall(const State &S, const SourceManager &SM,
       Object, Result, Distance, Selection.MinimumValue, Selection.MaximumValue,
       Index};
 }
+bool approvedOrderedMapSelectedBody(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!Function)
+    return false;
+  const auto Storage = approvedUtilityOrderedMapStorage(S, SM, Record, Context);
+  if (!Storage)
+    return false;
+  RandomSelection Selection(S, SM, Context, Record, Context.getSizeType(), Context.DoubleTy);
+  Selection.OrderedSentinelType = Storage->SentinelType;
+  Selection.OrderedMapElementType =
+      cast<ClassTemplateSpecializationDecl>(Storage->Tree)->getTemplateArgs().get(0).getAsType();
+  Selection.OrderedMapPairType = Storage->MappedPairType;
+  return Selection.retain(Function);
+}
+
+bool approvedOrderedSetSelectedBody(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!Function)
+    return false;
+  const auto Storage = approvedUtilityOrderedSetStorage(S, SM, Record, Context);
+  if (!Storage)
+    return false;
+  RandomSelection Selection(S, SM, Context, Record, Context.getSizeType(), Context.DoubleTy);
+  Selection.OrderedSentinelType = Storage->SentinelType;
+  return Selection.retain(Function);
+}
+
 bool approvedHashSetBucketSource(const State &S, const SourceManager &SM,
     const FunctionDecl *Function, const CXXRecordDecl *Owner, const ASTContext &Context) {
   if (!Function || !approvedEmptyHashSetRecord(S, SM, Owner, Context))

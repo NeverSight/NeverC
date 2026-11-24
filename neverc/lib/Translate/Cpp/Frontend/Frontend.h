@@ -219,6 +219,7 @@ struct State {
       SDKDependencies;
   std::map<std::string, llvm::sys::fs::UniqueID> SDKVirtualFiles;
   std::string SDKDistribution, SDKCatalogHash;
+  clang::FileID NativeHeapPredefines;
   // Exact operator calls indexed from unevaluated operands in this AST. Clang
   // does not mark synthesized operator[] references with NOUR_Unevaluated.
   std::set<const clang::CallExpr *> UnevaluatedArraySubscripts;
@@ -1309,6 +1310,13 @@ enum class UtilityOperation {
   ForwardList,
   List,
   OrderedContainerObserver,
+  OrderedSetCount,
+  OrderedMapSubscript,
+  OrderedSetCopyAssign,
+  OrderedSetInsert,
+  OrderedSetIterator,
+  OrderedSetMutation,
+  OrderedSetSwap,
   EmptyHashSetObserver,
   EmptyHashSetSetMaxLoadFactor,
   EmptyHashSetResizeBuckets,
@@ -4630,6 +4638,93 @@ const clang::MemberExpr *approvedEmptyHashSetSetMaxLoadFactor(
 std::optional<UtilityContainerObserver> approvedEmptyHashSetObserver(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityOrderedSetStorage {
+  const clang::CXXRecordDecl *Record, *Tree;
+  clang::QualType NodeType, LinkType, SentinelType;
+  uint64_t NodeBytes, ValueOffsetBytes, MappedOffsetBytes;
+  bool Multi;
+  clang::QualType MappedPairType;
+};
+std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context,
+    const std::function<bool(clang::QualType)> &Complete = {});
+
+const clang::CXXRecordDecl *approvedOrderedSetIteratorRecord(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context, const UtilityOrderedSetStorage *Owner = nullptr, UtilityOrderedSetStorage *Resolved = nullptr);
+bool approvedOrderedSetIteratorCopyConstruction(const State &S,
+    const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+enum class OrderedSetIteratorOperation {
+  Begin, End, Find, LowerBound, UpperBound, EqualRange, Dereference, Arrow,
+  Increment, PostIncrement, Decrement, PostDecrement, Equal, NotEqual
+};
+struct UtilityOrderedSetIteratorCall {
+  OrderedSetIteratorOperation Operation;
+  UtilityOrderedSetStorage Storage;
+  const clang::MemberExpr *Endpoint;
+  const clang::Expr *First, *Second;
+  std::optional<UtilityPairRecord> Pair{};
+};
+std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+enum class OrderedSetMutation { Clear, Key, Position, Range };
+struct UtilityOrderedSetMutation {
+  OrderedSetMutation Operation;
+  UtilityOrderedSetStorage Storage;
+  const clang::MemberExpr *Receiver;
+};
+std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+enum class OrderedInsertionKind { Insert, TryEmplace, InsertOrAssign };
+
+struct UtilityOrderedSetInsertion {
+  UtilityOrderedSetStorage Storage;
+  std::optional<UtilityPairRecord> Result, Input;
+  OrderedInsertionKind Kind;
+};
+std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+bool approvedOrderedMapSelectedBody(const State &S, const clang::SourceManager &SM,
+    const clang::FunctionDecl *Function, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State &S,
+    const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool approvedOrderedSetMoveConstruction(const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
+const clang::MemberExpr *approvedOrderedSetSwap(const State &S, const clang::SourceManager &SM,
+    const clang::CallExpr *Call, const clang::ASTContext &Context);
+
+struct UtilityOrderedSetListConstruction {
+  UtilityOrderedSetStorage Storage;
+  UtilityInitializerListRecord List;
+  std::optional<UtilityPairRecord> Pair;
+};
+std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
+    const clang::ASTContext &Context);
+bool approvedOrderedSetSelectedBody(const State &S,
+    const clang::SourceManager &SM, const clang::FunctionDecl *Function,
+    const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 bool approvedOrderedContainerRuntimeRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
@@ -4848,6 +4943,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityForwardLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityLists;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityOrderedContainers;
+  std::set<const clang::CXXRecordDecl *> RequiredUtilityOrderedSetIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityEmptyHashSets;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityPriorityQueues;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityDeques;

@@ -18374,3 +18374,31 @@ same source and layout checks through pointer receivers.
 Default unordered_set<unsigned int> and unordered_multiset<unsigned int>
 use the checked unsigned representation for keys, hashing, iterators and
 node transfers on the supported 64-bit targets.
+
+## Default integer ordered set
+
+The checked `std::set<int>` supports nonempty initializer lists, `insert` with
+an iterator and success flag, ordered traversal, and `count`, `find`,
+`lower_bound` and `upper_bound` on the supported 64-bit targets. A direct
+`#include <cstdlib>` makes the checked hosted C ABI imports `std::malloc` and
+`std::free` available to translated C++.
+
+## Default integer ordered set and multiset mutations
+
+Checked `std::set<int>` and `std::multiset<int>` support erasing by key,
+position or iterator range, clearing, and `equal_range`. Their checked copy
+constructors and assignments preserve values, with multiset copies retaining
+duplicates. Move construction and swap preserve the transferred nodes.
+
+## Default integer ordered map and multimap
+
+Checked `std::map<int, int>` and `std::multimap<int, int>` support initializer
+lists, insertion of their `value_type`, ordered traversal, lookup, erasing by
+key or iterator, clearing, and swap. The checked map subscript returns a
+reference to the stored mapped value and value-initializes it for a new key.
+The checked scalar `try_emplace` and `insert_or_assign` report whether they
+inserted a node. Supported ownership operations include map copy and move
+construction and copy assignment on both containers. A mutable cursor can
+convert to its const type, and ordered set and map cursors retain their
+independent owner sentinels when the headers are used together. Const
+lookup and end queries preserve the read-only owner's storage.
