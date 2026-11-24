@@ -137210,9 +137210,13 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const S
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
   if (!Method || !Method->isCopyAssignmentOperator() || Method->getNumParams() != 1 ||
       Method->isConst() || Method->isVolatile() || Method->isVirtual() ||
-      !Call->isLValue() || !orderedPinnedFunction(S, SM, Method, "set"))
+      !Call->isLValue())
     return std::nullopt;
   const auto *Owner = Method->getParent();
+  if (!Owner->getIdentifier()) return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "set" && Header != "map") || !orderedPinnedFunction(S, SM, Method, Header))
+    return std::nullopt;
   const auto Type = Context.getRecordType(Owner);
   const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
   const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
@@ -137230,10 +137234,13 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const S
       !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getLValueReferenceType(Type.withConst())) ||
       !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), Type))
     return std::nullopt;
-  const auto Storage = approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const bool Mapped = Header == "map";
+  const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
+                              : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   if (!Storage || !approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) ||
-      !approvedOrderedSetSelectedBody(S, SM, Owner->getDestructor(), Owner, Context) ||
-      !approvedOrderedSetSelectedBody(S, SM, Method, Owner, Context))
+      !SelectedBody(S, SM, Owner->getDestructor(), Owner, Context) ||
+      !SelectedBody(S, SM, Method, Owner, Context))
     return std::nullopt;
   return Storage;
 }
