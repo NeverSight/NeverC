@@ -1,5 +1,6 @@
 #include "BuiltinCppSdkData.h"
 #include "Frontend.h"
+#include "llvm/Support/raw_ostream.h"
 #include "clang/Lex/Lexer.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclFriend.h"
@@ -136093,6 +136094,14 @@ static bool associativeStorageDeclaration(const State &S, const SourceManager &S
           (Ordered && Expansion->Path == "__tree"));
 }
 
+template <class T>
+static T orderedSetProofFailure(bool Trace, const char *Name, unsigned Line, T Result) {
+  static thread_local unsigned Rows = 0;
+  if (Trace && Rows++ < 320)
+    llvm::errs() << "MAP_PROOF " << Name << " line=" << Line << "\n";
+  return Result;
+}
+
 static bool approvedAssociativeStorageGraph(const State &S, const SourceManager &SM,
                                             QualType Type, const ASTContext &Context,
                                             bool Ordered) {
@@ -136144,25 +136153,28 @@ static bool approvedAssociativeStorageGraph(const State &S, const SourceManager 
 bool approvedAssociativeContainerLayoutQuery(
     const State &S, const SourceManager &SM, QualType Type,
     const ASTContext &Context) {
+  const auto *TraceRecord = Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+  const bool Trace = TraceRecord && TraceRecord->getIdentifier() &&
+                     (TraceRecord->getName() == "map" || TraceRecord->getName() == "multimap");
   if (Type.isNull() || Type.isVolatileQualified() || Type.isRestrictQualified() ||
       Type.getAddressSpace() != LangAS::Default || Context.getTypeSize(Context.VoidPtrTy) != 64 ||
       Context.getTypeSize(Context.CharTy) != 8)
-    return false;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, false);
   const auto *Input = Type->getAsCXXRecordDecl();
   const auto *Record = Input ? Input->getDefinition() : nullptr;
   if (!approvedAssociativeContainerMetadataRecord(S, SM, Record, Context) ||
       Record->getNumBases() || Record->getNumVBases() || Record->isDynamicClass() ||
       Record->field_empty() || std::next(Record->field_begin()) != Record->field_end())
-    return false;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, false);
   const auto Header = associativeContainerHeader(Record->getName());
   const bool Ordered = Header != "unordered_set";
   if (!approvedAssociativeStorageGraph(S, SM, Type, Context, Ordered))
-    return false;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, false);
   const auto *Storage = *Record->field_begin();
   if (!Storage->getIdentifier() || Storage->getName() != (Ordered ? "__tree_" : "__table_") ||
       Storage->isBitField() || Storage->isMutable() || Storage->hasInClassInitializer() ||
       !cstddefOrigin(S, SM, Storage->getLocation(), "libcxx", Header))
-    return false;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, false);
   const auto StorageName = Ordered ? "__tree" : "__hash_table";
   // Selecting a node-handle overload can instantiate a friend declaration
   // of __tree or __hash_table. The definition remains in its original header.
@@ -136171,13 +136183,13 @@ bool approvedAssociativeContainerLayoutQuery(
   const auto *Table = Impl ? Impl->getDefinition() : nullptr;
   if (!Table || Table->getNumBases() || Table->isDynamicClass() ||
       !cstddefOrigin(S, SM, Table->getLocation(), "libcxx", StorageName))
-    return false;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, false);
   const auto &Layout = Context.getASTRecordLayout(Record);
   const auto &StorageLayout = Context.getASTRecordLayout(Table);
   if (Layout.getFieldOffset(0) || Layout.getSize() != StorageLayout.getSize() ||
       Layout.getAlignment() != StorageLayout.getAlignment() ||
       Context.getTypeAlign(Type) != Context.getTypeAlign(Context.VoidPtrTy))
-    return false;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, false);
 
   const auto &Public = cast<ClassTemplateSpecializationDecl>(Record)->getTemplateArgs();
   const auto &Private = Impl->getTemplateArgs();
@@ -136192,7 +136204,7 @@ bool approvedAssociativeContainerLayoutQuery(
     if (!Pair || !Rebound || !Pattern || Pattern->getName() != "__map_value_compare" ||
         !cstddefOrigin(S, SM, Pattern->getLocation(), "libcxx", "map") ||
         Compare->getSpecializationKind() != TSK_ImplicitInstantiation)
-      return false;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, false);
     const auto &Args = Compare->getTemplateArgs();
     if (Args.size() != 4 || Args.get(0).getKind() != TemplateArgument::Type ||
         Args.get(1).getKind() != TemplateArgument::Type || Args.get(2).getKind() != TemplateArgument::Type ||
@@ -136203,11 +136215,11 @@ bool approvedAssociativeContainerLayoutQuery(
         !Context.hasSameType(Args.get(0).getAsType(), Context.IntTy) ||
         !Context.hasSameType(Args.get(1).getAsType(), Value) ||
         !Context.hasSameType(Args.get(2).getAsType(), Public.get(2).getAsType()))
-      return false;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, false);
   } else {
     for (unsigned I = 0; I < Private.size(); ++I)
       if (!Context.hasSameType(Private.get(I).getAsType(), Public.get(I).getAsType()))
-        return false;
+        return orderedSetProofFailure(Trace, __func__, __LINE__, false);
   }
 
   auto Field = [&](const CXXRecordDecl *R, llvm::StringRef Name) -> const FieldDecl * {
@@ -136233,7 +136245,7 @@ bool approvedAssociativeContainerLayoutQuery(
   const uint64_t P = Context.getTypeSize(Context.VoidPtrTy);
   const auto *Size = Field(Table, "__size_");
   if (!Size || !Context.hasSameType(Size->getType(), Context.getSizeType()))
-    return false;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, false);
   if (Ordered) {
     const auto *Begin = Field(Table, "__begin_node_");
     const auto *End = Field(Table, "__end_node_");
@@ -136631,42 +136643,43 @@ std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager
 static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context, const std::function<bool(QualType)> &Complete, bool Mapped) {
+  const bool Trace = Mapped;
   Record = Record ? Record->getDefinition() : nullptr;
   if (!Record || !Record->getIdentifier() ||
       associativeContainerHeader(Record->getName()) != (Mapped ? "map" : "set") ||
       !approvedOrderedContainerRuntimeRecord(S, SM, Record, Context))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Storage = orderedTreeField(Record, "__tree_");
   const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
   Tree = Tree ? Tree->getDefinition() : nullptr;
   const auto *TreeSpec = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Tree);
-  if (!TreeSpec) return std::nullopt;
+  if (!TreeSpec) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Element = TreeSpec->getTemplateArgs().get(0).getAsType();
   const auto *AllocatorField = orderedTreeField(Tree, "__node_alloc_");
   const auto *Allocator = AllocatorField ? associativeTypeIdentity(S, SM,
       AllocatorField->getType()->getAsCXXRecordDecl(), "allocator", "__memory/allocator.h",
       "__fwd/memory.h", 1) : nullptr;
-  if (!Allocator) return std::nullopt;
+  if (!Allocator) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto NodeType = Allocator->getTemplateArgs().get(0).getAsType();
   const auto *NodeSpec = associativeTypeIdentity(S, SM, NodeType->getAsCXXRecordDecl(),
       "__tree_node", "__tree", {}, 2);
   if (!NodeSpec || NodeSpec->getSpecializationKind() == TSK_ExplicitSpecialization ||
       !Context.hasSameType(NodeSpec->getTemplateArgs().get(0).getAsType(), Element) ||
       !Context.hasSameType(NodeSpec->getTemplateArgs().get(1).getAsType(), Context.VoidPtrTy))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   if (!NodeSpec->getDefinition() && (!Complete || !Complete(NodeType)))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Node = NodeSpec->getDefinition();
   if (!Node || Node->getNumBases() != 1 || Node->bases_begin()->isVirtual() ||
       Node->getNumVBases() || !approvedAssociativeStorageGraph(S, SM, NodeType, Context, true))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto LinkType = Node->bases_begin()->getType();
   const auto *LinkSpec = associativeTypeIdentity(S, SM, LinkType->getAsCXXRecordDecl(),
       "__tree_node_base", "__tree", {}, 1);
   const auto *Link = LinkSpec ? LinkSpec->getDefinition() : nullptr;
   if (!Link || !Context.hasSameType(LinkSpec->getTemplateArgs().get(0).getAsType(), Context.VoidPtrTy) ||
       Link->getNumBases() != 1 || Link->bases_begin()->isVirtual() || Link->getNumVBases())
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto SentinelType = Link->bases_begin()->getType();
   const auto *SentinelSpec = associativeTypeIdentity(S, SM, SentinelType->getAsCXXRecordDecl(),
       "__tree_end_node", "__tree", {}, 1);
@@ -136676,7 +136689,7 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
   if (!Sentinel || Sentinel->getNumBases() || !End ||
       !Context.hasSameType(SentinelSpec->getTemplateArgs().get(0).getAsType(), LinkPointer) ||
       !Context.hasSameType(End->getType(), SentinelType))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
 
   const auto *Left = orderedTreeField(Sentinel, "__left_");
   const auto *Right = orderedTreeField(Link, "__right_");
@@ -136689,7 +136702,7 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
       !Context.hasSameType(Parent->getType(), Context.getPointerType(SentinelType)) ||
       !Context.hasSameType(Black->getType(), Context.BoolTy) ||
       !Context.hasSameType(Value->getType(), Element))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
 
   const auto W = Context.getTypeSize(Context.VoidPtrTy);
   const auto Byte = Context.getCharWidth();
@@ -136708,7 +136721,7 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
       ValueOffset < 3 * W + Byte || ValueOffset % Context.getTypeAlign(Element) ||
       ValueOffset + Context.getTypeSize(Element) > Context.getTypeSize(NodeType) ||
       Context.getTypeAlign(NodeType) != Context.getTypeAlign(Context.VoidPtrTy))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
 
   auto KeyOffset = ValueOffset;
   uint64_t MappedOffset = 0;
@@ -136722,23 +136735,23 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
     if (!Wrapper || Wrapper->getNumBases() || !Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->First->getType(), Context.IntTy.withConst()) ||
         !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto &WrapperLayout = Context.getASTRecordLayout(Wrapper);
     const auto &PairLayout = Context.getASTRecordLayout(Pair->Record);
     if (WrapperLayout.getFieldCount() != 1 || PairLayout.getFieldCount() != 2 ||
         WrapperLayout.getFieldOffset(Field->getFieldIndex()) != 0 ||
         Context.getTypeSize(Field->getType()) != Context.getTypeSize(Element))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     if (PairLayout.getFieldOffset(Pair->First->getFieldIndex()) != 0)
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     MappedPairType = Field->getType();
     MappedOffset = ValueOffset + PairLayout.getFieldOffset(Pair->Second->getFieldIndex());
     const auto Width = Context.getTypeSize(Context.IntTy);
     if (KeyOffset + Width > MappedOffset || MappedOffset + Width > Context.getTypeSize(NodeType) ||
         KeyOffset % Context.getTypeAlign(Context.IntTy) || MappedOffset % Context.getTypeAlign(Context.IntTy))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   } else if (!Context.hasSameType(Element, Context.IntTy)) {
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   }
   return UtilityOrderedSetStorage{Record, Tree, NodeType, LinkType, SentinelType,
       uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()), KeyOffset / Byte, MappedOffset / Byte,
@@ -136759,10 +136772,12 @@ std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(
 static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record, const ASTContext &Context,
     const UtilityOrderedSetStorage *Owner, UtilityOrderedSetStorage *Resolved) {
-  if (!S.coreV2() || !Record || !Record->getIdentifier()) return nullptr;
+  const bool Trace = Record && Record->getIdentifier() &&
+                     (Record->getName() == "__map_iterator" || Record->getName() == "__map_const_iterator");
+  if (!S.coreV2() || !Record || !Record->getIdentifier()) return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
   const auto Name = Record->getName();
   const bool Const = Name == "__map_const_iterator";
-  if (!Const && Name != "__map_iterator") return nullptr;
+  if (!Const && Name != "__map_iterator") return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
   const auto *Wrapper = associativeTypeIdentity(S, SM, Record, Name, "map", "__tree", 1);
   const auto *Definition = Wrapper ? Wrapper->getDefinition() : nullptr;
   const auto *Field = orderedTreeField(Definition, "__i_");
@@ -136770,10 +136785,10 @@ static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
       !Definition->hasTrivialDestructor() || Definition->getNumBases() ||
       !associativeStorageDeclaration(S, SM, Field, true) || Field->isMutable() ||
       Field->isBitField() || Field->getAccess() != AS_private)
-    return nullptr;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
 
   const auto CursorType = Wrapper->getTemplateArgs().get(0).getAsType();
-  if (!Context.hasSameType(Field->getType(), CursorType)) return nullptr;
+  if (!Context.hasSameType(Field->getType(), CursorType)) return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
   const auto *Cursor = associativeTypeIdentity(S, SM, CursorType->getAsCXXRecordDecl(),
       Const ? "__tree_const_iterator" : "__tree_iterator", "__tree", {}, 3);
   const auto *CursorRecord = Cursor ? Cursor->getDefinition() : nullptr;
@@ -136782,12 +136797,12 @@ static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
       !CursorRecord->hasTrivialDestructor() || CursorRecord->getNumBases() ||
       !associativeStorageDeclaration(S, SM, Link, true) || Link->isMutable() ||
       Link->isBitField() || Link->getAccess() != AS_private)
-    return nullptr;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
   const auto &Args = Cursor->getTemplateArgs();
   const auto Pointer = Args.get(1).getAsType();
   if (!Pointer->isPointerType() || Pointer.hasQualifiers() ||
       !Context.hasSameType(Args.get(2).getAsType(), Context.getPointerDiffType()))
-    return nullptr;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
   const auto Node = Pointer->getPointeeType();
 
   std::optional<UtilityOrderedSetStorage> LocalOwner;
@@ -136800,11 +136815,11 @@ static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
           const auto Storage = approvedUtilityOrderedMapStorage(S, SM, Declaration, Context);
           if (!Storage || !Context.hasSameType(Storage->NodeType, Node)) continue;
           if (!LocalOwner) LocalOwner = Storage;
-          else if (LocalOwner->Tree->getCanonicalDecl() != Storage->Tree->getCanonicalDecl()) return nullptr;
+          else if (LocalOwner->Tree->getCanonicalDecl() != Storage->Tree->getCanonicalDecl()) return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
         }
       }
     }
-    if (!LocalOwner) return nullptr;
+    if (!LocalOwner) return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
     Owner = &*LocalOwner;
   }
   const auto *Tree = dyn_cast<ClassTemplateSpecializationDecl>(Owner->Tree);
@@ -136812,7 +136827,7 @@ static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
       !Context.hasSameType(Args.get(0).getAsType(), Tree->getTemplateArgs().get(0).getAsType()) ||
       !(Context.hasSameType(Link->getType(), Context.getPointerType(Owner->LinkType)) ||
         Context.hasSameType(Link->getType(), Context.getPointerType(Owner->SentinelType))))
-    return nullptr;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
 
   const auto Type = Context.getRecordType(Definition);
   const auto &OuterLayout = Context.getASTRecordLayout(Definition);
@@ -136823,7 +136838,7 @@ static const CXXRecordDecl *approvedOrderedMapIteratorRecord(
       OuterLayout.getFieldOffset(Field->getFieldIndex()) || InnerLayout.getFieldOffset(Link->getFieldIndex()) ||
       Context.getTypeSize(Type) != Width || Context.getTypeSize(CursorType) != Width ||
       Context.getTypeAlign(Type) != Alignment || Context.getTypeAlign(CursorType) != Alignment)
-    return nullptr;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, nullptr);
   if (Resolved) *Resolved = *Owner;
   return Definition;
 }
@@ -136905,13 +136920,17 @@ bool approvedOrderedSetIteratorCopyConstruction(const State &S,
 
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *TraceFunction = Call ? Call->getDirectCallee() : nullptr;
+  const auto TraceFile = TraceFunction ? S.sdkFile(SM, TraceFunction->getLocation()) : std::nullopt;
+  const bool Trace = TraceFile && TraceFile->Root == "libcxx" &&
+                     (TraceFile->Path == "map" || TraceFile->Path == "__tree");
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = Access ? Access->getMethodDecl() : nullptr;
   if (!Method || !Method->getIdentifier() || Method->isConst() || Method->isStatic() ||
       Method->isVolatile() || Method->isVirtual() || !Call->isPRValue() ||
       !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
       Method->getNumParams() != Call->getNumArgs())
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   using Kind = OrderedInsertionKind;
   const auto Name = Method->getName();
   const auto *Template = Method->getPrimaryTemplate();
@@ -136924,41 +136943,41 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   else if (Name == "insert_or_assign" && Template && Args == 2)
     Insertion = Kind::InsertOrAssign;
   else
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto Receiver = associativeMemberReceiverType(Member);
   const auto *Record = Method->getParent();
-  if (!Record->getIdentifier()) return std::nullopt;
+  if (!Record->getIdentifier()) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Header = associativeContainerHeader(Record->getName());
   if ((Header != "set" && Header != "map") || Receiver.isNull() || Receiver.isConstQualified() ||
       !S.owns(SM, Member->getMemberLoc()) || !Context.hasSameType(Receiver, Context.getRecordType(Record)) ||
       !orderedPinnedFunction(S, SM, Method, Header))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const bool Mapped = Header == "map";
   const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                             : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
-  if (!Table) return std::nullopt;
+  if (!Table) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   if (Insertion != Kind::Insert &&
       (!Mapped || Table->Multi || !orderedPinnedFunction(S, SM, Template->getTemplatedDecl(), Header)))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
   const auto Parameter = Method->getParamDecl(0)->getType();
   if (!(Context.hasSameType(Parameter, Context.getLValueReferenceType(Value.withConst())) ||
         Context.hasSameType(Parameter, Context.getRValueReferenceType(Value))) ||
       !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Value))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   if (Args == 2) {
     const auto Argument = Method->getParamDecl(1)->getType();
     const auto MappedType = Argument->getPointeeType();
     if (!Argument->isReferenceType() || MappedType.isVolatileQualified() ||
         !Context.hasSameUnqualifiedType(MappedType, Context.IntTy) ||
         !Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Context.IntTy))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   }
   std::optional<UtilityPairRecord> Input;
   if (Mapped && Insertion == Kind::Insert) {
     Input = approvedUtilityPairRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
-    if (!Input) return std::nullopt;
+    if (!Input) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   }
   auto Iterator = Call->getType();
   std::optional<UtilityPairRecord> Pair;
@@ -136966,7 +136985,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     Pair = approvedUtilityPairRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context);
     if (!Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->Second->getType(), Context.BoolTy))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     Iterator = Pair->First->getType();
   }
   const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
@@ -136974,12 +136993,16 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       !SelectedBody(S, SM, Method, Record, Context) ||
       !approvedOrderedContainerDestructor(S, SM, Record->getDestructor(), Context) ||
       !SelectedBody(S, SM, Record->getDestructor(), Record, Context))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion};
 }
 
 std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *TraceFunction = Call ? Call->getDirectCallee() : nullptr;
+  const auto TraceFile = TraceFunction ? S.sdkFile(SM, TraceFunction->getLocation()) : std::nullopt;
+  const bool Trace = TraceFile && TraceFile->Root == "libcxx" &&
+                     (TraceFile->Path == "map" || TraceFile->Path == "__tree");
   using Op = OrderedSetIteratorOperation;
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = Access ? Access->getMethodDecl() : nullptr;
@@ -136987,13 +137010,13 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     const auto Name = Method->getName();
     const bool Begin = Name == "begin" || Name == "cbegin";
     const bool End = Name == "end" || Name == "cend";
-    if (!Begin && !End) return std::nullopt;
+    if (!Begin && !End) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
     const auto Receiver = associativeMemberReceiverType(Reference);
     const auto *Owner = Method->getParent();
-    if (!Owner->getIdentifier()) return std::nullopt;
+    if (!Owner->getIdentifier()) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto Header = associativeContainerHeader(Owner->getName());
-    if (Header != "set" && Header != "map") return std::nullopt;
+    if (Header != "set" && Header != "map") return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const bool Mapped = Header == "map";
     const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
     if (Receiver.isNull() || (!Method->isConst() && Receiver.isConstQualified()) ||
@@ -137002,26 +137025,26 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
         !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
         !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
         !orderedPinnedFunction(S, SM, Method, Header))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
     if (!Table || !approvedOrderedSetIteratorRecord(
             S, SM, Call->getType()->getAsCXXRecordDecl(), Context, &*Table) ||
         !SelectedBody(S, SM, Method, Owner, Context))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     return UtilityOrderedSetIteratorCall{Begin ? Op::Begin : Op::End, *Table, Reference, nullptr, nullptr};
   }
 
   if (Method && Method->getIdentifier() && Method->getNumParams() == 1 && Call->getNumArgs() == 1) {
     const auto Name = Method->getName();
     const bool Find = Name == "find", Lower = Name == "lower_bound", Range = Name == "equal_range";
-    if (!Find && !Lower && !Range && Name != "upper_bound") return std::nullopt;
+    if (!Find && !Lower && !Range && Name != "upper_bound") return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
     const auto Receiver = associativeMemberReceiverType(Reference);
     const auto *Owner = Method->getParent();
-    if (!Owner->getIdentifier()) return std::nullopt;
+    if (!Owner->getIdentifier()) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto Header = associativeContainerHeader(Owner->getName());
-    if (Header != "set" && Header != "map") return std::nullopt;
+    if (Header != "set" && Header != "map") return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const bool Mapped = Header == "map";
     const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
     const auto *Key = Call->getArg(0);
@@ -137034,21 +137057,21 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
         !Context.hasSameType(Method->getParamDecl(0)->getType(), Parameter) ||
         !Context.hasSameUnqualifiedType(Key->getType(), Context.IntTy) ||
         !orderedPinnedFunction(S, SM, Method, Header))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
-    if (!Table) return std::nullopt;
+    if (!Table) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     auto Element = Call->getType();
     std::optional<UtilityPairRecord> Pair;
     if (Range) {
       Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
       if (!Pair || !Pair->Record->hasTrivialDestructor() ||
           !Context.hasSameType(Pair->First->getType(), Pair->Second->getType()))
-        return std::nullopt;
+        return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
       Element = Pair->First->getType();
     }
     const auto *Iterator = approvedOrderedSetIteratorRecord(S, SM, Element->getAsCXXRecordDecl(), Context, &*Table);
-    if (!Iterator) return std::nullopt;
+    if (!Iterator) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto *Carrier = Pair ? Pair->Record : Iterator;
 
     const auto *Returned = orderedExpression(orderedReturn(Method));
@@ -137056,7 +137079,7 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
       const auto *Ctor = Convert->getConstructor();
       if (Convert->getNumArgs() != 1 || Ctor->getParent()->getCanonicalDecl() != Carrier->getCanonicalDecl() ||
           !orderedPinnedFunction(S, SM, Ctor, Range ? "__utility/pair.h" : (Mapped ? "map" : "__tree")))
-        return std::nullopt;
+        return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
       Returned = orderedExpression(Convert->getArg(0));
     }
     const auto *Forward = dyn_cast_or_null<CXXMemberCallExpr>(Returned);
@@ -137071,7 +137094,7 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
         !isa_and_nonnull<CXXThisExpr>(orderedExpression(Storage->getBase())) ||
         !orderedParameter(Forward->getArg(0), Method->getParamDecl(0)) ||
         !SelectedBody(S, SM, Method, Owner, Context))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto OpKind = Range ? Op::EqualRange : (Find ? Op::Find : (Lower ? Op::LowerBound : Op::UpperBound));
     return UtilityOrderedSetIteratorCall{OpKind, *Table, Reference, Key, nullptr, Pair};
   }
@@ -137080,27 +137103,27 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
   const auto *Function = Operator ? Operator->getDirectCallee() : nullptr;
   if (!Function || !Operator->getNumArgs() || !S.owns(SM, Operator->getOperatorLoc()) ||
       Function->isVariadic())
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *First = Operator->getArg(0);
   UtilityOrderedSetStorage Table{};
   const auto *Record = approvedOrderedSetIteratorRecord(
       S, SM, First->getType()->getAsCXXRecordDecl(), Context, nullptr, &Table);
   if (!Record || !First->isLValue() || First->getType().isVolatileQualified() ||
       First->getType().isRestrictQualified() || First->getType().getAddressSpace() != LangAS::Default)
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Type = Context.getRecordType(Record);
   const bool Mapped = !Table.MappedPairType.isNull();
   const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   if (!orderedPinnedFunction(S, SM, Function, Mapped ? "map" : "__tree"))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Result = Function->getReturnType();
   if (!Context.hasSameType(Result.getNonReferenceType(), Call->getType()))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Kind = Operator->getOperator();
   if (Kind == OO_EqualEqual || Kind == OO_ExclaimEqual) {
     if (isa<CXXMethodDecl>(Function) || Function->getNumParams() != 2 || Operator->getNumArgs() != 2 ||
         !Context.hasSameType(Result, Context.BoolTy) || !Call->isPRValue())
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     const auto Reference = Context.getLValueReferenceType(Type.withConst());
     const auto *Second = Operator->getArg(1);
     if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) ||
@@ -137109,7 +137132,7 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
         Second->getType().isVolatileQualified() || Second->getType().isRestrictQualified() ||
         Second->getType().getAddressSpace() != LangAS::Default ||
         !SelectedBody(S, SM, Function, Table.Record, Context))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     return UtilityOrderedSetIteratorCall{Kind == OO_EqualEqual ? Op::Equal : Op::NotEqual,
                                          Table, nullptr, First, Second};
   }
@@ -137118,7 +137141,7 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
   if (!Member || Member->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
       Member->isStatic() || Member->isVirtual() || Member->isVolatile() || Member->getPrimaryTemplate() ||
       Function->getNumParams() + 1 != Operator->getNumArgs())
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   Op Operation;
   if (Kind == OO_Star || Kind == OO_Arrow) {
     auto Value = Mapped ? Table.MappedPairType : Context.IntTy;
@@ -137126,7 +137149,7 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     if (!Member->isConst() || Function->getNumParams() ||
         !Context.hasSameType(Result, Kind == OO_Star ? Context.getLValueReferenceType(Value)
                                                     : Context.getPointerType(Value)))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     Operation = Kind == OO_Star ? Op::Dereference : Op::Arrow;
   } else if (Kind == OO_PlusPlus || Kind == OO_MinusMinus) {
     const bool Post = Function->getNumParams() == 1;
@@ -137136,64 +137159,68 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
                  !Context.hasSameType(Function->getParamDecl(0)->getType(), Context.IntTy))
               : Function->getNumParams() != 0) ||
         !Context.hasSameType(Result, Post ? Type : Context.getLValueReferenceType(Type)))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     Operation = Kind == OO_PlusPlus ? (Post ? Op::PostIncrement : Op::Increment)
                                     : (Post ? Op::PostDecrement : Op::Decrement);
   } else {
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   }
   if (!SelectedBody(S, SM, Function, Table.Record, Context))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   return UtilityOrderedSetIteratorCall{Operation, Table, nullptr, First, nullptr};
 }
 
 std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *TraceFunction = Call ? Call->getDirectCallee() : nullptr;
+  const auto TraceFile = TraceFunction ? S.sdkFile(SM, TraceFunction->getLocation()) : std::nullopt;
+  const bool Trace = TraceFile && TraceFile->Root == "libcxx" &&
+                     (TraceFile->Path == "map" || TraceFile->Path == "__tree");
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = Access ? Access->getMethodDecl() : nullptr;
   if (!Method || !Method->getIdentifier() || Method->isConst() || Method->isStatic() ||
       Method->isVirtual() || Method->isVolatile() || Method->getPrimaryTemplate() ||
       Method->getNumParams() != Call->getNumArgs() || !Call->isPRValue() ||
       !Context.hasSameType(Method->getReturnType(), Call->getType()))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Name = Method->getName();
   const auto Arity = Call->getNumArgs();
   if (Name == "clear" ? Arity != 0 : (Name != "erase" || (Arity != 1 && Arity != 2)))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
   const auto Receiver = associativeMemberReceiverType(Reference);
   const auto *Owner = Method->getParent();
-  if (!Owner->getIdentifier()) return std::nullopt;
+  if (!Owner->getIdentifier()) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Header = associativeContainerHeader(Owner->getName());
   if ((Header != "set" && Header != "map") || Receiver.isNull() || !Reference ||
       !S.owns(SM, Reference->getMemberLoc()) || !Context.hasSameType(Receiver, Context.getRecordType(Owner)) ||
       !orderedPinnedFunction(S, SM, Method, Header))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const bool Mapped = Header == "map";
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
                                : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
-  if (!Storage) return std::nullopt;
+  if (!Storage) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
 
   OrderedSetMutation Operation;
   if (Name == "clear") {
-    if (!Call->getType()->isVoidType()) return std::nullopt;
+    if (!Call->getType()->isVoidType()) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     Operation = OrderedSetMutation::Clear;
   } else if (Arity == 1 && Context.hasSameType(Call->getType(), Context.getSizeType())) {
     const auto Key = Context.getLValueReferenceType(Context.IntTy.withConst());
     if (!Context.hasSameType(Method->getParamDecl(0)->getType(), Key) ||
         !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     Operation = OrderedSetMutation::Key;
   } else {
     const auto Result = Call->getType();
     if (!approvedOrderedSetIteratorRecord(S, SM, Result->getAsCXXRecordDecl(), Context, &*Storage))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     for (unsigned I = 0; I != Arity; ++I) {
       const auto Parameter = Method->getParamDecl(I)->getType();
       if (!Context.hasSameType(Call->getArg(I)->getType(), Parameter) ||
           (Mapped ? !approvedOrderedSetIteratorRecord(S, SM, Parameter->getAsCXXRecordDecl(), Context, &*Storage)
                   : !Context.hasSameType(Parameter, Result)))
-        return std::nullopt;
+        return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
     }
     Operation = Arity == 1 ? OrderedSetMutation::Position : OrderedSetMutation::Range;
   }
@@ -137201,7 +137228,7 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
   if (!SelectedBody(S, SM, Method, Owner, Context) ||
       !approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) ||
       !SelectedBody(S, SM, Owner->getDestructor(), Owner, Context))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   return UtilityOrderedSetMutation{Operation, *Storage, Reference};
 }
 
@@ -137240,6 +137267,10 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const S
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State &S,
     const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *TraceFunction = Call ? Call->getDirectCallee() : nullptr;
+  const auto TraceFile = TraceFunction ? S.sdkFile(SM, TraceFunction->getLocation()) : std::nullopt;
+  const bool Trace = TraceFile && TraceFile->Root == "libcxx" &&
+                     (TraceFile->Path == "map" || TraceFile->Path == "__tree");
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
   if (!Method || !Method->isOverloadedOperator() || Method->getOverloadedOperator() != OO_Subscript ||
       Method->isConst() || Method->isVolatile() || Method->isStatic() || Method->isVirtual() ||
@@ -137247,17 +137278,17 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State 
       !Call->isLValue() || !Context.hasSameType(Call->getType(), Context.IntTy) ||
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Context.IntTy)) ||
       !orderedPinnedFunction(S, SM, Method, "map"))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Owner = Method->getParent();
-  if (!Owner->getIdentifier() || Owner->getName() != "map") return std::nullopt;
+  if (!Owner->getIdentifier() || Owner->getName() != "map") return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
   const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
   const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
   const unsigned Offset = Operator ? 1 : 0;
-  if (Call->getNumArgs() != Offset + 1) return std::nullopt;
+  if (Call->getNumArgs() != Offset + 1) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Site = Reference ? Reference->getMemberLoc()
       : Operator ? Operator->getOperatorLoc() : SourceLocation();
-  if (!S.owns(SM, Site)) return std::nullopt;
+  if (!S.owns(SM, Site)) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Receiver = Operator && Operator->getArg(0)->isLValue() ? Operator->getArg(0)->getType()
       : associativeMemberReceiverType(Reference);
   const auto *Key = Call->getArg(Offset);
@@ -137267,29 +137298,32 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State 
   if (Receiver.isNull() || !Context.hasSameType(Receiver, Context.getRecordType(Owner)) ||
       !Context.hasSameUnqualifiedType(Key->getType(), Context.IntTy) ||
       (!LValue && (!RValue || !Key->isXValue())))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
 
   const auto Tree = approvedUtilityOrderedMapStorage(S, SM, Owner, Context);
   if (!Tree || !approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) ||
       !approvedOrderedMapSelectedBody(S, SM, Owner->getDestructor(), Owner, Context) ||
       !approvedOrderedMapSelectedBody(S, SM, Method, Owner, Context))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   return Tree;
 }
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
+  const auto *TraceCtor = Construction ? Construction->getConstructor() : nullptr;
+  const auto TraceFile = TraceCtor ? S.sdkFile(SM, TraceCtor->getLocation()) : std::nullopt;
+  const bool Trace = TraceFile && TraceFile->Root == "libcxx" && TraceFile->Path == "map";
   const auto *Ctor = Construction ? Construction->getConstructor() : nullptr;
   if (!Ctor || !Ctor->isCopyConstructor() || Ctor->getNumParams() != 1 ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
       Construction->getNumArgs() != 1 || !S.owns(SM, Construction->getExprLoc()))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Owner = Ctor->getParent();
-  if (!Owner->getIdentifier()) return std::nullopt;
+  if (!Owner->getIdentifier()) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Header = associativeContainerHeader(Owner->getName());
   if ((Header != "set" && Header != "map") || !orderedPinnedFunction(S, SM, Ctor, Header))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const bool Mapped = Header == "map";
   const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   const auto Type = Context.getRecordType(Owner);
@@ -137297,13 +137331,13 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
   if (!Context.hasSameUnqualifiedType(Construction->getType(), Type) ||
       !Context.hasSameType(Ctor->getParamDecl(0)->getType(), Context.getLValueReferenceType(Type.withConst())) ||
       !Context.hasSameUnqualifiedType(Argument->getType(), Type))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
   if (!Storage || !approvedOrderedContainerDestructor(S, SM, Owner->getDestructor(), Context) ||
       !SelectedBody(S, SM, Owner->getDestructor(), Owner, Context) ||
       !SelectedBody(S, SM, Ctor, Owner, Context))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   return Storage;
 }
 
@@ -137419,16 +137453,19 @@ static bool approvedOrderedSetListDefault(const State &S, const SourceManager &S
 std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
+  const auto *TraceCtor = Construction ? Construction->getConstructor() : nullptr;
+  const auto TraceFile = TraceCtor ? S.sdkFile(SM, TraceCtor->getLocation()) : std::nullopt;
+  const bool Trace = TraceFile && TraceFile->Root == "libcxx" && TraceFile->Path == "map";
   if (!Construction || Construction->getConstructionKind() != CXXConstructionKind::Complete ||
       Construction->getNumArgs() != 2 || !S.owns(SM, Construction->getExprLoc()))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Selected = Construction->getConstructor();
   const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
   const auto List = orderedSetListParameter(S, SM, Ctor, Context);
   if (!List || Ctor->getNumCtorInitializers() != 1 ||
       !Context.hasSameType(Construction->getArg(0)->getType(), Ctor->getParamDecl(0)->getType()) ||
       !Context.hasSameUnqualifiedType(Construction->getArg(1)->getType(), Ctor->getParamDecl(1)->getType().getNonReferenceType()))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Record = Ctor->getParent();
   const bool Mapped = associativeContainerHeader(Record->getName()) == "map";
   const auto Table = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
@@ -137439,7 +137476,7 @@ std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruct
     if (!Pair || !Pair->Record->hasTrivialDestructor() ||
         !Context.hasSameType(Pair->First->getType(), Context.IntTy.withConst()) ||
         !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   }
   const auto *Init = *Ctor->init_begin();
   const auto *Build = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit()));
@@ -137456,7 +137493,7 @@ std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruct
       Insert->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
       !Insert->getPrimaryTemplate() || Insert->getNumParams() != 2 || Range->getNumArgs() != 2 ||
       !Insert->getReturnType()->isVoidType() || !orderedReceiver(Range))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   for (unsigned I = 0; I != 2; ++I) {
     const auto *Endpoint = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Range->getArg(I)));
     const auto *Method = Endpoint ? Endpoint->getMethodDecl() : nullptr;
@@ -137465,18 +137502,22 @@ std::optional<UtilityOrderedSetListConstruction> approvedOrderedSetListConstruct
         !Method->isConst() || Endpoint->getNumArgs() ||
         !orderedParameter(Endpoint->getImplicitObjectArgument(), Ctor->getParamDecl(0)) ||
         !Context.hasSameType(Insert->getParamDecl(I)->getType(), List->Begin->getType()))
-      return std::nullopt;
+      return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   }
   const auto *Destructor = Record->getDestructor();
   const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   if (!approvedOrderedContainerDestructor(S, SM, Destructor, Context) ||
       !SelectedBody(S, SM, Destructor, Record, Context) || !SelectedBody(S, SM, Ctor, Record, Context))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   return UtilityOrderedSetListConstruction{*Table, *List, Pair};
 }
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *TraceFunction = Call ? Call->getDirectCallee() : nullptr;
+  const auto TraceFile = TraceFunction ? S.sdkFile(SM, TraceFunction->getLocation()) : std::nullopt;
+  const bool Trace = TraceFile && TraceFile->Root == "libcxx" &&
+                     (TraceFile->Path == "map" || TraceFile->Path == "__tree");
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = Access ? Access->getMethodDecl() : nullptr;
   if (!Method || !Method->getIdentifier() || Method->getName() != "count" ||
@@ -137487,19 +137528,19 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
       !Context.hasSameType(Method->getParamDecl(0)->getType(),
           Context.getLValueReferenceType(Context.IntTy.withConst())) ||
       !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto Receiver = associativeMemberReceiverType(Member);
   const auto *Record = Method->getParent();
-  if (!Record->getIdentifier()) return std::nullopt;
+  if (!Record->getIdentifier()) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Header = associativeContainerHeader(Record->getName());
   if ((Header != "set" && Header != "map") || Receiver.isNull() || !S.owns(SM, Member->getMemberLoc()) ||
       !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Record)) ||
       !orderedPinnedFunction(S, SM, Method, Header))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto Table = Header == "map" ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                                     : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
-  if (!Table) return std::nullopt;
+  if (!Table) return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   const auto *Forward = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(orderedReturn(Method)));
   const auto *Find = orderedTreeMethod(S, SM, Forward, Table->Tree,
       Table->Multi ? "__count_multi" : "__count_unique", 1);
@@ -137510,7 +137551,7 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
       !orderedParameter(Forward->getArg(0), Method->getParamDecl(0)) ||
       !(Header == "map" ? approvedOrderedMapSelectedBody(S, SM, Method, Record, Context)
                          : approvedOrderedSetSelectedBody(S, SM, Method, Record, Context)))
-    return std::nullopt;
+    return orderedSetProofFailure(Trace, __func__, __LINE__, std::nullopt);
   return Table;
 }
 
