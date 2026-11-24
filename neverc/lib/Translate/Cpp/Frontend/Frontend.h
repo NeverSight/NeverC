@@ -5299,6 +5299,7 @@ struct OrderedNodeInsertion {
   UtilityAssociativeNodeRecord Node;
   const clang::MemberExpr *Receiver;
   std::optional<AssociativeNodeInsertResult> Result;
+  bool Hinted;
 };
 std::optional<OrderedNodeInsertion> orderedNodeInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,

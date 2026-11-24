@@ -27315,7 +27315,8 @@ class FunctionLowering {
   };
 
   OrderedSetSearch searchOrderedSet(Expression Place, Expression Key,
-      const UtilityOrderedSetStorage &Info, SourceLocation L, bool AddEquivalent = false) {
+      const UtilityOrderedSetStorage &Info, SourceLocation L, bool AddEquivalent = false,
+      std::optional<Expression> EqualKeysGoLeft = std::nullopt) {
     auto Root = orderedContainerMember(Place, "nct_ordered_root", L);
     auto Slot = snapshot(address(Root, A.Context.VoidPtrTy, L), L);
     auto Node = snapshot(std::move(Root), L);
@@ -27331,7 +27332,11 @@ class FunctionLowering {
     else branch(binary("==", Key, CurrentKey, "bool", L), Done, Descend, L);
     label(Descend, L);
     assign(Parent, Node, L);
-    branch(binary("<", std::move(Key), std::move(CurrentKey), "bool", L), Left, Right, L);
+    auto GoesLeft = binary("<", Key, CurrentKey, "bool", L);
+    if (EqualKeysGoLeft)
+      GoesLeft = binary("||", std::move(GoesLeft),
+          binary("&&", *EqualKeysGoLeft, binary("==", Key, CurrentKey, "bool", L), "bool", L), "bool", L);
+    branch(std::move(GoesLeft), Left, Right, L);
     label(Left, L);
     assign(Slot, address(orderedNodeChild(Node, false, L), A.Context.VoidPtrTy, L), L);
     jump(Follow, L);
@@ -27341,6 +27346,78 @@ class FunctionLowering {
     label(Follow, L);
     assign(Node, dereference(Slot, L), L);
     jump(Check, L);
+    label(Done, L);
+    return {std::move(Node), std::move(Parent), std::move(Slot)};
+  }
+
+  OrderedSetSearch searchOrderedSetWithHint(Expression Place, Expression Key, Expression Hint,
+      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    auto End = snapshot(orderedTreeSentinel(Place, L), L);
+    auto Begin = snapshot(orderedContainerMember(Place, "nct_ordered_begin", L), L);
+    auto Node = snapshot(A.zero(A.Context.VoidPtrTy, L), L);
+    auto Parent = snapshot(A.zero(A.Context.VoidPtrTy, L), L);
+    auto Slot = snapshot(A.zero(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
+    std::optional<Expression> EqualKeysGoLeft;
+    if (Info.Multi)
+      EqualKeysGoLeft = snapshot(boolean(true, L), L);
+    const auto Compare = labelName(), Before = labelName(), Prev = labelName(),
+               BeforeHint = labelName(), BeforeParent = labelName(),
+               FromRoot = labelName(), AttachLeft = labelName(), AttachRight = labelName(),
+               Done = labelName();
+    const auto HintIsLower = Info.Multi ? FromRoot : labelName();
+    auto Previous = snapshot(A.zero(A.Context.VoidPtrTy, L), L);
+    branch(binary("==", Hint, End, "bool", L), Before, Compare, L);
+    label(Compare, L);
+    auto HintKey = snapshot(orderedSetKey(Hint, Info, L), L);
+    branch(binary(Info.Multi ? "<=" : "<", Key, HintKey, "bool", L), Before, HintIsLower, L);
+    if (!Info.Multi) {
+      const auto After = labelName(), Equal = labelName(), CheckNext = labelName(),
+                 AfterHint = labelName(), AfterParent = labelName();
+      label(HintIsLower, L);
+      branch(binary("<", HintKey, Key, "bool", L), After, Equal, L);
+      label(Equal, L);
+      assign(Node, Hint, L);
+      jump(Done, L);
+      label(After, L);
+      auto Next = stepOrderedIterator(Hint, true, L);
+      branch(binary("==", Next, End, "bool", L), AfterHint, CheckNext, L);
+      label(CheckNext, L);
+      branch(binary("<", Key, orderedSetKey(Next, Info, L), "bool", L), AfterHint, FromRoot, L);
+      label(AfterHint, L);
+      assign(Parent, Hint, L);
+      branch(cast(orderedNodeChild(Hint, true, L), "bool", L), AfterParent, AttachRight, L);
+      label(AfterParent, L);
+      assign(Parent, Next, L);
+      jump(AttachLeft, L);
+    }
+    label(Before, L);
+    // When the hint is higher but its predecessor is too high, libc++ uses
+    // the upper bound. A hint below the key falls back to the lower bound.
+    if (EqualKeysGoLeft)
+      assign(*EqualKeysGoLeft, boolean(false, L), L);
+    branch(binary("==", Hint, Begin, "bool", L), BeforeHint, Prev, L);
+    label(Prev, L);
+    assign(Previous, stepOrderedIterator(Hint, false, L), L);
+    branch(binary(Info.Multi ? "<=" : "<", orderedSetKey(Previous, Info, L), Key, "bool", L),
+        BeforeHint, FromRoot, L);
+    label(BeforeHint, L);
+    assign(Parent, Hint, L);
+    branch(cast(orderedNodeChild(Hint, false, L), "bool", L), BeforeParent, AttachLeft, L);
+    label(BeforeParent, L);
+    assign(Parent, Previous, L);
+    jump(AttachRight, L);
+    label(FromRoot, L);
+    auto Search = searchOrderedSet(Place, Key, Info, L, Info.Multi, EqualKeysGoLeft);
+    assign(Node, std::move(Search.Node), L);
+    assign(Parent, std::move(Search.Parent), L);
+    assign(Slot, std::move(Search.Slot), L);
+    jump(Done, L);
+    label(AttachLeft, L);
+    assign(Slot, address(orderedNodeChild(Parent, false, L), A.Context.VoidPtrTy, L), L);
+    jump(Done, L);
+    label(AttachRight, L);
+    assign(Slot, address(orderedNodeChild(Parent, true, L), A.Context.VoidPtrTy, L), L);
+    jump(Done, L);
     label(Done, L);
     return {std::move(Node), std::move(Parent), std::move(Slot)};
   }
@@ -27671,7 +27748,14 @@ class FunctionLowering {
     const auto L = Call->getExprLoc();
     const auto *Method = Call->getDirectCallee();
     auto Place = dereference(snapshot(unorderedSetReceiverPointer(Info.Receiver, L), L), L);
-    auto Source = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
+    std::optional<Expression> Hint;
+    if (Info.Hinted) {
+      auto Value = argument(Call->getArg(0), Method->getParamDecl(0)->getType());
+      Hint = snapshot(orderedIteratorCursor(dereference(std::move(Value), L), L), L);
+    }
+    const unsigned HandleIndex = Info.Hinted ? 1u : 0u;
+    auto Source = dereference(snapshot(argument(Call->getArg(HandleIndex),
+        Method->getParamDecl(HandleIndex)->getType()), L), L);
     auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
     auto Position = orderedIteratorCursor(Info.Result ? fieldStorage(Output, Info.Result->Position, L) : Output, L);
     auto Node = snapshot(unorderedHandlePointer(Source, Info.Node, L), L);
@@ -27684,13 +27768,16 @@ class FunctionLowering {
     branch(cast(Node, "bool", L), Present, Done, L);
     label(Present, L);
     auto Key = snapshot(orderedSetKey(Node, Info.Tree, L), L);
-    auto Search = searchOrderedSet(Place, Key, Info.Tree, L, Info.Tree.Multi);
-    if (Info.Result) {
+    auto Search = Hint
+        ? searchOrderedSetWithHint(Place, Key, std::move(*Hint), Info.Tree, L)
+        : searchOrderedSet(Place, Key, Info.Tree, L, Info.Tree.Multi);
+    if (!Info.Tree.Multi) {
       const auto Duplicate = labelName(), Insert = labelName();
       branch(cast(Search.Node, "bool", L), Duplicate, Insert, L);
       label(Duplicate, L);
       assign(Position, Search.Node, L);
-      moveUnorderedHandle(fieldStorage(Output, Info.Result->Handle, L), Source, Info.Node, false, L);
+      if (Info.Result)
+        moveUnorderedHandle(fieldStorage(Output, Info.Result->Handle, L), Source, Info.Node, false, L);
       jump(Done, L);
       label(Insert, L);
     }

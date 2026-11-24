@@ -140928,6 +140928,34 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
       Offset ? UnorderedNodeTransferKind::HintInsert : UnorderedNodeTransferKind::Insert, Offset};
 }
 
+static bool orderedNodeArgument(const State &S, const SourceManager &SM,
+    const Expr *Forwarded, const ParmVarDecl *Parameter, const ParmVarDecl *TreeParameter,
+    const CXXRecordDecl *Iterator, bool Mapped, const ASTContext &Context) {
+  const auto *Argument = orderedExpression(Forwarded);
+  if (const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(Argument)) {
+    const auto Type = Copy->getType();
+    const auto *Ctor = Copy->getConstructor();
+    if (!Iterator || !Ctor->isImplicit() || !Ctor->isCopyConstructor() || !Ctor->isTrivial() ||
+        Ctor->getNumParams() != 1 || Copy->getNumArgs() != 1 ||
+        !approvedStandardSDKDeclaration(S, SM, Ctor) ||
+        !Context.hasSameType(Ctor->getParamDecl(0)->getType(),
+                             Context.getLValueReferenceType(Type.withConst())) ||
+        !Context.hasSameUnqualifiedType(Copy->getArg(0)->getType(), Type) ||
+        !Context.hasSameType(TreeParameter->getType(), Type))
+      return false;
+    Argument = orderedExpression(Copy->getArg(0));
+  }
+  if (Iterator && Mapped) {
+    const auto *Field = orderedTreeField(Iterator, "__i_");
+    const auto *Reference = dyn_cast_or_null<MemberExpr>(Argument);
+    return Field && Reference && Reference->getMemberDecl() == Field &&
+        Context.hasSameType(TreeParameter->getType(), Field->getType()) &&
+        orderedParameter(Reference->getBase(), Parameter);
+  }
+  return Context.hasSameType(TreeParameter->getType(), Parameter->getType()) &&
+      orderedParameter(Argument, Parameter);
+}
+
 std::optional<OrderedNodeExtraction> orderedNodeExtraction(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -140975,31 +141003,9 @@ std::optional<OrderedNodeExtraction> orderedNodeExtraction(
       !Context.hasSameType(Types->get(0).getAsType(), Call->getType()) ||
       !Context.hasSameType(Selected->getReturnType(), Call->getType()))
     return std::nullopt;
-  const auto *Argument = orderedExpression(Read->getArg(0));
-  if (const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(Argument)) {
-    const auto Type = Copy->getType();
-    const auto *Ctor = Copy->getConstructor();
-    if (!ByIterator || !Ctor->isImplicit() || !Ctor->isCopyConstructor() || !Ctor->isTrivial() ||
-        Ctor->getNumParams() != 1 || Copy->getNumArgs() != 1 ||
-        !approvedStandardSDKDeclaration(S, SM, Ctor) ||
-        !Context.hasSameType(Ctor->getParamDecl(0)->getType(),
-                             Context.getLValueReferenceType(Type.withConst())) ||
-        !Context.hasSameUnqualifiedType(Copy->getArg(0)->getType(), Type) ||
-        !Context.hasSameType(Selected->getParamDecl(0)->getType(), Type))
-      return std::nullopt;
-    Argument = orderedExpression(Copy->getArg(0));
-  }
-  if (ByIterator && Mapped) {
-    const auto *Field = orderedTreeField(Iterator, "__i_");
-    const auto *Reference = dyn_cast_or_null<MemberExpr>(Argument);
-    if (!Reference || !Field || Reference->getMemberDecl() != Field ||
-        !Context.hasSameType(Selected->getParamDecl(0)->getType(), Field->getType()) ||
-        !orderedParameter(Reference->getBase(), Parameter))
-      return std::nullopt;
-  } else if (!Context.hasSameType(Selected->getParamDecl(0)->getType(), Input) ||
-             !orderedParameter(Argument, Parameter)) {
+  if (!orderedNodeArgument(S, SM, Read->getArg(0), Parameter,
+                           Selected->getParamDecl(0), Iterator, Mapped, Context))
     return std::nullopt;
-  }
   const auto Body = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   if (!Body(S, SM, Method, Owner, Context))
     return std::nullopt;
@@ -141010,14 +141016,17 @@ std::optional<OrderedNodeInsertion> orderedNodeInsertion(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  const unsigned Arity = Method ? Method->getNumParams() : 0;
   if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
       Method->isStatic() || Method->isVirtual() || Method->isConst() || Method->isVolatile() ||
-      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      Method->getPrimaryTemplate() || Arity < 1 || Arity > 2 || Call->getNumArgs() != Arity ||
       !Call->isPRValue() || !Context.hasSameType(Call->getType(), Method->getReturnType()))
     return std::nullopt;
-  const auto Input = Method->getParamDecl(0)->getType();
-  if (!Input->isRValueReferenceType() || !Context.hasSameType(Input->getPointeeType(), Call->getArg(0)->getType()) ||
-      !Call->getArg(0)->isGLValue())
+  const bool Hinted = Arity == 2;
+  const unsigned HandleIndex = Arity - 1;
+  const auto Input = Method->getParamDecl(HandleIndex)->getType();
+  if (!Input->isRValueReferenceType() || !Context.hasSameType(Input->getPointeeType(), Call->getArg(HandleIndex)->getType()) ||
+      !Call->getArg(HandleIndex)->isGLValue())
     return std::nullopt;
   const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
   const auto Receiver = associativeMemberReceiverType(Member);
@@ -141035,9 +141044,17 @@ std::optional<OrderedNodeInsertion> orderedNodeInsertion(
   if (!Tree || !Node || !std::holds_alternative<UtilityOrderedSetStorage>(Node->Owner) ||
       !Context.hasSameType(Tree->NodeType, Node->NodeType))
     return std::nullopt;
+  const CXXRecordDecl *Hint = nullptr;
+  if (Hinted) {
+    const auto Type = Method->getParamDecl(0)->getType();
+    Hint = approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context, &*Tree);
+    if (!Hint || (Mapped && Hint->getName() != "__map_const_iterator") ||
+        !Context.hasSameType(Call->getArg(0)->getType(), Type))
+      return std::nullopt;
+  }
   std::optional<AssociativeNodeInsertResult> Result;
   const CXXRecordDecl *Iterator = nullptr;
-  if (Tree->Multi) {
+  if (Tree->Multi || Hinted) {
     Iterator = approvedOrderedSetIteratorRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context, &*Tree);
     if (!Iterator || (Mapped && Iterator->getName() != "__map_iterator")) return std::nullopt;
   } else {
@@ -141060,31 +141077,34 @@ std::optional<OrderedNodeInsertion> orderedNodeInsertion(
   }
   const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(Returned);
   const auto *Selected = orderedTreeMethod(S, SM, Insert, Tree->Tree,
-      Tree->Multi ? "__node_handle_insert_multi" : "__node_handle_insert_unique", 1);
+      Tree->Multi ? "__node_handle_insert_multi" : "__node_handle_insert_unique", Arity);
   const auto *Types = Selected ? Selected->getTemplateSpecializationArgs() : nullptr;
   const auto *Storage = Selected ? dyn_cast_or_null<MemberExpr>(
       orderedExpression(Insert->getImplicitObjectArgument())) : nullptr;
   if (!Storage || Storage->getMemberDecl() != orderedTreeField(Owner, "__tree_") ||
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Storage->getBase())) || Selected->isConst() ||
-      !Types || Types->size() != (Tree->Multi ? 1u : 2u) || Types->get(0).getKind() != TemplateArgument::Type ||
+      !Types || Types->size() != (Result ? 2u : 1u) || Types->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Types->get(0).getAsType(), Input->getPointeeType()) ||
-      !Context.hasSameType(Selected->getParamDecl(0)->getType(), Input))
+      !Context.hasSameType(Selected->getParamDecl(HandleIndex)->getType(), Input))
     return std::nullopt;
   if (Result && (Types->get(1).getKind() != TemplateArgument::Type ||
                  !Context.hasSameType(Types->get(1).getAsType(), Call->getType()) ||
                  !Context.hasSameType(Selected->getReturnType(), Call->getType())))
     return std::nullopt;
-  const auto *Move = dyn_cast_or_null<CallExpr>(orderedExpression(Insert->getArg(0)));
+  if (Hint && !orderedNodeArgument(S, SM, Insert->getArg(0), Method->getParamDecl(0),
+                                   Selected->getParamDecl(0), Hint, Mapped, Context))
+    return std::nullopt;
+  const auto *Move = dyn_cast_or_null<CallExpr>(orderedExpression(Insert->getArg(HandleIndex)));
   const auto *MoveFunction = Move ? Move->getDirectCallee() : nullptr;
   if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
       Move->getNumArgs() != 1 || !Context.hasSameType(MoveFunction->getReturnType(), Input) ||
       !orderedPinnedFunction(S, SM, MoveFunction, "__utility/move.h") ||
-      !orderedParameter(Move->getArg(0), Method->getParamDecl(0)))
+      !orderedParameter(Move->getArg(0), Method->getParamDecl(HandleIndex)))
     return std::nullopt;
   const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   if (!SelectedBody(S, SM, Method, Owner, Context))
     return std::nullopt;
-  return OrderedNodeInsertion{*Tree, *Node, Member, Result};
+  return OrderedNodeInsertion{*Tree, *Node, Member, Result, Hinted};
 }
 
 bool associativeNodeBaseCast(const State &S, const SourceManager &SM,
