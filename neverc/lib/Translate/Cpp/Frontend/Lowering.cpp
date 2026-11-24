@@ -31033,7 +31033,7 @@ class FunctionLowering {
     }
     if (Operation == UtilityOperation::OrderedMapBoundedAt) {
       const auto Info = approvedOrderedMapBoundedAt(A.S, A.Sources, Call, A.Context);
-      if (!Info) reject(L, "map at", "A checked key in the const owner's initializer list is required.");
+      if (!Info) reject(L, "map at", "The mapped key must be proved present by the initializer or by a checked lookup.");
       const auto *Member = clang::cast<CXXMemberCallExpr>(Call);
       const auto *Reference = clang::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
       auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
