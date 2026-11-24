@@ -10380,16 +10380,45 @@ static bool variantVisitZeroMatrix(const State &S, const SourceManager &SM,
          variantForwardedCapture(S, SM, Forward, Capture, Context);
 }
 
+static const Expr *variantVisitMoveSource(const State &S, const SourceManager &SM,
+    const Expr *Operand, const ASTContext &Context) {
+  const auto *Call = variantVisitCall(Operand);
+  const auto *Move = Call && Call->getNumArgs() == 1 ? variantVisitDefinition(
+      S, SM, Call->getDirectCallee(), "move", 1, {}, "__utility/move.h") : nullptr;
+  if (!Move || !Move->getReturnType()->isRValueReferenceType())
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "0.1", "Observe the selected compiler source check"), nullptr);
+  const auto *Input = Move->getParamDecl(0);
+  const auto Type = Input->getType();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Move->getBody());
+  const auto *AliasDecl = Body && Body->size() == 2 ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
+  const auto *Alias = AliasDecl && AliasDecl->isSingleDecl()
+      ? dyn_cast<TypeAliasDecl>(AliasDecl->getSingleDecl()) : nullptr;
+  const auto *Return = Alias ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  const auto *Result = Return ? Return->getRetValue() : nullptr;
+  const auto *Cast = Result ? dyn_cast<CXXStaticCastExpr>(Result->IgnoreParenImpCasts()) : nullptr;
+  if (!Type->isLValueReferenceType() || !Alias || !Cast || Cast->getCastKind() != CK_NoOp ||
+      !Context.hasSameType(Alias->getUnderlyingType(), Type.getNonReferenceType()) ||
+      !Context.hasSameType(Cast->getTypeAsWritten(), Move->getReturnType()) ||
+      !Context.hasSameType(Type.getNonReferenceType(), Move->getReturnType().getNonReferenceType()) ||
+      !variantParameter(Cast->getSubExpr(), Input))
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "0.2", "Observe the selected compiler source check"), nullptr);
+  return Call->getArg(0);
+}
+
 static const FunctionDecl *variantVisitAsVariant(const State &S, const SourceManager &SM,
     const CallExpr *Call, const UtilityVariantRecord &V, const ASTContext &Context) {
   const auto *F = Call && Call->getNumArgs() == 1 ? variantVisitDefinition(
       S, SM, Call->getDirectCallee(), "__as_variant", 1) : nullptr;
   const auto *Owner = F ? F->getReturnType().getNonReferenceType()->getAsCXXRecordDecl() : nullptr;
-  if (!F || !F->getReturnType()->isLValueReferenceType() ||
+  if (!F || !F->getReturnType()->isReferenceType() ||
       !Context.hasSameType(F->getReturnType(), F->getParamDecl(0)->getType()) ||
-      !Owner || Owner->getCanonicalDecl() != V.Record->getCanonicalDecl() ||
-      !variantParameter(variantReturned(F), F->getParamDecl(0)))
-    return nullptr;
+      !Owner || Owner->getCanonicalDecl() != V.Record->getCanonicalDecl())
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "1.1", "Observe the selected compiler source check"), nullptr);
+  const auto *Result = variantReturned(F);
+  if (F->getReturnType()->isRValueReferenceType())
+    Result = variantVisitMoveSource(S, SM, Result, Context);
+  if (!variantParameter(Result, F->getParamDecl(0)))
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "1.2", "Observe the selected compiler source check"), nullptr);
   return F;
 }
 
@@ -10400,7 +10429,7 @@ static bool variantVisitValuelessTest(const State &S, const SourceManager &SM,
   const auto Query = approvedUtilityVariantQuery(S, SM, Check, Context);
   if (!Query || !Query->Valueless ||
       Query->Variant.Record->getCanonicalDecl() != V.Record->getCanonicalDecl())
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "2.1", "Observe the selected compiler source check"), false);
   const auto *Receiver = variantVisitCall(Check->getImplicitObjectArgument());
   return variantVisitAsVariant(S, SM, Receiver, V, Context) &&
          variantParameter(Receiver->getArg(0), Operand);
@@ -10414,10 +10443,10 @@ static bool variantVisitGuard(const State &S, const SourceManager &SM,
       S, SM, Call->getDirectCallee(), "__throw_if_valueless", Count) : nullptr;
   const auto *Body = F ? dyn_cast_or_null<CompoundStmt>(F->getBody()) : nullptr;
   if (!Body || Body->size() != 2 || !F->getReturnType()->isVoidType())
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "3.1", "Observe the selected compiler source check"), false);
   for (unsigned I = 0; I < Count; ++I)
     if (!variantForward(S, SM, Call->getArg(I), Visit->getParamDecl(I + 1), Context))
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "3.2", "Observe the selected compiler source check"), false);
   const auto *Value = variantVisitVariable(Body->body_front());
   const auto *Branch = dyn_cast<IfStmt>(Body->body_back());
   const auto *Test = Branch ? variantReference(Branch->getCond()) : nullptr;
@@ -10425,7 +10454,7 @@ static bool variantVisitGuard(const State &S, const SourceManager &SM,
       !Value->getType()->isBooleanType() || !Value->hasInit() ||
       !Test || Test->getDecl() != Value ||
       Branch->getInit() || Branch->getConditionVariable() || Branch->getElse())
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "3.3", "Observe the selected compiler source check"), false);
   // The pinned SDK forms a unary left fold over the valueless queries.
   const Expr *Init = Value->getInit();
   for (unsigned I = Count; I > 1; --I) {
@@ -10433,11 +10462,11 @@ static bool variantVisitGuard(const State &S, const SourceManager &SM,
     if (!Either || Either->getOpcode() != BO_LOr ||
         !variantVisitValuelessTest(S, SM, Either->getRHS(), F->getParamDecl(I - 1),
                                    Variants[I - 1], Context))
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "3.4", "Observe the selected compiler source check"), false);
     Init = Either->getLHS();
   }
   if (!variantVisitValuelessTest(S, SM, Init, F->getParamDecl(0), Variants[0], Context))
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "3.5", "Observe the selected compiler source check"), false);
   const auto *Failure = dyn_cast<CompoundStmt>(Branch->getThen());
   const auto *Throw = Failure && Failure->size() == 1 ? dyn_cast<CallExpr>(Failure->body_front()) : nullptr;
   const auto *Never = Throw ? Throw->getDirectCallee() : nullptr;
@@ -10510,24 +10539,24 @@ static const CallExpr *variantVisitDispatchTarget(const State &S, const SourceMa
     llvm::ArrayRef<unsigned> Indices, const ASTContext &Context) {
   if (!Entry.isLValue() || Entry.isNullPointer() || Entry.isLValueOnePastTheEnd() ||
       !Entry.getLValueOffset().isZero())
-    return nullptr;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "4.1", "Observe the selected compiler source check"), nullptr);
   const unsigned Count = Variants.size();
   const auto *Selected = dyn_cast_or_null<FunctionDecl>(Entry.getLValueBase().dyn_cast<const ValueDecl *>());
   const auto *Dispatch = variantVisitDefinition(S, SM, Selected, "__dispatch", Count + 1, "__dispatcher");
   const auto *Invoke = Dispatch ? variantVisitCall(variantReturned(Dispatch)) : nullptr;
   const auto *Apply = dyn_cast_or_null<CXXOperatorCallExpr>(variantVisitInvoke(S, SM, Invoke, Count, Context));
   if (!Apply || !variantVisitCast(Invoke->getArg(0), Dispatch->getParamDecl(0), Context))
-    return nullptr;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "4.2", "Observe the selected compiler source check"), nullptr);
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Get = variantVisitCall(Invoke->getArg(I + 1));
     if (!Get || Get->getNumArgs() != 1 || !variantVisitCast(Get->getArg(0), Dispatch->getParamDecl(I + 1), Context) ||
         !variantBaseAlternativeProjection(S, SM, Get, Variants[I], Indices[I], Context))
-      return nullptr;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "4.3", "Observe the selected compiler source check"), nullptr);
   }
   const auto *Wrapper = variantVisitDefinition(S, SM, Apply->getDirectCallee(), "operator()", Count, "__value_visitor");
   if (!Wrapper || cast<CXXMethodDecl>(Wrapper)->getParent()->getCanonicalDecl() !=
                      cast<CXXRecordDecl>(Capture->getParent())->getCanonicalDecl())
-    return nullptr;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "4.4", "Observe the selected compiler source check"), nullptr);
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Wrapper->getBody());
   const auto *Exhaustive = Body && Body->size() == 2 ? dyn_cast<CallExpr>(Body->body_front()) : nullptr;
   const auto *Check = Exhaustive && !Exhaustive->getNumArgs() ? variantVisitDefinition(S, SM,
@@ -10535,19 +10564,19 @@ static const CallExpr *variantVisitDispatchTarget(const State &S, const SourceMa
   const auto *CheckBody = Check ? dyn_cast_or_null<CompoundStmt>(Check->getBody()) : nullptr;
   const auto *Assert = CheckBody && CheckBody->size() == 1 ? dyn_cast<DeclStmt>(CheckBody->body_front()) : nullptr;
   if (!Assert || !Assert->isSingleDecl() || !isa<StaticAssertDecl>(Assert->getSingleDecl()))
-    return nullptr;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "4.5", "Observe the selected compiler source check"), nullptr);
   const auto *Call = variantVisitCall(variantVisitReturn(Body));
   const auto *Target = variantVisitInvoke(S, SM, Call, Count, Context);
   if (!Target)
-    return nullptr;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "4.6", "Observe the selected compiler source check"), nullptr);
   const auto *Forward = variantVisitCall(Call->getArg(0));
   if (!Forward || Forward->getNumArgs() != 1 || !variantForwardedCapture(S, SM, Forward, Capture, Context))
-    return nullptr;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "4.7", "Observe the selected compiler source check"), nullptr);
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Field = variantForwardedField(S, SM, Call->getArg(I + 1), Wrapper->getParamDecl(I), Context);
     if (!Field || Field->getMemberDecl()->getCanonicalDecl() !=
                       Variants[I].Alternatives[Indices[I]]->getCanonicalDecl())
-      return nullptr;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "4.8", "Observe the selected compiler source check"), nullptr);
   }
   return Target;
 }
@@ -10562,12 +10591,12 @@ static bool variantVisitParameter(const State &S, const SourceManager &SM,
 
 static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APValue &Entry,
     const FieldDecl *Capture, llvm::ArrayRef<UtilityVariantRecord> Variants,
-    llvm::ArrayRef<unsigned> Indices, llvm::ArrayRef<QualType> Inputs,
+    llvm::ArrayRef<unsigned> Indices, llvm::ArrayRef<QualType> Inputs, const FunctionDecl *Base,
     QualType Object, QualType Result, const CXXMethodDecl *&SelectedMethod,
     const ASTContext &Context) {
   const auto *Target = variantVisitDispatchTarget(S, SM, Entry, Capture, Variants, Indices, Context);
   if (!Target || !Context.hasSameType(Target->getType(), Result))
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "5.1", "Observe the selected compiler source check"), false);
   const unsigned Count = Variants.size();
   const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
   const auto *Record = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
@@ -10584,10 +10613,10 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
         Method->getNumParams() != Count ||
         !S.owns(SM, Method->getLocation()) || !Method->hasBody(Definition) ||
         !S.owns(SM, Definition->getLocation()))
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "5.2", "Observe the selected compiler source check"), false);
     SelectedMethod = Method;
   } else if (Operation) {
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "5.3", "Observe the selected compiler source check"), false);
   }
   for (unsigned I = 0; I < Count; ++I) {
     const auto Parameter = SelectedMethod ? SelectedMethod->getParamDecl(I)->getType() : Inputs[I];
@@ -10596,14 +10625,16 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
     const auto Alternative = Variants[I].Alternatives[Indices[I]]->getType();
     if (!variantVisitParameter(S, SM, Parameter, Context) ||
         !Context.hasSameUnqualifiedType(Argument->getType(), Value))
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "5.4", "Observe the selected compiler source check"), false);
     if (Parameter->isLValueReferenceType()) {
-      if (!Argument->isLValue() || !Context.hasSameType(Argument->getType(), Value) ||
+      // An owned variant's payload may be passed only by value.
+      if (Base->getParamDecl(I + 1)->getType()->isRValueReferenceType() ||
+          !Argument->isLValue() || !Context.hasSameType(Argument->getType(), Value) ||
           !Context.hasSameUnqualifiedType(Alternative, Value))
-        return false;
+        return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "5.5", "Observe the selected compiler source check"), false);
     } else if (!Context.hasSameUnqualifiedType(Alternative, Value) &&
                !(Alternative->isIntegerType() && Value->isIntegerType())) {
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "5.6", "Observe the selected compiler source check"), false);
     }
   }
   return true;
@@ -10655,30 +10686,30 @@ static bool variantVisitIndexSelection(const State &S, const SourceManager &SM,
       S, SM, Select->getDirectCallee(), "__at", Count + 1, "__base") : nullptr;
   const auto *TableRef = Current ? variantReference(Select->getArg(0)) : nullptr;
   if (!TableRef || TableRef->getDecl() != Matrix)
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "6.1", "Observe the selected compiler source check"), false);
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Index = dyn_cast_or_null<CXXMemberCallExpr>(variantVisitCall(Select->getArg(I + 1)));
     if (!Index || Index->getNumArgs() ||
         !variantParameter(Index->getImplicitObjectArgument(), Base->getParamDecl(I + 1)) ||
         !variantIndexBody(S, SM, Index->getMethodDecl(), Variants[I], Context))
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "6.2", "Observe the selected compiler source check"), false);
   }
   QualType TableType = Matrix->getType();
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Buffer = variantVisitArrayField(S, SM, TableType, Variants[I].Alternatives.size(), Context);
     if (!Buffer || !Context.hasSameUnqualifiedType(
                        Current->getParamDecl(0)->getType().getNonReferenceType(), TableType))
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "6.3", "Observe the selected compiler source check"), false);
     const auto *Project = variantVisitCall(variantReturned(Current));
     const unsigned Remaining = Count - I;
     const auto *Next = Project && Project->getNumArgs() == Remaining ? variantVisitDefinition(
         S, SM, Project->getDirectCallee(), "__at", Remaining, "__base") : nullptr;
     if (!Next || !variantVisitArraySubscript(S, SM, variantVisitCall(Project->getArg(0)), Buffer,
                                                Current->getParamDecl(0), Current->getParamDecl(1)))
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "6.4", "Observe the selected compiler source check"), false);
     for (unsigned J = 1; J < Remaining; ++J)
       if (!variantParameter(Project->getArg(J), Current->getParamDecl(J + 1)))
-        return false;
+        return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "6.5", "Observe the selected compiler source check"), false);
     TableType = Context.getAsConstantArrayType(Buffer->getType())->getElementType();
     Current = Next;
   }
@@ -10692,7 +10723,7 @@ static bool variantVisitMatrix(const State &S, const SourceManager &SM,
     std::vector<const CXXMethodDecl *> &Methods, const ASTContext &Context) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Base->getBody());
   if (!Body || Body->size() != 2)
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.1", "Observe the selected compiler source check"), false);
   const auto *Matrix = variantVisitVariable(Body->body_front());
   const auto *Indirect = variantVisitCall(variantVisitReturn(Body));
   const auto *Select = Indirect ? variantVisitCall(Indirect->getCallee()) : nullptr;
@@ -10701,43 +10732,49 @@ static bool variantVisitMatrix(const State &S, const SourceManager &SM,
       !Indirect || Indirect->getDirectCallee() || Indirect->getNumArgs() != Count + 1 ||
       !variantForward(S, SM, Indirect->getArg(0), Base->getParamDecl(0), Context) ||
       !variantVisitIndexSelection(S, SM, Select, Matrix, Base, Variants, Context))
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.2", "Observe the selected compiler source check"), false);
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Borrow = dyn_cast_or_null<CXXMemberCallExpr>(variantVisitCall(Indirect->getArg(I + 1)));
     const auto *AsBase = Borrow ? Borrow->getMethodDecl() : nullptr;
+    const auto *Operand = Base->getParamDecl(I + 1);
+    const bool Moved = Operand->getType()->isRValueReferenceType();
     if (!variantFunction(S, SM, AsBase, 0, false) || AsBase->getName() != "__as_base" ||
-        !AsBase->getReturnType()->isLValueReferenceType() || Borrow->getNumArgs() ||
-        !variantForward(S, SM, Borrow->getImplicitObjectArgument(), Base->getParamDecl(I + 1), Context))
-      return false;
+        !AsBase->getReturnType()->isReferenceType() ||
+        AsBase->getReturnType()->isRValueReferenceType() != Moved ||
+        AsBase->getRefQualifier() != (Moved ? RQ_RValue : RQ_LValue) || Borrow->getNumArgs() ||
+        !variantForward(S, SM, Borrow->getImplicitObjectArgument(), Operand, Context))
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.3", "Observe the selected compiler source check"), false);
     const auto *Self = variantReturned(AsBase);
+    if (Moved)
+      Self = variantVisitMoveSource(S, SM, Self, Context);
     const auto *Deref = Self ? dyn_cast<UnaryOperator>(Self->IgnoreParenImpCasts()) : nullptr;
     if (!Deref || Deref->getOpcode() != UO_Deref ||
         !isa<CXXThisExpr>(Deref->getSubExpr()->IgnoreParenImpCasts()))
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.4", "Observe the selected compiler source check"), false);
   }
   Expr::EvalResult Evaluated;
   if (!Matrix->getInit()->EvaluateAsRValue(Evaluated, Context) || Evaluated.HasSideEffects)
-    return false;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.5", "Observe the selected compiler source check"), false);
   llvm::SmallVector<unsigned, 2> Indices(Count, 0);
   auto CheckEntries = [&](auto &&Self, const APValue &Entry, unsigned Dimension) -> bool {
     if (Dimension == Count) {
       const CXXMethodDecl *Method = nullptr;
-      if (!variantVisitLeaf(S, SM, Entry, Capture, Variants, Indices, Inputs,
+      if (!variantVisitLeaf(S, SM, Entry, Capture, Variants, Indices, Inputs, Base,
                                     Object, Result, Method, Context))
-        return false;
+        return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.6", "Observe the selected compiler source check"), false);
       Methods.push_back(Method);
       return true;
     }
     if (!Entry.isStruct() || Entry.getStructNumBases() || Entry.getStructNumFields() != 1)
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.7", "Observe the selected compiler source check"), false);
     const auto &Entries = Entry.getStructField(0);
     const unsigned Extent = Variants[Dimension].Alternatives.size();
     if (!Entries.isArray() || Entries.getArraySize() != Extent || Entries.getArrayInitializedElts() != Extent)
-      return false;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.8", "Observe the selected compiler source check"), false);
     for (unsigned I = 0; I < Extent; ++I) {
       Indices[Dimension] = I;
       if (!Self(Self, Entries.getArrayInitializedElt(I), Dimension + 1))
-        return false;
+        return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "7.9", "Observe the selected compiler source check"), false);
     }
     return true;
   };
@@ -10758,27 +10795,36 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
   std::size_t MatrixEntries = 1;
   for (unsigned I = 0; I < Count; ++I) {
     const auto *Operand = Call->getArg(I + 1);
-    if (!Operand->isLValue() || Operand->getType().isVolatileQualified() ||
-        !Context.hasSameType(Visit->getParamDecl(I + 1)->getType(),
-                             Context.getLValueReferenceType(Operand->getType())))
-      return std::nullopt;
+    const auto Value = Operand->getType();
+    if (Value.isVolatileQualified())
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.1", "Observe the selected compiler source check"), std::nullopt);
+    const auto Reference = Operand->isLValue() ? Context.getLValueReferenceType(Value)
+                                               : Context.getRValueReferenceType(Value);
+    if (!Context.hasSameType(Visit->getParamDecl(I + 1)->getType(), Reference))
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.2", "Observe the selected compiler source check"), std::nullopt);
+    if (!Operand->isLValue()) {
+      const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Operand->IgnoreParens());
+      if (!Temporary || Temporary->getStorageDuration() != SD_FullExpression ||
+          Temporary->getExtendingDecl() || !Temporary->getSubExpr()->isPRValue())
+        return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.3", "Observe the selected compiler source check"), std::nullopt);
+    }
     auto V = approvedUtilityVariantRecord(S, SM, Operand->getType(), Context);
     if (!V || V->Alternatives.empty() || V->Alternatives.size() > 8 ||
         V->Alternatives.size() > MaxMatrixEntries / MatrixEntries ||
         llvm::any_of(V->Alternatives, [&](const FieldDecl *F) {
           return !variantVisitParameter(S, SM, F->getType(), Context);
         }))
-      return std::nullopt;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.4", "Observe the selected compiler source check"), std::nullopt);
     MatrixEntries *= V->Alternatives.size();
     Variants.push_back(std::move(*V));
   }
   const auto Parameter = Visit->getParamDecl(0)->getType();
   if (!Parameter->isReferenceType())
-    return std::nullopt;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.5", "Observe the selected compiler source check"), std::nullopt);
   const auto Type = Parameter.getNonReferenceType();
   const auto Result = Visit->getReturnType();
   if (Type.isVolatileQualified() || !(Result->isIntegerType() || Result->isVoidType()))
-    return std::nullopt;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.6", "Observe the selected compiler source check"), std::nullopt);
   const auto *Object = Type->getAsCXXRecordDecl();
   std::vector<QualType> Inputs;
   QualType ObjectType;
@@ -10790,39 +10836,39 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
         Definition->getNumBases() || !S.owns(SM, Definition->getLocation()) ||
         !Operand->isLValue() || !Parameter->isLValueReferenceType() ||
         !Context.hasSameType(Type, Operand->getType()))
-      return std::nullopt;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.7", "Observe the selected compiler source check"), std::nullopt);
     ObjectType = Type;
   } else {
     if (!Type->isFunctionType() && !Type->isFunctionPointerType())
-      return std::nullopt;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.8", "Observe the selected compiler source check"), std::nullopt);
     const auto *Prototype = (Type->isFunctionType() ? Type : Type->getPointeeType())->getAs<FunctionProtoType>();
     if (!Prototype || Prototype->isVariadic() || Prototype->getNumParams() != Count ||
         !llvm::all_of(Prototype->param_types(), [&](QualType Q) {
           return variantVisitParameter(S, SM, Q, Context);
         }) ||
         !Context.hasSameType(Prototype->getReturnType(), Result))
-      return std::nullopt;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.9", "Observe the selected compiler source check"), std::nullopt);
     Inputs.assign(Prototype->param_type_begin(), Prototype->param_type_end());
   }
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Visit->getBody());
   if (!Body || Body->size() != 3)
-    return std::nullopt;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.10", "Observe the selected compiler source check"), std::nullopt);
   const auto *Using = dyn_cast<DeclStmt>(Body->body_front());
   if (!Using || !Using->isSingleDecl() || !isa<UsingDecl>(Using->getSingleDecl()) ||
       !variantDeclaration(S, SM, Using->getSingleDecl()) ||
       !variantVisitGuard(S, SM, dyn_cast<CallExpr>(*std::next(Body->body_begin())),
                                  Visit, Variants, Context))
-    return std::nullopt;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.11", "Observe the selected compiler source check"), std::nullopt);
   const auto *Value = variantVisitCall(variantVisitReturn(Body));
   const auto *VisitValue = Value && Value->getNumArgs() == Count + 1 ? variantVisitDefinition(
       S, SM, Value->getDirectCallee(), "__visit_value", Count + 1, "__variant") : nullptr;
   if (!VisitValue || !variantForward(S, SM, Value->getArg(0), Visit->getParamDecl(0), Context))
-    return std::nullopt;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.12", "Observe the selected compiler source check"), std::nullopt);
   const auto *Alternative = variantVisitCall(variantReturned(VisitValue));
   const auto *VisitAlternative = Alternative && Alternative->getNumArgs() == Count + 1 ? variantVisitDefinition(
       S, SM, Alternative->getDirectCallee(), "__visit_alt", Count + 1, "__variant") : nullptr;
   if (!VisitAlternative)
-    return std::nullopt;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.13", "Observe the selected compiler source check"), std::nullopt);
   const auto *Capture = variantVisitCapture(S, SM, variantVisitCall(Alternative->getArg(0)),
                                                     VisitValue->getParamDecl(0), Context);
   const auto *ToBase = variantVisitCall(variantReturned(VisitAlternative));
@@ -10830,7 +10876,7 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
       S, SM, ToBase->getDirectCallee(), "__visit_alt", Count + 1, "__base") : nullptr;
   if (!Capture || !Base ||
       !variantForward(S, SM, ToBase->getArg(0), VisitAlternative->getParamDecl(0), Context))
-    return std::nullopt;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.14", "Observe the selected compiler source check"), std::nullopt);
   for (unsigned I = 0; I < Count; ++I) {
     const unsigned Arg = I + 1;
     const auto *Impl = dyn_cast_or_null<MemberExpr>(functionalInvokeStrippedExpression(ToBase->getArg(Arg)));
@@ -10838,15 +10884,17 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     if (!variantForward(S, SM, Value->getArg(Arg), Visit->getParamDecl(Arg), Context) ||
         !variantForward(S, SM, Alternative->getArg(Arg), VisitValue->getParamDecl(Arg), Context) ||
         !Impl || Impl->isArrow() ||
+        Impl->isXValue() != Call->getArg(Arg)->isXValue() ||
+        Impl->isXValue() != Base->getParamDecl(Arg)->getType()->isRValueReferenceType() ||
         Impl->getMemberDecl()->getCanonicalDecl() != Variants[I].Implementation->getCanonicalDecl() ||
         !variantVisitAsVariant(S, SM, AsVariant, Variants[I], Context) ||
         !variantForward(S, SM, AsVariant->getArg(0), VisitAlternative->getParamDecl(Arg), Context))
-      return std::nullopt;
+      return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.15", "Observe the selected compiler source check"), std::nullopt);
   }
   std::vector<const CXXMethodDecl *> Methods;
   if (!variantVisitMatrix(S, SM, Base, Capture, Variants, Inputs, ObjectType, Result,
                                   Methods, Context))
-    return std::nullopt;
+    return (const_cast<State &>(S).diagnose("TR0203", "variant visit proof trace", "8.16", "Observe the selected compiler source check"), std::nullopt);
   return UtilityVariantVisit{
       std::move(Variants), Parameter, std::move(Inputs), Result, std::move(Methods)};
 }
