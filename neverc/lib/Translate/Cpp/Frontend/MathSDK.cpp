@@ -136071,7 +136071,9 @@ bool pinnedAssociativeContainerType(const State &S, const SourceManager &SM,
 
 static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
   return Context.hasSameType(Type, Context.IntTy) ||
-         Context.hasSameType(Type, Context.LongLongTy);
+         Context.hasSameType(Type, Context.LongTy) ||
+         Context.hasSameType(Type, Context.LongLongTy) ||
+         Context.hasSameType(Type, Context.UnsignedLongLongTy);
 }
 
 bool approvedAssociativeContainerMetadataRecord(
