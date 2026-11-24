@@ -27693,15 +27693,24 @@ class FunctionLowering {
 
   void insertOrderedSetRange(Expression Place, Expression Current, Expression End,
       const UtilityOrderedSetRangeInput &Info, SourceLocation L) {
-    const auto Pointer = type(Info.PointerType, L);
-    const auto Index = type(A.Context.getPointerDiffType(), L);
+    const bool TreeCursor = !Info.IteratorType->isPointerType();
+    if (TreeCursor) {
+      Current = snapshot(orderedIteratorCursor(std::move(Current), L), L);
+      End = snapshot(orderedIteratorCursor(std::move(End), L), L);
+    }
     const auto Check = labelName(), Read = labelName(), Done = labelName();
     jump(Check, L);
     label(Check, L);
     branch(binary("!=", Current, std::move(End), "bool", L), Read, Done, L);
     label(Read, L);
-    insertOrderedSetElement(Place, dereference(Current, L), Info.Storage, Info.Pair, L);
-    assign(Current, binary("+", Current, one(Index, L), Pointer, L), L);
+    const auto Value = (Info.Pair ? Info.Storage.MappedPairType : A.Context.IntTy).withConst();
+    auto Element = TreeCursor ? nodeFieldAt(Current, Value, Info.Storage.ValueOffsetBytes, L)
+                              : dereference(Current, L);
+    insertOrderedSetElement(Place, std::move(Element), Info.Storage, Info.Pair, L);
+    auto Next = TreeCursor ? stepOrderedIterator(Current, true, L)
+                           : binary("+", Current, one(type(A.Context.getPointerDiffType(), L), L),
+                                    type(Info.IteratorType, L), L);
+    assign(Current, std::move(Next), L);
     jump(Check, L);
     label(Done, L);
   }
@@ -30652,8 +30661,8 @@ class FunctionLowering {
       if (!Info) reject(L, "ordered range insertion", "The exact checked pointer range is required.");
       const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
       auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
-      auto Begin = snapshot(argument(Call->getArg(0), Info->PointerType), L);
-      auto End = snapshot(argument(Call->getArg(1), Info->PointerType), L);
+      auto Begin = snapshot(argument(Call->getArg(0), Info->IteratorType), L);
+      auto End = snapshot(argument(Call->getArg(1), Info->IteratorType), L);
       insertOrderedSetRange(std::move(Place), std::move(Begin), std::move(End), *Info, L);
       return {};
     }
@@ -40687,8 +40696,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
     if (const auto Info = approvedOrderedSetRangeConstruction(A.S, A.Sources, C, A.Context)) {
-      auto Begin = snapshot(argument(C->getArg(0), Info->PointerType), L);
-      auto End = snapshot(argument(C->getArg(1), Info->PointerType), L);
+      auto Begin = snapshot(argument(C->getArg(0), Info->IteratorType), L);
+      auto End = snapshot(argument(C->getArg(1), Info->IteratorType), L);
       argument(C->getArg(2), C->getConstructor()->getParamDecl(2)->getType());
       initializeOrderedContainer(Place, L);
       insertOrderedSetRange(std::move(Place), std::move(Begin), std::move(End), *Info, L);

@@ -137047,6 +137047,79 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion};
 }
 
+static std::optional<UtilityOrderedSetIteratorCall> checkedOrderedIteratorOperator(
+    const State &S, const SourceManager &SM, const CXXOperatorCallExpr *Operator,
+    const ASTContext &Context, const UtilityOrderedSetStorage *Owner = nullptr) {
+  using Op = OrderedSetIteratorOperation;
+  const auto *Function = Operator ? Operator->getDirectCallee() : nullptr;
+  if (!Function || !Operator->getNumArgs() || Function->isVariadic())
+    return std::nullopt;
+  const auto *First = Operator->getArg(0);
+  UtilityOrderedSetStorage Table{};
+  const auto *Record = approvedOrderedSetIteratorRecord(
+      S, SM, First->getType()->getAsCXXRecordDecl(), Context, Owner, &Table);
+  if (!Record || !First->isLValue() || First->getType().isVolatileQualified() ||
+      First->getType().isRestrictQualified() || First->getType().getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  const auto Type = Context.getRecordType(Record);
+  const bool Mapped = !Table.MappedPairType.isNull();
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  if (!orderedPinnedFunction(S, SM, Function, Mapped ? "map" : "__tree"))
+    return std::nullopt;
+  const auto Result = Function->getReturnType();
+  if (!Context.hasSameType(Result.getNonReferenceType(), Operator->getType()))
+    return std::nullopt;
+  const auto Kind = Operator->getOperator();
+  if (Kind == OO_EqualEqual || Kind == OO_ExclaimEqual) {
+    if (isa<CXXMethodDecl>(Function) || Function->getNumParams() != 2 || Operator->getNumArgs() != 2 ||
+        !Context.hasSameType(Result, Context.BoolTy) || !Operator->isPRValue())
+      return std::nullopt;
+    const auto Reference = Context.getLValueReferenceType(Type.withConst());
+    const auto *Second = Operator->getArg(1);
+    if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) ||
+        !Context.hasSameType(Function->getParamDecl(1)->getType(), Reference) ||
+        !Context.hasSameUnqualifiedType(Second->getType(), Type) || !Second->isLValue() ||
+        Second->getType().isVolatileQualified() || Second->getType().isRestrictQualified() ||
+        Second->getType().getAddressSpace() != LangAS::Default ||
+        !SelectedBody(S, SM, Function, Table.Record, Context))
+      return std::nullopt;
+    return UtilityOrderedSetIteratorCall{Kind == OO_EqualEqual ? Op::Equal : Op::NotEqual,
+                                         Table, nullptr, First, Second};
+  }
+
+  const auto *Member = dyn_cast<CXXMethodDecl>(Function);
+  if (!Member || Member->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      Member->isStatic() || Member->isVirtual() || Member->isVolatile() || Member->getPrimaryTemplate() ||
+      Function->getNumParams() + 1 != Operator->getNumArgs())
+    return std::nullopt;
+  Op Operation;
+  if (Kind == OO_Star || Kind == OO_Arrow) {
+    auto Value = Mapped ? Table.MappedPairType : Context.IntTy;
+    if (!Mapped || Record->getName() == "__map_const_iterator") Value = Value.withConst();
+    if (!Member->isConst() || Function->getNumParams() ||
+        !Context.hasSameType(Result, Kind == OO_Star ? Context.getLValueReferenceType(Value)
+                                                    : Context.getPointerType(Value)))
+      return std::nullopt;
+    Operation = Kind == OO_Star ? Op::Dereference : Op::Arrow;
+  } else if (Kind == OO_PlusPlus || Kind == OO_MinusMinus) {
+    const bool Post = Function->getNumParams() == 1;
+    const auto *Dummy = Post ? dyn_cast<IntegerLiteral>(Operator->getArg(1)->IgnoreParenImpCasts()) : nullptr;
+    if (Member->isConst() || First->getType().isConstQualified() ||
+        (Post ? (!Dummy || !Dummy->getValue().isZero() ||
+                 !Context.hasSameType(Function->getParamDecl(0)->getType(), Context.IntTy))
+              : Function->getNumParams() != 0) ||
+        !Context.hasSameType(Result, Post ? Type : Context.getLValueReferenceType(Type)))
+      return std::nullopt;
+    Operation = Kind == OO_PlusPlus ? (Post ? Op::PostIncrement : Op::Increment)
+                                    : (Post ? Op::PostDecrement : Op::Decrement);
+  } else {
+    return std::nullopt;
+  }
+  if (!SelectedBody(S, SM, Function, Table.Record, Context))
+    return std::nullopt;
+  return UtilityOrderedSetIteratorCall{Operation, Table, nullptr, First, nullptr};
+}
+
 std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   using Op = OrderedSetIteratorOperation;
@@ -137146,74 +137219,9 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
   }
 
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
-  const auto *Function = Operator ? Operator->getDirectCallee() : nullptr;
-  if (!Function || !Operator->getNumArgs() || !S.owns(SM, Operator->getOperatorLoc()) ||
-      Function->isVariadic())
+  if (!Operator || !S.owns(SM, Operator->getOperatorLoc()))
     return std::nullopt;
-  const auto *First = Operator->getArg(0);
-  UtilityOrderedSetStorage Table{};
-  const auto *Record = approvedOrderedSetIteratorRecord(
-      S, SM, First->getType()->getAsCXXRecordDecl(), Context, nullptr, &Table);
-  if (!Record || !First->isLValue() || First->getType().isVolatileQualified() ||
-      First->getType().isRestrictQualified() || First->getType().getAddressSpace() != LangAS::Default)
-    return std::nullopt;
-  const auto Type = Context.getRecordType(Record);
-  const bool Mapped = !Table.MappedPairType.isNull();
-  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
-  if (!orderedPinnedFunction(S, SM, Function, Mapped ? "map" : "__tree"))
-    return std::nullopt;
-  const auto Result = Function->getReturnType();
-  if (!Context.hasSameType(Result.getNonReferenceType(), Call->getType()))
-    return std::nullopt;
-  const auto Kind = Operator->getOperator();
-  if (Kind == OO_EqualEqual || Kind == OO_ExclaimEqual) {
-    if (isa<CXXMethodDecl>(Function) || Function->getNumParams() != 2 || Operator->getNumArgs() != 2 ||
-        !Context.hasSameType(Result, Context.BoolTy) || !Call->isPRValue())
-      return std::nullopt;
-    const auto Reference = Context.getLValueReferenceType(Type.withConst());
-    const auto *Second = Operator->getArg(1);
-    if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) ||
-        !Context.hasSameType(Function->getParamDecl(1)->getType(), Reference) ||
-        !Context.hasSameUnqualifiedType(Second->getType(), Type) || !Second->isLValue() ||
-        Second->getType().isVolatileQualified() || Second->getType().isRestrictQualified() ||
-        Second->getType().getAddressSpace() != LangAS::Default ||
-        !SelectedBody(S, SM, Function, Table.Record, Context))
-      return std::nullopt;
-    return UtilityOrderedSetIteratorCall{Kind == OO_EqualEqual ? Op::Equal : Op::NotEqual,
-                                         Table, nullptr, First, Second};
-  }
-
-  const auto *Member = dyn_cast<CXXMethodDecl>(Function);
-  if (!Member || Member->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
-      Member->isStatic() || Member->isVirtual() || Member->isVolatile() || Member->getPrimaryTemplate() ||
-      Function->getNumParams() + 1 != Operator->getNumArgs())
-    return std::nullopt;
-  Op Operation;
-  if (Kind == OO_Star || Kind == OO_Arrow) {
-    auto Value = Mapped ? Table.MappedPairType : Context.IntTy;
-    if (!Mapped || Record->getName() == "__map_const_iterator") Value = Value.withConst();
-    if (!Member->isConst() || Function->getNumParams() ||
-        !Context.hasSameType(Result, Kind == OO_Star ? Context.getLValueReferenceType(Value)
-                                                    : Context.getPointerType(Value)))
-      return std::nullopt;
-    Operation = Kind == OO_Star ? Op::Dereference : Op::Arrow;
-  } else if (Kind == OO_PlusPlus || Kind == OO_MinusMinus) {
-    const bool Post = Function->getNumParams() == 1;
-    const auto *Dummy = Post ? dyn_cast<IntegerLiteral>(Operator->getArg(1)->IgnoreParenImpCasts()) : nullptr;
-    if (Member->isConst() || First->getType().isConstQualified() ||
-        (Post ? (!Dummy || !Dummy->getValue().isZero() ||
-                 !Context.hasSameType(Function->getParamDecl(0)->getType(), Context.IntTy))
-              : Function->getNumParams() != 0) ||
-        !Context.hasSameType(Result, Post ? Type : Context.getLValueReferenceType(Type)))
-      return std::nullopt;
-    Operation = Kind == OO_PlusPlus ? (Post ? Op::PostIncrement : Op::Increment)
-                                    : (Post ? Op::PostDecrement : Op::Decrement);
-  } else {
-    return std::nullopt;
-  }
-  if (!SelectedBody(S, SM, Function, Table.Record, Context))
-    return std::nullopt;
-  return UtilityOrderedSetIteratorCall{Operation, Table, nullptr, First, nullptr};
+  return checkedOrderedIteratorOperator(S, SM, Operator, Context);
 }
 
 std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
@@ -137829,26 +137837,31 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !TemplateArgs || TemplateArgs->size() != 1 || TemplateArgs->get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
-  const auto Pointer = TemplateArgs->get(0).getAsType();
-  if (Pointer.isNull() || Pointer.hasQualifiers() || !Pointer->isPointerType() ||
-      !Context.hasSameType(Pointer, Function->getParamDecl(0)->getType()) ||
-      !Context.hasSameType(Pointer, Function->getParamDecl(1)->getType()))
+  const auto Iterator = TemplateArgs->get(0).getAsType();
+  if (Iterator.isNull() || Iterator.hasQualifiers() ||
+      !Context.hasSameType(Iterator, Function->getParamDecl(0)->getType()) ||
+      !Context.hasSameType(Iterator, Function->getParamDecl(1)->getType()))
     return std::nullopt;
-  const auto Element = Pointer->getPointeeType();
   const bool Mapped = Header == "map";
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Storage) return std::nullopt;
-  const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
-  if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
+  if (Iterator->isPointerType()) {
+    const auto Element = Iterator->getPointeeType();
+    const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
+    if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
+      return std::nullopt;
+  } else if (!approvedOrderedSetIteratorRecord(
+                 S, SM, Iterator->getAsCXXRecordDecl(), Context, &*Storage)) {
     return std::nullopt;
+  }
   std::optional<UtilityPairRecord> Pair;
   if (Mapped) {
     Pair = approvedUtilityPairRecord(S, SM, Storage->MappedPairType->getAsCXXRecordDecl(), Context);
     if (!Pair || !Pair->Record->hasTrivialDestructor())
       return std::nullopt;
   }
-  return UtilityOrderedSetRangeInput{*Storage, Pointer, Pair};
+  return UtilityOrderedSetRangeInput{*Storage, Iterator, Pair};
 }
 
 static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
@@ -137863,14 +137876,35 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
   if (!Input) return std::nullopt;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
   const auto *Loop = Body && Body->size() == 1 ? dyn_cast<ForStmt>(Body->body_front()) : nullptr;
-  const auto *Condition = Loop ? dyn_cast_or_null<BinaryOperator>(orderedExpression(Loop->getCond())) : nullptr;
-  const auto *Advance = Loop ? dyn_cast_or_null<UnaryOperator>(orderedExpression(Loop->getInc())) : nullptr;
-  if (!Condition || Condition->getOpcode() != BO_NE ||
-      !orderedParameter(Condition->getLHS(), Method->getParamDecl(0)) ||
-      !orderedParameter(Condition->getRHS(), Method->getParamDecl(1)) ||
-      !Advance || Advance->getOpcode() != UO_PreInc ||
-      !orderedParameter(Advance->getSubExpr(), Method->getParamDecl(0)))
-    return std::nullopt;
+  if (!Loop) return std::nullopt;
+  const auto *First = Method->getParamDecl(0), *Last = Method->getParamDecl(1);
+  const auto *Condition = orderedExpression(Loop->getCond());
+  const auto *Advance = orderedExpression(Loop->getInc());
+  if (Input->IteratorType->isPointerType()) {
+    const auto *Compare = dyn_cast_or_null<BinaryOperator>(Condition);
+    const auto *Step = dyn_cast_or_null<UnaryOperator>(Advance);
+    if (!Compare || Compare->getOpcode() != BO_NE ||
+        !orderedParameter(Compare->getLHS(), First) || !orderedParameter(Compare->getRHS(), Last) ||
+        !Step || Step->getOpcode() != UO_PreInc || !orderedParameter(Step->getSubExpr(), First))
+      return std::nullopt;
+  } else {
+    auto Check = [&](const Expr *E) {
+      return checkedOrderedIteratorOperator(
+          S, SM, dyn_cast_or_null<CXXOperatorCallExpr>(E), Context, &Input->Storage);
+    };
+    const auto Different = Check(Condition);
+    const auto Step = Check(Advance);
+    const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(
+        orderedExpression(dyn_cast<Expr>(Loop->getBody())));
+    const auto Element = Insert && Insert->getNumArgs() == 2
+        ? Check(orderedExpression(Insert->getArg(1))) : std::nullopt;
+    using Op = OrderedSetIteratorOperation;
+    if (!Different || Different->Operation != Op::NotEqual ||
+        !orderedParameter(Different->First, First) || !orderedParameter(Different->Second, Last) ||
+        !Step || Step->Operation != Op::Increment || !orderedParameter(Step->First, First) ||
+        !Element || Element->Operation != Op::Dereference || !orderedParameter(Element->First, First))
+      return std::nullopt;
+  }
   const auto SelectedBody = Header == "map" ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   return SelectedBody(S, SM, Method, Record, Context) ? Input : std::nullopt;
 }
@@ -137890,8 +137924,8 @@ std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
   const auto Header = associativeContainerHeader(Record->getName());
   if (Header != "map" && Header != "set") return std::nullopt;
   const auto Input = orderedSetRangeMethod(S, SM, Method, Record, Header, Context);
-  if (!Input || !Context.hasSameType(Call->getArg(0)->getType(), Input->PointerType) ||
-      !Context.hasSameType(Call->getArg(1)->getType(), Input->PointerType))
+  if (!Input || !Context.hasSameType(Call->getArg(0)->getType(), Input->IteratorType) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Input->IteratorType))
     return std::nullopt;
   return Input;
 }
@@ -137938,8 +137972,8 @@ std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
   const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
   const auto Input = orderedSetRangeConstructor(S, SM, Ctor, Context);
   if (!Input || Ctor->getNumCtorInitializers() != 1 ||
-      !Context.hasSameType(Construction->getArg(0)->getType(), Input->PointerType) ||
-      !Context.hasSameType(Construction->getArg(1)->getType(), Input->PointerType) ||
+      !Context.hasSameType(Construction->getArg(0)->getType(), Input->IteratorType) ||
+      !Context.hasSameType(Construction->getArg(1)->getType(), Input->IteratorType) ||
       !Context.hasSameUnqualifiedType(Construction->getArg(2)->getType(), Ctor->getParamDecl(2)->getType().getNonReferenceType()))
     return std::nullopt;
   const auto *Record = Ctor->getParent();
