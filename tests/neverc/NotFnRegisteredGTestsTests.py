@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.associative_signed_wide_registered = cls.registered
+        cls.associative_signed_wide_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.associative_signed_wide_original = cls.adapter.restore_original_gtests(cls.associative_signed_wide_registered,
+                                                                        cls.associative_signed_wide_suffix)
+        cls.registered = cls.adapter.restore_associative_signed_wide_history(cls.associative_signed_wide_registered)
         cls.ordered_map_scalar_and_checked_at_registered = cls.registered
         cls.ordered_map_scalar_and_checked_at_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_map_scalar_and_checked_at_original = cls.adapter.restore_original_gtests(cls.ordered_map_scalar_and_checked_at_registered,
@@ -3567,6 +3572,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_map_scalar_and_checked_at_history(self.ordered_map_scalar_and_checked_at_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_map_scalar_and_checked_at_registered, self.ordered_map_scalar_and_checked_at_suffix + b' ')
+
+
+    def test_associative_signed_wide_retains_published_bodies(self):
+        self.assertEqual(self.associative_signed_wide_original + self.associative_signed_wide_suffix, self.associative_signed_wide_registered)
+        self.assertEqual(self.adapter.restore_associative_signed_wide_history(self.associative_signed_wide_original),
+                         self.ordered_map_scalar_and_checked_at_original)
+        output, evidence = self.extractor.extract(self.associative_signed_wide_original, ['TranslateTest.CoreV2PairDeducedFromFloatingLiteralRunAtBothOptimizations', 'TranslateTest.CoreV2PairDeducedFromNumericLimitsResultRunAtBothOptimizations', 'TranslateTest.CoreV2PairExplicitTypeForNumericLimitsResultRunAtBothOptimizations', 'TranslateTest.CoreV2PairDeducedFromSourceFunctionResultRunAtBothOptimizations', 'TranslateTest.CoreV2PairDeducedFromFloatNumericLimitsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtAfterAbsentKeyReturnRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtAfterAbsentKeyReturnPreservesReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtPresentElseBranchRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetGreaterBoundariesAndIterationRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetGreaterHintsAndDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapGreaterCompareAndStorageRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapLongSubscriptAssignAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapLongLongPairRangeAndNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransparentLessExactSearchRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransparentGreaterExactSearchRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetTransparentGreaterEqualRangeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransparentWideFindAndBoundsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransparentWideDescendingRangeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapTransparentSignedProbeCountRunAtBothOptimizations', 'TranslateTest.CoreV2PairDeducedVolatileNumericLimitsGuardRejected', 'TranslateTest.CoreV2OrderedMapAtKeyChangesAfterGuardRejected', 'TranslateTest.CoreV2OrderedMapAtFallthroughIsAbsentRejected', 'TranslateTest.CoreV2OrderedMapAtAfterGuardOfOtherContainerRejected', 'TranslateTest.CoreV2OrderedMapGreaterOnDifferentKeyTypeGuardRejected', 'TranslateTest.CoreV2OrderedSetCallerComparatorGuardRejected', 'TranslateTest.CoreV2UnorderedMapQualifiedLongStorageGuardRejected', 'TranslateTest.CoreV2OrderedSetMismatchedLessSpecializationGuardRejected', 'TranslateTest.CoreV2OrderedSetTransparentUnsignedProbeGuardRejected', 'TranslateTest.CoreV2OrderedMapTransparentVolatileProbeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8950)
+        self.assertEqual(evidence['selected_count'], 29)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-map-long-subscript-assign-and-copy', output)
+        self.assertIn(b'unordered-map-qualified-long-storage-guard', output)
+
+    def test_associative_signed_wide_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_associative_signed_wide_history(self.associative_signed_wide_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.associative_signed_wide_registered, self.associative_signed_wide_suffix + b' ')
 
 
 if __name__ == '__main__':

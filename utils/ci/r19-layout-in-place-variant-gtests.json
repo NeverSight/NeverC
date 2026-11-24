@@ -265,6 +265,14 @@
       "gtest_body_sha256": "cbcdc28ec120779c9066a398585869f0f4ade407bf8b5addc11d99baa813ed9a"
     },
     {
+      "name": "associative-set-custom-type-or-policy",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
+      "original_case_source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
+      "gtest_body_sha256": "e005d7446163b0567a864b6f2a5a5e1f31c1e33d0e99da2ce99c5a91001a3da5"
+    },
+    {
       "name": "any-layout-runtime-construction",
       "formal_test_name": "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations",
       "expected": "accept",
@@ -329,14 +337,6 @@
       "source_sha256": "5174929925c12414408c4aa1d12b6af448a77b0b559ed3ee7bb1c84965e9bd3d",
       "original_case_source_sha256": "5174929925c12414408c4aa1d12b6af448a77b0b559ed3ee7bb1c84965e9bd3d",
       "gtest_body_sha256": "e4962618d04bf0c02bbf1a67bac8ae9c0b5b8849ccde934534b9fddc4804a25f"
-    },
-    {
-      "name": "associative-set-custom-type-or-policy",
-      "formal_test_name": "TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRejected",
-      "expected": "reject",
-      "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
-      "original_case_source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
-      "gtest_body_sha256": "f5f7b605cc72b86a39af32cf26cf65be40037a6d396e53ca291bfb88c9665589"
     },
     {
       "name": "associative-set-renamed-container-storage",
@@ -469,6 +469,7 @@
     "TranslateTest.CoreV2VariantTypeConstructionEmptyAlternativeRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantTypeConstructionZeroIndexRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapStoresFloatMappedValues",
+    "TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected",
     "TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected",
@@ -477,7 +478,6 @@
     "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected",
     "TranslateTest.CoreV2AssociativeMapRenamedContainerStorageRejected",
     "TranslateTest.CoreV2AssociativeMapRuntimeStorageGuardRejected",
-    "TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRejected",
     "TranslateTest.CoreV2AssociativeSetRenamedContainerStorageRejected",
     "TranslateTest.CoreV2AssociativeSetRuntimeStorageGuardRejected",
     "TranslateTest.CoreV2AssociativeUnorderedSetCustomTypeOrPolicyRejected",
@@ -757,6 +757,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "associative-set-custom-type-or-policy",
+      "expected": "accept",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "set",
+      "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "any-layout-runtime-construction",
       "source": "#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n",
       "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
@@ -818,14 +826,6 @@
       "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, int>;\nint main() { Container value; return sizeof(value) == 0; }\n",
       "public_header": "map",
       "source_sha256": "5174929925c12414408c4aa1d12b6af448a77b0b559ed3ee7bb1c84965e9bd3d",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "associative-set-custom-type-or-policy",
-      "expected": "reject",
-      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n",
-      "public_header": "set",
-      "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
       "kind": "source-body-guard"
     },
     {
@@ -944,8 +944,8 @@
   "extractor_sha256": "4f9a108a7a4c93d16ced521dff9abb11d00e776f3078ab7def070cccca3c5253",
   "current_registry_count": 8097,
   "current_python_registry_tests": 120,
-  "native_reference_selected_executions": 66,
-  "planned_generated_c23_executions": 66,
+  "native_reference_selected_executions": 68,
+  "planned_generated_c23_executions": 68,
   "native_reference_proofs": {
     "any-layout": "d89e6931c9771241a94eaf5f31750e55821fa0ad1d094572d74c24deb800234a",
     "associative-metadata": "c2b4b1e86ecb64c73bdaec0c5c07756cbad3a260c465a48f1a9676bcdbc13572",
@@ -953,5 +953,5 @@
     "variant-in-place-runtime": "bd90cf05c8c2a12d4d00b5759d5195f30114f5f455e69bb3142e391e6e176475"
   },
   "native_reference_authentication_sha256": "7252dc627daa9c512c414f006584a89ad165af708373991926d444d7e11d3bcf",
-  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
+  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
 }

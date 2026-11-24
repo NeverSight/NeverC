@@ -119,6 +119,14 @@
       "source_sha256": "8b166212a15e7d07cc7536efff2b8525552bcef7c3bf80cd0d0a57c2f2b26b2d",
       "original_case_source_sha256": "8b166212a15e7d07cc7536efff2b8525552bcef7c3bf80cd0d0a57c2f2b26b2d",
       "gtest_body_sha256": "bc6dc354c0ad78ef4338e71a63ee26295f81f56243d5fdb97aff4f37acac7fd7"
+    },
+    {
+      "name": "ordered-allocator-observer-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedAllocatorObserverCustomPolicyGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "da1450a8ba9836abff9bb98b6e876f902ed0e43bf1f63ae8cef74e661842b046",
+      "original_case_source_sha256": "da1450a8ba9836abff9bb98b6e876f902ed0e43bf1f63ae8cef74e661842b046",
+      "gtest_body_sha256": "1553ba3f9c5e4628821ef8dca0aedda5fb80e59cbece89b810f5fc14879d6fcc"
     }
   ],
   "negative_cases": [
@@ -137,14 +145,6 @@
       "source_sha256": "dfe667a73ae49002c8e8bdd495b44f1052115c1b10a3d24cad5c97dc24e2f0e6",
       "original_case_source_sha256": "dfe667a73ae49002c8e8bdd495b44f1052115c1b10a3d24cad5c97dc24e2f0e6",
       "gtest_body_sha256": "202e8706538ed077986489e23ee0a32844bb8ba561dac8af7b88f2e7242d6e4e"
-    },
-    {
-      "name": "ordered-allocator-observer-custom-policy-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedAllocatorObserverCustomPolicyGuardRejected",
-      "expected": "reject",
-      "source_sha256": "da1450a8ba9836abff9bb98b6e876f902ed0e43bf1f63ae8cef74e661842b046",
-      "original_case_source_sha256": "da1450a8ba9836abff9bb98b6e876f902ed0e43bf1f63ae8cef74e661842b046",
-      "gtest_body_sha256": "a2b6005bf99db89acf29547454ad92a5de4fd97b48ecffe5f6e64ae7f133bc57"
     }
   ],
   "source_cases": [
@@ -269,6 +269,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-allocator-observer-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\nint main() {\n  const std::set<int, std::greater<int>> values{1, 2, 3};\n  return values.get_allocator() == std::allocator<int>{} && *values.begin() == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "da1450a8ba9836abff9bb98b6e876f902ed0e43bf1f63ae8cef74e661842b046",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-range-foreign-cursor-guard",
       "expected": "reject",
       "public_header": "map",
@@ -282,14 +290,6 @@
       "public_header": "set",
       "source": "#include <set>\nstruct Compare {\n  bool descending;\n  bool operator()(int a, int b) const { return descending ? a > b : a < b; }\n};\n\nint main() {\n  std::set<int, Compare> values(Compare{true});\n  values.insert(1);\n  values.insert(3);\n  return *values.begin() == 3 ? 0 : 1;\n}\n",
       "source_sha256": "dfe667a73ae49002c8e8bdd495b44f1052115c1b10a3d24cad5c97dc24e2f0e6",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-allocator-observer-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\n#include <functional>\nint main() {\n  const std::set<int, std::greater<int>> values{1, 2, 3};\n  return values.get_allocator() == std::allocator<int>{} && *values.begin() == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "da1450a8ba9836abff9bb98b6e876f902ed0e43bf1f63ae8cef74e661842b046",
       "kind": "source-body-guard"
     }
   ],
@@ -309,9 +309,9 @@
     "TranslateTest.CoreV2OrderedAllocatorCopyConstructionRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedRangeReverseIteratorRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapGetsAllocatorWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedAllocatorObserverCustomPolicyGuardRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedRangeForeignCursorGuardRejected",
-    "TranslateTest.CoreV2OrderedExplicitStatefulPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedAllocatorObserverCustomPolicyGuardRejected"
+    "TranslateTest.CoreV2OrderedExplicitStatefulPolicyGuardRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -324,14 +324,15 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8788,
   "current_python_registry_tests": 260,
-  "native_reference_selected_executions": 30,
-  "planned_generated_c23_executions": 30,
+  "native_reference_selected_executions": 32,
+  "planned_generated_c23_executions": 32,
   "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
     "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c",
     "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
     "ordered-policies-and-iterator-ranges": "e18fa9b070d855db549dc7598c7e0e04cf32debea3025ba99cf1e9da7e71504f",
     "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd"
   },
-  "native_reference_authentication_sha256": "7b3e5c79deef469e313e533850bceff712ecdef59a2886014178bcd684a08d0b",
-  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
+  "native_reference_authentication_sha256": "b774175b65a1cd3a910eaac82dde75b65493edcc4714a864255ba5c340f31d4e",
+  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
 }

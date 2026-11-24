@@ -1220,8 +1220,7 @@ class FunctionLowering {
   }
   Expression unorderedNodeValue(Expression Node, const UtilityUnorderedTableRecord &Info,
                                  SourceLocation L) {
-    return nodeFieldAt(std::move(Node), A.Context.IntTy,
-        Info.ValueOffsetBytes + A.Context.getTypeSizeInChars(A.Context.IntTy).getQuantity(), L);
+    return nodeFieldAt(std::move(Node), Info.MappedType, Info.MappedOffsetBytes, L);
   }
   Expression unorderedSentinel(Expression Place, const UtilityUnorderedTableRecord &Info,
                                  SourceLocation L) {
@@ -1655,7 +1654,7 @@ class FunctionLowering {
     auto Result = snapshot(Multi ? A.zero(Info.NodePointerType, L) :
         unorderedFindNode(Place, Info, Key, Hash, L), L);
     auto InsertedValue = snapshot(boolean(false, L), L);
-    auto InitialValue = [&] { return Mapped ? Expression(*Mapped) : A.zero(A.Context.IntTy, L); };
+    auto InitialValue = [&] { return Mapped ? Expression(*Mapped) : A.zero(Info.MappedType, L); };
     const auto Existing = labelName();
     const auto Allocate = labelName(), Capacity = labelName(), NeedCapacity = labelName();
     const auto Grow = labelName(), Desired = labelName(), SelectMinimum = labelName(), Rehash = labelName();
@@ -27406,6 +27405,7 @@ class FunctionLowering {
   Expression orderedSetBoundary(Expression Place, Expression Key,
       const UtilityOrderedSetStorage &Info, OrderedSetIteratorOperation Operation, SourceLocation L) {
     const bool Upper = Operation == OrderedSetIteratorOperation::UpperBound;
+    const auto ComparisonType = Key.getString("type")->str();
     auto End = snapshot(orderedTreeSentinel(Place, L), L);
     auto Result = snapshot(End, L);
     auto Node = snapshot(orderedContainerMember(std::move(Place), "nct_ordered_root", L), L);
@@ -27415,8 +27415,9 @@ class FunctionLowering {
     label(Check, L);
     branch(cast(Node, "bool", L), Compare, Found, L);
     label(Compare, L);
-    auto AtNode = snapshot(orderedSetKey(Node, Info, L), L);
-    branch(binary(Upper ? ">" : ">=", std::move(AtNode), Key, "bool", L), Left, Right, L);
+    auto AtNode = snapshot(cast(orderedSetKey(Node, Info, L), ComparisonType, L), L);
+    const auto Comparison = Info.Descending ? (Upper ? "<" : "<=") : (Upper ? ">" : ">=");
+    branch(binary(Comparison, std::move(AtNode), Key, "bool", L), Left, Right, L);
     label(Left, L);
     assign(Result, Node, L);
     assign(Node, orderedNodeChild(Node, false, L), L);
@@ -27429,7 +27430,8 @@ class FunctionLowering {
       const auto Match = labelName(), Miss = labelName(), Done = labelName();
       branch(binary("!=", Result, End, "bool", L), Match, Done, L);
       label(Match, L);
-      branch(binary("==", orderedSetKey(Result, Info, L), std::move(Key), "bool", L), Done, Miss, L);
+      auto Candidate = cast(orderedSetKey(Result, Info, L), ComparisonType, L);
+      branch(binary("==", std::move(Candidate), std::move(Key), "bool", L), Done, Miss, L);
       label(Miss, L);
       assign(Result, std::move(End), L);
       jump(Done, L);
@@ -27460,7 +27462,7 @@ class FunctionLowering {
     else branch(binary("==", Key, CurrentKey, "bool", L), Done, Descend, L);
     label(Descend, L);
     assign(Parent, Node, L);
-    auto GoesLeft = binary("<", Key, CurrentKey, "bool", L);
+    auto GoesLeft = binary(Info.Descending ? ">" : "<", Key, CurrentKey, "bool", L);
     if (EqualKeysGoLeft) {
       const auto CheckDirection = labelName(), CheckEquality = labelName();
       branch(std::move(GoesLeft), Left, CheckDirection, L);
@@ -27503,12 +27505,14 @@ class FunctionLowering {
     branch(binary("==", Hint, End, "bool", L), Before, Compare, L);
     label(Compare, L);
     auto HintKey = snapshot(orderedSetKey(Hint, Info, L), L);
-    branch(binary(Info.Multi ? "<=" : "<", Key, HintKey, "bool", L), Before, HintIsLower, L);
+    const auto BeforeKey = Info.Descending ? ">" : "<";
+    const auto MayPrecede = Info.Multi ? (Info.Descending ? ">=" : "<=") : BeforeKey;
+    branch(binary(MayPrecede, Key, HintKey, "bool", L), Before, HintIsLower, L);
     if (!Info.Multi) {
       const auto After = labelName(), Equal = labelName(), CheckNext = labelName(),
                  AfterHint = labelName(), AfterParent = labelName();
       label(HintIsLower, L);
-      branch(binary("<", HintKey, Key, "bool", L), After, Equal, L);
+      branch(binary(BeforeKey, HintKey, Key, "bool", L), After, Equal, L);
       label(Equal, L);
       assign(Node, Hint, L);
       jump(Done, L);
@@ -27516,7 +27520,7 @@ class FunctionLowering {
       auto Next = stepOrderedIterator(Hint, true, L);
       branch(binary("==", Next, End, "bool", L), AfterHint, CheckNext, L);
       label(CheckNext, L);
-      branch(binary("<", Key, orderedSetKey(Next, Info, L), "bool", L), AfterHint, FromRoot, L);
+      branch(binary(BeforeKey, Key, orderedSetKey(Next, Info, L), "bool", L), AfterHint, FromRoot, L);
       label(AfterHint, L);
       assign(Parent, Hint, L);
       branch(cast(orderedNodeChild(Hint, true, L), "bool", L), AfterParent, AttachRight, L);
@@ -27532,7 +27536,7 @@ class FunctionLowering {
     branch(binary("==", Hint, Begin, "bool", L), BeforeHint, Prev, L);
     label(Prev, L);
     assign(Previous, stepOrderedIterator(Hint, false, L), L);
-    branch(binary(Info.Multi ? "<=" : "<", orderedSetKey(Previous, Info, L), Key, "bool", L),
+    branch(binary(MayPrecede, orderedSetKey(Previous, Info, L), Key, "bool", L),
         BeforeHint, FromRoot, L);
     label(BeforeHint, L);
     assign(Parent, Hint, L);
@@ -31291,14 +31295,14 @@ class FunctionLowering {
       return Output;
     }
     if (Operation == UtilityOperation::OrderedMapCompareValues) {
-      const auto Pair = approvedOrderedValueComparatorCall(A.S, A.Sources, Call, A.Context);
-      if (!Pair) reject(L, "ordered value comparator", "The checked pair-key comparison is required.");
+      const auto Info = approvedOrderedValueComparatorCall(A.S, A.Sources, Call, A.Context);
+      if (!Info) reject(L, "ordered value comparator", "The checked pair-key comparison is required.");
       lvalue(Call->getArg(0));
       const auto *Method = Call->getDirectCallee();
       auto Left = dereference(snapshot(argument(Call->getArg(1), Method->getParamDecl(0)->getType()), L), L);
       auto Right = dereference(snapshot(argument(Call->getArg(2), Method->getParamDecl(1)->getType()), L), L);
-      return binary("<", fieldStorage(std::move(Left), Pair->First, L),
-                    fieldStorage(std::move(Right), Pair->First, L), "bool", L);
+      return binary(Info->Descending ? ">" : "<", fieldStorage(std::move(Left), Info->Pair.First, L),
+                    fieldStorage(std::move(Right), Info->Pair.First, L), "bool", L);
     }
     if (Operation == UtilityOperation::AssociativeGetAllocator ||
         Operation == UtilityOperation::AssociativePolicy) {
@@ -31444,8 +31448,8 @@ class FunctionLowering {
         // The SDK copies tuple parameters while constructing the pair, after
         // node allocation. Reference elements still read their live referents.
         assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
-        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), readMappedPiecewiseValue(std::move(Keys), *Info->KeyTuple, A.Context.IntTy, L), L);
-        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), readMappedPiecewiseValue(std::move(Values), *Info->ValueTuple, A.Context.IntTy, L), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), readMappedPiecewiseValue(std::move(Keys), *Info->KeyTuple, Info->Map.KeyType, L), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), readMappedPiecewiseValue(std::move(Values), *Info->ValueTuple, Info->Map.MappedType, L), L);
         Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
         Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
       } else if (Info->Kind == UnorderedMapInsertionKind::Default) {
@@ -31454,8 +31458,8 @@ class FunctionLowering {
             quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
             type(Info->Map.NodePointerType, L), L), L);
         assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
-        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
-        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), A.zero(A.Context.IntTy, L), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), A.zero(Info->Map.KeyType, L), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), A.zero(Info->Map.MappedType, L), L);
         Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
         Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
       } else if (Info->Kind == UnorderedMapInsertionKind::Pair) {

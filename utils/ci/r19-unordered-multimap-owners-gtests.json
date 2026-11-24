@@ -39,6 +39,14 @@
       "source_sha256": "8783158f896e45d79f58472fa5c53c88dd3d857fe07e66200ced5200dd2aee24",
       "original_case_source_sha256": "8783158f896e45d79f58472fa5c53c88dd3d857fe07e66200ced5200dd2aee24",
       "gtest_body_sha256": "f4b137354567d36c7e73a7757ef3aa85eea7276e7bdfdf71c98bdfe22fccaa69"
+    },
+    {
+      "name": "unordered-multimap-owners-unapproved-mapped-type",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
+      "original_case_source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
+      "gtest_body_sha256": "caf4eaf1cb523dd36a429c1a5356c59aab8b08cecea3c8e9be6d1fe6be5fc1fd"
     }
   ],
   "negative_cases": [
@@ -49,14 +57,6 @@
       "source_sha256": "3585d2a653e13519ea38b505eb1cc0c737284157c95fa660b7aae5fe17fdcaa3",
       "original_case_source_sha256": "3585d2a653e13519ea38b505eb1cc0c737284157c95fa660b7aae5fe17fdcaa3",
       "gtest_body_sha256": "064f9a5a10f154df7d4cde726c8e99a398765b5f5f9dbfde5eff2d68c8417dd2"
-    },
-    {
-      "name": "unordered-multimap-owners-unapproved-mapped-type",
-      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRejected",
-      "expected": "reject",
-      "source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
-      "original_case_source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
-      "gtest_body_sha256": "907028d5bb5b4d29d1866ce3cb2367a1dbefe1a77f77c51aa73741f5473c7139"
     }
   ],
   "source_cases": [
@@ -101,19 +101,19 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-multimap-owners-unapproved-mapped-type",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> pairs;\n  return pairs.count(1);\n}\n",
+      "source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "unordered-multimap-owners-custom-hash-owner",
       "expected": "reject",
       "public_header": "unordered_map",
       "source": "#include <unordered_map>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_multimap<int, int, Hash> pairs;\n  return pairs.empty();\n}\n",
       "source_sha256": "3585d2a653e13519ea38b505eb1cc0c737284157c95fa660b7aae5fe17fdcaa3",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-multimap-owners-unapproved-mapped-type",
-      "expected": "reject",
-      "public_header": "unordered_map",
-      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> pairs;\n  return pairs.count(1);\n}\n",
-      "source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
       "kind": "source-body-guard"
     }
   ],
@@ -123,8 +123,8 @@
     "TranslateTest.CoreV2UnorderedMultimapOwnersCopyOwnsDistinctNodesAfterSourceClearRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedMultimapOwnersBucketSizePreservesDuplicateMultiplicityAfterRehashRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedMultimapOwnersComparisonRequiresMappedValueMultiplicitiesRunAtBothOptimizations",
-    "TranslateTest.CoreV2UnorderedMultimapOwnersCustomHashOwnerRejected",
-    "TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRejected"
+    "TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapOwnersCustomHashOwnerRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -137,11 +137,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8631,
   "current_python_registry_tests": 240,
-  "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
   "native_reference_proofs": {
+    "unordered-map-wide-mapped": "a277fa7cd60cbb7628d63cec83f9dfbada19f9b3987d1d367d42072a0704e5af",
     "unordered-multimap-owners": "c6f13b6b610a6a4b442984f031eedb8e15c1ded9891605a4d23c33cf502bd365"
   },
-  "native_reference_authentication_sha256": "02f59def9d0733989c5f908ed75503a7a85a2dd5b6e47afd147d70aefd9dc222",
-  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
+  "native_reference_authentication_sha256": "b6847c6f61742ca03f46e7531d2b69841c47c25e6da3148191ce58136713edd4",
+  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
 }

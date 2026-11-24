@@ -135,6 +135,14 @@
       "source_sha256": "d030808fb2df2fae6419e66583861dd9dfa72d225f4b3b180c58325111e1a250",
       "original_case_source_sha256": "d030808fb2df2fae6419e66583861dd9dfa72d225f4b3b180c58325111e1a250",
       "gtest_body_sha256": "8f56c8f2234ba1aedef9f4b271ddfecab5114fa069c238c9d8ff59bb32ddbc99"
+    },
+    {
+      "name": "ordered-map-double-comparison-advances-past-unordered-pair",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab",
+      "original_case_source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab",
+      "gtest_body_sha256": "31525b3467177c9acb0e2b36bffdd7e1f4786f34f2cfcf77df23edd65e8a71c0"
     }
   ],
   "negative_cases": [
@@ -201,14 +209,6 @@
       "source_sha256": "6b891c6eb6e89bd934599692eefa08681b5585a8e7abedc924d31a3c80bf83e5",
       "original_case_source_sha256": "6b891c6eb6e89bd934599692eefa08681b5585a8e7abedc924d31a3c80bf83e5",
       "gtest_body_sha256": "407ea7ae1d395bb62efbd6264e89c18453d6417d883be1514836e301c9a6071d"
-    },
-    {
-      "name": "ordered-map-double-comparison-advances-past-unordered-pair",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRejected",
-      "expected": "reject",
-      "source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab",
-      "original_case_source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab",
-      "gtest_body_sha256": "2c5f1df6484fad81a514cbc8a553d1cf1ae631865436352f3662f2cb06fd13d2"
     },
     {
       "name": "ordered-map-long-double-storage-guard",
@@ -365,6 +365,14 @@
       "source_sha256": "d030808fb2df2fae6419e66583861dd9dfa72d225f4b3b180c58325111e1a250"
     },
     {
+      "name": "ordered-map-double-comparison-advances-past-unordered-pair",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <limits>\n#include <map>\nint main() {\n  const auto quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n",
+      "source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab"
+    },
+    {
       "name": "ordered-map-const-long-mapped-storage-guard",
       "expected": "reject",
       "public_header": "map",
@@ -429,14 +437,6 @@
       "source_sha256": "6b891c6eb6e89bd934599692eefa08681b5585a8e7abedc924d31a3c80bf83e5"
     },
     {
-      "name": "ordered-map-double-comparison-advances-past-unordered-pair",
-      "public_header": "map",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include <limits>\n#include <map>\nint main() {\n  const auto quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n",
-      "source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab"
-    },
-    {
       "name": "ordered-map-long-double-storage-guard",
       "public_header": "map",
       "expected": "reject",
@@ -471,6 +471,7 @@
     "TranslateTest.CoreV2OrderedMapFloatSubscriptCopyAndNodeRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMultimapDoublePiecewiseAndEqualKeysRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairTypedInputRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapConstLongMappedStorageGuardRejected",
     "TranslateTest.CoreV2OrderedMapUnsignedLongLongDifferentPairLeafGuardRejected",
     "TranslateTest.CoreV2OrderedMapQualifiedUintValueGuardRejected",
@@ -479,7 +480,6 @@
     "TranslateTest.CoreV2LimitsResourceHeaderDirectSourceIncludeIsRejectedRejected",
     "TranslateTest.CoreV2OrderedMapAtGuardDifferentKeyRejected",
     "TranslateTest.CoreV2OrderedMapAtGuardDifferentOwnerRejected",
-    "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRejected",
     "TranslateTest.CoreV2OrderedMapLongDoubleStorageGuardRejected",
     "TranslateTest.CoreV2OrderedMapConstDoubleStorageGuardRejected"
   ],
@@ -494,16 +494,17 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8921,
   "current_python_registry_tests": 272,
-  "native_reference_selected_executions": 34,
-  "planned_generated_c23_executions": 34,
+  "native_reference_selected_executions": 36,
+  "planned_generated_c23_executions": 36,
   "native_reference_proofs": {
     "climits": "33bdf57d36833668e608066eb1065e3bf3c607601573ee36af6ef998fbe6f41f",
     "ordered-long-navigation": "0ffa21135bf2e19ca5b7b800c3c832ce9d45f2e3930e133e5c7b0bcf18159d0b",
     "ordered-map-float": "760559df7326c21d012df460fd5a7035266ce4597af9925657d2619e8c9467b6",
     "ordered-map-guarded-at": "90048dc90094c0eae7fb2d568395c00cd5e39d5b68721b030abd83e5763a8fd5",
     "ordered-map-integral-values": "28d73f3b71d64cad03ecee6dbc6a1c4d66028c63a06539a38de5ed16642d1f54",
-    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec"
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
+    "pair-numeric-limits": "07cca5d914b063de0f0895f43402fd453476c92c6deacc4caf1db89e33cb7153"
   },
-  "native_reference_authentication_sha256": "ba42a188313e0234ba3d9e8c9c38bf021f9312d0a6f2c9d75d9c129ff33ba157",
-  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
+  "native_reference_authentication_sha256": "d149db0d9fd5e1472e31004c1c772cd924584593d271eea0e4eefc3bd4f07551",
+  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
 }

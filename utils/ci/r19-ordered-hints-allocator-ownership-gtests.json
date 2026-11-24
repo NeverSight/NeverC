@@ -95,17 +95,33 @@
       "source_sha256": "123105b21925c6af310a455681c5266ea8405da548967235d1e85b5eeb39cd7a",
       "original_case_source_sha256": "123105b21925c6af310a455681c5266ea8405da548967235d1e85b5eeb39cd7a",
       "gtest_body_sha256": "7ca7c243a0c4f15242099493ae0ba7b3111154faec0a5dc34467c9ee74b2c562"
+    },
+    {
+      "name": "ordered-hinted-node-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedHintedNodeCustomPolicyGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "25d209ba904c42b686428bc73508f71397648b5752105cc11d430a511d731d0d",
+      "original_case_source_sha256": "25d209ba904c42b686428bc73508f71397648b5752105cc11d430a511d731d0d",
+      "gtest_body_sha256": "74d1de6459ace52b06fea16716523b07890738b4778373d3dd4e55b9e798948c"
+    },
+    {
+      "name": "ordered-set-hinted-insert-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetHintedInsertCustomPolicyGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9b35c0b9edfd43ae1a21cc4c6bfe6e364dca86778be84fab053ac00549daf614",
+      "original_case_source_sha256": "9b35c0b9edfd43ae1a21cc4c6bfe6e364dca86778be84fab053ac00549daf614",
+      "gtest_body_sha256": "7c1e7915ed1e4020aaaebeff81bad93ca90743a48928ad08f832ac267c0f23e2"
+    },
+    {
+      "name": "ordered-allocator-extended-constructor-custom-compare-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c324d92525b5fdaf2acb7aca5c61d689d2752bd8c3becc7c7e71e43632e9c5ac",
+      "original_case_source_sha256": "c324d92525b5fdaf2acb7aca5c61d689d2752bd8c3becc7c7e71e43632e9c5ac",
+      "gtest_body_sha256": "f76694d55585d03de0bbbf273f62eae359857b7dc90ff5dae2b33c433f9b55c7"
     }
   ],
   "negative_cases": [
-    {
-      "name": "ordered-hinted-node-custom-policy-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedHintedNodeCustomPolicyGuardRejected",
-      "expected": "reject",
-      "source_sha256": "25d209ba904c42b686428bc73508f71397648b5752105cc11d430a511d731d0d",
-      "original_case_source_sha256": "25d209ba904c42b686428bc73508f71397648b5752105cc11d430a511d731d0d",
-      "gtest_body_sha256": "e909fcf33ca717bc0897dc230fbf3a233680454c46796fc623730f0b88802406"
-    },
     {
       "name": "ordered-map-hinted-emplace-converting-value-guard",
       "formal_test_name": "TranslateTest.CoreV2OrderedMapHintedEmplaceConvertingValueGuardRejected",
@@ -113,22 +129,6 @@
       "source_sha256": "c86a80e440840731b13171e9c28c52bf904e08fcf51465eb509ef8486a27c7bf",
       "original_case_source_sha256": "c86a80e440840731b13171e9c28c52bf904e08fcf51465eb509ef8486a27c7bf",
       "gtest_body_sha256": "9762229d3c5b41d888bff1de26c196534f2d3facb562e4e74350259cced36bdf"
-    },
-    {
-      "name": "ordered-set-hinted-insert-custom-policy-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedSetHintedInsertCustomPolicyGuardRejected",
-      "expected": "reject",
-      "source_sha256": "9b35c0b9edfd43ae1a21cc4c6bfe6e364dca86778be84fab053ac00549daf614",
-      "original_case_source_sha256": "9b35c0b9edfd43ae1a21cc4c6bfe6e364dca86778be84fab053ac00549daf614",
-      "gtest_body_sha256": "aac4bdc591d1d554b774c82149f0601540d2dc45f6b2b4092530004a10122f11"
-    },
-    {
-      "name": "ordered-allocator-extended-constructor-custom-compare-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRejected",
-      "expected": "reject",
-      "source_sha256": "c324d92525b5fdaf2acb7aca5c61d689d2752bd8c3becc7c7e71e43632e9c5ac",
-      "original_case_source_sha256": "c324d92525b5fdaf2acb7aca5c61d689d2752bd8c3becc7c7e71e43632e9c5ac",
-      "gtest_body_sha256": "424481bd929df3dd16b044fd0569aa29d6b9c633aa3808cf0b08504374bd77a5"
     }
   ],
   "source_cases": [
@@ -230,11 +230,27 @@
     },
     {
       "name": "ordered-hinted-node-custom-policy-guard",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "map",
       "source": "#include <functional>\n#include <map>\n#include <utility>\nint main() {\n  std::map<int, int, std::greater<int>> source{{2, 20}}, destination{{1, 10}};\n  auto node = source.extract(2);\n  auto position = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && position->first == 2 ? 0 : 1;\n}\n",
       "source_sha256": "25d209ba904c42b686428bc73508f71397648b5752105cc11d430a511d731d0d",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-hinted-insert-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values{2};\n  auto inserted = values.insert(values.cbegin(), 3);\n  return inserted == values.begin() && *inserted == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "9b35c0b9edfd43ae1a21cc4c6bfe6e364dca86778be84fab053ac00549daf614",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-allocator-extended-constructor-custom-compare-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map source{{2, 20}};\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "c324d92525b5fdaf2acb7aca5c61d689d2752bd8c3becc7c7e71e43632e9c5ac",
+      "kind": "cpp17-operation"
     },
     {
       "name": "ordered-map-hinted-emplace-converting-value-guard",
@@ -242,22 +258,6 @@
       "public_header": "map",
       "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  short mapped = 14;\n  auto inserted = values.emplace_hint(values.cend(), 1, mapped);\n  return inserted->second == 14 ? 0 : 1;\n}\n",
       "source_sha256": "c86a80e440840731b13171e9c28c52bf904e08fcf51465eb509ef8486a27c7bf",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-set-hinted-insert-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values{2};\n  auto inserted = values.insert(values.cbegin(), 3);\n  return inserted == values.begin() && *inserted == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "9b35c0b9edfd43ae1a21cc4c6bfe6e364dca86778be84fab053ac00549daf614",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-allocator-extended-constructor-custom-compare-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map source{{2, 20}};\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n",
-      "source_sha256": "c324d92525b5fdaf2acb7aca5c61d689d2752bd8c3becc7c7e71e43632e9c5ac",
       "kind": "source-body-guard"
     }
   ],
@@ -274,10 +274,10 @@
     "TranslateTest.CoreV2OrderedMultisetAllocatorMoveTransfersExistingAddressesRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapAllocatorMoveKeepsPayloadAndNodeRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMultimapAllocatorCopyAndMoveRetainEquivalentSequenceRunAtBothOptimizations",
-    "TranslateTest.CoreV2OrderedHintedNodeCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedMapHintedEmplaceConvertingValueGuardRejected",
-    "TranslateTest.CoreV2OrderedSetHintedInsertCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRejected"
+    "TranslateTest.CoreV2OrderedHintedNodeCustomPolicyGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetHintedInsertCustomPolicyGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapHintedEmplaceConvertingValueGuardRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -290,11 +290,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8820,
   "current_python_registry_tests": 264,
-  "native_reference_selected_executions": 24,
-  "planned_generated_c23_executions": 24,
+  "native_reference_selected_executions": 30,
+  "planned_generated_c23_executions": 30,
   "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
     "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c"
   },
-  "native_reference_authentication_sha256": "4f1f548b09a2d3c2321d2014716e000ac65fbde417a37ce098069b7b1e25317e",
-  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
+  "native_reference_authentication_sha256": "773fb9fcc046a46d803b346c0fef485d899ad63228e3e68646f0f1f9735a8fce",
+  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
 }

@@ -287,6 +287,54 @@
       "source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
       "original_case_source_sha256": "6745b18bf4c0e55036e74c9902d36c9da5c4ad632bbc7a697bd9520746648bac",
       "gtest_body_sha256": "56cb53c3a35145d75d8123b7eb20795e3d5892f0daaf5b9c5347893033a43382"
+    },
+    {
+      "name": "ordered-map-pair-emplacement-custom-order-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapPairEmplacementCustomOrderGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e02365a48bc77e4a339d6dde7bee0d1aa9f83a28c7ce65e0749b9f005529ef15",
+      "original_case_source_sha256": "e02365a48bc77e4a339d6dde7bee0d1aa9f83a28c7ce65e0749b9f005529ef15",
+      "gtest_body_sha256": "99584f2cf27c59efef4c697e26908b8c1cbdcb53a78447c6206793e4a652076b"
+    },
+    {
+      "name": "ordered-map-piecewise-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapPiecewiseCustomPolicyGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f332c184b46ef26d42c65bbf272d4833fbce12f0624a287a08b2bbabb2fc14e3",
+      "original_case_source_sha256": "f332c184b46ef26d42c65bbf272d4833fbce12f0624a287a08b2bbabb2fc14e3",
+      "gtest_body_sha256": "c326027eb3aa6ea57adb69cba2e4eb83486ad33321afcea0212a14a21b6b722f"
+    },
+    {
+      "name": "ordered-iterator-navigation-custom-comparator-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedIteratorNavigationCustomComparatorGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4e5465e3264005c5a8372adef333d6453d73d10f52605a59d188ab3fa665f77d",
+      "original_case_source_sha256": "4e5465e3264005c5a8372adef333d6453d73d10f52605a59d188ab3fa665f77d",
+      "gtest_body_sha256": "eab7e95fc0f28c8275503a854f4a822339b8d620c7eaf8c8f109270e4cceb90e"
+    },
+    {
+      "name": "ordered-free-access-custom-comparator-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedFreeAccessCustomComparatorGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "39cd8a6323a11fbce253a92b475a16144bae0707483b920cc3cd8d45d3d61c7d",
+      "original_case_source_sha256": "39cd8a6323a11fbce253a92b475a16144bae0707483b920cc3cd8d45d3d61c7d",
+      "gtest_body_sha256": "5c9583a039f477d59774d5d0081fa8dd447f3cfae2f5fc8439dc16335f1c8b32"
+    },
+    {
+      "name": "ordered-reverse-navigation-custom-comparator-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedReverseNavigationCustomComparatorGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
+      "original_case_source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
+      "gtest_body_sha256": "f26ba72792e30aa51c1b2c796e98e36f2baf4bdeea096147054deb6cf9df47c6"
+    },
+    {
+      "name": "ordered-map-hinted-piecewise-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
+      "original_case_source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
+      "gtest_body_sha256": "fa971184f7555c920b945200b7a7e3f34f73463aa09739676ed55abd8347c588"
     }
   ],
   "negative_cases": [
@@ -299,14 +347,6 @@
       "gtest_body_sha256": "75e8d7f108293dd9011c01ab5186ba16dca1f7f2d0b7883a16c2e8ef1ffdf395"
     },
     {
-      "name": "ordered-map-pair-emplacement-custom-order-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapPairEmplacementCustomOrderGuardRejected",
-      "expected": "reject",
-      "source_sha256": "e02365a48bc77e4a339d6dde7bee0d1aa9f83a28c7ce65e0749b9f005529ef15",
-      "original_case_source_sha256": "e02365a48bc77e4a339d6dde7bee0d1aa9f83a28c7ce65e0749b9f005529ef15",
-      "gtest_body_sha256": "21b36e8309efd6d51b6f46f92288c07f9833a2e95427b70041f11b0efc953091"
-    },
-    {
       "name": "ordered-map-piecewise-narrow-tuple-leaf-guard",
       "formal_test_name": "TranslateTest.CoreV2OrderedMapPiecewiseNarrowTupleLeafGuardRejected",
       "expected": "reject",
@@ -315,52 +355,12 @@
       "gtest_body_sha256": "5c399b51f5fb155d46857337843ec16ed337b5f6ecf66e6add35f9926c12c466"
     },
     {
-      "name": "ordered-map-piecewise-custom-policy-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapPiecewiseCustomPolicyGuardRejected",
-      "expected": "reject",
-      "source_sha256": "f332c184b46ef26d42c65bbf272d4833fbce12f0624a287a08b2bbabb2fc14e3",
-      "original_case_source_sha256": "f332c184b46ef26d42c65bbf272d4833fbce12f0624a287a08b2bbabb2fc14e3",
-      "gtest_body_sha256": "e5d16930566d8027fc348fb7eee7f94dacbb0faf7be24ade13a4ff0be65eed87"
-    },
-    {
-      "name": "ordered-iterator-navigation-custom-comparator-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedIteratorNavigationCustomComparatorGuardRejected",
-      "expected": "reject",
-      "source_sha256": "4e5465e3264005c5a8372adef333d6453d73d10f52605a59d188ab3fa665f77d",
-      "original_case_source_sha256": "4e5465e3264005c5a8372adef333d6453d73d10f52605a59d188ab3fa665f77d",
-      "gtest_body_sha256": "501262dff9136f967f222025d98eb5df5a2e5bdd3609738c0aac2958607cb874"
-    },
-    {
-      "name": "ordered-free-access-custom-comparator-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedFreeAccessCustomComparatorGuardRejected",
-      "expected": "reject",
-      "source_sha256": "39cd8a6323a11fbce253a92b475a16144bae0707483b920cc3cd8d45d3d61c7d",
-      "original_case_source_sha256": "39cd8a6323a11fbce253a92b475a16144bae0707483b920cc3cd8d45d3d61c7d",
-      "gtest_body_sha256": "55913c19002671cdded92d9d099b4499cb3937c773e40b50924d6b3668a0cfc9"
-    },
-    {
-      "name": "ordered-reverse-navigation-custom-comparator-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedReverseNavigationCustomComparatorGuardRejected",
-      "expected": "reject",
-      "source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
-      "original_case_source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
-      "gtest_body_sha256": "c7885a49fa667ee725b88830692a31b4c285309e68d7ced7ae848cfe2a7e1815"
-    },
-    {
       "name": "ordered-map-hinted-pair-different-mapped-leaf-guard",
       "formal_test_name": "TranslateTest.CoreV2OrderedMapHintedPairDifferentMappedLeafGuardRejected",
       "expected": "reject",
       "source_sha256": "ae19eda2f86e7af41502727baee9a2eb40d5f669bf63c9142b54c7205803bea4",
       "original_case_source_sha256": "ae19eda2f86e7af41502727baee9a2eb40d5f669bf63c9142b54c7205803bea4",
       "gtest_body_sha256": "f90d19d8cae38c65a130ebc62536ec121dbac49e6f37634e2ffddc40290b3928"
-    },
-    {
-      "name": "ordered-map-hinted-piecewise-custom-policy-guard",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRejected",
-      "expected": "reject",
-      "source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
-      "original_case_source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
-      "gtest_body_sha256": "99eb186e49007a1253702c6fdc589aab33ddb25322e3c69914e3951b0f2da137"
     },
     {
       "name": "ordered-wide-map-other-pair-leaf-guard",
@@ -677,19 +677,59 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-pair-emplacement-custom-order-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace(std::make_pair(2, 7)).second ? 0 : 1;\n}\n",
+      "source_sha256": "e02365a48bc77e4a339d6dde7bee0d1aa9f83a28c7ce65e0749b9f005529ef15",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-piecewise-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1}, std::tuple<int>{2}).second ? 0 : 1;\n}\n",
+      "source_sha256": "f332c184b46ef26d42c65bbf272d4833fbce12f0624a287a08b2bbabb2fc14e3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-iterator-navigation-custom-comparator-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{2, 3};\n  return *std::next(values.begin()) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "4e5465e3264005c5a8372adef333d6453d73d10f52605a59d188ab3fa665f77d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-free-access-custom-comparator-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 2};\n  return *std::begin(values) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "39cd8a6323a11fbce253a92b475a16144bae0707483b920cc3cd8d45d3d61c7d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-reverse-navigation-custom-comparator-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3};\n  return *std::next(values.rbegin()) == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-hinted-piecewise-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace_hint(values.cend(), std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(7))->second == 7 ? 0 : 1;\n}\n",
+      "source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-map-emplacement-pair-with-different-mapped-leaf-guard",
       "expected": "reject",
       "public_header": "map",
       "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  return values.emplace(std::make_pair(2, 7L)).first->second == 7 ? 0 : 1;\n}\n",
       "source_sha256": "20f99799e32c10286064b1bd9219ba4718481b90705206b33b0a8c62b04c2faa",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-pair-emplacement-custom-order-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <functional>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace(std::make_pair(2, 7)).second ? 0 : 1;\n}\n",
-      "source_sha256": "e02365a48bc77e4a339d6dde7bee0d1aa9f83a28c7ce65e0749b9f005529ef15",
       "kind": "source-body-guard"
     },
     {
@@ -701,51 +741,11 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "ordered-map-piecewise-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1}, std::tuple<int>{2}).second ? 0 : 1;\n}\n",
-      "source_sha256": "f332c184b46ef26d42c65bbf272d4833fbce12f0624a287a08b2bbabb2fc14e3",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-iterator-navigation-custom-comparator-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{2, 3};\n  return *std::next(values.begin()) == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "4e5465e3264005c5a8372adef333d6453d73d10f52605a59d188ab3fa665f77d",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-free-access-custom-comparator-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 2};\n  return *std::begin(values) == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "39cd8a6323a11fbce253a92b475a16144bae0707483b920cc3cd8d45d3d61c7d",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-reverse-navigation-custom-comparator-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3};\n  return *std::next(values.rbegin()) == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "767f1333602417b1189d700979c4586581a4e8f3afeb7767797978195093bbb9",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-hinted-pair-different-mapped-leaf-guard",
       "expected": "reject",
       "public_header": "map",
       "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  return values.emplace_hint(values.cend(), std::make_pair(2, 7L))->second == 7 ? 0 : 1;\n}\n",
       "source_sha256": "ae19eda2f86e7af41502727baee9a2eb40d5f669bf63c9142b54c7205803bea4",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-hinted-piecewise-custom-policy-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace_hint(values.cend(), std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(7))->second == 7 ? 0 : 1;\n}\n",
-      "source_sha256": "847a08ea3265ae9b4afdafd67b327e2c9316e07bfd65a39cd08430f66c2d9338",
       "kind": "source-body-guard"
     },
     {
@@ -810,15 +810,15 @@
     "TranslateTest.CoreV2OrderedMapFreeSizeWithLongMappedValues",
     "TranslateTest.CoreV2OrderedMapReverseDistanceWithLongMappedValues",
     "TranslateTest.CoreV2OrderedMapStoresDoubleMappedValues",
+    "TranslateTest.CoreV2OrderedMapPairEmplacementCustomOrderGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapPiecewiseCustomPolicyGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedIteratorNavigationCustomComparatorGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedFreeAccessCustomComparatorGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedReverseNavigationCustomComparatorGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapEmplacementPairWithDifferentMappedLeafGuardRejected",
-    "TranslateTest.CoreV2OrderedMapPairEmplacementCustomOrderGuardRejected",
     "TranslateTest.CoreV2OrderedMapPiecewiseNarrowTupleLeafGuardRejected",
-    "TranslateTest.CoreV2OrderedMapPiecewiseCustomPolicyGuardRejected",
-    "TranslateTest.CoreV2OrderedIteratorNavigationCustomComparatorGuardRejected",
-    "TranslateTest.CoreV2OrderedFreeAccessCustomComparatorGuardRejected",
-    "TranslateTest.CoreV2OrderedReverseNavigationCustomComparatorGuardRejected",
     "TranslateTest.CoreV2OrderedMapHintedPairDifferentMappedLeafGuardRejected",
-    "TranslateTest.CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRejected",
     "TranslateTest.CoreV2OrderedWideMapOtherPairLeafGuardRejected",
     "TranslateTest.CoreV2OrderedMapAtMissingStaticKeyRemainsThrowingRejected",
     "TranslateTest.CoreV2OrderedMapAtReferenceReceiverDoesNotProvePresenceRejected"
@@ -834,9 +834,10 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8893,
   "current_python_registry_tests": 270,
-  "native_reference_selected_executions": 72,
-  "planned_generated_c23_executions": 72,
+  "native_reference_selected_executions": 84,
+  "planned_generated_c23_executions": 84,
   "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
     "ordered-iteration": "59a2504b946826cc4b34792d15ae0238e10fcb281cac66cca926dd5c6e588b20",
     "ordered-long-navigation": "0ffa21135bf2e19ca5b7b800c3c832ce9d45f2e3930e133e5c7b0bcf18159d0b",
     "ordered-map-bounded-at": "439d237fe6cf85f90da2a2fadb910c8ddd2cc8947f73007af17e8a79add3c5da",
@@ -846,6 +847,6 @@
     "ordered-map-wide-mapped-layout": "24042ea64d327921492261ab30679cc0869d72af780d53fccc8232834f86f3cc",
     "ordered-reverse-navigation": "c18de00ca65af2241e91aa06dfd970b8e099bd4df40757bfa6778aba9030dc03"
   },
-  "native_reference_authentication_sha256": "483116ebdf156c04141ea43da5e402fdab5dc21fb683345ac04bed33ade40848",
-  "source_proof_sha256": "dd1d1be6d073e325ea2380269f2eb33ea4a62406543b80f9dc9ed86b5aa32cb7"
+  "native_reference_authentication_sha256": "b7a8d5e1cf1cf5c922295612d60dcacb3820084ed08f5808eb290fbcfff6a0c9",
+  "source_proof_sha256": "427690a851d04647ca1667eeba25da5fe806507b094b88660081c2604152ebbc"
 }

@@ -18491,3 +18491,13 @@ The pinned C++ limits header supplies integral boundary macros for the
 checked source. For a checked map and key, a successful find compared
 with end proves that at can return the mapped reference. Mutable at
 returns a writable reference in the checked branch.
+
+## Signed ordered lookup and wide unordered values
+
+Checked pairs recognize floating values deduced through the pinned
+numeric_limits result aliases. Checked map at accepts an immediate
+return on the missing-key branch. Ordered maps and sets support the
+pinned descending and transparent standard comparators. Transparent
+lookup preserves the width of signed long and long long probes.
+Unordered maps and multimaps use the target-specific mapped field
+type and offset for long and long long values.
