@@ -101,22 +101,6 @@
       "source_sha256": "093ef3d483f885e7639eb5ab779c3f50993ef6408d1f368124376be48622fdbf"
     },
     {
-      "name": "ordered-empty-owner-custom-comparator",
-      "expected": "reject",
-      "public_header": "set",
-      "kind": "source-body-guard",
-      "source": "#include <set>\nstruct Reverse { bool operator()(int lhs, int rhs) const { return lhs > rhs; } };\nint main() {\n  std::set<int, Reverse> values;\n  return values.empty();\n}\n",
-      "source_sha256": "1972f0da4189fa64bb8dea672912b60d15cc6af58dbd42dcf07a9618ee14ae6c"
-    },
-    {
-      "name": "ordered-empty-owner-different-key",
-      "expected": "reject",
-      "public_header": "map",
-      "kind": "source-body-guard",
-      "source": "#include <map>\nint main() {\n  std::map<long long, int> values;\n  return values.size() != 0;\n}\n",
-      "source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250"
-    },
-    {
       "name": "ordered-empty-owner-set-insert",
       "expected": "accept",
       "public_header": "set",
@@ -131,6 +115,22 @@
       "kind": "cpp17-operation",
       "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n",
       "source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378"
+    },
+    {
+      "name": "ordered-empty-owner-custom-comparator",
+      "expected": "reject",
+      "public_header": "set",
+      "kind": "source-body-guard",
+      "source": "#include <set>\nstruct Reverse { bool operator()(int lhs, int rhs) const { return lhs > rhs; } };\nint main() {\n  std::set<int, Reverse> values;\n  return values.empty();\n}\n",
+      "source_sha256": "1972f0da4189fa64bb8dea672912b60d15cc6af58dbd42dcf07a9618ee14ae6c"
+    },
+    {
+      "name": "ordered-empty-owner-different-key",
+      "expected": "reject",
+      "public_header": "map",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint main() {\n  std::map<long long, int> values;\n  return values.size() != 0;\n}\n",
+      "source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250"
     }
   ],
   "new_gtest_names": [
@@ -167,7 +167,7 @@
     "source": "#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n",
     "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9"
   },
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e",
   "maintained_original_sha256": "b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d",
@@ -179,5 +179,12 @@
   "current_registry_count": 8302,
   "current_python_registry_tests": 162,
   "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "ordered-empty-owner": "5924748fdcb2ab437464396281f9dbebaa6383a04af842824749d3299a793fc9",
+    "ordered-empty-owner-map-copy": "48d3c1d73a8b4a81781036ffe09637fae86c63c8a972d5e6ba55732a60c067fb",
+    "ordered-set-core": "1c2f471258c24fa552d0702893167e6543b8e3a6e6be5d499e9e0f6be5786d4e"
+  },
+  "native_reference_authentication_sha256": "3994a56820662632ed0070abac004038796fd20d49b4e529bd4a2a3b46f6caa6",
+  "source_proof_sha256": "6a89b4d134035217aa54d5a4b59883be7d0f8ec8bccdf9dfc05bec269669cbad"
 }

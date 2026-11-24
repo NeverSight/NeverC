@@ -31,6 +31,14 @@
       "source_sha256": "3ff121f3cc149abc522a73f1cfff1a78155090ea9640cfba90c7921845effa35",
       "original_case_source_sha256": "3ff121f3cc149abc522a73f1cfff1a78155090ea9640cfba90c7921845effa35",
       "gtest_body_sha256": "0bc0b2eebe1f5573b5433e4f9c45d0ed79723df9a1f19d8c0aa39c3eace13b1c"
+    },
+    {
+      "name": "ordered-observer-query-observer-does-not-admit-storage",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9",
+      "original_case_source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9",
+      "gtest_body_sha256": "0845bc3e16b7f66832438803ffb03ade685fe3072e9f306ae4a77252ce05c660"
     }
   ],
   "negative_cases": [
@@ -49,14 +57,6 @@
       "source_sha256": "8ae78f43675ed229cc137872e408d499599eb99ac177b51d352ee5de3c17a30f",
       "original_case_source_sha256": "8ae78f43675ed229cc137872e408d499599eb99ac177b51d352ee5de3c17a30f",
       "gtest_body_sha256": "eab31962dfacc5d56df7719b5961bfc971d4ea0333e937ee33a9725b67189914"
-    },
-    {
-      "name": "ordered-observer-query-observer-does-not-admit-storage",
-      "formal_test_name": "TranslateTest.CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected",
-      "expected": "reject",
-      "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9",
-      "original_case_source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9",
-      "gtest_body_sha256": "7ae122ca31bfee61051df92d94229cac8b6970842f503ee6476203361989f66e"
     }
   ],
   "source_cases": [
@@ -93,6 +93,14 @@
       "source_sha256": "3ff121f3cc149abc522a73f1cfff1a78155090ea9640cfba90c7921845effa35"
     },
     {
+      "name": "ordered-observer-query-observer-does-not-admit-storage",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n",
+      "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9"
+    },
+    {
       "name": "ordered-observer-query-overridden-key-type",
       "expected": "reject",
       "public_header": "map",
@@ -107,14 +115,6 @@
       "kind": "source-body-guard",
       "source": "#define size changed_set_size\n#include <set>\n#undef size\n#include <utility>\nusing Set = std::multiset<int>;\nint main() { return !noexcept(std::declval<const Set&>().changed_set_size()); }\n",
       "source_sha256": "8ae78f43675ed229cc137872e408d499599eb99ac177b51d352ee5de3c17a30f"
-    },
-    {
-      "name": "ordered-observer-query-observer-does-not-admit-storage",
-      "expected": "reject",
-      "public_header": "map",
-      "kind": "source-body-guard",
-      "source": "#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n",
-      "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9"
     }
   ],
   "new_gtest_names": [
@@ -122,11 +122,11 @@
     "TranslateTest.CoreV2OrderedObserverQuerySetObserverSignaturesRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedObserverQueryMultimapObserverSignaturesRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedObserverQueryMultisetObserverSignaturesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations",
     "TranslateTest.CoreV2OrderedObserverQueryOverriddenKeyTypeRejected",
-    "TranslateTest.CoreV2OrderedObserverQueryRenamedSdkMemberRejected",
-    "TranslateTest.CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected"
+    "TranslateTest.CoreV2OrderedObserverQueryRenamedSdkMemberRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "f4e563671fa504ae4b0530dc0fa5cd213df7ad32c8965cc6b0d7119c555a4854",
   "maintained_original_sha256": "1a39c3d2d7c96ed5470131a21ef92d8b098fe9d56ecb012ed91cd0ecc9d540d7",
@@ -138,5 +138,11 @@
   "current_registry_count": 8263,
   "current_python_registry_tests": 152,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "ordered-empty-owner": "5924748fdcb2ab437464396281f9dbebaa6383a04af842824749d3299a793fc9",
+    "ordered-observer-query": "46d766cb1e09680daaa9c96d0477ce2dbd1467fb5704b34e7bba07da7162c905"
+  },
+  "native_reference_authentication_sha256": "ceda2f009dc83d4dd77a23fdde097ed2f19c7abd5c37dc6cee697eda415eef40",
+  "source_proof_sha256": "6a89b4d134035217aa54d5a4b59883be7d0f8ec8bccdf9dfc05bec269669cbad"
 }
