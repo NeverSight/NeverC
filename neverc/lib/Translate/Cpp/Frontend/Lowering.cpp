@@ -27466,18 +27466,21 @@ class FunctionLowering {
     return {std::move(Search.Node), std::move(Inserted)};
   }
 
-  OrderedSetInserted emplaceOrderedSetDefault(Expression Place,
+  Expression readMappedPiecewiseInteger(Expression Tuple, const UtilityTupleRecord &Shape, SourceLocation L) {
+    if (Shape.Elements.empty()) return A.zero(A.Context.IntTy, L);
+    const auto &Element = Shape.Elements.front();
+    auto Value = fieldStorage(dereference(std::move(Tuple), L), Element, L);
+    return Element.getType()->isReferenceType() ? dereference(std::move(Value), L) : Value;
+  }
+
+  OrderedSetInserted emplaceOrderedSetCandidate(Expression Place, Expression Candidate,
       const UtilityOrderedSetStorage &Info, SourceLocation L) {
-    // Empty emplacement constructs a node before searching, even for an
-    // existing unique key. Destroy that candidate if the tree rejects it.
-    auto Candidate = allocateOrderedSetNode(Info, L);
-    auto Key = A.zero(A.Context.IntTy, L);
-    auto Search = searchOrderedSet(Place, Key, Info, L, Info.Multi);
+    auto Search = searchOrderedSet(Place, orderedSetKey(Candidate, Info, L), Info, L, Info.Multi);
     auto Inserted = snapshot(binary("==", Search.Node, A.zero(A.Context.VoidPtrTy, L), "bool", L), L);
     const auto Insert = labelName(), Destroy = labelName(), Done = labelName();
     branch(Inserted, Insert, Destroy, L);
     label(Insert, L);
-    linkOrderedSetKey(Place, Candidate, std::move(Key), std::move(Search.Parent), std::move(Search.Slot), Info, L);
+    linkOrderedSetNode(Place, Candidate, std::move(Search.Parent), std::move(Search.Slot), L);
     assign(Search.Node, Candidate, L);
     jump(Done, L);
     label(Destroy, L);
@@ -27486,6 +27489,15 @@ class FunctionLowering {
     jump(Done, L);
     label(Done, L);
     return {std::move(Search.Node), std::move(Inserted)};
+  }
+
+  OrderedSetInserted emplaceOrderedSetDefault(Expression Place,
+      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    auto Candidate = allocateOrderedSetNode(Info, L);
+    assign(orderedSetKey(Candidate, Info, L), A.zero(A.Context.IntTy, L), L);
+    if (!Info.MappedPairType.isNull())
+      assign(nodeFieldAt(Candidate, A.Context.IntTy, Info.MappedOffsetBytes, L), A.zero(A.Context.IntTy, L), L);
+    return emplaceOrderedSetCandidate(std::move(Place), std::move(Candidate), Info, L);
   }
 
   Expression orderedNodeIsRed(Expression Node, SourceLocation L) {
@@ -30551,11 +30563,17 @@ class FunctionLowering {
       const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
       auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
       auto Insert = [&]() {
-        if (!Call->getNumArgs()) {
-          auto Result = emplaceOrderedSetDefault(std::move(Place), Info->Storage, L);
-          if (!Info->Storage.MappedPairType.isNull())
-            initializeOrderedMappedValue(Result, A.zero(A.Context.IntTy, L), Info->Storage, L);
-          return Result;
+        if (!Call->getNumArgs())
+          return emplaceOrderedSetDefault(std::move(Place), Info->Storage, L);
+        if (Info->Piecewise) {
+          auto Keys = snapshot(argument(Call->getArg(1), Method->getParamDecl(1)->getType()), L);
+          auto Values = snapshot(argument(Call->getArg(2), Method->getParamDecl(2)->getType()), L);
+          auto Candidate = allocateOrderedSetNode(Info->Storage, L);
+          assign(orderedSetKey(Candidate, Info->Storage, L),
+                 readMappedPiecewiseInteger(std::move(Keys), Info->Piecewise->Key, L), L);
+          assign(nodeFieldAt(Candidate, A.Context.IntTy, Info->Storage.MappedOffsetBytes, L),
+                 readMappedPiecewiseInteger(std::move(Values), Info->Piecewise->Value, L), L);
+          return emplaceOrderedSetCandidate(std::move(Place), std::move(Candidate), Info->Storage, L);
         }
         auto Input = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
         std::optional<Expression> MappedArgument;
@@ -31057,17 +31075,11 @@ class FunctionLowering {
         PreparedNode = snapshot(cast(unorderedHeapAllocate(Info->Map.NodeType,
             quantity(Info->Map.NodeBytes, type(A.Context.getSizeType(), L), L), L),
             type(Info->Map.NodePointerType, L), L), L);
-        auto Read = [&](Expression Tuple, const UtilityTupleRecord &Shape) {
-          if (Shape.Elements.empty()) return A.zero(A.Context.IntTy, L);
-          const auto &Element = Shape.Elements.front();
-          auto Value = fieldStorage(dereference(Tuple, L), Element, L);
-          return Element.getType()->isReferenceType() ? dereference(Value, L) : Value;
-        };
         // The SDK copies tuple parameters while constructing the pair, after
         // node allocation. Reference elements still read their live referents.
         assign(unorderedNodeNext(*PreparedNode, Info->Map, L), A.zero(Info->Map.NodePointerType, L), L);
-        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), Read(Keys, *Info->KeyTuple), L);
-        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), Read(Values, *Info->ValueTuple), L);
+        assign(unorderedNodeKey(*PreparedNode, Info->Map, L), readMappedPiecewiseInteger(std::move(Keys), *Info->KeyTuple, L), L);
+        assign(unorderedNodeValue(*PreparedNode, Info->Map, L), readMappedPiecewiseInteger(std::move(Values), *Info->ValueTuple, L), L);
         Key = unorderedNodeKey(*PreparedNode, Info->Map, L);
         Mapped = unorderedNodeValue(*PreparedNode, Info->Map, L);
       } else if (Info->Kind == UnorderedMapInsertionKind::Default) {

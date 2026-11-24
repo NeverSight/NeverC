@@ -136958,6 +136958,39 @@ static bool orderedIntegerEmplacementArgument(const ASTContext &Context, QualTyp
       utilityScalarDirectConversion(Context, Type, Context.IntTy);
 }
 
+static std::optional<UtilityMapPiecewiseArguments> approvedMappedPiecewiseArguments(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const CXXMethodDecl *Method,
+    unsigned Offset, const ASTContext &Context) {
+  if (!Method->getParamDecl(Offset)->getType()->isReferenceType() ||
+      !approvedUtilityPiecewiseConstructType(S, SM,
+          Method->getParamDecl(Offset)->getType().getNonReferenceType(), Context) ||
+      !approvedUtilityPiecewiseConstructExpression(S, SM, Call->getArg(Offset), Context))
+    return std::nullopt;
+  auto TupleArgument = [&](unsigned Index) -> std::optional<UtilityTupleRecord> {
+    const auto Parameter = Method->getParamDecl(Index)->getType();
+    const auto Value = Parameter.getNonReferenceType();
+    if (!Parameter->isReferenceType() || Value.isVolatileQualified() ||
+        Value.isRestrictQualified() || Value.getAddressSpace() != LangAS::Default ||
+        !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Value))
+      return std::nullopt;
+    auto Tuple = approvedUtilityTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
+    if (!Tuple) Tuple = approvedUtilityReferenceTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
+    if (!Tuple || !Tuple->Record->hasTrivialDestructor() || Tuple->Elements.size() > 1)
+      return std::nullopt;
+    if (!Tuple->Elements.empty()) {
+      const auto Element = Tuple->Elements.front().getType().getNonReferenceType();
+      if (Element.isVolatileQualified() || Element.isRestrictQualified() ||
+          Element.getAddressSpace() != LangAS::Default ||
+          !Context.hasSameUnqualifiedType(Element, Context.IntTy)) return std::nullopt;
+    }
+    return Tuple;
+  };
+  auto Key = TupleArgument(Offset + 1);
+  auto Value = TupleArgument(Offset + 2);
+  if (!Key || !Value) return std::nullopt;
+  return UtilityMapPiecewiseArguments{std::move(*Key), std::move(*Value)};
+}
+
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -136974,7 +137007,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   Kind Insertion;
   if (Name == "insert" && Args == 1)
     Insertion = Kind::Insert;
-  else if (Name == "emplace" && Template && Args <= 2)
+  else if (Name == "emplace" && Template && Args <= 3)
     Insertion = Kind::Emplace;
   else if (Name == "try_emplace" && Template && (Args == 1 || Args == 2))
     Insertion = Kind::TryEmplace;
@@ -136999,7 +137032,12 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     return std::nullopt;
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
   std::optional<UtilityPairRecord> Input;
+  std::optional<UtilityMapPiecewiseArguments> Piecewise;
   if (Insertion == Kind::Emplace) {
+    if (Mapped && Args == 3) {
+      Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, 0, Context);
+      if (!Piecewise) return std::nullopt;
+    }
     if (Mapped && Args == 1) {
       const auto PairType = Method->getParamDecl(0)->getType().getNonReferenceType();
       Input = approvedUtilityPairRecord(S, SM, PairType->getAsCXXRecordDecl(), Context);
@@ -137025,7 +137063,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
-          (!Input && !orderedIntegerEmplacementArgument(Context, Referred)))
+          (!Input && !Piecewise && !orderedIntegerEmplacementArgument(Context, Referred)))
         return std::nullopt;
     }
   } else {
@@ -137086,7 +137124,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       (!approvedOrderedContainerDestructor(S, SM, Destructor, Context) ||
        !SelectedBody(S, SM, Destructor, Record, Context)))
     return std::nullopt;
-  return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion};
+  return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion, std::move(Piecewise)};
 }
 
 static std::optional<UtilityOrderedSetIteratorCall> checkedOrderedIteratorOperator(
@@ -140163,33 +140201,10 @@ std::optional<UtilityUnorderedMapInsertion> approvedUtilityUnorderedMapInsertion
   if ((Name == "emplace" || Name == "emplace_hint") && Count == 0) {
     Kind = UnorderedMapInsertionKind::Default;
   } else if ((Name == "emplace" || Name == "emplace_hint") && Count == 3) {
-    if (!Method->getParamDecl(Offset)->getType()->isReferenceType() ||
-        !approvedUtilityPiecewiseConstructType(S, SM,
-            Method->getParamDecl(Offset)->getType().getNonReferenceType(), Context) ||
-        !approvedUtilityPiecewiseConstructExpression(S, SM, Call->getArg(Offset), Context))
-      return std::nullopt;
-    auto TupleArgument = [&](unsigned Index) -> std::optional<UtilityTupleRecord> {
-      const auto Parameter = Method->getParamDecl(Index)->getType();
-      const auto Value = Parameter.getNonReferenceType();
-      if (!Parameter->isReferenceType() || Value.isVolatileQualified() ||
-          Value.isRestrictQualified() || Value.getAddressSpace() != LangAS::Default ||
-          !Context.hasSameUnqualifiedType(Call->getArg(Index)->getType(), Value))
-        return std::nullopt;
-      auto Tuple = approvedUtilityTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
-      if (!Tuple) Tuple = approvedUtilityReferenceTupleRecord(S, SM, Value->getAsCXXRecordDecl(), Context);
-      if (!Tuple || !Tuple->Record->hasTrivialDestructor() || Tuple->Elements.size() > 1)
-        return std::nullopt;
-      if (!Tuple->Elements.empty()) {
-        const auto Element = Tuple->Elements.front().getType().getNonReferenceType();
-        if (Element.isVolatileQualified() || Element.isRestrictQualified() ||
-            Element.getAddressSpace() != LangAS::Default ||
-            !Context.hasSameUnqualifiedType(Element, Context.IntTy)) return std::nullopt;
-      }
-      return Tuple;
-    };
-    KeyTuple = TupleArgument(Offset + 1);
-    ValueTuple = TupleArgument(Offset + 2);
-    if (!KeyTuple || !ValueTuple) return std::nullopt;
+    const auto Piecewise = approvedMappedPiecewiseArguments(S, SM, Call, Method, Offset, Context);
+    if (!Piecewise) return std::nullopt;
+    KeyTuple = Piecewise->Key;
+    ValueTuple = Piecewise->Value;
     Kind = UnorderedMapInsertionKind::Piecewise;
   } else if (Name == "insert" || ((Name == "emplace" || Name == "emplace_hint") && Count == 1)) {
     if (Count != 1 || !Method->getParamDecl(Offset)->getType()->isReferenceType())

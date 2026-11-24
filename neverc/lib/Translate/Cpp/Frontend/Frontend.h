@@ -4687,12 +4687,17 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+struct UtilityMapPiecewiseArguments {
+  UtilityTupleRecord Key, Value;
+};
+
 enum class OrderedInsertionKind { Insert, Emplace, TryEmplace, InsertOrAssign };
 
 struct UtilityOrderedSetInsertion {
   UtilityOrderedSetStorage Storage;
   std::optional<UtilityPairRecord> Result, Input;
   OrderedInsertionKind Kind;
+  std::optional<UtilityMapPiecewiseArguments> Piecewise;
 };
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
