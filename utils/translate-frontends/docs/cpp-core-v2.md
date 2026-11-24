@@ -18472,3 +18472,12 @@ field is mutable and whose mapped field matches the destination type.
 Selected ordered emplacement calls accept narrower integral arguments
 through their checked standard conversions. The original function-body
 cases keep their source bytes and now require successful translation.
+
+## Ordered map emplacement and iterator navigation
+
+Checked maps and multimaps support empty, pair, piecewise and hinted
+emplacement. Checked forward and reverse iterators support standard
+navigation and the free range access functions. Signed long long mapped
+values retain their type and width through ownership and mutation.
+Const map lookup with `at` accepts keys proved present in a local
+owner's initializer list and returns the stored mapped reference.

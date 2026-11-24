@@ -2572,6 +2572,30 @@ def restore_ordered_value_input_history(source):
     return restored
 
 
+R19_ORDERED_MAP_AND_ITERATION_REGISTERED_SHA256 = 'c56b904bdc2f1b794604a1ef4e32ab755dae67fffd60dabc2c5e581a559ea4e4'
+R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SHA256 = '139a357bf63dab6ffce3c8565795ace71921a79fb4d0acafe8fad37cd3765127'
+R19_ORDERED_MAP_AND_ITERATION_PREVIOUS_REGISTERED_SHA256 = 'c5db0e72676a6713cfc15e29904c4e2efba396e97047ac2e1f82de58f009e30f'
+R19_ORDERED_MAP_AND_ITERATION_PREVIOUS_MAINTAINED_SHA256 = '095817b19e138f070eeba1f668ef2853c45e25ae7a2936c0216a4710c6f7a0ee'
+R19_ORDERED_MAP_AND_ITERATION_ADDITIONS_SHA256 = '6558007d48c30cc6bc9552481111308417d02ff822809295abf76b474bd584d0'
+R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SIZE = 20622756
+R19_ORDERED_MAP_AND_ITERATION_ADDITIONS_SIZE = 52230
+
+
+def restore_ordered_map_and_iteration_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MAP_AND_ITERATION_REGISTERED_SHA256, R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MAP_AND_ITERATION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MAP_AND_ITERATION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_MAP_AND_ITERATION_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MAP_AND_ITERATION_REGISTERED_SHA256
+             else R19_ORDERED_MAP_AND_ITERATION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -3145,6 +3169,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ORDERED_VALUE_INPUT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MAP_AND_ITERATION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

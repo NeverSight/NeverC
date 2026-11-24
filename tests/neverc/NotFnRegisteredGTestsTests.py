@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_map_and_iteration_registered = cls.registered
+        cls.ordered_map_and_iteration_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_map_and_iteration_original = cls.adapter.restore_original_gtests(cls.ordered_map_and_iteration_registered,
+                                                                        cls.ordered_map_and_iteration_suffix)
+        cls.registered = cls.adapter.restore_ordered_map_and_iteration_history(cls.ordered_map_and_iteration_registered)
         cls.ordered_value_input_registered = cls.registered
         cls.ordered_value_input_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_value_input_original = cls.adapter.restore_original_gtests(cls.ordered_value_input_registered,
@@ -3521,6 +3526,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_value_input_history(self.ordered_value_input_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_value_input_registered, self.ordered_value_input_suffix + b' ')
+
+
+    def test_ordered_map_and_iteration_retains_published_bodies(self):
+        self.assertEqual(self.ordered_map_and_iteration_original + self.ordered_map_and_iteration_suffix, self.ordered_map_and_iteration_registered)
+        self.assertEqual(self.adapter.restore_ordered_map_and_iteration_history(self.ordered_map_and_iteration_original),
+                         self.ordered_value_input_original)
+        output, evidence = self.extractor.extract(self.ordered_map_and_iteration_original, ['TranslateTest.CoreV2OrderedMapDefaultEmplacementInitializesBothFieldsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapEmplacementCopiesExactIntegerPairRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapEmplacementOfExactPairsKeepsOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapDefaultEmplacementPreservesExistingZeroKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPiecewiseEmplacementReadsLiveReferenceElementsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPiecewiseEmptyKeyAndValueTuplesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapPiecewiseInsertsEquivalentValuesInOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPiecewiseConstructsBeforeUniqueConflictRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedIteratorAdvanceWalksInBothDirectionsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapDistanceCountsConstIteratorsAndEmptyRangesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedIteratorNextAndPrevCopyTheirInputRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapNextRetainsEquivalentPositionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetFreeBeginEndAndEmptyFollowOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapFreeBeginKeepsMappedMutabilityRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetFreeReverseAccessRetainsEquivalentValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapFreeConstReverseAccessUsesOwnerEndpointsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedReverseAdvanceMutatesOnlyTheSelectedCursorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapReverseDistanceKeepsEquivalentPositionsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseNextPrevPreserveSourceAndMappedReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetReverseAdvanceCanReachAndLeaveEndRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapHintedDefaultEmplacementPreservesDuplicateValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapHintedExactPairPreservesExistingMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapHintedExactPairInsertsBeforeEquivalentHintRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapHintedPiecewisePositionsValueAndKeepsEquivalentsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedWideMapSubscriptKeepsExistingValueAndZeroInitializesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedWideMultimapPiecewiseAndHintedPairKeep64BitValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedWideMapPointerRangeCopyAndNodeHandlePreserveLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedWideMapComparisonAndAssignmentUseFullSignedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtReadsExistingConstMappedReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtProvesKeyInLaterInitializerEntryRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtMappedReferenceRetainsWideTypeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtDuplicateInitializerKeepsFirstValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapEmplacementPairWithDifferentMappedLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapPairEmplacementCustomOrderGuardRejected', 'TranslateTest.CoreV2OrderedMapPiecewiseNarrowTupleLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapPiecewiseCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedIteratorNavigationCustomComparatorGuardRejected', 'TranslateTest.CoreV2OrderedIteratorNavigationDifferentMappedLayoutGuardRejected', 'TranslateTest.CoreV2OrderedFreeAccessCustomComparatorGuardRejected', 'TranslateTest.CoreV2OrderedFreeAccessOtherMappedStorageGuardRejected', 'TranslateTest.CoreV2OrderedReverseNavigationCustomComparatorGuardRejected', 'TranslateTest.CoreV2OrderedReverseNavigationDifferentMappedLayoutGuardRejected', 'TranslateTest.CoreV2OrderedMapHintedPairDifferentMappedLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedWideMappedFloatingStorageGuardRejected', 'TranslateTest.CoreV2OrderedWideMapOtherPairLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapAtMissingStaticKeyRemainsThrowingRejected', 'TranslateTest.CoreV2OrderedMapAtReferenceReceiverDoesNotProvePresenceRejected'])
+        self.assertEqual(evidence['original_test_names'], 8893)
+        self.assertEqual(evidence['selected_count'], 48)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-default-emplacement-initializes-both-fields', output)
+        self.assertIn(b'ordered-map-emplacement-pair-with-different-mapped-leaf-guard', output)
+
+    def test_ordered_map_and_iteration_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_map_and_iteration_history(self.ordered_map_and_iteration_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_map_and_iteration_registered, self.ordered_map_and_iteration_suffix + b' ')
 
 
 if __name__ == '__main__':

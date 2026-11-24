@@ -1315,6 +1315,7 @@ enum class UtilityOperation {
   OrderedMapCompareValues,
   OrderedSetCount,
   OrderedMapSubscript,
+  OrderedMapBoundedAt,
   OrderedSetCopyAssign,
   OrderedSetMoveAssign,
   OrderedSetMerge,
@@ -4653,7 +4654,7 @@ struct UtilityOrderedSetStorage {
   clang::QualType NodeType, LinkType, SentinelType;
   uint64_t NodeBytes, ValueOffsetBytes, MappedOffsetBytes;
   bool Multi;
-  clang::QualType MappedPairType;
+  clang::QualType MappedPairType, MappedValueType;
 };
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
@@ -4691,12 +4692,17 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+struct UtilityMapPiecewiseArguments {
+  UtilityTupleRecord Key, Value;
+};
+
 enum class OrderedInsertionKind { Insert, Emplace, TryEmplace, InsertOrAssign };
 
 struct UtilityOrderedSetInsertion {
   UtilityOrderedSetStorage Storage;
   std::optional<UtilityPairRecord> Result, Input;
   OrderedInsertionKind Kind;
+  std::optional<UtilityMapPiecewiseArguments> Piecewise;
   bool Hinted;
 };
 std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
@@ -4719,6 +4725,9 @@ bool approvedOrderedMapSelectedBody(const State &S, const clang::SourceManager &
     const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedMapBoundedAt(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
