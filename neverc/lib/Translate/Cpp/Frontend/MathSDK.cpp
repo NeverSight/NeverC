@@ -123996,6 +123996,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedOrderedMapSubscript(S, SM, Call, Context)) return UtilityOperation::OrderedMapSubscript;
   if (approvedOrderedSetAssignment(S, SM, Call, Context, false)) return UtilityOperation::OrderedSetCopyAssign;
   if (approvedOrderedSetAssignment(S, SM, Call, Context, true)) return UtilityOperation::OrderedSetMoveAssign;
+  if (approvedOrderedSetMerge(S, SM, Call, Context)) return UtilityOperation::OrderedSetMerge;
   if (approvedOrderedSetInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsert;
   if (approvedOrderedSetListInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertList;
   if (approvedOrderedSetRangeInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertRange;
@@ -137244,6 +137245,77 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
       !SelectedBody(S, SM, Owner->getDestructor(), Owner, Context))
     return std::nullopt;
   return UtilityOrderedSetMutation{Operation, *Storage, Reference};
+}
+
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetMerge(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "merge" ||
+      Method->isConst() || Method->isStatic() || Method->isVolatile() || Method->isVirtual() ||
+      Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return std::nullopt;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Deduced = Method->getTemplateSpecializationArgs();
+  const auto *Owner = Method->getParent();
+  const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Reference);
+  if (!Primary || !Deduced || Deduced->size() != 1 || Deduced->get(0).getKind() != TemplateArgument::Type ||
+      !Owner->getIdentifier() || Receiver.isNull() ||
+      !Context.hasSameType(Receiver, Context.getRecordType(Owner)) || !S.owns(SM, Reference->getMemberLoc()))
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "map" && Header != "set") || !orderedPinnedFunction(S, SM, Method, Header) ||
+      !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), Header))
+    return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (!Parameter->isReferenceType() ||
+      Parameter->isLValueReferenceType() != Call->getArg(0)->isLValue())
+    return std::nullopt;
+  const auto SourceType = Parameter.getNonReferenceType();
+  const auto *Source = dyn_cast_or_null<ClassTemplateSpecializationDecl>(SourceType->getAsCXXRecordDecl());
+  if (!Source || !Source->getIdentifier() || associativeContainerHeader(Source->getName()) != Header ||
+      !Context.hasSameType(SourceType, Context.getRecordType(Source)) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), SourceType))
+    return std::nullopt;
+  const bool Mapped = Header == "map";
+  const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
+                              : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const auto From = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Source, Context)
+                           : approvedUtilityOrderedSetStorage(S, SM, Source, Context);
+  if (!Storage || !From || !Context.hasSameType(Storage->NodeType, From->NodeType) ||
+      !Context.hasSameType(Storage->LinkType, From->LinkType) ||
+      !Context.hasSameType(Storage->SentinelType, From->SentinelType) ||
+      Storage->NodeBytes != From->NodeBytes || Storage->ValueOffsetBytes != From->ValueOffsetBytes ||
+      Storage->MappedOffsetBytes != From->MappedOffsetBytes ||
+      (Mapped && !Context.hasSameType(Storage->MappedPairType, From->MappedPairType)) ||
+      !Context.hasSameType(Deduced->get(0).getAsType(),
+          Source->getTemplateArgs().get(Mapped ? 2 : 1).getAsType()))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Body || Body->body_empty()) return std::nullopt;
+  const auto *Last = Body->body_back();
+  const auto *Return = dyn_cast<ReturnStmt>(Last);
+  const auto *Merge = dyn_cast_or_null<CXXMemberCallExpr>(
+      orderedExpression(Return ? Return->getRetValue() : dyn_cast<Expr>(Last)));
+  const auto *TreeMethod = orderedTreeMethod(S, SM, Merge, Storage->Tree,
+      Storage->Multi ? "__node_handle_merge_multi" : "__node_handle_merge_unique", 1);
+  if (!TreeMethod || !TreeMethod->getPrimaryTemplate() || !TreeMethod->getReturnType()->isVoidType() ||
+      !Context.hasSameType(TreeMethod->getParamDecl(0)->getType(),
+                          Context.getLValueReferenceType(Context.getRecordType(From->Tree))))
+    return std::nullopt;
+  const auto *DestField = dyn_cast_or_null<MemberExpr>(orderedExpression(Merge->getImplicitObjectArgument()));
+  const auto *SourceField = dyn_cast_or_null<MemberExpr>(orderedExpression(Merge->getArg(0)));
+  if (!DestField || DestField->getMemberDecl() != orderedTreeField(Owner, "__tree_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(DestField->getBase())) ||
+      !SourceField || SourceField->getMemberDecl() != orderedTreeField(Source, "__tree_") ||
+      !orderedParameter(SourceField->getBase(), Method->getParamDecl(0)))
+    return std::nullopt;
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  return SelectedBody(S, SM, Method, Owner, Context) && SelectedBody(S, SM, Owner->getDestructor(), Owner, Context) &&
+         SelectedBody(S, SM, Source->getDestructor(), Source, Context) ? Storage : std::nullopt;
 }
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,

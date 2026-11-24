@@ -1314,6 +1314,7 @@ enum class UtilityOperation {
   OrderedMapSubscript,
   OrderedSetCopyAssign,
   OrderedSetMoveAssign,
+  OrderedSetMerge,
   OrderedSetInsert,
   OrderedSetInsertList,
   OrderedSetInsertRange,
@@ -4695,6 +4696,9 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetMerge(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context, bool Move);
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(
