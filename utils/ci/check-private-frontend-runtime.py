@@ -12,6 +12,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import time
 import traceback
 import xml.etree.ElementTree as ET
@@ -77,13 +78,11 @@ def main():
         plan_path = root / 'utils/ci/cpp-private-runtime-plan.json'
         plan = json.loads(plan_path.read_text())
         assert plan['preparation_only'] is False and plan['execution_binding_required'] is True
-        assert plan['required_actual_total_gtest_xml'] == 221
-        assert plan['required_actual_frontend_requests'] == 832
-        assert plan['required_actual_stl_generated_o0_o2_products'] == 182
+        assert plan['member_formal_tests'] == 1000 and plan['member_generated_executions'] == 1226
+        assert plan['member_execution_target'] == 'x86_64-unknown-linux-gnu'
         assert len(plan['target_abis']) == 6 and all('i686' not in target for target in plan['target_abis'])
-        for field in ['actual_integrated_syntax6_authentication_sha256', 'actual_member78_authentication_sha256',
-                      'actual_baseline750_authentication_sha256', 'actual_native144_authentication_sha256']:
-            assert re.fullmatch('[0-9a-f]{64}', plan[field])
+        assert re.fullmatch('[0-9a-f]{64}', plan['historical_member_syntax6_reference_sha256'])
+        assert re.fullmatch('[0-9a-f]{64}', plan['actual_ordered_policies_and_iterator_ranges5376_proof_sha256'])
         r['execution_plan_sha256'] = sha(plan_path)
         r['source_sha256'] = {name: sha(root / name) for name in plan['source_paths']}
         shutil.copyfile(plan_path, out / 'execution-plan.json')
@@ -93,10 +92,10 @@ def main():
         assert sha(args.component_report) == args.component_report_sha256
         assert component['revision'] == args.component_revision and component['completed'] and component['passed'] is True and component['not_fn_private_support_complete'] is False
         assert component['all_five_bridge_units_recompiled'] is True
-        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 750
-        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 528
-        assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 198
-        assert sum(row['expected'] == 'invalid' and row['expectation_satisfied'] for row in component['requests']) == 24
+        assert component['focused_request_contract_passed'] is True and len(component['requests']) == 5376
+        assert sum(row['expected'] == 'accept' and row['expectation_satisfied'] for row in component['requests']) == 3474
+        assert sum(row['expected'] == 'reject' and row['expectation_satisfied'] for row in component['requests']) == 1902
+        assert sum(row['expected'] == 'invalid' and row['expectation_satisfied'] for row in component['requests']) == 0
         archive = args.archive.resolve()
         assert archive.is_file() and sha(archive) == component['replayed_archive_sha256']
         assert sha(args.private_prefix) == plan['private_prefix_sha256']
@@ -117,20 +116,26 @@ def main():
             private_prefix_sha256=sha(args.private_prefix),
             baseline_provenance=baseline, focused_component_scope_only=True)
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
-        assert sha(sdk / 'catalog.json') == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
+        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == 'b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77'
         catalog = json.loads((sdk / 'catalog.json').read_text())
         rows = catalog['headers'] + catalog['metadata']
-        assert len(rows) == 665
+        assert len(rows) == 687
         for row in rows:
             assert sha(sdk / row['root'] / row['path']) == row['sha256']
-        r['sdk_files_verified'] = 665
+        r['sdk_files_verified'] = 687
+        current_sdk = {p.relative_to(sdk).as_posix(): sha(p) for p in sdk.rglob('*') if p.is_file()}
+        assert current_sdk == plan['sdk_input_sha256'] and len(current_sdk) == 695
+        assert component['exact_sdk_input_sha256'] == current_sdk
+        embedding = component['current_sdk_embedding']
+        assert embedding['generated_in_actions'] and embedding['new_header_sha256'] == plan['expected_embedding_sha256']
+        r['exact_sdk_input_sha256'] = current_sdk
         manifest = json.loads((root / 'utils/ci/cpp-pair-piecewise-formal-tests.json').read_text())
         selected = manifest['new'] + manifest['regression']
         assert len(selected) == manifest['expected_total'] == 124
         registered = (root / 'tests/neverc/TranslateTests.cpp').read_bytes()
-        additions_path = root / plan['not_fn_formal_additions_path']
+        additions_path = root / plan['member_formal_additions_path']
         additions = additions_path.read_bytes()
-        assert sha(additions_path) == plan['not_fn_formal_additions_sha256']
+        assert sha(additions_path) == plan['member_formal_additions_sha256']
         previous_additions_path = root / plan['not_fn_registered_previous_additions_path']
         previous_additions = previous_additions_path.read_bytes()
         assert sha(previous_additions_path) == plan['not_fn_registered_previous_additions_sha256']
@@ -138,25 +143,33 @@ def main():
         r['registered_product_source'] = dict(
             registered_source_sha256=hashlib.sha256(registered).hexdigest(),
             restored_original_source_sha256=hashlib.sha256(original).hexdigest(),
-            original_extractor_and_7493_guard_unchanged=True,
-            registered_and_new_goldens_replayed_once_in_formal221=True)
+            original_extractor_and_7493_guard_unchanged=False,
+            historical_7493_guard_preserved=True,extractor_logic_preserved=True,
+            exact_current_registry_authenticated=True,
+            extractor_original_sha256=plan['extractor_original_sha256'],
+            extractor_control_sha256=plan['extractor_control_sha256'],
+            original_registration_extracted_for_fixture_only=True,explicit_result12_replayed_once=True)
+        assert hashlib.sha256(original).hexdigest()==plan['maintained_original_source_sha256']=='615020e719791e665aa2823bf4bd2e007176c2aebf65ab55c8ff693bff2f3d00'
+        assert plan['expected_restored_gtest_count']==8788
+        assert sha(root/'utils/ci/extract_cpp_gtests.py')==plan['extractor_control_sha256']=='dabfb7f432bba5711c0e4674b1767def6b2cead09662b88859bedc18230004c6'
         generated, source_proof = extract(original, selected)
+        assert source_proof['original_test_names']==8788
         original_selected = tuple(selected)
         original_generated_sha256 = hashlib.sha256(generated).hexdigest()
-        additional = plan['not_fn_formal_cases']
-        assert len(additional) == 97 and len({c['formal_test_name'] for c in additional}) == 97
+        additional = plan['member_formal_cases']
+        assert len(additional) == 1000 and len({c['formal_test_name'] for c in additional}) == 1000
         assert not set(original_selected) & {c['formal_test_name'] for c in additional}
-        assert generated.count(b'TEST_F(') == 124 and additions.count(b'TEST_F(') == 97
+        assert generated.count(b'TEST_F(') == 124 and additions.count(b'TEST_F(') == 1000
         registered_additional = ['.'.join(part.decode() for part in match) for match in
             re.findall(rb'TEST_F\(\s*(\w+)\s*,\s*(\w+)\s*\)', additions)]
         assert registered_additional == [case['formal_test_name'] for case in additional]
-        generated += additions
-        selected += [c['formal_test_name'] for c in additional]
-        r['stl_formal_extension'] = dict(original_registered_source_names=7493,
+        generated = generated[:generated.index(b'TEST_F(')] + additions + b'\n}\n'
+        selected = [c['formal_test_name'] for c in additional]
+        r['explicit_result_formal_extension'] = dict(original_registered_source_names=8788,
             original_selected_names=list(original_selected),
             original_generated_before_extension_sha256=original_generated_sha256,
             additions_sha256=sha(additions_path), additional_cases=additional,
-            original_extractor_and_124_bodies_unchanged=True)
+            original_extractor_and_124_bodies_unchanged=False,extractor_logic_and_selected_bodies_unchanged=True,original124_not_executed_in_this_focused_run=True)
         first_test = generated.index(b'TEST_F(')
         prefix_bytes = generated[:first_test]
         cleanup = b'''
@@ -188,7 +201,77 @@ def main():
         producer.write_text(component['authenticated_system_libraries'])
         assert sha(producer) == component['authenticated_system_libraries_sha256']
         r['authenticated_system_libraries_sha256'] = sha(producer)
-        driver, tests, owner = build_runtime_gtest(root, build, out, backend, archive,
+
+        fix = plan['fresh_c23_backend']
+        assert os.environ.get('GITHUB_ACTIONS') == 'true'
+        assert all(sha(root / name) == digest for name, digest in fix['source_sha256'].items())
+        witness = root / fix['focused_regression']
+        flags = ['-std=c23', '-fno-lto', '-fno-builtin-mimalloc']
+        red = {}
+        for opt in ('-O0', '-O2'):
+            output = build / ('baseline-constant-if-' + opt[1:])
+            assert run([backend, witness, *flags, opt, '-o', output],
+                       'runtime/c23-constant-if-baseline-' + opt[1:] + '-build') == 0
+            red[opt] = run([output], 'runtime/c23-constant-if-baseline-' + opt[1:])
+            assert red[opt] == 1
+
+        stage1 = build / 'stage1'
+        hook = out / 'runtime/c23-stage1-archive-binding.cmake.txt'
+        audit = root / 'neverc/lib/Translate/Cpp/Frontend/AuditArchive.py'
+        assert audit.is_file()
+        nm_file = build / 'authenticated-cpp-nm.txt'
+        nm_file.write_text('/usr/bin/llvm-nm-22\n')
+        hook.write_text(f"""
+find_package(Threads REQUIRED)
+add_library(nevercCppFrontend STATIC IMPORTED GLOBAL)
+set_target_properties(nevercCppFrontend PROPERTIES
+  IMPORTED_LOCATION "{archive.as_posix()}"
+  NEVERC_CPP_AUDIT_PYTHON "{sys.executable}"
+  NEVERC_CPP_AUDIT_SCRIPT "{audit.as_posix()}"
+  NEVERC_CPP_AUDIT_HOST_ARGUMENTS "--host-nm;/usr/bin/llvm-nm-22"
+  NEVERC_CPP_AUDIT_PRIVATE_ARGUMENTS ""
+  NEVERC_CPP_AUDIT_NM_FILE "{nm_file.as_posix()}"
+  NEVERC_CPP_AUDIT_PREFIX "{args.private_prefix.as_posix()}")
+target_link_libraries(nevercCppFrontend INTERFACE Threads::Threads ${{CMAKE_DL_LIBS}} m)
+""")
+        config = ['cmake', '-S', root / 'llvm', '-B', stage1, '-G', 'Ninja',
+            '-DCMAKE_BUILD_TYPE=Release', '-DCMAKE_C_FLAGS_RELEASE=-O1 -DNDEBUG',
+            '-DCMAKE_CXX_FLAGS_RELEASE=-O1 -DNDEBUG',
+            '-DCMAKE_C_COMPILER=/usr/bin/clang-22', '-DCMAKE_CXX_COMPILER=/usr/bin/clang++-22',
+            '-DCMAKE_PROJECT_LLVM_INCLUDE=' + str(hook), '-DPython3_EXECUTABLE=' + sys.executable,
+            '-DLLVM_ENABLE_PROJECTS=neverc', '-DLLVM_TARGETS_TO_BUILD=X86;AArch64',
+            '-DLLVM_INCLUDE_TOOLS=OFF', '-DLLVM_INCLUDE_UTILS=OFF', '-DLLVM_INCLUDE_TESTS=OFF',
+            '-DLLVM_INCLUDE_EXAMPLES=OFF', '-DLLVM_INCLUDE_BENCHMARKS=OFF',
+            '-DNEVERC_INCLUDE_TESTS=OFF', '-DNEVERC_BUILD_TOOLS=ON',
+            '-DNEVERC_ENABLE_PYTHON_PLUGINS=OFF', '-DNEVERC_BUNDLE_PYTHON_RUNTIME=OFF',
+            '-DLLVM_ENABLE_ASSERTIONS=OFF', '-DLLVM_ENABLE_ZLIB=OFF', '-DLLVM_ENABLE_ZSTD=OFF',
+            '-DLLVM_ENABLE_LIBXML2=OFF', '-DLLVM_ENABLE_CURL=OFF', '-DLLVM_ENABLE_TERMINFO=OFF']
+        if Path('/usr/bin/ld.lld-22').is_file():
+            config.append('-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=/usr/bin/ld.lld-22')
+        assert run(config, 'runtime-build/configure-c23-stage1', 180) == 0
+        assert run(['cmake', '--build', stage1, '--target', 'neverc', '--parallel', '4'],
+                   'runtime-build/fresh-c23-stage1', 4200) == 0
+        build_log = out / 'runtime-build/fresh-c23-stage1.log'
+        assert 'Builtin C++ frontend: defined and undefined symbols use the private LLVM ABI' in build_log.read_text()
+        fixed_backend = stage1 / 'bin/neverc'
+        header = fixed_backend.open('rb').read(64)
+        assert header[:6] == bytes.fromhex('7f454c460201') and header[18:20] == bytes.fromhex('3e00')
+        assert run([fixed_backend, '--version'], 'runtime/c23-stage1-version') == 0
+        green = {}
+        for opt in ('-O0', '-O2'):
+            output = build / ('fixed-constant-if-' + opt[1:])
+            assert run([fixed_backend, witness, *flags, opt, '-o', output],
+                       'runtime/c23-constant-if-fixed-' + opt[1:] + '-build') == 0
+            green[opt] = run([output], 'runtime/c23-constant-if-fixed-' + opt[1:])
+            assert green[opt] == 0
+        r['host_compiler_artifact_rebuilt'] = True
+        r['fresh_c23_backend'] = dict(product_revision=fix['commit'], checkout_revision=revision,
+            source_sha256=fix['source_sha256'], stage1=True, backend=str(fixed_backend),
+            compiler_sha256=sha(fixed_backend), compiler_elf_header=header.hex(),
+            compilation_log_sha256=sha(build_log), archive_hook_sha256=sha(hook),
+            private_archive_sha256=sha(archive), baseline_status=red, fixed_status=green)
+        save()
+        driver, tests, owner = build_runtime_gtest(root, build, out, fixed_backend, archive,
             producer.read_text(), path, args.private_prefix, run)
         r['actual_cmake_owners'] = owner
         for label, binary in [('driver', driver), ('gtest', tests)]:
@@ -206,7 +289,7 @@ def main():
                 suite = line.strip()
             elif suite and line.startswith('  '):
                 found.append(suite + line.strip().split()[0])
-        assert set(found) == set(selected) and len(found) == 221
+        assert set(found) == set(selected) and len(found) == 1000
         xml = out / 'gtest.xml'
         environment = dict(os.environ, NEVERC_PRIVATE_RUNTIME_RETAIN=str(build / 'retained-programs'))
         code = run([tests, '--gtest_filter=' + ':'.join(selected), '--gtest_output=xml:' + str(xml)],
@@ -216,7 +299,7 @@ def main():
         tree = ET.parse(xml).getroot()
         cases = tree.findall('.//testcase')
         names = [case.attrib['classname'] + '.' + case.attrib['name'] for case in cases]
-        assert len(cases) == 221 and set(names) == set(selected)
+        assert len(cases) == 1000 and set(names) == set(selected)
         failed = [name for name, case in zip(names, cases) if case.find('failure') is not None]
         skipped = [name for name, case in zip(names, cases) if case.find('skipped') is not None]
         r.update(formal_xml_sha256=sha(xml), actual_formal_tests=len(cases),
@@ -226,7 +309,7 @@ def main():
         r['actual_invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path),
             'bytes': path.stat().st_size} for path in sorted(invocations.rglob('*')) if path.is_file()]
         requests = sorted((invocations / 'frontend').glob('*/request.json'))
-        assert len(requests) == 832
+        assert len(requests) == 1000
         r['actual_frontend_request_count'] = len(requests)
         for request in requests:
             response = json.loads(request.with_name('response.json').read_text())
@@ -239,6 +322,7 @@ def main():
             'first_64_bytes_hex': path.open('rb').read(64).hex()}
             for path in sorted(retained.rglob('*')) if path.is_file()]
         assert sha(archive) == r['actual_private_archive_sha256'] and sha(backend) == baseline['compiler_sha256']
+        assert sha(fixed_backend) == r['fresh_c23_backend']['compiler_sha256']
         not_fn_products = []
         for case in additional:
             for optimization in ['-O0', '-O2']:
@@ -251,9 +335,9 @@ def main():
                     not_fn_products.append(dict(name=case['name'], optimization=optimization,
                         path=str(product.relative_to(retained)), bytes=product.stat().st_size,
                         sha256=sha(product), first_64_bytes_hex=header.hex()))
-        r['actual_stl_generated_products'] = not_fn_products
+        r['actual_explicit_result_generated_products'] = not_fn_products
         if not failed and not skipped and code == 0:
-            assert len(not_fn_products) == 182
+            assert len(not_fn_products) == 1226
             for product in not_fn_products:
                 header = bytes.fromhex(product['first_64_bytes_hex'])
                 assert product['bytes'] > 64 and len(header) == 64
