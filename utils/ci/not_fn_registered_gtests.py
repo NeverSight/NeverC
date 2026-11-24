@@ -2410,6 +2410,82 @@ def restore_ordered_list_assignment_and_emplace_history(source):
     return restored
 
 
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_REGISTERED_SHA256 = '87d62b8ae6d3cd26907c1cb089fed8be44025c7a302565fd0aa4e15ec2e58955'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SHA256 = '8807f2fc6c47f571b715521d18d1c2f1aca6885e38b2de6260559ec67831e18d'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_PREVIOUS_REGISTERED_SHA256 = '045b8bf332dc81fa11c018ca5e0360fe683be8e2808d3e61e89dac547bce4905'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_PREVIOUS_MAINTAINED_SHA256 = '7f999b85b761decd27f7e336a4ae778552062c84936b797d0d834c864a31f26a'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_ADDITIONS_SHA256 = '5bc9f315ea4f3e09d788d00ff29b6fcf44d2c8fdb849a7602114b156a321301e'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SIZE = 20478958
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_ADDITIONS_SIZE = 16416
+
+
+def restore_ordered_merge_comparison_and_map_emplace_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_REGISTERED_SHA256, R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMaxSizeMutableTreesRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-max-size-mutable-trees.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-max-size-mutable-trees.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-max-size-mutable-trees" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMaxSizeMutableTreesRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-max-size-mutable-trees.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-max-size-mutable-trees.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-max-size-mutable-trees" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMaxSizeMutableTreesRejected) {\n  const auto Source = tmpFile("ordered-max-size-mutable-trees.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_REGISTERED_SHA256
+             else R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_REGISTERED_SHA256 = '17da38c2da417df36c10d23081658af9f94798cdf66f91fffd1eb0a07b8f5fd9'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SHA256 = '615020e719791e665aa2823bf4bd2e007176c2aebf65ab55c8ff693bff2f3d00'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_PREVIOUS_REGISTERED_SHA256 = '87d62b8ae6d3cd26907c1cb089fed8be44025c7a302565fd0aa4e15ec2e58955'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_PREVIOUS_MAINTAINED_SHA256 = '8807f2fc6c47f571b715521d18d1c2f1aca6885e38b2de6260559ec67831e18d'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_ADDITIONS_SHA256 = 'e7bdd1e062a543d219e47fedab9c131eaf1662addf569984ae208d35ad8468c9'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SIZE = 20499724
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_ADDITIONS_SIZE = 20766
+
+
+def restore_ordered_policies_and_iterator_ranges_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_REGISTERED_SHA256, R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SHA256}
+    stop = R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_REGISTERED_SHA256
+             else R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_NODE_AND_VALUE_COMPARE_REGISTERED_SHA256 = '11794ebcf2e0af2b1fca673c0549041f72c3bd56634cccc8dd8f3912cab9ace2'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SHA256 = '4e44a789e4a9597fca5fb62d252ce9290b7d018e019bda016525ba9641f98da5'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_PREVIOUS_REGISTERED_SHA256 = '17da38c2da417df36c10d23081658af9f94798cdf66f91fffd1eb0a07b8f5fd9'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_PREVIOUS_MAINTAINED_SHA256 = '615020e719791e665aa2823bf4bd2e007176c2aebf65ab55c8ff693bff2f3d00'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_ADDITIONS_SHA256 = 'dbe80d7b0d7468c4088238a76a76c3fef8420176a9cf1a64cc00251829f61975'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SIZE = 20520119
+R19_ORDERED_NODE_AND_VALUE_COMPARE_ADDITIONS_SIZE = 20006
+
+
+def restore_ordered_node_and_value_compare_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_NODE_AND_VALUE_COMPARE_REGISTERED_SHA256, R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_NODE_AND_VALUE_COMPARE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_NODE_AND_VALUE_COMPARE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedComparatorMapValueComparatorRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-comparator-map-value-comparator.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  auto cmp = values.value_comp();\n  return !cmp({1, 4}, {2, 3});\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-comparator-map-value-comparator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-comparator-map-value-comparator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedComparatorMapValueComparatorRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-comparator-map-value-comparator.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  auto cmp = values.value_comp();\n  return !cmp({1, 4}, {2, 3});\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-comparator-map-value-comparator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-comparator-map-value-comparator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedComparatorMapValueComparatorRejected) {\n  const auto Source = tmpFile("ordered-comparator-map-value-comparator.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  auto cmp = values.value_comp();\n  return !cmp({1, 4}, {2, 3});\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_NODE_AND_VALUE_COMPARE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_NODE_AND_VALUE_COMPARE_REGISTERED_SHA256
+             else R19_ORDERED_NODE_AND_VALUE_COMPARE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -2941,6 +3017,27 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_NODE_AND_VALUE_COMPARE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

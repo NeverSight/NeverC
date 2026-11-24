@@ -31,6 +31,14 @@
       "source_sha256": "0d95523d5d89789f636940e7a0e98cf049fe54de14283e54feb5af3e804371a8",
       "original_case_source_sha256": "0d95523d5d89789f636940e7a0e98cf049fe54de14283e54feb5af3e804371a8",
       "gtest_body_sha256": "d3b7c6a1e2d36eb221f18a47df108006e4091988d0254a244caea01f8f165b82"
+    },
+    {
+      "name": "ordered-max-size-mutable-trees",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeMutableTreesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3",
+      "original_case_source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3",
+      "gtest_body_sha256": "4384b406d2b2859c18ed705bf70cd4cfd2149d50150d86a88a55c1f177d5d001"
     }
   ],
   "negative_cases": [
@@ -41,14 +49,6 @@
       "source_sha256": "82c259362183b7832820aa31eb65d085a6ee9558ad216e5c1559ca4e1bc8f66c",
       "original_case_source_sha256": "82c259362183b7832820aa31eb65d085a6ee9558ad216e5c1559ca4e1bc8f66c",
       "gtest_body_sha256": "b9d320ddb3c382a5f773bca0eca99438f2606ef566f5fbbaebcb79938712d8a6"
-    },
-    {
-      "name": "ordered-max-size-mutable-trees",
-      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeMutableTreesRejected",
-      "expected": "reject",
-      "source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3",
-      "original_case_source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3",
-      "gtest_body_sha256": "e40e22f45bcda958ae9b4be010cbdff5156e7fe0f6afef95d28f0ad1c4f8b355"
     },
     {
       "name": "ordered-max-size-custom-comparator",
@@ -101,20 +101,20 @@
       "source_sha256": "0d95523d5d89789f636940e7a0e98cf049fe54de14283e54feb5af3e804371a8"
     },
     {
+      "name": "ordered-max-size-mutable-trees",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n",
+      "source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3"
+    },
+    {
       "name": "ordered-max-size-different-element",
       "expected": "reject",
       "public_header": "set",
       "kind": "source-body-guard",
       "source": "#include <set>\nusing Values = std::set<short>;\nauto bound(const Values& values) { return values.max_size(); }\n",
       "source_sha256": "82c259362183b7832820aa31eb65d085a6ee9558ad216e5c1559ca4e1bc8f66c"
-    },
-    {
-      "name": "ordered-max-size-mutable-trees",
-      "expected": "reject",
-      "public_header": "map",
-      "kind": "source-body-guard",
-      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n",
-      "source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3"
     },
     {
       "name": "ordered-max-size-custom-comparator",
@@ -138,8 +138,8 @@
     "TranslateTest.CoreV2OrderedMaxSizeConstMultimapRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMaxSizeSetReceiverOnceRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMaxSizeMultisetRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMaxSizeMutableTreesRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMaxSizeDifferentElementRejected",
-    "TranslateTest.CoreV2OrderedMaxSizeMutableTreesRejected",
     "TranslateTest.CoreV2OrderedMaxSizeCustomComparatorRejected",
     "TranslateTest.CoreV2OrderedMaxSizeTemporaryRejected"
   ],
@@ -154,11 +154,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8310,
   "current_python_registry_tests": 164,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
+    "ordered-map-emplace": "455c13bdffa150a07ed7e139b48f0c20510a556dadc74d8481344537d5a058c1",
     "ordered-max-size": "0257406ff4ac820ff77fd499e186f7b6155c6c64872fa7558815e570f890e880"
   },
-  "native_reference_authentication_sha256": "26127295df9e4157a0852df724f8b514c78f5f4e33ba7653e3ef3f0ea346a74f",
-  "source_proof_sha256": "52f07c91054c21abac9e600a4f4f96ec564f80f96354dccb05b5ed284af3e388"
+  "native_reference_authentication_sha256": "337ec016a70ae22d1aef6677d0ea0307d5a9703f975af8165a3a7202a4619c02",
+  "source_proof_sha256": "838246acd03b39f750614aa652dfe4ace00028902c9fe2b763be40beae6b0983"
 }

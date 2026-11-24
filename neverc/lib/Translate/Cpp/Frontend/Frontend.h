@@ -15,6 +15,7 @@
 #include <memory>
 #include <cstddef>
 #include <optional>
+#include <variant>
 #include <set>
 #include <string>
 #include <vector>
@@ -1114,7 +1115,7 @@ enum class UtilityOperation {
   UnorderedMapInsertRange,
   UnorderedTableCopyAssign,
   UnorderedTableMoveAssign,
-  UnorderedTableGetAllocator,
+  AssociativeGetAllocator,
   AssociativePolicy,
   UnorderedIteratorDereference,
   UnorderedIteratorArrow,
@@ -1310,10 +1311,13 @@ enum class UtilityOperation {
   ForwardList,
   List,
   OrderedContainerObserver,
+  OrderedMapValueComparator,
+  OrderedMapCompareValues,
   OrderedSetCount,
   OrderedMapSubscript,
   OrderedSetCopyAssign,
   OrderedSetMoveAssign,
+  OrderedSetMerge,
   OrderedSetInsert,
   OrderedSetInsertList,
   OrderedSetListAssign,
@@ -1321,6 +1325,7 @@ enum class UtilityOperation {
   OrderedSetIterator,
   OrderedSetMutation,
   OrderedSetSwap,
+  OrderedSetCompare,
   EmptyHashSetObserver,
   EmptyHashSetSetMaxLoadFactor,
   EmptyHashSetResizeBuckets,
@@ -4597,7 +4602,7 @@ bool approvedUtilityUnorderedTableDefaultArgument(
 std::optional<FunctionalObjectRecord> approvedUtilityAssociativePolicyQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuery(
+std::optional<UtilityAllocatorRecord> approvedUtilityAssociativeAllocatorQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 std::optional<UtilityUnorderedMapConstructionKind>
@@ -4696,6 +4701,12 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetComparison(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetMerge(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context, bool Move);
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedMapStorage(
@@ -4730,7 +4741,7 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListAssignment(
     const clang::ASTContext &Context);
 struct UtilityOrderedSetRangeInput {
   UtilityOrderedSetStorage Storage;
-  clang::QualType PointerType;
+  clang::QualType IteratorType;
   std::optional<UtilityPairRecord> Pair;
 };
 std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
@@ -4749,7 +4760,7 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
 bool approvedOrderedContainerRuntimeRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
-bool approvedOrderedContainerDefaultConstruction(const State &S,
+bool approvedOrderedContainerEmptyConstruction(const State &S,
     const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context, llvm::StringRef *Failure = nullptr);
 bool approvedOrderedContainerDestructor(const State &S,
@@ -4758,6 +4769,21 @@ bool approvedOrderedContainerDestructor(const State &S,
 std::optional<UtilityContainerObserver> approvedOrderedContainerObserver(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
+struct UtilityOrderedValueComparator {
+  const clang::CXXRecordDecl *Record, *Owner;
+  const clang::FieldDecl *Comparator;
+  UtilityPairRecord Pair;
+};
+std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorRecord(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
+    const clang::ASTContext &Context);
+const clang::MemberExpr *approvedOrderedValueComparatorFactory(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
 clang::QualType approvedOrderedContainerObserverQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
@@ -4972,7 +4998,7 @@ public:
   std::set<const clang::CXXRecordDecl *> RequiredUtilityVectors;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMapIterators;
   std::set<const clang::CXXRecordDecl *> RequiredUtilityUnorderedMaps;
-  std::set<const clang::CXXRecordDecl *> RequiredUnorderedNodes;
+  std::set<const clang::CXXRecordDecl *> RequiredAssociativeNodes;
   std::set<const clang::CXXRecordDecl *> RequiredRandomEngines;
   std::set<const clang::CXXRecordDecl *> RequiredSeedSequences;
   std::set<const clang::CXXRecordDecl *> RequiredUniformDistributionRecords;
@@ -5078,7 +5104,7 @@ public:
       clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityUnorderedMap(const clang::CXXRecordDecl *Record,
       clang::SourceLocation Location, unsigned Depth = 0);
-  bool requireUnorderedNode(const clang::CXXRecordDecl *Record,
+  bool requireAssociativeNode(const clang::CXXRecordDecl *Record,
       clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityBitset(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
   bool requireUtilityForwardList(const clang::CXXRecordDecl *Record, clang::SourceLocation Location, unsigned Depth);
@@ -5222,49 +5248,52 @@ public:
            llvm::ArrayRef<FunctionTemplateBodySource> TemplateBodies = {},
            llvm::ArrayRef<FriendClassTemplateSource> FriendClasses = {});
 };
-struct UtilityUnorderedNodeRecord {
+struct UtilityAssociativeNodeRecord {
+  using OwnerStorage = std::variant<UtilityUnorderedTableRecord, UtilityOrderedSetStorage>;
   const clang::CXXRecordDecl *Record, *Specifics;
-  UtilityUnorderedTableRecord Map;
-  clang::QualType AllocatorType;
+  OwnerStorage Owner;
+  clang::QualType NodeType, PointerType, KeyType, AllocatorType;
+  uint64_t NodeBytes;
+  bool HasMappedValue;
   const clang::FieldDecl *Pointer, *Allocator;
   uint64_t AllocatorValueOffset, EngagedOffset;
 };
-std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
+std::optional<UtilityAssociativeNodeRecord> associativeNodeRecord(
     const State &S,const clang::SourceManager &SM,const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
-enum class UnorderedNodeOperation { Empty, Boolean, Key, Mapped, Allocator, Swap, MoveAssign };
-struct UnorderedNodeCall {
-  UtilityUnorderedNodeRecord Info;
-  UnorderedNodeOperation Operation;
+enum class AssociativeNodeOperation { Empty, Boolean, Key, Mapped, Allocator, Swap, MoveAssign };
+struct AssociativeNodeCall {
+  UtilityAssociativeNodeRecord Info;
+  AssociativeNodeOperation Operation;
   const clang::Expr *Object;
   unsigned Offset;
 };
-std::optional<UnorderedNodeCall> unorderedNodeCall(
+std::optional<AssociativeNodeCall> associativeNodeCall(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-enum class UnorderedNodeConstruction { Default, Move };
-std::optional<UnorderedNodeConstruction> unorderedNodeConstruction(
+enum class AssociativeNodeConstruction { Default, Move };
+std::optional<AssociativeNodeConstruction> associativeNodeConstruction(
     const State &S,const clang::SourceManager &SM,const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
-bool unorderedNodeDestructor(const State &S,const clang::SourceManager &SM,
+bool associativeNodeDestructor(const State &S,const clang::SourceManager &SM,
     const clang::CXXDestructorDecl *Destructor,const clang::ASTContext &Context);
-struct UnorderedNodeInsertResult {
+struct AssociativeNodeInsertResult {
   const clang::CXXRecordDecl *Record;
-  UtilityUnorderedMapIteratorRecord Iterator;
-  UtilityUnorderedNodeRecord Node;
+  std::optional<UtilityUnorderedMapIteratorRecord> UnorderedIterator;
+  UtilityAssociativeNodeRecord Node;
   const clang::FieldDecl *Position,*Inserted,*Handle;
 };
-std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
+std::optional<AssociativeNodeInsertResult> associativeNodeInsertResult(
     const State &S,const clang::SourceManager &SM,const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context,
     const std::function<bool(clang::QualType)> &Complete = {});
 enum class UnorderedNodeTransferKind { ExtractKey,ExtractIterator,Insert,HintInsert };
 struct UnorderedNodeTransfer {
   UtilityUnorderedTableRecord Map;
-  UtilityUnorderedNodeRecord Node;
+  UtilityAssociativeNodeRecord Node;
   std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
-  std::optional<UnorderedNodeInsertResult> Result;
+  std::optional<AssociativeNodeInsertResult> Result;
   UnorderedNodeTransferKind Kind;
   unsigned Offset;
 };
@@ -5272,7 +5301,27 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-bool unorderedNodeBaseCast(const State &S, const clang::SourceManager &SM,
+struct OrderedNodeExtraction {
+  UtilityOrderedSetStorage Tree;
+  UtilityAssociativeNodeRecord Node;
+  const clang::MemberExpr *Receiver;
+  bool ByIterator;
+};
+std::optional<OrderedNodeExtraction> orderedNodeExtraction(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+struct OrderedNodeInsertion {
+  UtilityOrderedSetStorage Tree;
+  UtilityAssociativeNodeRecord Node;
+  const clang::MemberExpr *Receiver;
+  std::optional<AssociativeNodeInsertResult> Result;
+};
+std::optional<OrderedNodeInsertion> orderedNodeInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+
+bool associativeNodeBaseCast(const State &S, const clang::SourceManager &SM,
     const clang::CastExpr *Cast, const clang::ASTContext &Context);
 std::optional<UtilityUnorderedTableRecord> unorderedTableMerge(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
@@ -5288,16 +5337,16 @@ struct UnorderedTableListAssignment {
 std::optional<UnorderedTableListAssignment> unorderedTableListAssignment(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-struct UnorderedResultCall {
-  UnorderedNodeInsertResult Result;
+struct AssociativeNodeResultCall {
+  AssociativeNodeInsertResult Result;
   const clang::Expr *Object;
   unsigned Offset;
   bool Swap, RightBeforeLeft;
 };
-std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
+std::optional<AssociativeNodeInsertResult> associativeNodeResultConstruction(
     const State &S,const clang::SourceManager &SM,const clang::CXXConstructExpr *C,
     const clang::ASTContext &Context);
-std::optional<UnorderedResultCall> unorderedResultCall(
+std::optional<AssociativeNodeResultCall> associativeNodeResultCall(
     const State &S,const clang::SourceManager &SM,const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 struct UnorderedTableNonmemberCall {
@@ -5317,7 +5366,7 @@ std::optional<UnorderedIteratorTraversalCall> unorderedIteratorTraversalCall(
     const clang::ASTContext &Context);
 struct UnorderedGenericSwapCall {
   std::optional<UtilityUnorderedTableRecord> Map;
-  std::optional<UtilityUnorderedNodeRecord> Node;
+  std::optional<UtilityAssociativeNodeRecord> Node;
   std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
 };
 std::optional<UnorderedGenericSwapCall> unorderedGenericSwapCall(

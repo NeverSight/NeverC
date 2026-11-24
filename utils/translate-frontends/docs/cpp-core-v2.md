@@ -18421,3 +18421,31 @@ assignment from an initializer list of the exact value type. The assignment
 replaces the previous sequence and retains input order within equivalent-key
 groups in duplicate-key containers. Integer sets and multisets also support
 emplacing a value with no arguments or one integer expression.
+
+## Default integer ordered node transfer and comparisons
+
+Integer sets and maps with default policies support comparisons of the stored
+sequences and merge with the matching unique-key or duplicate-key container.
+Merge transfers existing nodes without allocation. A unique destination
+leaves conflicting keys in the source. A duplicate-key destination keeps
+existing elements before newly transferred equivalent keys in source order.
+Integer maps and multimaps also support emplacement with two integer
+expressions. A duplicate key in a unique map retains the existing value.
+
+## Default integer ordered policies and iterator ranges
+
+Empty integer sets and maps may be constructed with explicit default
+comparators or allocators. The checked `get_allocator()` returns their
+standard allocator. Default integer sets, multisets, maps and multimaps
+accept checked half-open ranges of their forward-traversed ordered
+iterators for construction or range insertion. Duplicate-key containers
+preserve the order of equivalent values from that range.
+
+## Default integer ordered node handles and value comparison
+
+Default integer sets, multisets, maps and multimaps can extract nodes by
+key or iterator and insert compatible nodes without a hint. Successful
+insertion preserves the stored node. On a unique-key conflict, the return
+value carries the uninserted node. A detached map node permits changes to
+its key and mapped value before reinsertion. The checked map and multimap
+`value_comp()` compares the keys of two value pairs.

@@ -123996,13 +123996,17 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedOrderedMapSubscript(S, SM, Call, Context)) return UtilityOperation::OrderedMapSubscript;
   if (approvedOrderedSetAssignment(S, SM, Call, Context, false)) return UtilityOperation::OrderedSetCopyAssign;
   if (approvedOrderedSetAssignment(S, SM, Call, Context, true)) return UtilityOperation::OrderedSetMoveAssign;
+  if (approvedOrderedSetMerge(S, SM, Call, Context)) return UtilityOperation::OrderedSetMerge;
   if (approvedOrderedSetInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsert;
   if (approvedOrderedSetListInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertList;
   if (approvedOrderedSetListAssignment(S, SM, Call, Context)) return UtilityOperation::OrderedSetListAssign;
   if (approvedOrderedSetRangeInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsertRange;
   if (approvedOrderedSetIteratorCall(S, SM, Call, Context)) return UtilityOperation::OrderedSetIterator;
+  if (approvedOrderedValueComparatorFactory(S, SM, Call, Context)) return UtilityOperation::OrderedMapValueComparator;
+  if (approvedOrderedValueComparatorCall(S, SM, Call, Context)) return UtilityOperation::OrderedMapCompareValues;
   if (approvedOrderedSetMutation(S, SM, Call, Context)) return UtilityOperation::OrderedSetMutation;
   if (approvedOrderedSetSwap(S, SM, Call, Context)) return UtilityOperation::OrderedSetSwap;
+  if (approvedOrderedSetComparison(S, SM, Call, Context)) return UtilityOperation::OrderedSetCompare;
   if (approvedOrderedContainerObserver(S, SM, Call, Context))
     return UtilityOperation::OrderedContainerObserver;
   if (approvedEmptyHashSetObserver(S, SM, Call, Context))
@@ -124037,8 +124041,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     return std::nullopt;
   if (approvedUtilityAssociativePolicyQuery(S, SM, Call, Context))
     return UtilityOperation::AssociativePolicy;
-  if (approvedUtilityUnorderedTableAllocatorQuery(S, SM, Call, Context))
-    return UtilityOperation::UnorderedTableGetAllocator;
+  if (approvedUtilityAssociativeAllocatorQuery(S, SM, Call, Context))
+    return UtilityOperation::AssociativeGetAllocator;
   if (auto Assignment = approvedUtilityUnorderedTableAssignment(S, SM, Call, Context))
     return Assignment;
   if (approvedUtilityUnorderedMapRangeInsertion(S, SM, Call, Context))
@@ -136482,8 +136486,8 @@ bool orderedTreeEndSource(const State &S, const SourceManager &SM,
 }
 
 bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
-                            const CXXConstructExpr *Build, const ASTContext &Context,
-                            llvm::StringRef *Failure) {
+                            const CXXConstructExpr *Build, const CXXConstructorDecl *Owner,
+                            const ASTContext &Context, llvm::StringRef *Failure) {
   auto Fail = [&](llvm::StringRef Why) {
     if (Failure) *Failure = Why;
     return false;
@@ -136493,17 +136497,35 @@ bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
   // belong to the out-of-line instantiation rather than that declaration.
   const auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(
       Selected ? Selected->getDefinition() : nullptr);
-  if (!Ctor || Ctor->getNumParams() != 1 || Build->getNumArgs() != 1 ||
+  const unsigned Count = Ctor ? Ctor->getNumParams() : 0;
+  if (!Count || Count > 2 || Build->getNumArgs() != Count ||
       !orderedPinnedFunction(S, SM, Ctor, "__tree"))
     return Fail("The selected pinned tree constructor definition is required.");
-  if (!orderedPolicyInit(S, SM, Build->getArg(0), nullptr))
-    return Fail("The tree comparator requires the pinned empty initialization.");
-  const auto *Tree = Ctor->getParent();
+  const auto *Tree = dyn_cast<ClassTemplateSpecializationDecl>(Ctor->getParent());
+  if (!Tree || Tree->getTemplateArgs().size() != 3)
+    return Fail("The tree must use the authenticated comparator and allocator types.");
+  const auto &Arguments = Tree->getTemplateArgs();
+  const auto ComparatorType = Context.getLValueReferenceType(Arguments.get(1).getAsType().withConst());
+  const auto AllocatorType = Context.getLValueReferenceType(Arguments.get(2).getAsType().withConst());
+  const bool WithComparator = Context.hasSameType(Ctor->getParamDecl(0)->getType(), ComparatorType);
+  const bool WithAllocator =
+      Context.hasSameType(Ctor->getParamDecl(Count - 1)->getType(), AllocatorType);
+  if ((Count == 1 && !WithComparator && !WithAllocator) ||
+      (Count == 2 && !(WithComparator && WithAllocator)))
+    return Fail("The tree constructor must accept exactly the selected empty policies.");
+  for (const auto *Argument : Build->arguments())
+    if (!orderedPolicyInit(S, SM, Argument, Owner))
+      return Fail("The tree requires pinned empty policy initializers.");
   const auto *Size = orderedTreeField(Tree, "__size_");
   const auto *End = orderedTreeField(Tree, "__end_node_");
   const auto *Begin = orderedTreeField(Tree, "__begin_node_");
   const auto *Compare = orderedTreeField(Tree, "__value_comp_");
-  bool ZeroSize = false, NullRoot = false, CheckedCompare = false;
+  const auto *ComparatorRecord = Compare ? Compare->getType()->getAsCXXRecordDecl() : nullptr;
+  ComparatorRecord = ComparatorRecord ? ComparatorRecord->getDefinition() : nullptr;
+  bool ZeroSize = false, NullRoot = false;
+  bool CheckedCompare = !WithComparator && ComparatorRecord &&
+      ComparatorRecord->hasTrivialDefaultConstructor() &&
+      orderedTrivialPolicy(S, SM, Compare->getType());
   for (const auto *Init : Ctor->inits()) {
     if (!Init->isMemberInitializer())
       return Fail("Expected a tree member initializer.");
@@ -136524,6 +136546,10 @@ bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
       const auto *InitialValue = orderedExpression(Root->getInit());
       NullRoot = Root->isMemberInitializer() && Root->getMember() == Left &&
           InitialValue && isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(InitialValue);
+    } else if (Field == Begin) {
+      if (!Value || !Context.hasSameType(Value->getType(), Begin->getType()) ||
+          !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Value))
+        return Fail("The optional begin initializer must be a null pointer.");
     } else if (Field == Compare) {
       CheckedCompare = orderedPolicyInit(S, SM, Value, Ctor);
     } else if (!orderedPolicyInit(S, SM, Value, Ctor)) {
@@ -136945,7 +136971,7 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   Kind Insertion;
   if (Name == "insert" && Args == 1)
     Insertion = Kind::Insert;
-  else if (Name == "emplace" && Template && Args <= 1)
+  else if (Name == "emplace" && Template && Args <= 2)
     Insertion = Kind::Emplace;
   else if (Name == "try_emplace" && Template && (Args == 1 || Args == 2))
     Insertion = Kind::TryEmplace;
@@ -136971,18 +136997,18 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
   const auto Value = Mapped && Insertion == Kind::Insert ? Table->MappedPairType : Context.IntTy;
   if (Insertion == Kind::Emplace) {
     const auto *Deduced = Method->getTemplateSpecializationArgs();
-    if (Mapped || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+    if ((Mapped ? Args != 2 : Args > 1) || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         !Deduced || Deduced->size() != 1 || Deduced->get(0).getKind() != TemplateArgument::Pack)
       return std::nullopt;
     const auto Pack = Deduced->get(0).getPackAsArray();
     if (Pack.size() != Args) return std::nullopt;
-    if (Args) {
-      const auto *Element = Call->getArg(0);
-      const auto Parameter = Method->getParamDecl(0)->getType();
-      if (Pack.front().getKind() != TemplateArgument::Type || !Parameter->isReferenceType() ||
+    for (unsigned I = 0; I != Args; ++I) {
+      const auto *Element = Call->getArg(I);
+      const auto Parameter = Method->getParamDecl(I)->getType();
+      if (Pack[I].getKind() != TemplateArgument::Type || !Parameter->isReferenceType() ||
           Parameter->isLValueReferenceType() != Element->isLValue())
         return std::nullopt;
-      const auto Type = Pack.front().getAsType();
+      const auto Type = Pack[I].getAsType();
       const auto Referred = Parameter.getNonReferenceType();
       const auto Forwarded = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
       if (!Context.hasSameType(Parameter, Forwarded) || !Context.hasSameType(Element->getType(), Referred) ||
@@ -137043,6 +137069,79 @@ std::optional<UtilityOrderedSetInsertion> approvedOrderedSetInsertion(
       !SelectedBody(S, SM, Record->getDestructor(), Record, Context))
     return std::nullopt;
   return UtilityOrderedSetInsertion{*Table, Pair, Input, Insertion};
+}
+
+static std::optional<UtilityOrderedSetIteratorCall> checkedOrderedIteratorOperator(
+    const State &S, const SourceManager &SM, const CXXOperatorCallExpr *Operator,
+    const ASTContext &Context, const UtilityOrderedSetStorage *Owner = nullptr) {
+  using Op = OrderedSetIteratorOperation;
+  const auto *Function = Operator ? Operator->getDirectCallee() : nullptr;
+  if (!Function || !Operator->getNumArgs() || Function->isVariadic())
+    return std::nullopt;
+  const auto *First = Operator->getArg(0);
+  UtilityOrderedSetStorage Table{};
+  const auto *Record = approvedOrderedSetIteratorRecord(
+      S, SM, First->getType()->getAsCXXRecordDecl(), Context, Owner, &Table);
+  if (!Record || !First->isLValue() || First->getType().isVolatileQualified() ||
+      First->getType().isRestrictQualified() || First->getType().getAddressSpace() != LangAS::Default)
+    return std::nullopt;
+  const auto Type = Context.getRecordType(Record);
+  const bool Mapped = !Table.MappedPairType.isNull();
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  if (!orderedPinnedFunction(S, SM, Function, Mapped ? "map" : "__tree"))
+    return std::nullopt;
+  const auto Result = Function->getReturnType();
+  if (!Context.hasSameType(Result.getNonReferenceType(), Operator->getType()))
+    return std::nullopt;
+  const auto Kind = Operator->getOperator();
+  if (Kind == OO_EqualEqual || Kind == OO_ExclaimEqual) {
+    if (isa<CXXMethodDecl>(Function) || Function->getNumParams() != 2 || Operator->getNumArgs() != 2 ||
+        !Context.hasSameType(Result, Context.BoolTy) || !Operator->isPRValue())
+      return std::nullopt;
+    const auto Reference = Context.getLValueReferenceType(Type.withConst());
+    const auto *Second = Operator->getArg(1);
+    if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) ||
+        !Context.hasSameType(Function->getParamDecl(1)->getType(), Reference) ||
+        !Context.hasSameUnqualifiedType(Second->getType(), Type) || !Second->isLValue() ||
+        Second->getType().isVolatileQualified() || Second->getType().isRestrictQualified() ||
+        Second->getType().getAddressSpace() != LangAS::Default ||
+        !SelectedBody(S, SM, Function, Table.Record, Context))
+      return std::nullopt;
+    return UtilityOrderedSetIteratorCall{Kind == OO_EqualEqual ? Op::Equal : Op::NotEqual,
+                                         Table, nullptr, First, Second};
+  }
+
+  const auto *Member = dyn_cast<CXXMethodDecl>(Function);
+  if (!Member || Member->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      Member->isStatic() || Member->isVirtual() || Member->isVolatile() || Member->getPrimaryTemplate() ||
+      Function->getNumParams() + 1 != Operator->getNumArgs())
+    return std::nullopt;
+  Op Operation;
+  if (Kind == OO_Star || Kind == OO_Arrow) {
+    auto Value = Mapped ? Table.MappedPairType : Context.IntTy;
+    if (!Mapped || Record->getName() == "__map_const_iterator") Value = Value.withConst();
+    if (!Member->isConst() || Function->getNumParams() ||
+        !Context.hasSameType(Result, Kind == OO_Star ? Context.getLValueReferenceType(Value)
+                                                    : Context.getPointerType(Value)))
+      return std::nullopt;
+    Operation = Kind == OO_Star ? Op::Dereference : Op::Arrow;
+  } else if (Kind == OO_PlusPlus || Kind == OO_MinusMinus) {
+    const bool Post = Function->getNumParams() == 1;
+    const auto *Dummy = Post ? dyn_cast<IntegerLiteral>(Operator->getArg(1)->IgnoreParenImpCasts()) : nullptr;
+    if (Member->isConst() || First->getType().isConstQualified() ||
+        (Post ? (!Dummy || !Dummy->getValue().isZero() ||
+                 !Context.hasSameType(Function->getParamDecl(0)->getType(), Context.IntTy))
+              : Function->getNumParams() != 0) ||
+        !Context.hasSameType(Result, Post ? Type : Context.getLValueReferenceType(Type)))
+      return std::nullopt;
+    Operation = Kind == OO_PlusPlus ? (Post ? Op::PostIncrement : Op::Increment)
+                                    : (Post ? Op::PostDecrement : Op::Decrement);
+  } else {
+    return std::nullopt;
+  }
+  if (!SelectedBody(S, SM, Function, Table.Record, Context))
+    return std::nullopt;
+  return UtilityOrderedSetIteratorCall{Operation, Table, nullptr, First, nullptr};
 }
 
 std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
@@ -137144,74 +137243,9 @@ std::optional<UtilityOrderedSetIteratorCall> approvedOrderedSetIteratorCall(
   }
 
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
-  const auto *Function = Operator ? Operator->getDirectCallee() : nullptr;
-  if (!Function || !Operator->getNumArgs() || !S.owns(SM, Operator->getOperatorLoc()) ||
-      Function->isVariadic())
+  if (!Operator || !S.owns(SM, Operator->getOperatorLoc()))
     return std::nullopt;
-  const auto *First = Operator->getArg(0);
-  UtilityOrderedSetStorage Table{};
-  const auto *Record = approvedOrderedSetIteratorRecord(
-      S, SM, First->getType()->getAsCXXRecordDecl(), Context, nullptr, &Table);
-  if (!Record || !First->isLValue() || First->getType().isVolatileQualified() ||
-      First->getType().isRestrictQualified() || First->getType().getAddressSpace() != LangAS::Default)
-    return std::nullopt;
-  const auto Type = Context.getRecordType(Record);
-  const bool Mapped = !Table.MappedPairType.isNull();
-  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
-  if (!orderedPinnedFunction(S, SM, Function, Mapped ? "map" : "__tree"))
-    return std::nullopt;
-  const auto Result = Function->getReturnType();
-  if (!Context.hasSameType(Result.getNonReferenceType(), Call->getType()))
-    return std::nullopt;
-  const auto Kind = Operator->getOperator();
-  if (Kind == OO_EqualEqual || Kind == OO_ExclaimEqual) {
-    if (isa<CXXMethodDecl>(Function) || Function->getNumParams() != 2 || Operator->getNumArgs() != 2 ||
-        !Context.hasSameType(Result, Context.BoolTy) || !Call->isPRValue())
-      return std::nullopt;
-    const auto Reference = Context.getLValueReferenceType(Type.withConst());
-    const auto *Second = Operator->getArg(1);
-    if (!Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) ||
-        !Context.hasSameType(Function->getParamDecl(1)->getType(), Reference) ||
-        !Context.hasSameUnqualifiedType(Second->getType(), Type) || !Second->isLValue() ||
-        Second->getType().isVolatileQualified() || Second->getType().isRestrictQualified() ||
-        Second->getType().getAddressSpace() != LangAS::Default ||
-        !SelectedBody(S, SM, Function, Table.Record, Context))
-      return std::nullopt;
-    return UtilityOrderedSetIteratorCall{Kind == OO_EqualEqual ? Op::Equal : Op::NotEqual,
-                                         Table, nullptr, First, Second};
-  }
-
-  const auto *Member = dyn_cast<CXXMethodDecl>(Function);
-  if (!Member || Member->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
-      Member->isStatic() || Member->isVirtual() || Member->isVolatile() || Member->getPrimaryTemplate() ||
-      Function->getNumParams() + 1 != Operator->getNumArgs())
-    return std::nullopt;
-  Op Operation;
-  if (Kind == OO_Star || Kind == OO_Arrow) {
-    auto Value = Mapped ? Table.MappedPairType : Context.IntTy;
-    if (!Mapped || Record->getName() == "__map_const_iterator") Value = Value.withConst();
-    if (!Member->isConst() || Function->getNumParams() ||
-        !Context.hasSameType(Result, Kind == OO_Star ? Context.getLValueReferenceType(Value)
-                                                    : Context.getPointerType(Value)))
-      return std::nullopt;
-    Operation = Kind == OO_Star ? Op::Dereference : Op::Arrow;
-  } else if (Kind == OO_PlusPlus || Kind == OO_MinusMinus) {
-    const bool Post = Function->getNumParams() == 1;
-    const auto *Dummy = Post ? dyn_cast<IntegerLiteral>(Operator->getArg(1)->IgnoreParenImpCasts()) : nullptr;
-    if (Member->isConst() || First->getType().isConstQualified() ||
-        (Post ? (!Dummy || !Dummy->getValue().isZero() ||
-                 !Context.hasSameType(Function->getParamDecl(0)->getType(), Context.IntTy))
-              : Function->getNumParams() != 0) ||
-        !Context.hasSameType(Result, Post ? Type : Context.getLValueReferenceType(Type)))
-      return std::nullopt;
-    Operation = Kind == OO_PlusPlus ? (Post ? Op::PostIncrement : Op::Increment)
-                                    : (Post ? Op::PostDecrement : Op::Decrement);
-  } else {
-    return std::nullopt;
-  }
-  if (!SelectedBody(S, SM, Function, Table.Record, Context))
-    return std::nullopt;
-  return UtilityOrderedSetIteratorCall{Operation, Table, nullptr, First, nullptr};
+  return checkedOrderedIteratorOperator(S, SM, Operator, Context);
 }
 
 std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
@@ -137270,6 +137304,124 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
       !SelectedBody(S, SM, Owner->getDestructor(), Owner, Context))
     return std::nullopt;
   return UtilityOrderedSetMutation{Operation, *Storage, Reference};
+}
+
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetComparison(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || isa<CXXMethodDecl>(Function) || Function->getNumParams() != 2 || Call->getNumArgs() != 2 ||
+      !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      !Context.hasSameType(Function->getReturnType(), Context.BoolTy) ||
+      Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !S.owns(SM, Call->getExprLoc()))
+    return std::nullopt;
+  switch (Function->getOverloadedOperator()) {
+  case OO_EqualEqual: case OO_ExclaimEqual: case OO_Less: case OO_LessEqual:
+  case OO_Greater: case OO_GreaterEqual:
+    break;
+  default:
+    return std::nullopt;
+  }
+  const auto Parameter = Function->getParamDecl(0)->getType();
+  const auto Type = Parameter.getNonReferenceType().getUnqualifiedType();
+  const auto *Owner = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Type->getAsCXXRecordDecl());
+  if (!Owner || !Owner->getIdentifier() ||
+      !Context.hasSameType(Parameter, Context.getLValueReferenceType(Type.withConst())) ||
+      !Context.hasSameType(Function->getParamDecl(1)->getType(), Parameter) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Type) ||
+      !Context.hasSameUnqualifiedType(Call->getArg(1)->getType(), Type) ||
+      Call->getArg(0)->getType().isVolatileQualified() || Call->getArg(1)->getType().isVolatileQualified())
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  const auto *Primary = Function->getPrimaryTemplate();
+  if ((Header != "map" && Header != "set") || !Primary ||
+      !orderedPinnedFunction(S, SM, Function, Header) ||
+      !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), Header))
+    return std::nullopt;
+  const auto *Deduced = Function->getTemplateSpecializationArgs();
+  const auto &Args = Owner->getTemplateArgs();
+  if (!Deduced || Deduced->size() != Args.size()) return std::nullopt;
+  for (unsigned I = 0; I != Args.size(); ++I)
+    if (Deduced->get(I).getKind() != TemplateArgument::Type ||
+        Args.get(I).getKind() != TemplateArgument::Type ||
+        !Context.hasSameType(Deduced->get(I).getAsType(), Args.get(I).getAsType()))
+      return std::nullopt;
+  const bool Mapped = Header == "map";
+  const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
+                              : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  return Storage && SelectedBody(S, SM, Function, Owner, Context) ? Storage : std::nullopt;
+}
+
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetMerge(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "merge" ||
+      Method->isConst() || Method->isStatic() || Method->isVolatile() || Method->isVirtual() ||
+      Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Method->getReturnType()->isVoidType() || !Call->getType()->isVoidType() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return std::nullopt;
+  const auto *Primary = Method->getPrimaryTemplate();
+  const auto *Deduced = Method->getTemplateSpecializationArgs();
+  const auto *Owner = Method->getParent();
+  const auto *Reference = dyn_cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Reference);
+  if (!Primary || !Deduced || Deduced->size() != 1 || Deduced->get(0).getKind() != TemplateArgument::Type ||
+      !Owner->getIdentifier() || Receiver.isNull() ||
+      !Context.hasSameType(Receiver, Context.getRecordType(Owner)) || !S.owns(SM, Reference->getMemberLoc()))
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "map" && Header != "set") || !orderedPinnedFunction(S, SM, Method, Header) ||
+      !orderedPinnedFunction(S, SM, Primary->getTemplatedDecl(), Header))
+    return std::nullopt;
+  const auto Parameter = Method->getParamDecl(0)->getType();
+  if (!Parameter->isReferenceType() ||
+      Parameter->isLValueReferenceType() != Call->getArg(0)->isLValue())
+    return std::nullopt;
+  const auto SourceType = Parameter.getNonReferenceType();
+  const auto *Source = dyn_cast_or_null<ClassTemplateSpecializationDecl>(SourceType->getAsCXXRecordDecl());
+  if (!Source || !Source->getIdentifier() || associativeContainerHeader(Source->getName()) != Header ||
+      !Context.hasSameType(SourceType, Context.getRecordType(Source)) ||
+      !Context.hasSameType(Call->getArg(0)->getType(), SourceType))
+    return std::nullopt;
+  const bool Mapped = Header == "map";
+  const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
+                              : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const auto From = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Source, Context)
+                           : approvedUtilityOrderedSetStorage(S, SM, Source, Context);
+  if (!Storage || !From || !Context.hasSameType(Storage->NodeType, From->NodeType) ||
+      !Context.hasSameType(Storage->LinkType, From->LinkType) ||
+      !Context.hasSameType(Storage->SentinelType, From->SentinelType) ||
+      Storage->NodeBytes != From->NodeBytes || Storage->ValueOffsetBytes != From->ValueOffsetBytes ||
+      Storage->MappedOffsetBytes != From->MappedOffsetBytes ||
+      (Mapped && !Context.hasSameType(Storage->MappedPairType, From->MappedPairType)) ||
+      !Context.hasSameType(Deduced->get(0).getAsType(),
+          Source->getTemplateArgs().get(Mapped ? 2 : 1).getAsType()))
+    return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Body || Body->body_empty()) return std::nullopt;
+  const auto *Last = Body->body_back();
+  const auto *Return = dyn_cast<ReturnStmt>(Last);
+  const auto *Merge = dyn_cast_or_null<CXXMemberCallExpr>(
+      orderedExpression(Return ? Return->getRetValue() : dyn_cast<Expr>(Last)));
+  const auto *TreeMethod = orderedTreeMethod(S, SM, Merge, Storage->Tree,
+      Storage->Multi ? "__node_handle_merge_multi" : "__node_handle_merge_unique", 1);
+  if (!TreeMethod || !TreeMethod->getPrimaryTemplate() || !TreeMethod->getReturnType()->isVoidType() ||
+      !Context.hasSameType(TreeMethod->getParamDecl(0)->getType(),
+                          Context.getLValueReferenceType(Context.getRecordType(From->Tree))))
+    return std::nullopt;
+  const auto *DestField = dyn_cast_or_null<MemberExpr>(orderedExpression(Merge->getImplicitObjectArgument()));
+  const auto *SourceField = dyn_cast_or_null<MemberExpr>(orderedExpression(Merge->getArg(0)));
+  if (!DestField || DestField->getMemberDecl() != orderedTreeField(Owner, "__tree_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(DestField->getBase())) ||
+      !SourceField || SourceField->getMemberDecl() != orderedTreeField(Source, "__tree_") ||
+      !orderedParameter(SourceField->getBase(), Method->getParamDecl(0)))
+    return std::nullopt;
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  return SelectedBody(S, SM, Method, Owner, Context) && SelectedBody(S, SM, Owner->getDestructor(), Owner, Context) &&
+         SelectedBody(S, SM, Source->getDestructor(), Source, Context) ? Storage : std::nullopt;
 }
 
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,
@@ -137709,26 +137861,31 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
       Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
       !TemplateArgs || TemplateArgs->size() != 1 || TemplateArgs->get(0).getKind() != TemplateArgument::Type)
     return std::nullopt;
-  const auto Pointer = TemplateArgs->get(0).getAsType();
-  if (Pointer.isNull() || Pointer.hasQualifiers() || !Pointer->isPointerType() ||
-      !Context.hasSameType(Pointer, Function->getParamDecl(0)->getType()) ||
-      !Context.hasSameType(Pointer, Function->getParamDecl(1)->getType()))
+  const auto Iterator = TemplateArgs->get(0).getAsType();
+  if (Iterator.isNull() || Iterator.hasQualifiers() ||
+      !Context.hasSameType(Iterator, Function->getParamDecl(0)->getType()) ||
+      !Context.hasSameType(Iterator, Function->getParamDecl(1)->getType()))
     return std::nullopt;
-  const auto Element = Pointer->getPointeeType();
   const bool Mapped = Header == "map";
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Storage) return std::nullopt;
-  const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
-  if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
+  if (Iterator->isPointerType()) {
+    const auto Element = Iterator->getPointeeType();
+    const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
+    if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
+      return std::nullopt;
+  } else if (!approvedOrderedSetIteratorRecord(
+                 S, SM, Iterator->getAsCXXRecordDecl(), Context, &*Storage)) {
     return std::nullopt;
+  }
   std::optional<UtilityPairRecord> Pair;
   if (Mapped) {
     Pair = approvedUtilityPairRecord(S, SM, Storage->MappedPairType->getAsCXXRecordDecl(), Context);
     if (!Pair || !Pair->Record->hasTrivialDestructor())
       return std::nullopt;
   }
-  return UtilityOrderedSetRangeInput{*Storage, Pointer, Pair};
+  return UtilityOrderedSetRangeInput{*Storage, Iterator, Pair};
 }
 
 static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
@@ -137743,14 +137900,35 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
   if (!Input) return std::nullopt;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
   const auto *Loop = Body && Body->size() == 1 ? dyn_cast<ForStmt>(Body->body_front()) : nullptr;
-  const auto *Condition = Loop ? dyn_cast_or_null<BinaryOperator>(orderedExpression(Loop->getCond())) : nullptr;
-  const auto *Advance = Loop ? dyn_cast_or_null<UnaryOperator>(orderedExpression(Loop->getInc())) : nullptr;
-  if (!Condition || Condition->getOpcode() != BO_NE ||
-      !orderedParameter(Condition->getLHS(), Method->getParamDecl(0)) ||
-      !orderedParameter(Condition->getRHS(), Method->getParamDecl(1)) ||
-      !Advance || Advance->getOpcode() != UO_PreInc ||
-      !orderedParameter(Advance->getSubExpr(), Method->getParamDecl(0)))
-    return std::nullopt;
+  if (!Loop) return std::nullopt;
+  const auto *First = Method->getParamDecl(0), *Last = Method->getParamDecl(1);
+  const auto *Condition = orderedExpression(Loop->getCond());
+  const auto *Advance = orderedExpression(Loop->getInc());
+  if (Input->IteratorType->isPointerType()) {
+    const auto *Compare = dyn_cast_or_null<BinaryOperator>(Condition);
+    const auto *Step = dyn_cast_or_null<UnaryOperator>(Advance);
+    if (!Compare || Compare->getOpcode() != BO_NE ||
+        !orderedParameter(Compare->getLHS(), First) || !orderedParameter(Compare->getRHS(), Last) ||
+        !Step || Step->getOpcode() != UO_PreInc || !orderedParameter(Step->getSubExpr(), First))
+      return std::nullopt;
+  } else {
+    auto Check = [&](const Expr *E) {
+      return checkedOrderedIteratorOperator(
+          S, SM, dyn_cast_or_null<CXXOperatorCallExpr>(E), Context, &Input->Storage);
+    };
+    const auto Different = Check(Condition);
+    const auto Step = Check(Advance);
+    const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(
+        orderedExpression(dyn_cast<Expr>(Loop->getBody())));
+    const auto Element = Insert && Insert->getNumArgs() == 2
+        ? Check(orderedExpression(Insert->getArg(1))) : std::nullopt;
+    using Op = OrderedSetIteratorOperation;
+    if (!Different || Different->Operation != Op::NotEqual ||
+        !orderedParameter(Different->First, First) || !orderedParameter(Different->Second, Last) ||
+        !Step || Step->Operation != Op::Increment || !orderedParameter(Step->First, First) ||
+        !Element || Element->Operation != Op::Dereference || !orderedParameter(Element->First, First))
+      return std::nullopt;
+  }
   const auto SelectedBody = Header == "map" ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
   return SelectedBody(S, SM, Method, Record, Context) ? Input : std::nullopt;
 }
@@ -137770,8 +137948,8 @@ std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
   const auto Header = associativeContainerHeader(Record->getName());
   if (Header != "map" && Header != "set") return std::nullopt;
   const auto Input = orderedSetRangeMethod(S, SM, Method, Record, Header, Context);
-  if (!Input || !Context.hasSameType(Call->getArg(0)->getType(), Input->PointerType) ||
-      !Context.hasSameType(Call->getArg(1)->getType(), Input->PointerType))
+  if (!Input || !Context.hasSameType(Call->getArg(0)->getType(), Input->IteratorType) ||
+      !Context.hasSameType(Call->getArg(1)->getType(), Input->IteratorType))
     return std::nullopt;
   return Input;
 }
@@ -137808,6 +137986,23 @@ static bool approvedOrderedSetRangeDefault(const State &S, const SourceManager &
          orderedPolicyInit(S, SM, Init, nullptr);
 }
 
+static bool orderedRangeForwardedParameter(const State &S, const SourceManager &SM,
+    const Expr *Argument, const ParmVarDecl *Parameter, const ASTContext &Context) {
+  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Argument));
+  if (!Copy)
+    return orderedParameter(Argument, Parameter);
+  const auto Type = Parameter->getType();
+  const auto *Ctor = Copy->getConstructor();
+  return Ctor->isImplicit() && Ctor->isCopyConstructor() && Ctor->isTrivial() &&
+         Ctor->getNumParams() == 1 && Copy->getNumArgs() == 1 &&
+         approvedStandardSDKDeclaration(S, SM, Ctor) &&
+         Context.hasSameType(Copy->getType(), Type) &&
+         Context.hasSameType(Context.getRecordType(Ctor->getParent()), Type) &&
+         Context.hasSameType(Ctor->getParamDecl(0)->getType(),
+                             Context.getLValueReferenceType(Type.withConst())) &&
+         orderedParameter(Copy->getArg(0), Parameter);
+}
+
 std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context) {
@@ -137818,8 +138013,8 @@ std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
   const auto *Ctor = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getDefinition()) : nullptr;
   const auto Input = orderedSetRangeConstructor(S, SM, Ctor, Context);
   if (!Input || Ctor->getNumCtorInitializers() != 1 ||
-      !Context.hasSameType(Construction->getArg(0)->getType(), Input->PointerType) ||
-      !Context.hasSameType(Construction->getArg(1)->getType(), Input->PointerType) ||
+      !Context.hasSameType(Construction->getArg(0)->getType(), Input->IteratorType) ||
+      !Context.hasSameType(Construction->getArg(1)->getType(), Input->IteratorType) ||
       !Context.hasSameUnqualifiedType(Construction->getArg(2)->getType(), Ctor->getParamDecl(2)->getType().getNonReferenceType()))
     return std::nullopt;
   const auto *Record = Ctor->getParent();
@@ -137836,8 +138031,8 @@ std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
   const auto *Range = Body && Body->size() == 1 ? dyn_cast_or_null<CXXMemberCallExpr>(
       orderedExpression(dyn_cast<Expr>(Body->body_front()))) : nullptr;
   if (!orderedReceiver(Range) || Range->getNumArgs() != 2 ||
-      !orderedParameter(Range->getArg(0), Ctor->getParamDecl(0)) ||
-      !orderedParameter(Range->getArg(1), Ctor->getParamDecl(1)) ||
+      !orderedRangeForwardedParameter(S, SM, Range->getArg(0), Ctor->getParamDecl(0), Context) ||
+      !orderedRangeForwardedParameter(S, SM, Range->getArg(1), Ctor->getParamDecl(1), Context) ||
       !orderedSetRangeMethod(S, SM, Range->getMethodDecl(), Record, Header, Context))
     return std::nullopt;
   const auto *Destructor = Record->getDestructor();
@@ -137848,21 +138043,39 @@ std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
   return Input;
 }
 
-bool approvedOrderedContainerDefaultConstruction(const State &S,
+bool approvedOrderedContainerEmptyConstruction(const State &S,
     const SourceManager &SM, const CXXConstructExpr *Construction,
     const ASTContext &Context, llvm::StringRef *Failure) {
-  if (Failure) *Failure = "An authenticated complete default constructor is required.";
+  if (Failure) *Failure = "An authenticated complete empty constructor is required.";
   const auto *Selected = Construction ? Construction->getConstructor() : nullptr;
   const auto *Ctor = dyn_cast_or_null<CXXConstructorDecl>(
       Selected ? Selected->getDefinition() : nullptr);
   const auto *Owner = Ctor ? Ctor->getParent() : nullptr;
   if (!approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
-      !S.owns(SM, Construction->getExprLoc()) || !Ctor->isDefaultConstructor() ||
+      !S.owns(SM, Construction->getExprLoc()) || Ctor->getPrimaryTemplate() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
-      Ctor->getNumParams() || Construction->getNumArgs() ||
+      Construction->getNumArgs() != Ctor->getNumParams() ||
       !orderedPinnedFunction(S, SM, Ctor, associativeContainerHeader(Owner->getName())) ||
       Ctor->getNumCtorInitializers() != 1)
     return false;
+  const unsigned Count = Ctor->getNumParams();
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs();
+  const auto Comparator = Arguments.get(Arguments.size() - 2).getAsType();
+  const auto Allocator = Arguments.get(Arguments.size() - 1).getAsType();
+  auto PolicyOperand = [&](unsigned Index, QualType Type) {
+    const auto Argument = Construction->getArg(Index)->getType();
+    return !Argument.isVolatileQualified() && !Argument.isRestrictQualified() &&
+           Argument.getAddressSpace() == LangAS::Default &&
+           Context.hasSameUnqualifiedType(Argument, Type) &&
+           Context.hasSameType(Ctor->getParamDecl(Index)->getType(),
+                               Context.getLValueReferenceType(Type.withConst()));
+  };
+  if (Count > 2 || (!Count && !Ctor->isDefaultConstructor()) ||
+      (Count == 1 && !PolicyOperand(0, Comparator) && !PolicyOperand(0, Allocator)) ||
+      (Count == 2 && !(PolicyOperand(0, Comparator) && PolicyOperand(1, Allocator)))) {
+    if (Failure) *Failure = "Only the owner's exact empty comparator and allocator operands are supported.";
+    return false;
+  }
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Ctor->getBody());
   const auto *Init = *Ctor->init_begin();
   if (!Body || !Body->body_empty() || !Init->isMemberInitializer() ||
@@ -137870,8 +138083,9 @@ bool approvedOrderedContainerDefaultConstruction(const State &S,
     if (Failure) *Failure = "Expected a single pinned tree initializer and an empty owner constructor body.";
     return false;
   }
-  return orderedEmptyTreeSource(S, SM,
-      dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit())), Context, Failure);
+  const auto *Tree = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Init->getInit()));
+  return Tree && Context.hasSameType(Tree->getType(), Init->getMember()->getType()) &&
+         orderedEmptyTreeSource(S, SM, Tree, Ctor, Context, Failure);
 }
 
 bool approvedOrderedContainerDestructor(const State &S,
@@ -140110,7 +140324,7 @@ std::optional<UtilityOperation> approvedUtilityUnorderedTableAssignment(
   return Move ? UtilityOperation::UnorderedTableMoveAssign : UtilityOperation::UnorderedTableCopyAssign;
 }
 
-std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuery(
+std::optional<UtilityAllocatorRecord> approvedUtilityAssociativeAllocatorQuery(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -140126,6 +140340,22 @@ std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuer
   const auto *Owner = Method->getParent();
   if (!Owner->getIdentifier()) return std::nullopt;
   const auto Header = associativeContainerHeader(Owner->getName());
+  if (Header == "map" || Header == "set") {
+    const auto Receiver = associativeMemberReceiverType(Reference);
+    if (Receiver.isNull() || Method->isStatic() || Method->isVirtual() || Method->isVolatile() ||
+        Method->getPrimaryTemplate() || !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Owner)) ||
+        !Context.hasSameType(Call->getType(), Method->getReturnType()) ||
+        !approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
+        !orderedPinnedFunction(S, SM, Method, Header))
+      return std::nullopt;
+    const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs();
+    if (!Context.hasSameType(Call->getType(), Arguments.get(Arguments.size() - 1).getAsType()))
+      return std::nullopt;
+    const auto Allocator = approvedUtilityAllocatorRecord(
+        S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    const auto Body = Header == "map" ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+    return Allocator && Body(S, SM, Method, Owner, Context) ? Allocator : std::nullopt;
+  }
   if ((Header != "unordered_map" && Header != "unordered_set") ||
       !unorderedMapPublicMethod(S, SM, Method, Header))
     return std::nullopt;
@@ -140227,9 +140457,9 @@ bool approvedUtilityUnorderedTableDefaultArgument(
 }
 
 static const CXXConstructExpr *associativePolicyCopy(
-    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const State &S, const SourceManager &SM, const Expr *Value,
     QualType Type, const ASTContext &Context) {
-  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(orderedReturn(Method)));
+  const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Value));
   const auto Construction = functionalObjectConstruction(S, SM, Copy, Type, Context);
   if (Construction != FunctionalObjectConstruction::CopyOrMove ||
       !Copy->getConstructor()->isCopyConstructor() ||
@@ -140265,6 +140495,36 @@ static const CXXRecordDecl *orderedMapComparatorWrapper(
   return Record;
 }
 
+static bool approvedOrderedComparatorRead(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Owner,
+    const CXXMemberCallExpr *Read, QualType Type, bool Map, const ASTContext &Context) {
+  QualType StoredType = Type;
+  if (Map) {
+    const auto *Wrapper = orderedMapComparatorWrapper(S, SM, Read, Type, Context);
+    if (!Wrapper)
+      return false;
+    StoredType = Context.getRecordType(Wrapper);
+    Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Read->getImplicitObjectArgument()));
+  }
+
+  const auto *Storage = orderedTreeField(Owner, "__tree_");
+  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
+  const auto *Selected = Tree ? orderedTreeMethod(S, SM, Read, Tree, "value_comp") : nullptr;
+  const auto *Receiver = Selected
+      ? dyn_cast_or_null<MemberExpr>(orderedExpression(Read->getImplicitObjectArgument())) : nullptr;
+  const auto *Comparator = Tree ? orderedTreeField(Tree, "__value_comp_") : nullptr;
+  const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Selected)));
+  if (!Receiver || Receiver->getMemberDecl() != Storage ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) ||
+      !Selected->isConst() ||
+      !Context.hasSameType(Selected->getReturnType(), Context.getLValueReferenceType(StoredType.withConst())) ||
+      !Comparator || !Context.hasSameType(Comparator->getType(), StoredType) ||
+      !Value || Value->getMemberDecl() != Comparator ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())))
+    return false;
+  return true;
+}
+
 static std::optional<FunctionalObjectRecord> approvedOrderedComparatorCopy(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
@@ -140295,33 +140555,141 @@ static std::optional<FunctionalObjectRecord> approvedOrderedComparatorCopy(
   if (!Policy || !Context.hasSameType(Type, Expected) ||
       !Context.hasSameType(Type, Method->getReturnType()))
     return std::nullopt;
-  const auto *Copy = associativePolicyCopy(S, SM, Method, Type, Context);
+  const auto *Copy = associativePolicyCopy(S, SM, orderedReturn(Method), Type, Context);
   const auto *Read = Copy ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Copy->getArg(0))) : nullptr;
-  QualType StoredType = Type;
-  if (Map) {
-    const auto *Wrapper = orderedMapComparatorWrapper(S, SM, Read, Type, Context);
-    if (!Wrapper)
-      return std::nullopt;
-    StoredType = Context.getRecordType(Wrapper);
-    Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Read->getImplicitObjectArgument()));
-  }
+  return approvedOrderedComparatorRead(S, SM, Owner, Read, Type, Map, Context)
+      ? Policy : std::nullopt;
+}
 
-  const auto *Storage = orderedTreeField(Owner, "__tree_");
-  const auto *Tree = Storage ? Storage->getType()->getAsCXXRecordDecl() : nullptr;
-  const auto *Selected = Tree ? orderedTreeMethod(S, SM, Read, Tree, "value_comp") : nullptr;
-  const auto *Receiver = Selected
-      ? dyn_cast_or_null<MemberExpr>(orderedExpression(Read->getImplicitObjectArgument())) : nullptr;
-  const auto *Comparator = Tree ? orderedTreeField(Tree, "__value_comp_") : nullptr;
-  const auto *Value = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(Selected)));
-  if (!Receiver || Receiver->getMemberDecl() != Storage ||
-      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Receiver->getBase())) ||
-      !Selected->isConst() ||
-      !Context.hasSameType(Selected->getReturnType(), Context.getLValueReferenceType(StoredType.withConst())) ||
-      !Comparator || !Context.hasSameType(Comparator->getType(), StoredType) ||
-      !Value || Value->getMemberDecl() != Comparator ||
-      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Value->getBase())))
+std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorRecord(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record, const ASTContext &Context) {
+  if (!S.coreV2() || !Record || !Record->getIdentifier() || Record->getName() != "value_compare")
     return std::nullopt;
-  return Policy;
+  Record = Record->getDefinition();
+  const auto *Owner = Record ? dyn_cast<CXXRecordDecl>(Record->getDeclContext()) : nullptr;
+  if (!Owner || !Owner->getIdentifier() || associativeContainerHeader(Owner->getName()) != "map" ||
+      !approvedOrderedContainerRuntimeRecord(S, SM, Owner, Context) ||
+      !Record->isStandardLayout() || !Record->isTriviallyCopyable() || !Record->hasTrivialDestructor() ||
+      Record->getNumBases() != 1 || Record->bases_begin()->isVirtual() || Record->getNumVBases())
+    return std::nullopt;
+  for (const auto *Decl : Record->redecls())
+    if (!approvedStandardSDKDeclaration(S, SM, Decl) ||
+        !cstddefOrigin(S, SM, Decl->getLocation(), "libcxx", "map"))
+      return std::nullopt;
+  const auto *Field = orderedTreeField(Record, "comp");
+  const auto Base = Record->bases_begin()->getType();
+  const auto *BaseRecord = Base->getAsCXXRecordDecl();
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  const auto &Arguments = cast<ClassTemplateSpecializationDecl>(Owner)->getTemplateArgs();
+  if (!Field || Field->isMutable() || Field->isBitField() || Field->getAccess() != AS_protected ||
+      !associativeStorageDeclaration(S, SM, Field, true) ||
+      !Context.hasSameType(Field->getType(), Arguments.get(2).getAsType()) ||
+      !approvedFunctionalObjectRecord(S, SM, Field->getType()->getAsCXXRecordDecl(), Context) ||
+      !BaseRecord || !BaseRecord->getIdentifier() || !BaseRecord->getName().starts_with("__binary_function") ||
+      !orderedTrivialPolicy(S, SM, Base) || Layout.getFieldCount() != 1 ||
+      Layout.getFieldOffset(Field->getFieldIndex()) || !Layout.getBaseClassOffset(BaseRecord).isZero() ||
+      Layout.getSize().getQuantity() != 1 || Layout.getAlignment().getQuantity() != 1)
+    return std::nullopt;
+  const auto *Allocator = cast<ClassTemplateSpecializationDecl>(Arguments.get(3).getAsType()->getAsCXXRecordDecl());
+  const auto Pair = approvedUtilityPairRecord(S, SM,
+      Allocator->getTemplateArgs().get(0).getAsType()->getAsCXXRecordDecl(), Context);
+  if (!Pair || !Context.hasSameType(Pair->First->getType(), Context.IntTy.withConst()) ||
+      !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
+    return std::nullopt;
+  return UtilityOrderedValueComparator{Record, Owner, Field, *Pair};
+}
+
+const MemberExpr *approvedOrderedValueComparatorFactory(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "value_comp" ||
+      !Method->isConst() || Method->isStatic() || Method->isVirtual() || Method->isVolatile() ||
+      Method->getNumParams() || Call->getNumArgs() || !Call->isPRValue() ||
+      !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return nullptr;
+  const auto Info = approvedOrderedValueComparatorRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Member);
+  if (!Info || Receiver.isNull() || !S.owns(SM, Member->getMemberLoc()) ||
+      Method->getParent()->getCanonicalDecl() != Info->Owner->getCanonicalDecl() ||
+      !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Info->Owner)) ||
+      !orderedPinnedFunction(S, SM, Method, "map"))
+    return nullptr;
+  const auto *Aggregate = orderedExpression(orderedReturn(Method));
+  if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Aggregate)) {
+    if (Cast->getCastKind() != CK_ConstructorConversion) return nullptr;
+    Aggregate = orderedExpression(Cast->getSubExpr());
+  }
+  const auto *Build = dyn_cast_or_null<CXXConstructExpr>(Aggregate);
+  const auto *Ctor = Build ? Build->getConstructor() : nullptr;
+  const auto Type = Info->Comparator->getType();
+  const auto *Body = Ctor ? dyn_cast_or_null<CompoundStmt>(Ctor->getBody()) : nullptr;
+  if (!Body || !Body->body_empty() || Ctor->getNumParams() != 1 || Build->getNumArgs() != 1 ||
+      Ctor->getParent()->getCanonicalDecl() != Info->Record->getCanonicalDecl() ||
+      Ctor->getAccess() != AS_protected || !orderedPinnedFunction(S, SM, Ctor, "map") ||
+      !Context.hasSameType(Ctor->getParamDecl(0)->getType(), Type))
+    return nullptr;
+  bool Checked = false;
+  for (const auto *Init : Ctor->inits()) {
+    if (Init->isMemberInitializer()) {
+      if (Init->getMember() != Info->Comparator ||
+          !orderedPolicyInit(S, SM, Init->getInit(), Ctor))
+        return nullptr;
+      Checked = true;
+    } else if (!Init->isBaseInitializer() || !orderedPolicyInit(S, SM, Init->getInit(), nullptr)) {
+      return nullptr;
+    }
+  }
+  const auto *Copy = associativePolicyCopy(S, SM, Build->getArg(0), Type, Context);
+  const auto *Read = Copy ? dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(Copy->getArg(0))) : nullptr;
+  return Checked && approvedOrderedComparatorRead(S, SM, Info->Owner, Read, Type, true, Context)
+      ? Member : nullptr;
+}
+
+std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
+  const auto *Method = Operator ? dyn_cast_or_null<CXXMethodDecl>(Operator->getDirectCallee()) : nullptr;
+  if (!Method || Operator->getOperator() != OO_Call || Method->getNumParams() != 2 ||
+      Operator->getNumArgs() != 3 || !Method->isConst() || Method->isStatic() ||
+      Method->isVirtual() || Method->isVolatile() || !Call->isPRValue() ||
+      !Context.hasSameType(Method->getReturnType(), Context.BoolTy) ||
+      !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      !S.owns(SM, Operator->getOperatorLoc()) || !orderedPinnedFunction(S, SM, Method, "map"))
+    return std::nullopt;
+  const auto Info = approvedOrderedValueComparatorRecord(S, SM, Method->getParent(), Context);
+  const auto Receiver = Call->getArg(0)->getType();
+  if (!Info || Receiver.isVolatileQualified() || Receiver.isRestrictQualified() ||
+      Receiver.getAddressSpace() != LangAS::Default ||
+      !Context.hasSameUnqualifiedType(Receiver, Context.getRecordType(Info->Record)))
+    return std::nullopt;
+  const auto PairType = Context.getRecordType(Info->Pair.Record);
+  const auto Parameter = Context.getLValueReferenceType(PairType.withConst());
+  const auto *Invoke = dyn_cast_or_null<CXXOperatorCallExpr>(orderedExpression(orderedReturn(Method)));
+  const auto *Compare = Invoke ? dyn_cast_or_null<CXXMethodDecl>(Invoke->getDirectCallee()) : nullptr;
+  if (!Compare || Invoke->getOperator() != OO_Call || Compare->getNumParams() != 2 ||
+      Invoke->getNumArgs() != 3 ||
+      !Context.hasSameType(Context.getRecordType(Compare->getParent()), Info->Comparator->getType()) ||
+      !orderedPinnedFunction(S, SM, Compare, "__functional/operations.h"))
+    return std::nullopt;
+  const auto *Field = dyn_cast_or_null<MemberExpr>(orderedExpression(Invoke->getArg(0)));
+  const auto *Less = dyn_cast_or_null<BinaryOperator>(orderedExpression(orderedReturn(Compare)));
+  if (!Field || Field->getMemberDecl() != Info->Comparator ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())) ||
+      !Less || Less->getOpcode() != BO_LT ||
+      !orderedParameter(Less->getLHS(), Compare->getParamDecl(0)) ||
+      !orderedParameter(Less->getRHS(), Compare->getParamDecl(1)))
+    return std::nullopt;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Key = dyn_cast_or_null<MemberExpr>(orderedExpression(Invoke->getArg(I + 1)));
+    const auto *Argument = Method->getParamDecl(I);
+    if (!Key || Key->getMemberDecl() != Info->Pair.First ||
+        !orderedParameter(Key->getBase(), Argument) || !Context.hasSameType(Argument->getType(), Parameter) ||
+        !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(), PairType))
+      return std::nullopt;
+  }
+  return Info->Pair;
 }
 
 static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
@@ -140359,7 +140727,7 @@ static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
       !Context.hasSameType(Type, Method->getReturnType()))
     return std::nullopt;
 
-  const auto *Copy = associativePolicyCopy(S, SM, Method, Type, Context);
+  const auto *Copy = associativePolicyCopy(S, SM, orderedReturn(Method), Type, Context);
   if (!Copy)
     return std::nullopt;
 
@@ -140419,7 +140787,7 @@ std::optional<FunctionalObjectRecord> approvedUtilityAssociativePolicyQuery(
 
 
 
-std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
+std::optional<UtilityAssociativeNodeRecord> associativeNodeRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context, const std::function<bool(QualType)> &Complete) {
   auto SDK = [&](const Decl *D, llvm::StringRef Header = {}) {
@@ -140469,10 +140837,28 @@ std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
       Specifics->getTemplateArgs().size()!=2 ||
       !Context.hasSameType(Specifics->getTemplateArgs()[0].getAsType(),Node) ||
       !Context.hasSameType(Specifics->getTemplateArgs()[1].getAsType(),Context.getRecordType(R))) return std::nullopt;
-  auto FindOwner = [&](llvm::StringRef Name) -> std::optional<UtilityUnorderedTableRecord> {
+  const auto *NodeRecord = Node->getAsCXXRecordDecl();
+  const bool Ordered = NodeRecord && NodeRecord->getIdentifier() && NodeRecord->getName() == "__tree_node";
+  using OwnerStorage = UtilityAssociativeNodeRecord::OwnerStorage;
+  auto MatchOwner = [&](const CXXRecordDecl *Candidate) -> std::optional<OwnerStorage> {
+    if (Ordered) {
+      const auto Info = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Candidate, Context)
+                               : approvedUtilityOrderedSetStorage(S, SM, Candidate, Context, Complete);
+      if (Info && Context.hasSameType(Info->NodeType, Node))
+        return OwnerStorage(*Info);
+    } else {
+      const auto Info = Mapped ? approvedUtilityUnorderedMapRecord(S, SM, Candidate, Context, Complete)
+                               : approvedUtilityUnorderedSetStorage(S, SM, Candidate, Context);
+      if (Info && Context.hasSameType(Info->NodeType, Node))
+        return OwnerStorage(*Info);
+    }
+    return std::nullopt;
+  };
+  auto FindOwner = [&](llvm::StringRef Name) -> std::optional<OwnerStorage> {
     const DeclarationName Lookup(&Context.Idents.get(Name));
-    const unsigned AllocatorIndex = Mapped ? 4 : 3;
-    std::optional<UtilityUnorderedTableRecord> Table;
+    const unsigned AllocatorIndex = Ordered ? (Mapped ? 3 : 2) : (Mapped ? 4 : 3);
+    const CXXRecordDecl *Owner = nullptr;
+    std::optional<OwnerStorage> Storage;
     for (const auto *D : R->getDeclContext()->lookup(Lookup)) {
       const auto *T = dyn_cast<ClassTemplateDecl>(D);
       if (!T) continue;
@@ -140480,18 +140866,21 @@ std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
         const auto &Params = Candidate->getTemplateArgs();
         if (Params.size() != AllocatorIndex + 1 || Params.get(AllocatorIndex).getKind() != TemplateArgument::Type ||
             !Context.hasSameType(Params.get(AllocatorIndex).getAsType(), Allocator)) continue;
-        const auto Info = Mapped ? approvedUtilityUnorderedMapRecord(S, SM, Candidate, Context, Complete)
-                                 : approvedUtilityUnorderedSetStorage(S, SM, Candidate, Context);
-        if (!Info || !Context.hasSameType(Info->NodeType, Node)) continue;
-        if (Table && Table->Record->getCanonicalDecl() != Info->Record->getCanonicalDecl()) return std::nullopt;
-        Table = Info;
+        const auto Match = MatchOwner(Candidate);
+        if (!Match) continue;
+        if (Owner && Owner != Candidate->getCanonicalDecl()) return std::nullopt;
+        Owner = Candidate->getCanonicalDecl();
+        Storage = Match;
       }
     }
-    return Table;
+    return Storage;
   };
-  auto Table = FindOwner(Mapped ? "unordered_map" : "unordered_set");
-  if (!Table) Table = FindOwner(Mapped ? "unordered_multimap" : "unordered_multiset");
-  if (!Table) return std::nullopt;
+  auto Owner = FindOwner(Ordered ? (Mapped ? "map" : "set")
+                                 : (Mapped ? "unordered_map" : "unordered_set"));
+  if (!Owner)
+    Owner = FindOwner(Ordered ? (Mapped ? "multimap" : "multiset")
+                              : (Mapped ? "unordered_multimap" : "unordered_multiset"));
+  if (!Owner) return std::nullopt;
   const FieldDecl *Pointer=nullptr,*Optional=nullptr;unsigned Fields=0;
   for(const auto *F:R->fields()) {
     if (!SDK(F,"__node_handle") || F->isBitField() || F->isMutable() || F->hasAttrs() || F->getAccess()!=AS_private) return std::nullopt;
@@ -140528,7 +140917,12 @@ std::optional<UtilityUnorderedNodeRecord> unorderedNodeRecord(
     return true;
   };
   if (!Storage(Storage,OptionalRecord,P/B,0) || Value!=int64_t(P/B) || Engaged!=int64_t(P/B+1))return std::nullopt;
-  return UtilityUnorderedNodeRecord{R,Specifics,*Table,Allocator,Pointer,Optional,uint64_t(Value),uint64_t(Engaged)};
+  const auto *Table = std::get_if<UtilityUnorderedTableRecord>(&*Owner);
+  const auto PointerType = Table ? Table->NodePointerType : Context.VoidPtrTy;
+  const auto KeyType = Table ? Table->KeyType : Context.IntTy;
+  const auto Bytes = std::visit([](const auto &Storage) { return Storage.NodeBytes; }, *Owner);
+  return UtilityAssociativeNodeRecord{R, Specifics, *Owner, Node, PointerType, KeyType, Allocator,
+      Bytes, Mapped, Pointer, Optional, uint64_t(Value), uint64_t(Engaged)};
 }
 
 
@@ -140539,7 +140933,17 @@ static bool approvedUnorderedNodeMethodSource(const State &S, const SourceManage
                               : approvedHashSetBucketSource(S, SM, Function, Table.Record, Context);
 }
 
-std::optional<UnorderedNodeCall> unorderedNodeCall(
+static bool approvedAssociativeNodeMethodSource(const State &S, const SourceManager &SM,
+    const FunctionDecl *Function, const UtilityAssociativeNodeRecord &Info, const ASTContext &Context) {
+  if (const auto *Tree = std::get_if<UtilityOrderedSetStorage>(&Info.Owner)) {
+    const auto SelectedBody = Info.HasMappedValue ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+    return SelectedBody(S, SM, Function, Tree->Record, Context);
+  }
+  return approvedUnorderedNodeMethodSource(
+      S, SM, Function, std::get<UtilityUnorderedTableRecord>(Info.Owner), Context);
+}
+
+std::optional<AssociativeNodeCall> associativeNodeCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -140549,7 +140953,7 @@ std::optional<UnorderedNodeCall> unorderedNodeCall(
       !Function->isVariadic() && Function->hasBody() &&
       S.owns(SM, Call->getExprLoc()) &&
       Function->getTemplateSpecializationKind() != TSK_ExplicitSpecialization) {
-    const auto Info = unorderedNodeRecord(S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Info = associativeNodeRecord(S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
     if (Info) {
       const auto Reference = Context.getLValueReferenceType(Context.getRecordType(Info->Record));
       bool Pinned = Context.hasSameType(Function->getParamDecl(0)->getType(), Reference) &&
@@ -140560,8 +140964,8 @@ std::optional<UnorderedNodeCall> unorderedNodeCall(
         Pinned &= File && File->Root == "libcxx" && File->Path == "__node_handle" &&
             !S.owns(SM, D->getLocation()) && approvedStandardSDKDeclaration(S, SM, D);
       }
-      if (Pinned && approvedUnorderedNodeMethodSource(S, SM, Function, Info->Map, Context))
-        return UnorderedNodeCall{*Info, UnorderedNodeOperation::Swap, Call->getArg(0), 1};
+      if (Pinned && approvedAssociativeNodeMethodSource(S, SM, Function, *Info, Context))
+        return AssociativeNodeCall{*Info, AssociativeNodeOperation::Swap, Call->getArg(0), 1};
     }
   }
   const auto *Member=dyn_cast_or_null<CXXMemberCallExpr>(Call);
@@ -140586,7 +140990,7 @@ std::optional<UnorderedNodeCall> unorderedNodeCall(
   }
   auto ObjectType=Root->getType();if(ObjectType->isPointerType())ObjectType=ObjectType->getPointeeType();
   if (ObjectType.isVolatileQualified()||ObjectType.isRestrictQualified()||ObjectType.getAddressSpace()!=LangAS::Default)return std::nullopt;
-  const auto Info=unorderedNodeRecord(S,SM,ObjectType->getAsCXXRecordDecl(),Context);
+  const auto Info=associativeNodeRecord(S,SM,ObjectType->getAsCXXRecordDecl(),Context);
   if (!Info)return std::nullopt;
   const auto *Parent=Method->getParent()->getCanonicalDecl();
   if (Parent!=Info->Record->getCanonicalDecl() && Parent!=Info->Specifics->getCanonicalDecl())return std::nullopt;
@@ -140594,35 +140998,35 @@ std::optional<UnorderedNodeCall> unorderedNodeCall(
     const auto File=S.sdkFile(SM,D->getLocation());
     if (!File||File->Root!="libcxx"||File->Path!="__node_handle"||S.owns(SM,D->getLocation())||!approvedStandardSDKDeclaration(S,SM,D))return std::nullopt;
   }
-  if (!approvedUnorderedNodeMethodSource(S, SM, Method, Info->Map, Context))return std::nullopt;
+  if (!approvedAssociativeNodeMethodSource(S, SM, Method, *Info, Context))return std::nullopt;
   const auto Type=Context.getRecordType(Info->Record),Result=Method->getReturnType();
   if (!Context.hasSameType(Call->getType(),Result.getNonReferenceType()))return std::nullopt;
   const auto Name=Method->getIdentifier()?Method->getName():llvm::StringRef();
-  auto Return=[&](UnorderedNodeOperation Op){return std::optional<UnorderedNodeCall>(UnorderedNodeCall{*Info,Op,Root,Offset});};
+  auto Return=[&](AssociativeNodeOperation Op){return std::optional<AssociativeNodeCall>(AssociativeNodeCall{*Info,Op,Root,Offset});};
   if (Method->isConst()&&!Method->getNumParams()) {
-    if (Name=="empty"&&Context.hasSameType(Result,Context.BoolTy)&&Call->isPRValue())return Return(UnorderedNodeOperation::Empty);
+    if (Name=="empty"&&Context.hasSameType(Result,Context.BoolTy)&&Call->isPRValue())return Return(AssociativeNodeOperation::Empty);
     if (const auto *Conversion=dyn_cast<CXXConversionDecl>(Method);
-        Conversion&&Context.hasSameType(Conversion->getConversionType(),Context.BoolTy)&&Call->isPRValue())return Return(UnorderedNodeOperation::Boolean);
-    const bool ValueAccess = Info->Map.HasMappedValue ? Name == "key" || Name == "mapped" : Name == "value";
-    const auto Value = Name == "mapped" ? Context.IntTy : Info->Map.KeyType;
+        Conversion&&Context.hasSameType(Conversion->getConversionType(),Context.BoolTy)&&Call->isPRValue())return Return(AssociativeNodeOperation::Boolean);
+    const bool ValueAccess = Info->HasMappedValue ? Name == "key" || Name == "mapped" : Name == "value";
+    const auto Value = Name == "mapped" ? Context.IntTy : Info->KeyType;
     if (ValueAccess && Parent == Info->Specifics->getCanonicalDecl() && Call->isLValue() &&
         Context.hasSameType(Result, Context.getLValueReferenceType(Value)))
-      return Return(Name == "mapped" ? UnorderedNodeOperation::Mapped : UnorderedNodeOperation::Key);
+      return Return(Name == "mapped" ? AssociativeNodeOperation::Mapped : AssociativeNodeOperation::Key);
     if (Name=="get_allocator"&&Context.hasSameType(Result,Info->AllocatorType)&&Call->isPRValue()&&
-        approvedUtilityAllocatorRecord(S,SM,Result->getAsCXXRecordDecl(),Context))return Return(UnorderedNodeOperation::Allocator);
+        approvedUtilityAllocatorRecord(S,SM,Result->getAsCXXRecordDecl(),Context))return Return(AssociativeNodeOperation::Allocator);
   }
   if (Method->isConst()||ObjectType.isConstQualified()||Method->getNumParams()!=1||
       !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(),Type))return std::nullopt;
   if (Name=="swap"&&Result->isVoidType()&&
-      Context.hasSameType(Method->getParamDecl(0)->getType(),Context.getLValueReferenceType(Type)))return Return(UnorderedNodeOperation::Swap);
+      Context.hasSameType(Method->getParamDecl(0)->getType(),Context.getLValueReferenceType(Type)))return Return(AssociativeNodeOperation::Swap);
   if (Method->isMoveAssignmentOperator()&&Context.hasSameType(Result,Context.getLValueReferenceType(Type))&&Call->isLValue()&&
-      Context.hasSameType(Method->getParamDecl(0)->getType(),Context.getRValueReferenceType(Type)))return Return(UnorderedNodeOperation::MoveAssign);
+      Context.hasSameType(Method->getParamDecl(0)->getType(),Context.getRValueReferenceType(Type)))return Return(AssociativeNodeOperation::MoveAssign);
   return std::nullopt;
 }
 
 
-static bool unorderedNodeMethod(const State &S,const SourceManager &SM,
-    const CXXMethodDecl *Method,const UtilityUnorderedNodeRecord &Info,const ASTContext &Context) {
+static bool associativeNodeMethod(const State &S,const SourceManager &SM,
+    const CXXMethodDecl *Method,const UtilityAssociativeNodeRecord &Info,const ASTContext &Context) {
   if (!Method||Method->getParent()->getCanonicalDecl()!=Info.Record->getCanonicalDecl()||
       Method->isInvalidDecl()||Method->isDeleted()||Method->isStatic()||Method->isVirtual()||
       Method->isVolatile()||Method->isVariadic()||Method->getAccess()!=AS_public||
@@ -140631,30 +141035,30 @@ static bool unorderedNodeMethod(const State &S,const SourceManager &SM,
     const auto File=S.sdkFile(SM,D->getLocation());
     if (!File||File->Root!="libcxx"||File->Path!="__node_handle"||S.owns(SM,D->getLocation())||!approvedStandardSDKDeclaration(S,SM,D))return false;
   }
-  return approvedUnorderedNodeMethodSource(S, SM, Method, Info.Map, Context);
+  return approvedAssociativeNodeMethodSource(S, SM, Method, Info, Context);
 }
-std::optional<UnorderedNodeConstruction> unorderedNodeConstruction(
+std::optional<AssociativeNodeConstruction> associativeNodeConstruction(
     const State &S,const SourceManager &SM,const CXXConstructExpr *C,const ASTContext &Context) {
   if (!C||C->isTypeDependent()||C->isValueDependent()||C->isInstantiationDependent()||
       C->getConstructionKind()!=CXXConstructionKind::Complete)return std::nullopt;
-  const auto Info=unorderedNodeRecord(S,SM,Context.getBaseElementType(C->getType())->getAsCXXRecordDecl(),Context);
+  const auto Info=associativeNodeRecord(S,SM,Context.getBaseElementType(C->getType())->getAsCXXRecordDecl(),Context);
   const auto *Method=C->getConstructor();
-  if (!Info||!unorderedNodeMethod(S,SM,Method,*Info,Context)||C->getNumArgs()!=Method->getNumParams())return std::nullopt;
-  if (!C->getNumArgs()&&Method->isDefaultConstructor())return UnorderedNodeConstruction::Default;
+  if (!Info||!associativeNodeMethod(S,SM,Method,*Info,Context)||C->getNumArgs()!=Method->getNumParams())return std::nullopt;
+  if (!C->getNumArgs()&&Method->isDefaultConstructor())return AssociativeNodeConstruction::Default;
   if (C->getNumArgs()==1&&Method->isMoveConstructor()&&
       Context.hasSameType(Method->getParamDecl(0)->getType(),Context.getRValueReferenceType(Context.getRecordType(Info->Record)))&&
-      Context.hasSameUnqualifiedType(C->getArg(0)->getType(),Context.getRecordType(Info->Record)))return UnorderedNodeConstruction::Move;
+      Context.hasSameUnqualifiedType(C->getArg(0)->getType(),Context.getRecordType(Info->Record)))return AssociativeNodeConstruction::Move;
   return std::nullopt;
 }
-bool unorderedNodeDestructor(const State &S,const SourceManager &SM,
+bool associativeNodeDestructor(const State &S,const SourceManager &SM,
     const CXXDestructorDecl *D,const ASTContext &Context) {
-  const auto Info=D?unorderedNodeRecord(S,SM,D->getParent(),Context):std::nullopt;
+  const auto Info=D?associativeNodeRecord(S,SM,D->getParent(),Context):std::nullopt;
   const auto *P=D?D->getType()->getAs<FunctionProtoType>():nullptr;
-  return Info&&P&&P->isNothrow()&&!D->getNumParams()&&unorderedNodeMethod(S,SM,D,*Info,Context);
+  return Info&&P&&P->isNothrow()&&!D->getNumParams()&&associativeNodeMethod(S,SM,D,*Info,Context);
 }
 
 
-std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
+std::optional<AssociativeNodeInsertResult> associativeNodeInsertResult(
     const State &S,const SourceManager &SM,const CXXRecordDecl *Input,const ASTContext &Context,
     const std::function<bool(QualType)> &Complete) {
   auto SDK=[&](const Decl*D){const auto F=D?S.sdkFile(SM,D->getLocation()):std::nullopt;return F&&F->Root=="libcxx"&&F->Path=="__node_handle"&&!S.owns(SM,D->getLocation())&&approvedStandardSDKDeclaration(S,SM,D);};
@@ -140669,14 +141073,23 @@ std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
   for(const auto*D:R->redecls())if(!SDK(D))return std::nullopt;
   for(const auto*D:T->redecls()){if(!SDK(D))return std::nullopt;for(const auto*P:D->getTemplatedDecl()->redecls())if(!SDK(P))return std::nullopt;}
   const auto&A=R->getTemplateArgs();if(A[0].getKind()!=TemplateArgument::Type||A[1].getKind()!=TemplateArgument::Type)return std::nullopt;
-  const auto Iterator = approvedUtilityUnorderedIteratorRecord(S, SM,
-      A[0].getAsType()->getAsCXXRecordDecl(), Context, Complete);
-  const auto Node = unorderedNodeRecord(S, SM, A[1].getAsType()->getAsCXXRecordDecl(), Context, Complete);
-  if (!Iterator || Iterator->Local || !Node || Iterator->Const == Node->Map.HasMappedValue ||
-      Iterator->Owner.HasMappedValue != Node->Map.HasMappedValue ||
-      (Node->Map.HasMappedValue ? Iterator->Owner.Record->getCanonicalDecl() != Node->Map.Record->getCanonicalDecl()
-                                : !Context.hasSameType(Iterator->Owner.NodeType, Node->Map.NodeType)))
-    return std::nullopt;
+  const auto Node = associativeNodeRecord(S, SM, A[1].getAsType()->getAsCXXRecordDecl(), Context, Complete);
+  if (!Node) return std::nullopt;
+  const auto *Cursor = A[0].getAsType()->getAsCXXRecordDecl();
+  std::optional<UtilityUnorderedMapIteratorRecord> Iterator;
+  if (const auto *Tree = std::get_if<UtilityOrderedSetStorage>(&Node->Owner)) {
+    const auto *OrderedIterator = approvedOrderedSetIteratorRecord(S, SM, Cursor, Context, Tree);
+    if (!OrderedIterator || (Node->HasMappedValue && OrderedIterator->getName() != "__map_iterator"))
+      return std::nullopt;
+  } else {
+    const auto &Table = std::get<UtilityUnorderedTableRecord>(Node->Owner);
+    Iterator = approvedUtilityUnorderedIteratorRecord(S, SM, Cursor, Context, Complete);
+    if (!Iterator || Iterator->Local || Iterator->Const == Table.HasMappedValue ||
+        Iterator->Owner.HasMappedValue != Table.HasMappedValue ||
+        (Table.HasMappedValue ? Iterator->Owner.Record->getCanonicalDecl() != Table.Record->getCanonicalDecl()
+                              : !Context.hasSameType(Iterator->Owner.NodeType, Table.NodeType)))
+      return std::nullopt;
+  }
   const auto P=Context.getTypeSize(Context.VoidPtrTy);const auto&L=Context.getASTRecordLayout(R);
   const FieldDecl *Position=nullptr,*Inserted=nullptr,*Handle=nullptr;unsigned Count=0;
   for(const auto*F:R->fields()){
@@ -140686,7 +141099,7 @@ std::optional<UnorderedNodeInsertResult> unorderedNodeInsertResult(
   if(Count!=3||!Position||!Inserted||!Handle||!Context.hasSameType(Position->getType(),A[0].getAsType())||!Context.hasSameType(Inserted->getType(),Context.BoolTy)||!Context.hasSameType(Handle->getType(),A[1].getAsType())||
      L.getFieldOffset(Position->getFieldIndex())||L.getFieldOffset(Inserted->getFieldIndex())!=P||L.getFieldOffset(Handle->getFieldIndex())!=2*P||
      Context.getTypeSize(Context.getRecordType(R))!=4*P||Context.getTypeAlign(Context.getRecordType(R))!=Context.getTypeAlign(Context.VoidPtrTy))return std::nullopt;
-  return UnorderedNodeInsertResult{R,*Iterator,*Node,Position,Inserted,Handle};
+  return AssociativeNodeInsertResult{R, Iterator, *Node, Position, Inserted, Handle};
 }
 
 
@@ -140716,8 +141129,9 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
         Context.hasSameType(Other.NodeType, Map->NodeType);
   };
   if(Name=="extract"&&M->getNumParams()==1){
-    const auto Node=unorderedNodeRecord(S,SM,Call->getType()->getAsCXXRecordDecl(),Context);
-    if (!Node || !Compatible(Node->Map)) return std::nullopt;
+    const auto Node=associativeNodeRecord(S,SM,Call->getType()->getAsCXXRecordDecl(),Context);
+    const auto *Table = Node ? std::get_if<UtilityUnorderedTableRecord>(&Node->Owner) : nullptr;
+    if (!Table || !Compatible(*Table)) return std::nullopt;
     const auto P=M->getParamDecl(0)->getType();
     if (Context.hasSameType(P, Context.getLValueReferenceType(Map->KeyType.withConst())) &&
         Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Map->KeyType))
@@ -140731,17 +141145,21 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
   const unsigned Offset = M->getNumParams() - 1;
   const auto Parameter = M->getParamDecl(Offset)->getType();
   if (!Parameter->isRValueReferenceType()) return std::nullopt;
-  const auto Node = unorderedNodeRecord(S, SM, Parameter->getPointeeType()->getAsCXXRecordDecl(), Context);
-  if (!Node || !Compatible(Node->Map) ||
+  const auto Node = associativeNodeRecord(S, SM, Parameter->getPointeeType()->getAsCXXRecordDecl(), Context);
+  const auto *Table = Node ? std::get_if<UtilityUnorderedTableRecord>(&Node->Owner) : nullptr;
+  if (!Table || !Compatible(*Table) ||
       !Context.hasSameType(Parameter, Context.getRValueReferenceType(Context.getRecordType(Node->Record))) ||
       !Context.hasSameType(Call->getArg(Offset)->getType(), Context.getRecordType(Node->Record)))
     return std::nullopt;
   const auto OwnerName = Owner->getName();
   const bool Multi = OwnerName == "unordered_multiset" || OwnerName == "unordered_multimap";
   if (!Offset && !Multi) {
-    const auto Result = unorderedNodeInsertResult(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
-    if (!Result || !Compatible(Result->Node.Map) || !Compatible(Result->Iterator.Owner)) return std::nullopt;
-    return UnorderedNodeTransfer{*Map, *Node, Result->Iterator, Result, UnorderedNodeTransferKind::Insert, 0};
+    const auto Result = associativeNodeInsertResult(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (!Result || !Result->UnorderedIterator ||
+        !Compatible(std::get<UtilityUnorderedTableRecord>(Result->Node.Owner)) ||
+        !Compatible(Result->UnorderedIterator->Owner))
+      return std::nullopt;
+    return UnorderedNodeTransfer{*Map, *Node, Result->UnorderedIterator, Result, UnorderedNodeTransferKind::Insert, 0};
   }
   const auto Iterator = approvedUtilityUnorderedIteratorRecord(S, SM,
       Call->getType()->getAsCXXRecordDecl(), Context);
@@ -140758,7 +141176,166 @@ std::optional<UnorderedNodeTransfer> unorderedNodeTransfer(
       Offset ? UnorderedNodeTransferKind::HintInsert : UnorderedNodeTransferKind::Insert, Offset};
 }
 
-bool unorderedNodeBaseCast(const State &S, const SourceManager &SM,
+std::optional<OrderedNodeExtraction> orderedNodeExtraction(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "extract" ||
+      Method->isStatic() || Method->isVirtual() || Method->isConst() || Method->isVolatile() ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Call->isPRValue() || !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Member);
+  const auto *Owner = Method->getParent();
+  if (Receiver.isNull() || !Owner->getIdentifier() ||
+      !S.owns(SM, Member->getMemberLoc()) ||
+      !Context.hasSameType(Receiver, Context.getRecordType(Owner)))
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "set" && Header != "map") || !orderedPinnedFunction(S, SM, Method, Header))
+    return std::nullopt;
+  const bool Mapped = Header == "map";
+  const auto Tree = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
+                           : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const auto Handle = associativeNodeRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+  if (!Tree || !Handle || !std::holds_alternative<UtilityOrderedSetStorage>(Handle->Owner) ||
+      !Context.hasSameType(Tree->NodeType, Handle->NodeType))
+    return std::nullopt;
+  const auto *Parameter = Method->getParamDecl(0);
+  const auto Input = Parameter->getType();
+  const bool ByIterator = !Input->isReferenceType();
+  const auto *Iterator = ByIterator ? approvedOrderedSetIteratorRecord(
+      S, SM, Input->getAsCXXRecordDecl(), Context, &*Tree) : nullptr;
+  if (ByIterator ? (!Iterator || (Mapped && Iterator->getName() != "__map_const_iterator") ||
+                    !Context.hasSameType(Call->getArg(0)->getType(), Input))
+                 : (!Context.hasSameType(Input, Context.getLValueReferenceType(Context.IntTy.withConst())) ||
+                    !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.IntTy)))
+    return std::nullopt;
+  const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(orderedReturn(Method)));
+  const auto *Selected = orderedTreeMethod(S, SM, Read, Tree->Tree, "__node_handle_extract", 1);
+  const auto *Types = Selected ? Selected->getTemplateSpecializationArgs() : nullptr;
+  const auto *Storage = Selected ? dyn_cast_or_null<MemberExpr>(
+      orderedExpression(Read->getImplicitObjectArgument())) : nullptr;
+  if (!Storage || Storage->getMemberDecl() != orderedTreeField(Owner, "__tree_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Storage->getBase())) || Selected->isConst() ||
+      !Types || Types->size() != 1 || Types->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Types->get(0).getAsType(), Call->getType()) ||
+      !Context.hasSameType(Selected->getReturnType(), Call->getType()))
+    return std::nullopt;
+  const auto *Argument = orderedExpression(Read->getArg(0));
+  if (const auto *Copy = dyn_cast_or_null<CXXConstructExpr>(Argument)) {
+    const auto Type = Copy->getType();
+    const auto *Ctor = Copy->getConstructor();
+    if (!ByIterator || !Ctor->isImplicit() || !Ctor->isCopyConstructor() || !Ctor->isTrivial() ||
+        Ctor->getNumParams() != 1 || Copy->getNumArgs() != 1 ||
+        !approvedStandardSDKDeclaration(S, SM, Ctor) ||
+        !Context.hasSameType(Ctor->getParamDecl(0)->getType(),
+                             Context.getLValueReferenceType(Type.withConst())) ||
+        !Context.hasSameUnqualifiedType(Copy->getArg(0)->getType(), Type) ||
+        !Context.hasSameType(Selected->getParamDecl(0)->getType(), Type))
+      return std::nullopt;
+    Argument = orderedExpression(Copy->getArg(0));
+  }
+  if (ByIterator && Mapped) {
+    const auto *Field = orderedTreeField(Iterator, "__i_");
+    const auto *Reference = dyn_cast_or_null<MemberExpr>(Argument);
+    if (!Reference || !Field || Reference->getMemberDecl() != Field ||
+        !Context.hasSameType(Selected->getParamDecl(0)->getType(), Field->getType()) ||
+        !orderedParameter(Reference->getBase(), Parameter))
+      return std::nullopt;
+  } else if (!Context.hasSameType(Selected->getParamDecl(0)->getType(), Input) ||
+             !orderedParameter(Argument, Parameter)) {
+    return std::nullopt;
+  }
+  const auto Body = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  if (!Body(S, SM, Method, Owner, Context))
+    return std::nullopt;
+  return OrderedNodeExtraction{*Tree, *Handle, Member, ByIterator};
+}
+
+std::optional<OrderedNodeInsertion> orderedNodeInsertion(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Access = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Access ? Access->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "insert" ||
+      Method->isStatic() || Method->isVirtual() || Method->isConst() || Method->isVolatile() ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Call->isPRValue() || !Context.hasSameType(Call->getType(), Method->getReturnType()))
+    return std::nullopt;
+  const auto Input = Method->getParamDecl(0)->getType();
+  if (!Input->isRValueReferenceType() || !Context.hasSameType(Input->getPointeeType(), Call->getArg(0)->getType()) ||
+      !Call->getArg(0)->isGLValue())
+    return std::nullopt;
+  const auto *Member = dyn_cast<MemberExpr>(Access->getCallee()->IgnoreParenImpCasts());
+  const auto Receiver = associativeMemberReceiverType(Member);
+  const auto *Owner = Method->getParent();
+  if (Receiver.isNull() || !Owner->getIdentifier() || !S.owns(SM, Member->getMemberLoc()) ||
+      !Context.hasSameType(Receiver, Context.getRecordType(Owner)))
+    return std::nullopt;
+  const auto Header = associativeContainerHeader(Owner->getName());
+  if ((Header != "set" && Header != "map") || !orderedPinnedFunction(S, SM, Method, Header))
+    return std::nullopt;
+  const bool Mapped = Header == "map";
+  const auto Tree = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
+                           : approvedUtilityOrderedSetStorage(S, SM, Owner, Context);
+  const auto Node = associativeNodeRecord(S, SM, Input->getPointeeType()->getAsCXXRecordDecl(), Context);
+  if (!Tree || !Node || !std::holds_alternative<UtilityOrderedSetStorage>(Node->Owner) ||
+      !Context.hasSameType(Tree->NodeType, Node->NodeType))
+    return std::nullopt;
+  std::optional<AssociativeNodeInsertResult> Result;
+  const CXXRecordDecl *Iterator = nullptr;
+  if (Tree->Multi) {
+    Iterator = approvedOrderedSetIteratorRecord(S, SM, Call->getType()->getAsCXXRecordDecl(), Context, &*Tree);
+    if (!Iterator || (Mapped && Iterator->getName() != "__map_iterator")) return std::nullopt;
+  } else {
+    Result = associativeNodeInsertResult(S, SM, Call->getType()->getAsCXXRecordDecl(), Context);
+    if (!Result || Result->UnorderedIterator ||
+        Result->Node.Record->getCanonicalDecl() != Node->Record->getCanonicalDecl())
+      return std::nullopt;
+  }
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  const auto *Return = Body && !Body->body_empty() && Body->size() <= 2
+      ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  const auto *Returned = Return ? orderedExpression(Return->getRetValue()) : nullptr;
+  if (const auto *Convert = dyn_cast_or_null<CXXConstructExpr>(Returned)) {
+    const auto *Ctor = Convert->getConstructor();
+    if (!Iterator || Convert->getNumArgs() != 1 ||
+        Ctor->getParent()->getCanonicalDecl() != Iterator->getCanonicalDecl() ||
+        !orderedPinnedFunction(S, SM, Ctor, Mapped ? "map" : "__tree"))
+      return std::nullopt;
+    Returned = orderedExpression(Convert->getArg(0));
+  }
+  const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(Returned);
+  const auto *Selected = orderedTreeMethod(S, SM, Insert, Tree->Tree,
+      Tree->Multi ? "__node_handle_insert_multi" : "__node_handle_insert_unique", 1);
+  const auto *Types = Selected ? Selected->getTemplateSpecializationArgs() : nullptr;
+  const auto *Storage = Selected ? dyn_cast_or_null<MemberExpr>(
+      orderedExpression(Insert->getImplicitObjectArgument())) : nullptr;
+  if (!Storage || Storage->getMemberDecl() != orderedTreeField(Owner, "__tree_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Storage->getBase())) || Selected->isConst() ||
+      !Types || Types->size() != (Tree->Multi ? 1u : 2u) || Types->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Types->get(0).getAsType(), Input->getPointeeType()) ||
+      !Context.hasSameType(Selected->getParamDecl(0)->getType(), Input))
+    return std::nullopt;
+  if (Result && (Types->get(1).getKind() != TemplateArgument::Type ||
+                 !Context.hasSameType(Types->get(1).getAsType(), Call->getType()) ||
+                 !Context.hasSameType(Selected->getReturnType(), Call->getType())))
+    return std::nullopt;
+  const auto *Move = dyn_cast_or_null<CallExpr>(orderedExpression(Insert->getArg(0)));
+  const auto *MoveFunction = Move ? Move->getDirectCallee() : nullptr;
+  if (!MoveFunction || !MoveFunction->getIdentifier() || MoveFunction->getName() != "move" ||
+      Move->getNumArgs() != 1 || !Context.hasSameType(MoveFunction->getReturnType(), Input) ||
+      !orderedPinnedFunction(S, SM, MoveFunction, "__utility/move.h") ||
+      !orderedParameter(Move->getArg(0), Method->getParamDecl(0)))
+    return std::nullopt;
+  const auto SelectedBody = Mapped ? approvedOrderedMapSelectedBody : approvedOrderedSetSelectedBody;
+  if (!SelectedBody(S, SM, Method, Owner, Context))
+    return std::nullopt;
+  return OrderedNodeInsertion{*Tree, *Node, Member, Result};
+}
+
+bool associativeNodeBaseCast(const State &S, const SourceManager &SM,
     const CastExpr *Cast, const ASTContext &Context) {
   if (!isa_and_nonnull<ImplicitCastExpr>(Cast) ||
       (Cast->getCastKind() != CK_DerivedToBase &&
@@ -140767,7 +141344,7 @@ bool unorderedNodeBaseCast(const State &S, const SourceManager &SM,
   auto From = Cast->getSubExpr()->getType(), To = Cast->getType();
   if (From->isPointerType() != To->isPointerType()) return false;
   if (From->isPointerType()) { From = From->getPointeeType(); To = To->getPointeeType(); }
-  const auto Info = unorderedNodeRecord(S, SM, From->getAsCXXRecordDecl(), Context);
+  const auto Info = associativeNodeRecord(S, SM, From->getAsCXXRecordDecl(), Context);
   return Info && !From.isVolatileQualified() && !To.isVolatileQualified() &&
       !From.isRestrictQualified() && !To.isRestrictQualified() &&
       From.getAddressSpace() == LangAS::Default && To.getAddressSpace() == LangAS::Default &&
@@ -140890,8 +141467,8 @@ std::optional<UnorderedTableListAssignment> unorderedTableListAssignment(
   return UnorderedTableListAssignment{*Table, *List, std::nullopt, Object, Offset, bool(Operator)};
 }
 
-static bool unorderedResultMethod(const State &S, const SourceManager &SM,
-    const CXXMethodDecl *Method, const UnorderedNodeInsertResult &Info,
+static bool associativeNodeResultMethod(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const AssociativeNodeInsertResult &Info,
     const ASTContext &Context) {
   if (!Method || !Method->isImplicit() || !Method->isDefaulted() ||
       Method->isInvalidDecl() || Method->isDeleted() || Method->isStatic() ||
@@ -140902,18 +141479,18 @@ static bool unorderedResultMethod(const State &S, const SourceManager &SM,
     if (!File || File->Root != "libcxx" || File->Path != "__node_handle" ||
         S.owns(SM, D->getLocation()) || !approvedStandardSDKDeclaration(S, SM, D)) return false;
   }
-  return approvedUnorderedNodeMethodSource(S, SM, Method, Info.Node.Map, Context);
+  return approvedAssociativeNodeMethodSource(S, SM, Method, Info.Node, Context);
 }
 
-std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
+std::optional<AssociativeNodeInsertResult> associativeNodeResultConstruction(
     const State &S, const SourceManager &SM, const CXXConstructExpr *C,
     const ASTContext &Context) {
   if (!C || C->isTypeDependent() || C->isValueDependent() || C->isInstantiationDependent() ||
       C->getConstructionKind() != CXXConstructionKind::Complete || C->getNumArgs() > 1) return std::nullopt;
-  const auto Info = unorderedNodeInsertResult(
+  const auto Info = associativeNodeInsertResult(
       S, SM, Context.getBaseElementType(C->getType())->getAsCXXRecordDecl(), Context);
   const auto *Method = C->getConstructor();
-  if (!Info || !Method || !unorderedResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
+  if (!Info || !Method || !associativeNodeResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
   if (!C->getNumArgs())
     return Method->isDefaultConstructor() && !Method->getNumParams() ? Info : std::nullopt;
   if (!Method->isMoveConstructor() || Method->getNumParams() != 1) return std::nullopt;
@@ -140922,7 +141499,7 @@ std::optional<UnorderedNodeInsertResult> unorderedResultConstruction(
       Context.hasSameType(C->getArg(0)->getType(), Type) ? Info : std::nullopt;
 }
 
-std::optional<UnorderedResultCall> unorderedResultCall(
+std::optional<AssociativeNodeResultCall> associativeNodeResultCall(
     const State &S, const SourceManager &SM, const CallExpr *Call,
     const ASTContext &Context) {
   const auto *Function = Call ? Call->getDirectCallee() : nullptr;
@@ -140937,7 +141514,7 @@ std::optional<UnorderedResultCall> unorderedResultCall(
         Function->isVariadic() || !Function->hasBody() ||
         Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
         !S.owns(SM, Call->getExprLoc())) return std::nullopt;
-    const auto Info = unorderedNodeInsertResult(S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
+    const auto Info = associativeNodeInsertResult(S, SM, Call->getArg(0)->getType()->getAsCXXRecordDecl(), Context);
     if (!Info) return std::nullopt;
     const auto Type = Context.getRecordType(Info->Record), Reference = Context.getLValueReferenceType(Type);
     const auto *Arguments = Function->getTemplateSpecializationArgs();
@@ -140961,8 +141538,8 @@ std::optional<UnorderedResultCall> unorderedResultCall(
       if (!Pinned(D)) return std::nullopt;
       for (const auto *Pattern : D->getTemplatedDecl()->redecls()) if (!Pinned(Pattern)) return std::nullopt;
     }
-    if (!approvedUnorderedNodeMethodSource(S, SM, Function, Info->Node.Map, Context)) return std::nullopt;
-    return UnorderedResultCall{*Info,Call->getArg(0),1,true,false};
+    if (!approvedAssociativeNodeMethodSource(S, SM, Function, Info->Node, Context)) return std::nullopt;
+    return AssociativeNodeResultCall{*Info,Call->getArg(0),1,true,false};
   }
   const unsigned Offset = Operator ? 1 : 0;
   const auto *Reference = Member ? dyn_cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts()) : nullptr;
@@ -140972,13 +141549,13 @@ std::optional<UnorderedResultCall> unorderedResultCall(
       Call->getNumArgs() != Offset + 1 || !Call->isLValue() ||
       !S.owns(SM, Reference ? Reference->getExprLoc() : Operator ? Operator->getOperatorLoc() : SourceLocation())) return std::nullopt;
   auto Receiver = Object->getType();if (Receiver->isPointerType()) Receiver = Receiver->getPointeeType();
-  const auto Info = unorderedNodeInsertResult(S, SM, Receiver->getAsCXXRecordDecl(), Context);
-  if (!Info || Receiver.hasQualifiers() || !unorderedResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
+  const auto Info = associativeNodeInsertResult(S, SM, Receiver->getAsCXXRecordDecl(), Context);
+  if (!Info || Receiver.hasQualifiers() || !associativeNodeResultMethod(S, SM, Method, *Info, Context)) return std::nullopt;
   const auto Type = Context.getRecordType(Info->Record);
   if (!Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)) ||
       !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getRValueReferenceType(Type)) ||
       !Context.hasSameType(Call->getArg(Offset)->getType(), Type) || !Context.hasSameType(Call->getType(), Type)) return std::nullopt;
-  return UnorderedResultCall{*Info,Object,Offset,false,bool(Operator)};
+  return AssociativeNodeResultCall{*Info,Object,Offset,false,bool(Operator)};
 }
 
 std::optional<UnorderedTableNonmemberCall> unorderedTableNonmemberCall(
@@ -141135,10 +141712,14 @@ std::optional<UnorderedGenericSwapCall> unorderedGenericSwapCall(
   const auto *Record = Type->getAsCXXRecordDecl();
   UnorderedGenericSwapCall Info;
   Info.Map = approvedUtilityUnorderedMapRecord(S, SM, Record, Context);
-  if (!Info.Map) Info.Node = unorderedNodeRecord(S, SM, Record, Context);
+  if (!Info.Map) {
+    const auto Node = associativeNodeRecord(S, SM, Record, Context);
+    if (Node && std::holds_alternative<UtilityUnorderedTableRecord>(Node->Owner))
+      Info.Node = Node;
+  }
   if (!Info.Map && !Info.Node)
     Info.Iterator = approvedUtilityUnorderedMapIteratorRecord(S, SM, Record, Context);
-  const auto *Owner = Info.Map ? Info.Map->Record : Info.Node ? Info.Node->Map.Record :
+  const auto *Owner = Info.Map ? Info.Map->Record : Info.Node ? std::get<UtilityUnorderedTableRecord>(Info.Node->Owner).Record :
       Info.Iterator ? Info.Iterator->Owner.Record : nullptr;
   if (!Owner) return std::nullopt;
   auto Pinned = [&](const Decl *D) {

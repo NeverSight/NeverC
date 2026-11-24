@@ -43,6 +43,21 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.ordered_node_and_value_compare_registered = cls.registered
+        cls.ordered_node_and_value_compare_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_node_and_value_compare_original = cls.adapter.restore_original_gtests(cls.ordered_node_and_value_compare_registered,
+                                                                        cls.ordered_node_and_value_compare_suffix)
+        cls.registered = cls.adapter.restore_ordered_node_and_value_compare_history(cls.ordered_node_and_value_compare_registered)
+        cls.ordered_policies_and_iterator_ranges_registered = cls.registered
+        cls.ordered_policies_and_iterator_ranges_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_policies_and_iterator_ranges_original = cls.adapter.restore_original_gtests(cls.ordered_policies_and_iterator_ranges_registered,
+                                                                        cls.ordered_policies_and_iterator_ranges_suffix)
+        cls.registered = cls.adapter.restore_ordered_policies_and_iterator_ranges_history(cls.ordered_policies_and_iterator_ranges_registered)
+        cls.ordered_merge_comparison_and_map_emplace_registered = cls.registered
+        cls.ordered_merge_comparison_and_map_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_merge_comparison_and_map_emplace_original = cls.adapter.restore_original_gtests(cls.ordered_merge_comparison_and_map_emplace_registered,
+                                                                        cls.ordered_merge_comparison_and_map_emplace_suffix)
+        cls.registered = cls.adapter.restore_ordered_merge_comparison_and_map_emplace_history(cls.ordered_merge_comparison_and_map_emplace_registered)
         cls.ordered_list_assignment_and_emplace_registered = cls.registered
         cls.ordered_list_assignment_and_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.ordered_list_assignment_and_emplace_original = cls.adapter.restore_original_gtests(cls.ordered_list_assignment_and_emplace_registered,
@@ -3383,6 +3398,60 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_ordered_list_assignment_and_emplace_history(self.ordered_list_assignment_and_emplace_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.ordered_list_assignment_and_emplace_registered, self.ordered_list_assignment_and_emplace_suffix + b' ')
+
+
+    def test_ordered_merge_comparison_and_map_emplace_retains_published_bodies(self):
+        self.assertEqual(self.ordered_merge_comparison_and_map_emplace_original + self.ordered_merge_comparison_and_map_emplace_suffix, self.ordered_merge_comparison_and_map_emplace_registered)
+        self.assertEqual(self.adapter.restore_ordered_merge_comparison_and_map_emplace_history(self.ordered_merge_comparison_and_map_emplace_original),
+                         self.ordered_list_assignment_and_emplace_original)
+        output, evidence = self.extractor.extract(self.ordered_merge_comparison_and_map_emplace_original, ['TranslateTest.CoreV2OrderedSetMergeTransfersOriginalAddressesWithoutAllocatingRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMergeMultimapKeepsConflictsInTheSourceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapMergeRvalueMapAppendsEquivalentNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetSelfMergePreservesItsNodesAndSizeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetComparisonConstPrefixAndAllRelationsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapComparisonUsesMappedValuesAfterEqualKeysRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapComparisonRetainsEquivalentNodeOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetComparisonDistinguishesDuplicateCountsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapEmplaceIntDoesNotReplaceAnExistingValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapEmplaceIntKeepsEquivalentInsertionOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMergeCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedComparisonCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8770)
+        self.assertEqual(evidence['selected_count'], 13)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-merge-transfers-original-addresses-without-allocating', output)
+        self.assertIn(b'ordered-map-emplace-converting-mapped-argument-remains-unsupported', output)
+
+    def test_ordered_merge_comparison_and_map_emplace_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_merge_comparison_and_map_emplace_history(self.ordered_merge_comparison_and_map_emplace_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_merge_comparison_and_map_emplace_registered, self.ordered_merge_comparison_and_map_emplace_suffix + b' ')
+
+
+    def test_ordered_policies_and_iterator_ranges_retains_published_bodies(self):
+        self.assertEqual(self.ordered_policies_and_iterator_ranges_original + self.ordered_policies_and_iterator_ranges_suffix, self.ordered_policies_and_iterator_ranges_registered)
+        self.assertEqual(self.adapter.restore_ordered_policies_and_iterator_ranges_history(self.ordered_policies_and_iterator_ranges_original),
+                         self.ordered_merge_comparison_and_map_emplace_original)
+        output, evidence = self.extractor.extract(self.ordered_policies_and_iterator_ranges_original, ['TranslateTest.CoreV2OrderedSetIteratorRangeCopiesASubrangeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetRangeFromSetAndDuplicateIteratorsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMutableAndConstIteratorRangesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapIteratorRangeKeepsEquivalentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetExplicitDefaultPoliciesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetExplicitDefaultPoliciesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapExplicitDefaultPoliciesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapExplicitDefaultPoliciesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetAllocatorObserverEvaluatesReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetAllocatorObserverOnEmptyOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAllocatorObserverRebindsToPublicValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapAllocatorObserverOnConstOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedRangeReverseIteratorGuardRejected', 'TranslateTest.CoreV2OrderedRangeForeignCursorGuardRejected', 'TranslateTest.CoreV2OrderedExplicitStatefulPolicyGuardRejected', 'TranslateTest.CoreV2OrderedAllocatorCopyConstructionGuardRejected', 'TranslateTest.CoreV2OrderedAllocatorObserverCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedAllocatorObserverOtherMappedTypeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8788)
+        self.assertEqual(evidence['selected_count'], 18)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-iterator-range-copies-a-subrange', output)
+        self.assertIn(b'ordered-allocator-observer-custom-policy-guard', output)
+
+    def test_ordered_policies_and_iterator_ranges_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_policies_and_iterator_ranges_history(self.ordered_policies_and_iterator_ranges_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_policies_and_iterator_ranges_registered, self.ordered_policies_and_iterator_ranges_suffix + b' ')
+
+
+    def test_ordered_node_and_value_compare_retains_published_bodies(self):
+        self.assertEqual(self.ordered_node_and_value_compare_original + self.ordered_node_and_value_compare_suffix, self.ordered_node_and_value_compare_registered)
+        self.assertEqual(self.adapter.restore_ordered_node_and_value_compare_history(self.ordered_node_and_value_compare_original),
+                         self.ordered_policies_and_iterator_ranges_original)
+        output, evidence = self.extractor.extract(self.ordered_node_and_value_compare_original, ['TranslateTest.CoreV2OrderedSetExtractKeepsDetachedNodeUntilHandleDestructionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetExtractPositionAndMissingKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapExtractAllowsDetachedKeyAndValueChangesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapExtractKeepsEquivalentNodeOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetNodeInsertionKeepsAddressAndReturnsEndForEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapNodeConflictReturnsOwnerWithMutableKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetNodeInsertionTransfersBetweenOwnerKindsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapNodeInsertAppendsAnEquivalentNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedNodeCaseRetainsReinsertionGuardRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedValueCompareIgnoresTheMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapValueCompareCanBeCalledDirectlyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedValueCompareConstObjectUsesLiveInputsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedExtractionCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedNodeHintedInsertionGuardRejected', 'TranslateTest.CoreV2OrderedMapValueCompareCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedMapValueCompareOtherMappedTypeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8804)
+        self.assertEqual(evidence['selected_count'], 16)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-extract-keeps-detached-node-until-handle-destruction', output)
+        self.assertIn(b'ordered-node-hinted-insertion-guard', output)
+
+    def test_ordered_node_and_value_compare_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_node_and_value_compare_history(self.ordered_node_and_value_compare_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_node_and_value_compare_registered, self.ordered_node_and_value_compare_suffix + b' ')
 
 
 if __name__ == '__main__':

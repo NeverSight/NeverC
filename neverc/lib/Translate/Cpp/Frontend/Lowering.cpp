@@ -2044,8 +2044,8 @@ class FunctionLowering {
     label(Done, L);
     return Result;
   }
-  Expression unorderedHandlePointer(Expression Place,const UtilityUnorderedNodeRecord &Info,SourceLocation L) {
-    return Expression{{"kind","member"},{"type",type(Info.Map.NodePointerType,L)},
+  Expression unorderedHandlePointer(Expression Place,const UtilityAssociativeNodeRecord &Info,SourceLocation L) {
+    return Expression{{"kind","member"},{"type",type(Info.PointerType,L)},
         {"name","nct_unordered_handle_node"},{"args",json::Array{std::move(Place)}},{"loc",A.loc(L)}};
   }
   Expression unorderedHandleAllocator(Expression Place,SourceLocation L) {
@@ -2056,28 +2056,28 @@ class FunctionLowering {
     return Expression{{"kind","member"},{"type","bool"},{"name","nct_unordered_handle_engaged"},
         {"args",json::Array{std::move(Place)}},{"loc",A.loc(L)}};
   }
-  void initializeUnorderedHandle(Expression Place,const UtilityUnorderedNodeRecord &Info,
+  void initializeUnorderedHandle(Expression Place,const UtilityAssociativeNodeRecord &Info,
                                  Expression Pointer,Expression Engaged,SourceLocation L) {
     assign(unorderedHandlePointer(Place,Info,L),std::move(Pointer),L);
     assign(unorderedHandleAllocator(Place,L),A.zero(A.Context.UnsignedCharTy,L),L);
     assign(unorderedHandleEngaged(Place,L),std::move(Engaged),L);
   }
-  void releaseUnorderedHandle(Expression Place,const UtilityUnorderedNodeRecord &Info,SourceLocation L) {
-    initializeUnorderedHandle(Place,Info,A.zero(Info.Map.NodePointerType,L),boolean(false,L),L);
+  void releaseUnorderedHandle(Expression Place,const UtilityAssociativeNodeRecord &Info,SourceLocation L) {
+    initializeUnorderedHandle(Place,Info,A.zero(Info.PointerType,L),boolean(false,L),L);
   }
-  void destroyUnorderedHandleNode(Expression Place,const UtilityUnorderedNodeRecord &Info,SourceLocation L) {
+  void destroyUnorderedHandleNode(Expression Place,const UtilityAssociativeNodeRecord &Info,SourceLocation L) {
     auto Node=snapshot(unorderedHandlePointer(Place,Info,L),L);
     const auto Delete=labelName(),Done=labelName();
     branch(cast(Node,"bool",L),Delete,Done,L);
     label(Delete,L);
     // SDK leaves the handle pointer and allocator observable through delete.
-    unorderedHeapRelease(Node,Info.Map.NodeType,
-        quantity(Info.Map.NodeBytes,type(A.Context.getSizeType(),L),L),L);
-    assign(unorderedHandlePointer(Place,Info,L),A.zero(Info.Map.NodePointerType,L),L);
+    unorderedHeapRelease(Node,Info.NodeType,
+        quantity(Info.NodeBytes,type(A.Context.getSizeType(),L),L),L);
+    assign(unorderedHandlePointer(Place,Info,L),A.zero(Info.PointerType,L),L);
     jump(Done,L);label(Done,L);
   }
   void moveUnorderedHandle(Expression Destination,Expression Source,
-                            const UtilityUnorderedNodeRecord &Info,bool Assignment,SourceLocation L) {
+                            const UtilityAssociativeNodeRecord &Info,bool Assignment,SourceLocation L) {
     if(Assignment)destroyUnorderedHandleNode(Destination,Info,L);
     // Read the source after the old destination node's deletion hook returns.
     auto Node=snapshot(unorderedHandlePointer(Source,Info,L),L);
@@ -2089,7 +2089,7 @@ class FunctionLowering {
     releaseUnorderedHandle(Source,Info,L);
   }
   void swapUnorderedHandles(Expression Left,Expression Right,
-                            const UtilityUnorderedNodeRecord &Info,SourceLocation L) {
+                            const UtilityAssociativeNodeRecord &Info,SourceLocation L) {
     auto Node=snapshot(unorderedHandlePointer(Left,Info,L),L);
     auto Allocator=snapshot(unorderedHandleAllocator(Left,L),L);
     auto Engaged=snapshot(unorderedHandleEngaged(Left,L),L);
@@ -2101,8 +2101,8 @@ class FunctionLowering {
     assign(unorderedHandleEngaged(Right,L),Engaged,L);
   }
 
-  void moveUnorderedResult(Expression Destination, Expression Source,
-      const UnorderedNodeInsertResult &Info, bool Assignment, SourceLocation L) {
+  void moveAssociativeNodeResult(Expression Destination, Expression Source,
+      const AssociativeNodeInsertResult &Info, bool Assignment, SourceLocation L) {
     // Memberwise SDK order: position and bool precede node destruction/move.
     assign(fieldStorage(Destination, Info.Position, L), fieldStorage(Source, Info.Position, L), L);
     assign(fieldStorage(Destination, Info.Inserted, L), fieldStorage(Source, Info.Inserted, L), L);
@@ -2311,7 +2311,7 @@ class FunctionLowering {
     return Info.NotEqual ? binary("==", Equal, A.zero(A.Context.BoolTy, L), "bool", L) : Equal;
   }
 
-  Expression unorderedResultOperation(const CallExpr *Call, const UnorderedResultCall &Info) {
+  Expression associativeNodeResultOperation(const CallExpr *Call, const AssociativeNodeResultCall &Info) {
     auto L = Call->getExprLoc();
     const auto *Function = Call->getDirectCallee();
     if (Info.Swap) {
@@ -2333,7 +2333,7 @@ class FunctionLowering {
         : address(lvalue(Info.Object), Info.Object->getType(), L), L);
     if (!Source) Source = snapshot(argument(Call->getArg(Info.Offset), Function->getParamDecl(0)->getType()), L);
     auto Place = dereference(Receiver, L);
-    moveUnorderedResult(Place, dereference(*Source, L), Info.Result, true, L);
+    moveAssociativeNodeResult(Place, dereference(*Source, L), Info.Result, true, L);
     return Place;
   }
 
@@ -2434,33 +2434,39 @@ class FunctionLowering {
     return {};
   }
 
-  Expression unorderedNodeOperation(const CallExpr *Call, const UnorderedNodeCall &Info,
+  Expression associativeNodeOperation(const CallExpr *Call, const AssociativeNodeCall &Info,
                                      std::optional<Expression> Destination) {
     auto L = Call->getExprLoc();
     const auto Operation = Info.Operation;
     std::optional<Expression> Right;
     // C++17 assignment evaluates the right operand before the left operand.
-    if (Operation == UnorderedNodeOperation::MoveAssign)
+    if (Operation == AssociativeNodeOperation::MoveAssign)
       Right = snapshot(argument(Call->getArg(Info.Offset),
           Call->getDirectCallee()->getParamDecl(0)->getType()), L);
     auto PlacePointer = Info.Object->getType()->isPointerType()
         ? snapshot(expression(Info.Object), L)
         : snapshot(address(lvalue(Info.Object), Info.Object->getType(), L), L);
     auto Place = dereference(PlacePointer, L);
-    if (Operation == UnorderedNodeOperation::Empty || Operation == UnorderedNodeOperation::Boolean) {
+    if (Operation == AssociativeNodeOperation::Empty || Operation == AssociativeNodeOperation::Boolean) {
       auto Present = cast(unorderedHandlePointer(Place, Info.Info, L), "bool", L);
-      return Operation == UnorderedNodeOperation::Boolean ? Present : binary("==", Present, boolean(false, L), "bool", L);
+      return Operation == AssociativeNodeOperation::Boolean ? Present : binary("==", Present, boolean(false, L), "bool", L);
     }
-    if (Operation == UnorderedNodeOperation::Key)
-      return unorderedNodeKey(unorderedHandlePointer(Place, Info.Info, L), Info.Info.Map, L);
-    if (Operation == UnorderedNodeOperation::Mapped)
-      return unorderedNodeValue(unorderedHandlePointer(Place, Info.Info, L), Info.Info.Map, L);
-    if (Operation == UnorderedNodeOperation::Allocator) {
+    if (Operation == AssociativeNodeOperation::Key || Operation == AssociativeNodeOperation::Mapped) {
+      auto Node = unorderedHandlePointer(Place, Info.Info, L);
+      const bool Mapped = Operation == AssociativeNodeOperation::Mapped;
+      if (const auto *Tree = std::get_if<UtilityOrderedSetStorage>(&Info.Info.Owner))
+        return nodeFieldAt(std::move(Node), A.Context.IntTy,
+                           Mapped ? Tree->MappedOffsetBytes : Tree->ValueOffsetBytes, L);
+      const auto &Table = std::get<UtilityUnorderedTableRecord>(Info.Info.Owner);
+      return Mapped ? unorderedNodeValue(std::move(Node), Table, L)
+                    : unorderedNodeKey(std::move(Node), Table, L);
+    }
+    if (Operation == AssociativeNodeOperation::Allocator) {
       auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
       assign(Output, A.zero(Call->getType(), L), L);
       return Output;
     }
-    if (Operation == UnorderedNodeOperation::Swap) {
+    if (Operation == AssociativeNodeOperation::Swap) {
       Right = snapshot(argument(Call->getArg(Info.Offset),
           Call->getDirectCallee()->getParamDecl(0)->getType()), L);
       swapUnorderedHandles(Place, dereference(*Right, L), Info.Info, L);
@@ -27420,10 +27426,9 @@ class FunctionLowering {
     return snapshot(cast(unorderedHeapAllocate(Info.NodeType, quantity(Info.NodeBytes, Size, L), L), "ptr:void", L), L);
   }
 
-  void linkOrderedSetKey(Expression Place, Expression Node, Expression KeyStorage,
-      Expression Parent, Expression Slot, const UtilityOrderedSetStorage &Info, SourceLocation L) {
+  void linkOrderedSetNode(Expression Place, Expression Node, Expression Parent, Expression Slot,
+      SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
-    assign(orderedSetKey(Node, Info, L), std::move(KeyStorage), L);
     assign(orderedNodeChild(Node, false, L), A.zero(A.Context.VoidPtrTy, L), L);
     assign(orderedNodeChild(Node, true, L), A.zero(A.Context.VoidPtrTy, L), L);
     assign(orderedNodeParent(Node, L), std::move(Parent), L);
@@ -27439,6 +27444,12 @@ class FunctionLowering {
     balanceOrderedInsertion(Place, Node, L);
     auto Count = orderedContainerMember(std::move(Place), "nct_ordered_size", L);
     assign(Count, binary("+", Count, one(Size, L), Size, L), L);
+  }
+
+  void linkOrderedSetKey(Expression Place, Expression Node, Expression KeyStorage,
+      Expression Parent, Expression Slot, const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    assign(orderedSetKey(Node, Info, L), std::move(KeyStorage), L);
+    linkOrderedSetNode(std::move(Place), std::move(Node), std::move(Parent), std::move(Slot), L);
   }
 
   struct OrderedSetReuse {
@@ -27567,15 +27578,14 @@ class FunctionLowering {
     label(Done, L);
   }
 
-  Expression eraseOrderedSetNode(Expression Place, Expression Node,
-      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+  Expression unlinkOrderedSetNode(Expression Place, Expression Node, SourceLocation L) {
     auto Next = stepOrderedIterator(Node, true, L);
     auto Begin = orderedContainerMember(Place, "nct_ordered_begin", L);
     const auto ChangeBegin = labelName(), Find = labelName(), CheckRight = labelName(),
                UseSuccessor = labelName(), Unlink = labelName(), UseRight = labelName(),
                Replace = labelName(), Transplant = labelName(), MoveHole = labelName(),
                Repair = labelName(), ChildColor = labelName(), Blacken = labelName(),
-               FixHole = labelName(), Release = labelName();
+               FixHole = labelName(), Done = labelName();
     branch(binary("==", Begin, Node, "bool", L), ChangeBegin, Find, L);
     label(ChangeBegin, L);
     assign(std::move(Begin), Next, L);
@@ -27611,21 +27621,122 @@ class FunctionLowering {
     assign(Parent, std::move(Splice), L);
     jump(Repair, L);
     label(Repair, L);
-    branch(std::move(WasBlack), ChildColor, Release, L);
+    branch(std::move(WasBlack), ChildColor, Done, L);
     label(ChildColor, L);
     branch(cast(Child, "bool", L), Blacken, FixHole, L);
     label(Blacken, L);
     assign(orderedNodeBlack(std::move(Child), L), boolean(true, L), L);
-    jump(Release, L);
+    jump(Done, L);
     label(FixHole, L);
     balanceOrderedErasure(std::move(Parent), std::move(AtLeft), orderedTreeSentinel(Place, L), L);
-    jump(Release, L);
-    label(Release, L);
+    jump(Done, L);
+    label(Done, L);
     const auto Size = type(A.Context.getSizeType(), L);
     auto Count = orderedContainerMember(std::move(Place), "nct_ordered_size", L);
     assign(Count, binary("-", Count, one(Size, L), Size, L), L);
+    return Next;
+  }
+
+  Expression extractOrderedNode(const CallExpr *Call, const OrderedNodeExtraction &Info,
+      std::optional<Expression> Destination) {
+    const auto L = Call->getExprLoc();
+    const auto *Method = Call->getDirectCallee();
+    auto Place = dereference(snapshot(unorderedSetReceiverPointer(Info.Receiver, L), L), L);
+    auto Operand = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
+    auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+    auto Node = Info.ByIterator
+        ? snapshot(orderedIteratorCursor(std::move(Operand), L), L)
+        : snapshot(orderedSetBoundary(Place, std::move(Operand), Info.Tree,
+                                     OrderedSetIteratorOperation::Find, L), L);
+    const auto Done = labelName();
+    if (!Info.ByIterator) {
+      const auto Missing = labelName(), Found = labelName();
+      branch(binary("==", Node, orderedTreeSentinel(Place, L), "bool", L), Missing, Found, L);
+      label(Missing, L);
+      releaseUnorderedHandle(Output, Info.Node, L);
+      jump(Done, L);
+      label(Found, L);
+    }
+    unlinkOrderedSetNode(std::move(Place), Node, L);
+    initializeUnorderedHandle(Output, Info.Node, std::move(Node), boolean(true, L), L);
+    if (!Info.ByIterator) {
+      jump(Done, L);
+      label(Done, L);
+    }
+    return Output;
+  }
+
+  Expression insertOrderedNode(const CallExpr *Call, const OrderedNodeInsertion &Info,
+      std::optional<Expression> Destination) {
+    const auto L = Call->getExprLoc();
+    const auto *Method = Call->getDirectCallee();
+    auto Place = dereference(snapshot(unorderedSetReceiverPointer(Info.Receiver, L), L), L);
+    auto Source = dereference(snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L), L);
+    auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+    auto Position = orderedIteratorCursor(Info.Result ? fieldStorage(Output, Info.Result->Position, L) : Output, L);
+    auto Node = snapshot(unorderedHandlePointer(Source, Info.Node, L), L);
+    if (Info.Result) {
+      assign(fieldStorage(Output, Info.Result->Inserted, L), boolean(false, L), L);
+      releaseUnorderedHandle(fieldStorage(Output, Info.Result->Handle, L), Info.Node, L);
+    }
+    assign(Position, orderedTreeSentinel(Place, L), L);
+    const auto Present = labelName(), Done = labelName();
+    branch(cast(Node, "bool", L), Present, Done, L);
+    label(Present, L);
+    auto Key = snapshot(orderedSetKey(Node, Info.Tree, L), L);
+    auto Search = searchOrderedSet(Place, Key, Info.Tree, L, Info.Tree.Multi);
+    if (Info.Result) {
+      const auto Duplicate = labelName(), Insert = labelName();
+      branch(cast(Search.Node, "bool", L), Duplicate, Insert, L);
+      label(Duplicate, L);
+      assign(Position, Search.Node, L);
+      moveUnorderedHandle(fieldStorage(Output, Info.Result->Handle, L), Source, Info.Node, false, L);
+      jump(Done, L);
+      label(Insert, L);
+    }
+    linkOrderedSetNode(Place, Node, std::move(Search.Parent), std::move(Search.Slot), L);
+    releaseUnorderedHandle(Source, Info.Node, L);
+    assign(Position, std::move(Node), L);
+    if (Info.Result)
+      assign(fieldStorage(Output, Info.Result->Inserted, L), boolean(true, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Output;
+  }
+
+  Expression eraseOrderedSetNode(Expression Place, Expression Node,
+      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    auto Next = unlinkOrderedSetNode(std::move(Place), Node, L);
+    const auto Size = type(A.Context.getSizeType(), L);
     unorderedHeapRelease(std::move(Node), Info.NodeType, quantity(Info.NodeBytes, Size, L), L);
     return Next;
+  }
+
+  void mergeOrderedSetNodes(Expression Receiver, Expression Input,
+      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    const auto Start = labelName(), Check = labelName(), Search = labelName(), Transfer = labelName(),
+               Skip = labelName(), Done = labelName();
+    branch(binary("!=", cast(Receiver, "ptr:void", L), cast(Input, "ptr:void", L), "bool", L), Start, Done, L);
+    label(Start, L);
+    auto Place = dereference(std::move(Receiver), L);
+    auto Source = dereference(std::move(Input), L);
+    auto Current = snapshot(orderedContainerMember(Source, "nct_ordered_begin", L), L);
+    auto End = snapshot(orderedTreeSentinel(Source, L), L);
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, End, "bool", L), Search, Done, L);
+    label(Search, L);
+    const auto Find = searchOrderedSet(Place, orderedSetKey(Current, Info, L), Info, L, Info.Multi);
+    branch(cast(Find.Node, "bool", L), Skip, Transfer, L);
+    label(Skip, L);
+    assign(Current, stepOrderedIterator(Current, true, L), L);
+    jump(Check, L);
+    label(Transfer, L);
+    auto Next = unlinkOrderedSetNode(Source, Current, L);
+    linkOrderedSetNode(Place, Current, Find.Parent, Find.Slot, L);
+    assign(Current, std::move(Next), L);
+    jump(Check, L);
+    label(Done, L);
   }
 
   Expression initializeOrderedMappedValue(OrderedSetInserted Result, Expression Value,
@@ -27655,15 +27766,25 @@ class FunctionLowering {
 
   void insertOrderedSetRange(Expression Place, Expression Current, Expression End,
       const UtilityOrderedSetRangeInput &Info, SourceLocation L) {
-    const auto Pointer = type(Info.PointerType, L);
-    const auto Index = type(A.Context.getPointerDiffType(), L);
+    const bool TreeCursor = !Info.IteratorType->isPointerType();
+    if (TreeCursor) {
+      // A by-value iterator argument is passed as the address of its copy.
+      Current = snapshot(orderedIteratorCursor(dereference(std::move(Current), L), L), L);
+      End = snapshot(orderedIteratorCursor(dereference(std::move(End), L), L), L);
+    }
     const auto Check = labelName(), Read = labelName(), Done = labelName();
     jump(Check, L);
     label(Check, L);
     branch(binary("!=", Current, std::move(End), "bool", L), Read, Done, L);
     label(Read, L);
-    insertOrderedSetElement(Place, dereference(Current, L), Info.Storage, Info.Pair, L);
-    assign(Current, binary("+", Current, one(Index, L), Pointer, L), L);
+    const auto Value = (Info.Pair ? Info.Storage.MappedPairType : A.Context.IntTy).withConst();
+    auto Element = TreeCursor ? nodeFieldAt(Current, Value, Info.Storage.ValueOffsetBytes, L)
+                              : dereference(Current, L);
+    insertOrderedSetElement(Place, std::move(Element), Info.Storage, Info.Pair, L);
+    auto Next = TreeCursor ? stepOrderedIterator(Current, true, L)
+                           : binary("+", Current, one(type(A.Context.getPointerDiffType(), L), L),
+                                    type(Info.IteratorType, L), L);
+    assign(Current, std::move(Next), L);
     jump(Check, L);
     label(Done, L);
   }
@@ -27755,6 +27876,59 @@ class FunctionLowering {
       assign(orderedContainerMember(Place, Field, L), orderedContainerMember(Source, Field, L), L);
     rebindOrderedOwner(std::move(Place), L);
     initializeOrderedContainer(std::move(Source), L);
+  }
+
+  Expression compareOrderedSets(Expression Left, Expression Right, bool Equality,
+      const UtilityOrderedSetStorage &Info, SourceLocation L) {
+    auto Result = snapshot(boolean(false, L), L);
+    const auto Read = labelName(), Check = labelName(), CheckSecond = labelName(), Keys = labelName(),
+               OrderKeys = labelName(), Advance = labelName(), FirstEndReached = labelName(), Done = labelName();
+    if (Equality) {
+      auto LeftSize = orderedContainerMember(Left, "nct_ordered_size", L);
+      auto RightSize = orderedContainerMember(Right, "nct_ordered_size", L);
+      branch(binary("==", std::move(LeftSize), std::move(RightSize), "bool", L), Read, Done, L);
+    } else {
+      jump(Read, L);
+    }
+    label(Read, L);
+    auto First = snapshot(orderedContainerMember(Left, "nct_ordered_begin", L), L);
+    auto Second = snapshot(orderedContainerMember(Right, "nct_ordered_begin", L), L);
+    auto FirstEnd = snapshot(orderedTreeSentinel(std::move(Left), L), L);
+    auto SecondEnd = snapshot(orderedTreeSentinel(std::move(Right), L), L);
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", First, FirstEnd, "bool", L), CheckSecond, FirstEndReached, L);
+    label(CheckSecond, L);
+    branch(binary("!=", Second, SecondEnd, "bool", L), Keys, Done, L);
+    label(Keys, L);
+    auto X = snapshot(orderedSetKey(First, Info, L), L);
+    auto Y = snapshot(orderedSetKey(Second, Info, L), L);
+    const auto Mapped = Info.MappedPairType.isNull() ? Advance : labelName();
+    branch(binary("==", X, Y, "bool", L), Mapped, OrderKeys, L);
+    label(OrderKeys, L);
+    if (!Equality)
+      assign(Result, binary("<", std::move(X), std::move(Y), "bool", L), L);
+    jump(Done, L);
+    if (!Info.MappedPairType.isNull()) {
+      label(Mapped, L);
+      auto AValue = snapshot(nodeFieldAt(First, A.Context.IntTy, Info.MappedOffsetBytes, L), L);
+      auto BValue = snapshot(nodeFieldAt(Second, A.Context.IntTy, Info.MappedOffsetBytes, L), L);
+      const auto OrderValues = labelName();
+      branch(binary("==", AValue, BValue, "bool", L), Advance, OrderValues, L);
+      label(OrderValues, L);
+      if (!Equality)
+        assign(Result, binary("<", std::move(AValue), std::move(BValue), "bool", L), L);
+      jump(Done, L);
+    }
+    label(Advance, L);
+    assign(First, stepOrderedIterator(First, true, L), L);
+    assign(Second, stepOrderedIterator(Second, true, L), L);
+    jump(Check, L);
+    label(FirstEndReached, L);
+    assign(Result, binary(Equality ? "==" : "!=", std::move(Second), std::move(SecondEnd), "bool", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
   }
 
   void swapOrderedOwners(Expression Place, Expression Other, SourceLocation L) {
@@ -30459,7 +30633,7 @@ class FunctionLowering {
         using Kind = OrderedInsertionKind;
         if (Info->Input) {
           initializeOrderedMappedValue(Result, fieldStorage(std::move(Value), Info->Input->Second, L), Info->Storage, L);
-        } else if (Info->Kind == Kind::TryEmplace) {
+        } else if (Info->Kind == Kind::TryEmplace || (Info->Kind == Kind::Emplace && MappedArgument)) {
           auto Mapped = MappedArgument ? dereference(std::move(*MappedArgument), L) : A.zero(A.Context.IntTy, L);
           initializeOrderedMappedValue(Result, std::move(Mapped), Info->Storage, L);
         } else if (Info->Kind == Kind::InsertOrAssign) {
@@ -30529,6 +30703,22 @@ class FunctionLowering {
       assign(orderedIteratorCursor(Result, L), std::move(Node), L);
       return Result;
     }
+    if (Operation == UtilityOperation::OrderedSetCompare) {
+      const auto Info = approvedOrderedSetComparison(A.S, A.Sources, Call, A.Context);
+      if (!Info) reject(L, "ordered comparison", "The exact checked comparison and owner storage are required.");
+      const auto *Function = Call->getDirectCallee();
+      auto Left = dereference(snapshot(argument(Call->getArg(0), Function->getParamDecl(0)->getType()), L), L);
+      auto Right = dereference(snapshot(argument(Call->getArg(1), Function->getParamDecl(1)->getType()), L), L);
+      const auto Op = Function->getOverloadedOperator();
+      const bool Equality = Op == clang::OO_EqualEqual || Op == clang::OO_ExclaimEqual;
+      if (Op == clang::OO_Greater || Op == clang::OO_LessEqual)
+        std::swap(Left, Right);
+      auto Result = compareOrderedSets(std::move(Left), std::move(Right), Equality, *Info, L);
+      if (Op == clang::OO_ExclaimEqual || Op == clang::OO_GreaterEqual || Op == clang::OO_LessEqual)
+        return Expression{{"kind", "unary"}, {"type", "bool"}, {"operator", "!"},
+                          {"args", json::Array{std::move(Result)}}, {"loc", A.loc(L)}};
+      return Result;
+    }
     if (Operation == UtilityOperation::OrderedSetSwap) {
       const auto *Receiver = approvedOrderedSetSwap(A.S, A.Sources, Call, A.Context);
       if (!Receiver) reject(L, "ordered set swap", "Both owners require the same checked layout.");
@@ -30543,8 +30733,8 @@ class FunctionLowering {
       if (!Info) reject(L, "ordered range insertion", "The exact checked pointer range is required.");
       const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
       auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
-      auto Begin = snapshot(argument(Call->getArg(0), Info->PointerType), L);
-      auto End = snapshot(argument(Call->getArg(1), Info->PointerType), L);
+      auto Begin = snapshot(argument(Call->getArg(0), Info->IteratorType), L);
+      auto End = snapshot(argument(Call->getArg(1), Info->IteratorType), L);
       insertOrderedSetRange(std::move(Place), std::move(Begin), std::move(End), *Info, L);
       return {};
     }
@@ -30631,6 +30821,16 @@ class FunctionLowering {
       auto Result = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
       assign(orderedIteratorCursor(Result, L), std::move(Node), L);
       return Result;
+    }
+    if (Operation == UtilityOperation::OrderedSetMerge) {
+      const auto Info = approvedOrderedSetMerge(A.S, A.Sources, Call, A.Context);
+      if (!Info) reject(L, "ordered merge", "The exact checked source and compatible node layout are required.");
+      const auto *Member = clang::cast<CXXMemberCallExpr>(Call);
+      const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+      auto Receiver = snapshot(unorderedSetReceiverPointer(Reference, L), L);
+      auto Input = snapshot(argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType()), L);
+      mergeOrderedSetNodes(std::move(Receiver), std::move(Input), *Info, L);
+      return {};
     }
     if (Operation == UtilityOperation::OrderedSetCopyAssign || Operation == UtilityOperation::OrderedSetMoveAssign) {
       const bool Move = Operation == UtilityOperation::OrderedSetMoveAssign;
@@ -30780,11 +30980,29 @@ class FunctionLowering {
         Operation == UtilityOperation::BitsetResetAll || Operation == UtilityOperation::BitsetFlipAll ||
         Operation == UtilityOperation::BitsetAssign)
       return utilityBitsetOperation(Call, Operation);
-    if (Operation == UtilityOperation::UnorderedTableGetAllocator ||
+    if (Operation == UtilityOperation::OrderedMapValueComparator) {
+      const auto *Member = approvedOrderedValueComparatorFactory(A.S, A.Sources, Call, A.Context);
+      if (!Member) reject(L, "ordered value comparator", "The checked comparator factory is required.");
+      unorderedSetReceiverPointer(Member, L);
+      auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+      assign(Output, A.zero(Call->getType(), L), L);
+      return Output;
+    }
+    if (Operation == UtilityOperation::OrderedMapCompareValues) {
+      const auto Pair = approvedOrderedValueComparatorCall(A.S, A.Sources, Call, A.Context);
+      if (!Pair) reject(L, "ordered value comparator", "The checked pair-key comparison is required.");
+      lvalue(Call->getArg(0));
+      const auto *Method = Call->getDirectCallee();
+      auto Left = dereference(snapshot(argument(Call->getArg(1), Method->getParamDecl(0)->getType()), L), L);
+      auto Right = dereference(snapshot(argument(Call->getArg(2), Method->getParamDecl(1)->getType()), L), L);
+      return binary("<", fieldStorage(std::move(Left), Pair->First, L),
+                    fieldStorage(std::move(Right), Pair->First, L), "bool", L);
+    }
+    if (Operation == UtilityOperation::AssociativeGetAllocator ||
         Operation == UtilityOperation::AssociativePolicy) {
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
-      const bool Valid = Operation == UtilityOperation::UnorderedTableGetAllocator
-          ? bool(approvedUtilityUnorderedTableAllocatorQuery(A.S, A.Sources, Call, A.Context))
+      const bool Valid = Operation == UtilityOperation::AssociativeGetAllocator
+          ? bool(approvedUtilityAssociativeAllocatorQuery(A.S, A.Sources, Call, A.Context))
           : bool(approvedUtilityAssociativePolicyQuery(A.S, A.Sources, Call, A.Context));
       if (!Member || !Valid) reject(L, "associative container observer", "The authenticated stateless result is unavailable.");
       const auto *Object = Member->getImplicitObjectArgument();
@@ -34558,16 +34776,20 @@ class FunctionLowering {
         return unorderedIteratorTraversalOperation(Call, *Info, std::move(Destination));
       if (auto Info = unorderedTableNonmemberCall(A.S, A.Sources, Call, A.Context))
         return unorderedTableNonmemberOperation(Call, *Info);
-      if (auto Info = unorderedResultCall(A.S, A.Sources, Call, A.Context))
-        return unorderedResultOperation(Call, *Info);
+      if (auto Info = associativeNodeResultCall(A.S, A.Sources, Call, A.Context))
+        return associativeNodeResultOperation(Call, *Info);
       if (auto Info = unorderedTableListAssignment(A.S, A.Sources, Call, A.Context))
         return unorderedTableListAssignmentOperation(Call, *Info);
       if (auto Info = unorderedTableMerge(A.S, A.Sources, Call, A.Context))
         return unorderedTableMergeOperation(Call, *Info);
-      if (auto Info = unorderedNodeCall(A.S, A.Sources, Call, A.Context))
-        return unorderedNodeOperation(Call, *Info, std::move(Destination));
+      if (auto Info = associativeNodeCall(A.S, A.Sources, Call, A.Context))
+        return associativeNodeOperation(Call, *Info, std::move(Destination));
       if (auto Info = unorderedNodeTransfer(A.S, A.Sources, Call, A.Context))
         return unorderedNodeTransferOperation(Call, *Info, std::move(Destination));
+      if (auto Info = orderedNodeExtraction(A.S, A.Sources, Call, A.Context))
+        return extractOrderedNode(Call, *Info, std::move(Destination));
+      if (auto Info = orderedNodeInsertion(A.S, A.Sources, Call, A.Context))
+        return insertOrderedNode(Call, *Info, std::move(Destination));
       if (auto Operation =
               approvedUtilityOperation(A.S, A.Sources, Call, A.Context))
         return utilityOperation(Call, *Operation, std::move(Destination));
@@ -40272,23 +40494,27 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
                            std::move(Length), std::move(FillCharacter), L);
       return;
     }
-    if (auto Info = unorderedResultConstruction(A.S, A.Sources, C, A.Context)) {
+    if (auto Info = associativeNodeResultConstruction(A.S, A.Sources, C, A.Context)) {
       if (!C->getNumArgs()) {
-        unorderedMakeIterator(A.zero(Info->Node.Map.NodePointerType, L), Info->Iterator,
-            fieldStorage(Place, Info->Position, L), L);
+        auto Position = fieldStorage(Place, Info->Position, L);
+        if (Info->UnorderedIterator)
+          unorderedMakeIterator(A.zero(Info->Node.PointerType, L), *Info->UnorderedIterator,
+                               std::move(Position), L);
+        else
+          initializeZero(orderedIteratorCursor(std::move(Position), L), A.Context.VoidPtrTy, L);
         if (C->requiresZeroInitialization())
           assign(fieldStorage(Place, Info->Inserted, L), A.zero(A.Context.BoolTy, L), L);
         releaseUnorderedHandle(fieldStorage(Place, Info->Handle, L), Info->Node, L);
         return;
       }
       auto Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
-      moveUnorderedResult(Place, dereference(Source, L), *Info, false, L);
+      moveAssociativeNodeResult(Place, dereference(Source, L), *Info, false, L);
       return;
     }
-    if (auto Kind = unorderedNodeConstruction(A.S, A.Sources, C, A.Context)) {
-      const auto Info = unorderedNodeRecord(A.S, A.Sources, C->getType()->getAsCXXRecordDecl(), A.Context);
+    if (auto Kind = associativeNodeConstruction(A.S, A.Sources, C, A.Context)) {
+      const auto Info = associativeNodeRecord(A.S, A.Sources, C->getType()->getAsCXXRecordDecl(), A.Context);
       if (!Info) reject(L, "unordered node construction", "The authenticated storage is required.");
-      if (*Kind == UnorderedNodeConstruction::Default) releaseUnorderedHandle(Place, *Info, L);
+      if (*Kind == AssociativeNodeConstruction::Default) releaseUnorderedHandle(Place, *Info, L);
       else {
         auto Source = snapshot(argument(C->getArg(0), C->getConstructor()->getParamDecl(0)->getType()), L);
         moveUnorderedHandle(Place, dereference(Source, L), *Info, false, L);
@@ -40568,8 +40794,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       return;
     }
     if (const auto Info = approvedOrderedSetRangeConstruction(A.S, A.Sources, C, A.Context)) {
-      auto Begin = snapshot(argument(C->getArg(0), Info->PointerType), L);
-      auto End = snapshot(argument(C->getArg(1), Info->PointerType), L);
+      auto Begin = snapshot(argument(C->getArg(0), Info->IteratorType), L);
+      auto End = snapshot(argument(C->getArg(1), Info->IteratorType), L);
       argument(C->getArg(2), C->getConstructor()->getParamDecl(2)->getType());
       initializeOrderedContainer(Place, L);
       insertOrderedSetRange(std::move(Place), std::move(Begin), std::move(End), *Info, L);
@@ -40585,7 +40811,9 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       insertOrderedSetList(Place, std::move(Begin), std::move(Length), *Info, L);
       return;
     }
-    if (approvedOrderedContainerDefaultConstruction(A.S, A.Sources, C, A.Context)) {
+    if (approvedOrderedContainerEmptyConstruction(A.S, A.Sources, C, A.Context)) {
+      for (unsigned I = 0; I != C->getNumArgs(); ++I)
+        argument(C->getArg(I), C->getConstructor()->getParamDecl(I)->getType());
       initializeOrderedContainer(std::move(Place), L);
       return;
     }
@@ -42305,8 +42533,8 @@ public:
         approvedUtilityValarrayDestructor(A.S, A.Sources, D, A.Context);
     const bool VectorDestructor =
         approvedUtilityVectorDestructor(A.S, A.Sources, D, A.Context);
-    const bool UnorderedNodeDestructor = unorderedNodeDestructor(A.S, A.Sources, D, A.Context);
-    if (unorderedNodeRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !UnorderedNodeDestructor)
+    const bool UnorderedNodeDestructor = associativeNodeDestructor(A.S, A.Sources, D, A.Context);
+    if (associativeNodeRecord(A.S, A.Sources, DestroyedRecord, A.Context) && !UnorderedNodeDestructor)
       reject(D ? D->getLocation() : DestroyedRecord->getLocation(), "unordered node destructor",
              "The authenticated SDK node destruction chain is required.");
     const bool UnorderedMapDestructor =
@@ -42486,7 +42714,7 @@ public:
                                     {"loc", A.loc(L)}});
         jump(Done, L);
         label(Done, L);
-      } else if (auto Node = unorderedNodeRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
+      } else if (auto Node = associativeNodeRecord(A.S, A.Sources, DestroyedRecord, A.Context)) {
         destroyUnorderedHandleNode(dereference(*ThisPointer, L), *Node, L);
       } else if (auto Map = approvedUtilityUnorderedMapRecord(
                      A.S, A.Sources, DestroyedRecord, A.Context)) {

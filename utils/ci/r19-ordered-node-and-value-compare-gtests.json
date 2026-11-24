@@ -1,0 +1,300 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-set-extract-keeps-detached-node-until-handle-destruction",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetExtractKeepsDetachedNodeUntilHandleDestructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "52b04d43eba4872e0f420ccbf88537da233437eb531a6d3ce6cb4f8ec49545ad",
+      "original_case_source_sha256": "52b04d43eba4872e0f420ccbf88537da233437eb531a6d3ce6cb4f8ec49545ad",
+      "gtest_body_sha256": "48829e76a34c71578dc6599c0c12034d6db0c580f948ec5942fe439272c90bb7"
+    },
+    {
+      "name": "ordered-multiset-extract-position-and-missing-key",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetExtractPositionAndMissingKeyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "679f9d448416b0e01eb611cd9ca921588a2971e1cdbaca899627d7936c174cad",
+      "original_case_source_sha256": "679f9d448416b0e01eb611cd9ca921588a2971e1cdbaca899627d7936c174cad",
+      "gtest_body_sha256": "bdd10dd5690402fd51310d078b86eb8ff22023c96ab9ace961bf1c929bbddd2f"
+    },
+    {
+      "name": "ordered-map-extract-allows-detached-key-and-value-changes",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapExtractAllowsDetachedKeyAndValueChangesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "51f508b8f4140fe64d2832a581bc98a7e19c0c78f90e4ae5393e09283e35e1ed",
+      "original_case_source_sha256": "51f508b8f4140fe64d2832a581bc98a7e19c0c78f90e4ae5393e09283e35e1ed",
+      "gtest_body_sha256": "caf6d23f2f68ea11231c96a41c49cb73f2cc42c8c2c11d74cc2a952f66a12127"
+    },
+    {
+      "name": "ordered-multimap-extract-keeps-equivalent-node-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapExtractKeepsEquivalentNodeOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fc483fe0c9b8b1b7264ad7e53a58116532503ed51a6cd25ac7a51c24eced97bf",
+      "original_case_source_sha256": "fc483fe0c9b8b1b7264ad7e53a58116532503ed51a6cd25ac7a51c24eced97bf",
+      "gtest_body_sha256": "fd8f8c3c511d3d687a4e385d4513002da412b3f1ba2ee5d30d115fbc1a464c73"
+    },
+    {
+      "name": "ordered-set-node-insertion-keeps-address-and-returns-end-for-empty",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetNodeInsertionKeepsAddressAndReturnsEndForEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b45c099431683aa4b11473fe9133ae5a211c96bb5687e64d413cf190a513f1ba",
+      "original_case_source_sha256": "b45c099431683aa4b11473fe9133ae5a211c96bb5687e64d413cf190a513f1ba",
+      "gtest_body_sha256": "169ab78e92bd09dda5ee7aab1c1f279f5d4a5a61c87295f300d917ffe360fe54"
+    },
+    {
+      "name": "ordered-map-node-conflict-returns-owner-with-mutable-key",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapNodeConflictReturnsOwnerWithMutableKeyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d0c508df2b5420e1fcef98d39fc06270fc890c7f6fb465ca358617a148f589ab",
+      "original_case_source_sha256": "d0c508df2b5420e1fcef98d39fc06270fc890c7f6fb465ca358617a148f589ab",
+      "gtest_body_sha256": "d40c7c8c331e3e3465db6c3b480ef4b414cc1a9c5ec2550da25bf4f0fbf4ab4d"
+    },
+    {
+      "name": "ordered-multiset-node-insertion-transfers-between-owner-kinds",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetNodeInsertionTransfersBetweenOwnerKindsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a053c40a2238de5dbcef2f97bb2ca59df35251fda20b377f8c166f7590635e5e",
+      "original_case_source_sha256": "a053c40a2238de5dbcef2f97bb2ca59df35251fda20b377f8c166f7590635e5e",
+      "gtest_body_sha256": "1ee2a1aba332c13d1ad759354a0433cd46442b1bedfeb55049d5119e88b6042c"
+    },
+    {
+      "name": "ordered-multimap-node-insert-appends-an-equivalent-node",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapNodeInsertAppendsAnEquivalentNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cae166048c0a21f75d18792a55804787418637a66be8d113e862229247a1f0a7",
+      "original_case_source_sha256": "cae166048c0a21f75d18792a55804787418637a66be8d113e862229247a1f0a7",
+      "gtest_body_sha256": "3ce697b1c14de97996183a80a7e543fb220e164354bb93d0cdc426943e4c9f45"
+    },
+    {
+      "name": "ordered-node-case-retains-reinsertion-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedNodeCaseRetainsReinsertionGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e42fe675abfeb2dce7c6ab5c77f5aade7f07bda84a27ba0d19f7dcab4be25ead",
+      "original_case_source_sha256": "e42fe675abfeb2dce7c6ab5c77f5aade7f07bda84a27ba0d19f7dcab4be25ead",
+      "gtest_body_sha256": "002762a9cc9c9f434c5816445e91ac9739e66a213ab15c30eff20a85d8224057"
+    },
+    {
+      "name": "ordered-value-compare-ignores-the-mapped-value",
+      "formal_test_name": "TranslateTest.CoreV2OrderedValueCompareIgnoresTheMappedValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e243383b9cc60e8be241d30a03819d2950206faebe91228e010a824b9ba3634a",
+      "original_case_source_sha256": "e243383b9cc60e8be241d30a03819d2950206faebe91228e010a824b9ba3634a",
+      "gtest_body_sha256": "dfee2755f42d986b92ea22b1709cae24206e74a24760d3bbed6d2051466da34d"
+    },
+    {
+      "name": "ordered-multimap-value-compare-can-be-called-directly",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapValueCompareCanBeCalledDirectlyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "331e34b8d38a525a8557a1690fc8bc47c3e2bf56de53073e71e7a38633a9de1a",
+      "original_case_source_sha256": "331e34b8d38a525a8557a1690fc8bc47c3e2bf56de53073e71e7a38633a9de1a",
+      "gtest_body_sha256": "a33828d0217cfd912f237736f1d8bc8a3eb56a582ea419b714b5f58f157c3220"
+    },
+    {
+      "name": "ordered-value-compare-const-object-uses-live-inputs",
+      "formal_test_name": "TranslateTest.CoreV2OrderedValueCompareConstObjectUsesLiveInputsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "12f3b4d7efa99e271c7f0f9f910318290ed2dc5ca67453fdccd4be952a2a8ffa",
+      "original_case_source_sha256": "12f3b4d7efa99e271c7f0f9f910318290ed2dc5ca67453fdccd4be952a2a8ffa",
+      "gtest_body_sha256": "3a4d0848d07280a81edd37135538363d7836f1542f2dbf5421ab90807332dbac"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-extraction-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedExtractionCustomPolicyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "e94867acffd285de6f0eb8632bf3c2ed508b3e9921173d3fea9a59a49c42ce53",
+      "original_case_source_sha256": "e94867acffd285de6f0eb8632bf3c2ed508b3e9921173d3fea9a59a49c42ce53",
+      "gtest_body_sha256": "331191d3b13296e3bb94403af06415ca1449ce1c6c63dfd1d78708d1b9b950a8"
+    },
+    {
+      "name": "ordered-node-hinted-insertion-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedNodeHintedInsertionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
+      "original_case_source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
+      "gtest_body_sha256": "0e3750a573aeaa8542f3e5c311c2cc1054a1132aebb155c22fe8a64cd716e4e0"
+    },
+    {
+      "name": "ordered-map-value-compare-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapValueCompareCustomPolicyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "fe03261d983c89f2580fc863446ab214309e62b4bdc34532f3289a9fcbc585b0",
+      "original_case_source_sha256": "fe03261d983c89f2580fc863446ab214309e62b4bdc34532f3289a9fcbc585b0",
+      "gtest_body_sha256": "9d9e84d80faf7967af5e16c90e97f22fe39c69dc3f4ca9c571b17eabe72aeac9"
+    },
+    {
+      "name": "ordered-map-value-compare-other-mapped-type-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapValueCompareOtherMappedTypeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
+      "original_case_source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
+      "gtest_body_sha256": "6bc69b438029a92bd0281546e8f6cb4922febc6f0e4bbae1a8365c60c3303dc1"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-set-extract-keeps-detached-node-until-handle-destruction",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <cstddef>\n#include <cstdlib>\n#include <set>\n#include <utility>\nunsigned allocated, released;\nvoid *operator new(std::size_t size) { ++allocated; return std::malloc(size); }\nvoid operator delete(void *p) noexcept { ++released; std::free(p); }\nvoid operator delete(void *p, std::size_t) noexcept { ++released; std::free(p); }\n\nint main() {\n  using Set = std::set<int>;\n  {\n    Set source{7, 1, 3};\n    if (allocated != 3 || released != 0)\n      return 1;\n    {\n      Set::node_type node;\n      node = source.extract(3);\n      if (!node || node.value() != 3 || source.count(3) || source.size() != 2)\n        return 2;\n      node.value() = 9;\n      Set::node_type owner(std::move(node));\n      if (!node.empty() || owner.value() != 9 || allocated != 3 || released != 0)\n        return 3;\n    }\n    if (released != 1 || *source.begin() != 1)\n      return 4;\n  }\n  return allocated == 3 && released == 3 ? 0 : 5;\n}\n",
+      "source_sha256": "52b04d43eba4872e0f420ccbf88537da233437eb531a6d3ce6cb4f8ec49545ad",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multiset-extract-position-and-missing-key",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <utility>\nint main() {\n  std::multiset<int> values{4, 9, 4, 5};\n  auto first = values.find(4);\n  ++first;\n  auto handle = values.extract(first);\n  auto absent = values.extract(6);\n  if (!handle || !absent.empty() || handle.value() != 4 || values.count(4) != 1)\n    return 1;\n  handle.swap(absent);\n  return handle.empty() && absent.value() == 4 && values.size() == 3 ? 0 : 2;\n}\n",
+      "source_sha256": "679f9d448416b0e01eb611cd9ca921588a2971e1cdbaca899627d7936c174cad",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-extract-allows-detached-key-and-value-changes",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map values{{1, 10}, {2, 20}, {3, 30}};\n  auto node = values.extract(2);\n  if (node.empty() || node.key() != 2 || node.mapped() != 20 || values.count(2))\n    return 1;\n  node.key() = 9;\n  node.mapped() = 90;\n  auto position = values.find(3);\n  auto other = values.extract(position);\n  return node.key() == 9 && node.mapped() == 90 &&\n         other.key() == 3 && other.mapped() == 30 && values.size() == 1 ? 0 : 2;\n}\n",
+      "source_sha256": "51f508b8f4140fe64d2832a581bc98a7e19c0c78f90e4ae5393e09283e35e1ed",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-extract-keeps-equivalent-node-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::multimap<int, int>;\n  Map values{{1, 3}, {4, 8}, {4, 9}, {4, 10}};\n  auto node = values.extract(4);\n  if (!node || node.key() != 4 || node.mapped() != 8)\n    return 1;\n  const Map &read_only = values;\n  auto position = read_only.find(4);\n  ++position;\n  auto other = values.extract(position);\n  return other.key() == 4 && other.mapped() == 10 &&\n         other.get_allocator() == Map::allocator_type{} &&\n         values.count(4) == 1 && values.find(4)->second == 9 ? 0 : 2;\n}\n",
+      "source_sha256": "fc483fe0c9b8b1b7264ad7e53a58116532503ed51a6cd25ac7a51c24eced97bf",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-node-insertion-keeps-address-and-returns-end-for-empty",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <utility>\nint main() {\n  using Set = std::set<int>;\n  Set source{1, 4}, destination{3};\n  auto position = source.find(4);\n  const int *address = &*position;\n  auto node = source.extract(position);\n  auto result = destination.insert(std::move(node));\n  if (!result.inserted || !node.empty() || !result.node.empty() ||\n      result.position == destination.end() || &*result.position != address)\n    return 1;\n  Set::node_type absent;\n  auto skipped = destination.insert(std::move(absent));\n  return !skipped.inserted && skipped.node.empty() &&\n         skipped.position == destination.end() && destination.size() == 2 ? 0 : 2;\n}\n",
+      "source_sha256": "b45c099431683aa4b11473fe9133ae5a211c96bb5687e64d413cf190a513f1ba",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-node-conflict-returns-owner-with-mutable-key",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nint main() {\n  using Map = std::map<int, int>;\n  Map source{{2, 21}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto result = destination.insert(std::move(node));\n  if (result.inserted || !node.empty() || result.node.empty() ||\n      result.position->second != 20 || result.node.key() != 2 || result.node.mapped() != 21)\n    return 1;\n  result.node.key() = 4;\n  auto inserted = destination.insert(std::move(result.node));\n  return inserted.inserted && inserted.node.empty() && result.node.empty() &&\n         inserted.position->first == 4 && destination[4] == 21 ? 0 : 2;\n}\n",
+      "source_sha256": "d0c508df2b5420e1fcef98d39fc06270fc890c7f6fb465ca358617a148f589ab",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multiset-node-insertion-transfers-between-owner-kinds",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <utility>\nint main() {\n  std::set<int> source{5};\n  std::multiset<int> destination{2, 5, 5};\n  auto node = source.extract(5);\n  auto position = destination.insert(std::move(node));\n  if (position == destination.end() || *position != 5 || !node.empty() ||\n      !source.empty() || destination.count(5) != 3)\n    return 1;\n  auto missing = source.extract(5);\n  return destination.insert(std::move(missing)) == destination.end() ? 0 : 2;\n}\n",
+      "source_sha256": "a053c40a2238de5dbcef2f97bb2ca59df35251fda20b377f8c166f7590635e5e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-node-insert-appends-an-equivalent-node",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nint main() {\n  std::map<int, int> source{{2, 42}};\n  std::multimap<int, int> destination{{2, 40}, {2, 41}};\n  auto node = source.extract(2);\n  auto position = destination.insert(std::move(node));\n  auto first = destination.begin();\n  if (!node.empty() || !source.empty() || first->second != 40)\n    return 1;\n  ++first;\n  if (first->second != 41)\n    return 2;\n  ++first;\n  return first == position && first->second == 42 && destination.count(2) == 3 ? 0 : 3;\n}\n",
+      "source_sha256": "cae166048c0a21f75d18792a55804787418637a66be8d113e862229247a1f0a7",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-node-case-retains-reinsertion-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <utility>\nint main() {\n  std::set<int> source{1, 4}, destination{3};\n  auto node = source.extract(4);\n  auto result = destination.insert(std::move(node));\n  return result.inserted && node.empty() && *result.position == 4 ? 0 : 1;\n}\n",
+      "source_sha256": "e42fe675abfeb2dce7c6ab5c77f5aade7f07bda84a27ba0d19f7dcab4be25ead",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-value-compare-ignores-the-mapped-value",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  const Map values{{2, 1}};\n  auto compare = values.value_comp();\n  Map::value_type a{3, 900}, b{4, -900}, equal{3, -20};\n  if (!compare(a, b) || compare(b, a) || compare(a, equal))\n    return 1;\n  return !compare(equal, a) && values.begin()->first == 2 ? 0 : 2;\n}\n",
+      "source_sha256": "e243383b9cc60e8be241d30a03819d2950206faebe91228e010a824b9ba3634a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-value-compare-can-be-called-directly",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Map = std::multimap<int, int>;\nstatic const Map *owner(const Map *value, int &count) {\n  ++count;\n  return value;\n}\n\nint main() {\n  const Map values{{3, 8}, {3, 9}, {4, 7}};\n  auto first = values.begin();\n  auto last = values.find(4);\n  int count = 0;\n  return owner(&values, count)->value_comp()(*first, *last) && count == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "331e34b8d38a525a8557a1690fc8bc47c3e2bf56de53073e71e7a38633a9de1a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-value-compare-const-object-uses-live-inputs",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::multimap<int, int>;\n  const Map values;\n  const auto compare = values.value_comp();\n  const Map::value_type low{-2, 47}, high{5, -47};\n  return compare(low, high) && !compare(high, low) && !compare(low, low) ? 0 : 1;\n}\n",
+      "source_sha256": "12f3b4d7efa99e271c7f0f9f910318290ed2dc5ca67453fdccd4be952a2a8ffa",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-extraction-custom-policy-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Compare {\n  bool descending;\n  bool operator()(int a, int b) const { return descending ? a > b : a < b; }\n};\nint main() {\n  std::map<int, int, Compare> map({{1, 5}, {3, 7}}, Compare{true});\n  auto node = map.extract(3);\n  return node.key() == 3 && node.mapped() == 7 && map.size() == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "e94867acffd285de6f0eb8632bf3c2ed508b3e9921173d3fea9a59a49c42ce53",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-node-hinted-insertion-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> source{{2, 10}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto inserted = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;\n}\n",
+      "source_sha256": "c0b739b423c045a404cb028fba6980c48d6ce1cd996bc4216cb6136ec0b254f2",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-value-compare-custom-policy-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\n#include <functional>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  const Map values;\n  auto compare = values.value_comp();\n  return compare(Map::value_type{2, 10}, Map::value_type{1, 20}) ? 0 : 1;\n}\n",
+      "source_sha256": "fe03261d983c89f2580fc863446ab214309e62b4bdc34532f3289a9fcbc585b0",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-value-compare-other-mapped-type-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values;\n  return values.value_comp()(Map::value_type{1, 100L}, Map::value_type{2, -100L}) ? 0 : 1;\n}\n",
+      "source_sha256": "cd5ad336ae34e882e1055f4056de975b84fab5e20bdc1d764715f26e52c19fb0",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedSetExtractKeepsDetachedNodeUntilHandleDestructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetExtractPositionAndMissingKeyRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapExtractAllowsDetachedKeyAndValueChangesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapExtractKeepsEquivalentNodeOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetNodeInsertionKeepsAddressAndReturnsEndForEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapNodeConflictReturnsOwnerWithMutableKeyRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetNodeInsertionTransfersBetweenOwnerKindsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapNodeInsertAppendsAnEquivalentNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedNodeCaseRetainsReinsertionGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedValueCompareIgnoresTheMappedValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapValueCompareCanBeCalledDirectlyRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedValueCompareConstObjectUsesLiveInputsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedExtractionCustomPolicyGuardRejected",
+    "TranslateTest.CoreV2OrderedNodeHintedInsertionGuardRejected",
+    "TranslateTest.CoreV2OrderedMapValueCompareCustomPolicyGuardRejected",
+    "TranslateTest.CoreV2OrderedMapValueCompareOtherMappedTypeGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "11794ebcf2e0af2b1fca673c0549041f72c3bd56634cccc8dd8f3912cab9ace2",
+  "maintained_original_sha256": "4e44a789e4a9597fca5fb62d252ce9290b7d018e019bda016525ba9641f98da5",
+  "previous_registered_source_sha256": "17da38c2da417df36c10d23081658af9f94798cdf66f91fffd1eb0a07b8f5fd9",
+  "previous_maintained_original_sha256": "615020e719791e665aa2823bf4bd2e007176c2aebf65ab55c8ff693bff2f3d00",
+  "restorer_sha256": "4776f1ad6e6da09746e0f334fdc75e10da87f5a4bd395553ba09df24c26b0d95",
+  "extractor_sha256": "abc7c73ca8c9bf3e7627fb8afd994513e09aebce0f74a0f623f511c85deabecd",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8804,
+  "current_python_registry_tests": 262,
+  "native_reference_selected_executions": 24,
+  "planned_generated_c23_executions": 24,
+  "native_reference_proofs": {
+    "ordered-node-and-value-compare": "9f688edfd1ca4e2fceb07c51e787e299665a0488a58c4ecb6c377980d0cd41cc"
+  },
+  "native_reference_authentication_sha256": "196799a85decba64575df89a6218387d9b6fc46c1f953d606744e129311443f5",
+  "source_proof_sha256": "838246acd03b39f750614aa652dfe4ace00028902c9fe2b763be40beae6b0983"
+}
