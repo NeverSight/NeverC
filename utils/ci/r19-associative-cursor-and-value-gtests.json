@@ -133,22 +133,6 @@
       "source_sha256": "a344b6c2fc95b317ad95ee4a9eb12309e163ca714c326e9837075c2909d8c68c"
     },
     {
-      "name": "unordered-map-const-double-mapped-payload-guard",
-      "public_header": "unordered_map",
-      "expected": "reject",
-      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, const double> values;\n  return values.try_emplace(4, 1.25).second ? 0 : 1;\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "827709887030fad7af83aef79facc301ca907e4623a8b4987252b47f9085e2cc"
-    },
-    {
-      "name": "unordered-map-long-double-mapped-payload-guard",
-      "public_header": "unordered_map",
-      "expected": "reject",
-      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, long double> values;\n  return values.try_emplace(4, 1.25L).second ? 0 : 1;\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "3c96579aa64dfadf1bdf627125464ef9d81976241eb30c8a450cfea115d839c9"
-    },
-    {
       "name": "ordered-set-forward-range-between-standard-orders",
       "public_header": "set",
       "expected": "accept",
@@ -189,6 +173,22 @@
       "source_sha256": "5ac19e8a75e1dbe2ae9d6a2fda180e92f22a3505b391af35c9593f2e40f4f0cd"
     },
     {
+      "name": "unordered-map-const-double-mapped-payload-guard",
+      "public_header": "unordered_map",
+      "expected": "reject",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, const double> values;\n  return values.try_emplace(4, 1.25).second ? 0 : 1;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "827709887030fad7af83aef79facc301ca907e4623a8b4987252b47f9085e2cc"
+    },
+    {
+      "name": "unordered-map-long-double-mapped-payload-guard",
+      "public_header": "unordered_map",
+      "expected": "reject",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, long double> values;\n  return values.try_emplace(4, 1.25L).second ? 0 : 1;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "3c96579aa64dfadf1bdf627125464ef9d81976241eb30c8a450cfea115d839c9"
+    },
+    {
       "name": "unordered-set-unchecked-float-pointer-range-guard",
       "public_header": "unordered_set",
       "expected": "reject",
@@ -211,7 +211,7 @@
     "TranslateTest.CoreV2UnorderedMapLongDoubleMappedPayloadGuardRejected",
     "TranslateTest.CoreV2UnorderedSetUncheckedFloatPointerRangeGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "9a53740d79d62df82fe3fd1efbb81b4e479555d5c6c41815036f82a5e4e844d3",
   "maintained_original_sha256": "fd6daaebffdceb8456e0d0ad6a42e754ac6e98c4a9fa9ec310991260f1f13a61",
@@ -223,5 +223,12 @@
   "current_registry_count": 8962,
   "current_python_registry_tests": 276,
   "native_reference_selected_executions": 18,
-  "planned_generated_c23_executions": 18
+  "planned_generated_c23_executions": 18,
+  "native_reference_proofs": {
+    "ordered-shared-cursor": "109121d160959c31c4b776897084dbde4c3a7a2312db9721fbff0b2cbee95a36",
+    "unordered-scalar-mapped": "4e1c1b09d57ea1b12f157c47ee177c6bffa8dbe1958a64712242ea3e9e164918",
+    "unordered-set-converted-input": "a1e2ec71a39a7abb4a49a0250b68e068892b32b04057b3ceaf963d94a2abd4ee"
+  },
+  "native_reference_authentication_sha256": "f18485f97614e3fda4b7b241b99a159181e44fffc8f5dec6661d3e1c462a30fe",
+  "source_proof_sha256": "f90b7122847acc179b22edb3ff01c5813f4f4a6556b4d938c9f27bfe79422c4a"
 }

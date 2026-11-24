@@ -142,14 +142,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-merge-custom-comparator-remains-unsupported",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int a, int b) const { return a > b; }\n};\nvoid merge(std::map<int, int> &output, std::map<int, int, Reverse> &input) { output.merge(input); }\n",
-      "source_sha256": "e03e6b35362b23e4acdd1074148a3a6084193c9bab1f559ee9a7c6ba468b585e",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-comparison-const-prefix-and-all-relations",
       "expected": "accept",
       "public_header": "set",
@@ -182,14 +174,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-comparison-custom-comparator-remains-unsupported",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nbool equal(const std::set<int, Reverse> &a, const std::set<int, Reverse> &b) { return a == b; }\n",
-      "source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-emplace-int-does-not-replace-an-existing-value",
       "expected": "accept",
       "public_header": "map",
@@ -212,6 +196,22 @@
       "source": "#include <map>\nvoid insert(std::map<int, int> &values) {\n  short converted = 3;\n  values.emplace(1, converted);\n}\n",
       "source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-merge-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int a, int b) const { return a > b; }\n};\nvoid merge(std::map<int, int> &output, std::map<int, int, Reverse> &input) { output.merge(input); }\n",
+      "source_sha256": "e03e6b35362b23e4acdd1074148a3a6084193c9bab1f559ee9a7c6ba468b585e",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-comparison-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nbool equal(const std::set<int, Reverse> &a, const std::set<int, Reverse> &b) { return a == b; }\n",
+      "source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
+      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -229,7 +229,7 @@
     "TranslateTest.CoreV2OrderedMapMergeCustomComparatorRemainsUnsupportedRejected",
     "TranslateTest.CoreV2OrderedComparisonCustomComparatorRemainsUnsupportedRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "87d62b8ae6d3cd26907c1cb089fed8be44025c7a302565fd0aa4e15ec2e58955",
   "maintained_original_sha256": "8807f2fc6c47f571b715521d18d1c2f1aca6885e38b2de6260559ec67831e18d",
@@ -241,5 +241,11 @@
   "current_registry_count": 8770,
   "current_python_registry_tests": 258,
   "native_reference_selected_executions": 20,
-  "planned_generated_c23_executions": 20
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "ordered-map-emplace": "455c13bdffa150a07ed7e139b48f0c20510a556dadc74d8481344537d5a058c1",
+    "ordered-merge-and-comparison": "f90cc9fb8817a57ef3b8bfb7c3ba12ecd7e55e185b95f3ab6bd37265264b1794"
+  },
+  "native_reference_authentication_sha256": "a8426f4bff1fa7c2ee342d56db6b358a520c8ed92494f19d293a67a8ce37484d",
+  "source_proof_sha256": "f90b7122847acc179b22edb3ff01c5813f4f4a6556b4d938c9f27bfe79422c4a"
 }

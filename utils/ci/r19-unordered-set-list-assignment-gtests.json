@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetListAssignmentLongKeyListAssignmentRejected",
     "TranslateTest.CoreV2UnorderedSetListAssignmentShortKeyMultiListAssignmentRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "0a3e74d58b7b14a41049e2a8ad8f513413e5ef6b2426a30625103d46c6befdf6",
   "maintained_original_sha256": "376aa6cafedc4544350af55c4762116affe6ffb8a1e3283ac406b8c9db064275",
@@ -155,5 +155,10 @@
   "current_registry_count": 8552,
   "current_python_registry_tests": 224,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-list-assignment": "417e16b2a23f14a8ac96419b416b0e3ae29a9a44b6faf4881379bb1869f57bc1"
+  },
+  "native_reference_authentication_sha256": "fe283c105163f96892eabef45cb5fca18bcdc02e5e651205775611557c06837d",
+  "source_proof_sha256": "f90b7122847acc179b22edb3ff01c5813f4f4a6556b4d938c9f27bfe79422c4a"
 }
