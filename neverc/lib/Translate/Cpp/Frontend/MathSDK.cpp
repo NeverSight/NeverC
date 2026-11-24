@@ -59511,7 +59511,7 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   auto Iterator = Function->getParamDecl(0)->getType();
   auto Distance = Parameter->getType();
   const auto Reverse = approvedUtilityReverseIteratorRecord(
-      S, SM, Iterator->getAsCXXRecordDecl(), Context);
+      S, SM, Iterator->getAsCXXRecordDecl(), Context, true);
   const auto Wrapped = approvedUtilityWrapIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
   const auto Unordered = approvedUtilityUnorderedMapIteratorRecord(
@@ -134648,7 +134648,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Type->getPointeeType()->isVoidType();
   };
   auto NavigableIterator = [&](QualType Type) {
-    return ObjectPointer(Type) || ReverseFor(Type).has_value() ||
+    return ObjectPointer(Type) || ReverseFor(Type, true).has_value() ||
            approvedUtilityWrapIteratorRecord(S, SM, Type->getAsCXXRecordDecl(),
                                              Context).has_value() ||
            approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context);

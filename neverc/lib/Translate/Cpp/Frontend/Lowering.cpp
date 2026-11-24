@@ -18330,7 +18330,12 @@ class FunctionLowering {
         assign(Cursor, stepOrderedIteratorBy(Cursor, std::move(Offset), false, L), L);
         return {};
       }
-      auto Reverse = ReverseFor(IteratorType);
+      auto Reverse = ReverseFor(IteratorType, true);
+      if (Reverse && !Reverse->OrderedElementType.isNull()) {
+        auto Slot = ReverseCurrent(std::move(Iterator), *Reverse);
+        assign(Slot, stepOrderedIteratorBy(Slot, std::move(Offset), true, L), L);
+        return {};
+      }
       const auto Wrapped = approvedUtilityWrapIteratorRecord(
           A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
       if (Reverse) {
@@ -18357,14 +18362,18 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::IteratorDistance: {
-      if (approvedOrderedSetIteratorRecord(A.S, A.Sources, Call->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context)) {
-        auto First = loadOrderedIteratorArgument(Call, 0, L);
-        auto Last = loadOrderedIteratorArgument(Call, 1, L);
-        return countOrderedIteratorSteps(std::move(First), std::move(Last), L);
+      const auto Type = Call->getArg(0)->getType();
+      auto Reverse = ReverseFor(Type, true);
+      const bool OrderedReverse = Reverse && !Reverse->OrderedElementType.isNull();
+      if (OrderedReverse ||
+          approvedOrderedSetIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context)) {
+        const auto *Layout = OrderedReverse ? &*Reverse : nullptr;
+        auto First = loadOrderedIteratorArgument(Call, 0, L, Layout);
+        auto Last = loadOrderedIteratorArgument(Call, 1, L, Layout);
+        return countOrderedIteratorSteps(std::move(First), std::move(Last), !OrderedReverse, L);
       }
       auto First = AlgorithmRangeValue(0).first;
       auto Last = AlgorithmRangeValue(1).first;
-      auto Reverse = ReverseFor(Call->getArg(0)->getType());
       if (Reverse) {
         auto FirstCurrent =
             snapshot(ReverseCurrent(std::move(First), *Reverse), L);
@@ -18393,20 +18402,25 @@ class FunctionLowering {
                  "The selected iterator distance is unavailable.");
         return snapshot(cast(expression(Distance), Difference, L), L);
       };
-      const auto *Record = Call->getArg(0)->getType()->getAsCXXRecordDecl();
-      if (approvedOrderedSetIteratorRecord(A.S, A.Sources, Record, A.Context)) {
-        auto Input = loadOrderedIteratorArgument(Call, 0, L);
+      const auto Type = Call->getArg(0)->getType();
+      auto Reverse = ReverseFor(Type, true);
+      const bool OrderedReverse = Reverse && !Reverse->OrderedElementType.isNull();
+      if (OrderedReverse ||
+          approvedOrderedSetIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context)) {
+        const auto *Layout = OrderedReverse ? &*Reverse : nullptr;
+        auto Input = loadOrderedIteratorArgument(Call, 0, L, Layout);
         auto Offset = LoadOffset();
+        const bool WalkBack = OrderedReverse != (Operation == UtilityOperation::IteratorPrev);
+        auto Position = stepOrderedIteratorBy(std::move(Input), std::move(Offset), WalkBack, L);
+        if (OrderedReverse)
+          return ReverseValue(std::move(Position), *Reverse);
         auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
-        auto Position = stepOrderedIteratorBy(std::move(Input), std::move(Offset),
-            Operation == UtilityOperation::IteratorPrev, L);
         assign(orderedIteratorCursor(Output, L), std::move(Position), L);
         return Output;
       }
       auto IteratorRange = AlgorithmRangeValue(0);
       auto Iterator = std::move(IteratorRange.first);
       auto Offset = LoadOffset();
-      auto Reverse = ReverseFor(Call->getArg(0)->getType());
       if (Reverse) {
         auto Current =
             snapshot(ReverseCurrent(std::move(Iterator), *Reverse), L);
@@ -27271,10 +27285,13 @@ class FunctionLowering {
     return Info.WrappedCurrent ? fieldStorage(std::move(Stored), Info.WrappedCurrent, L) : Stored;
   }
 
-  Expression loadOrderedIteratorArgument(const CallExpr *Call, unsigned Index, SourceLocation L) {
+  Expression loadOrderedIteratorArgument(const CallExpr *Call, unsigned Index, SourceLocation L,
+      const UtilityReverseIteratorRecord *Layout) {
     const auto Parameter = Call->getDirectCallee()->getParamDecl(Index)->getType();
     auto Argument = dereference(argument(Call->getArg(Index), Parameter), L);
-    return snapshot(orderedIteratorCursor(std::move(Argument), L), L);
+    auto Cursor = Layout ? reverseIteratorSlot(std::move(Argument), Layout->Current, *Layout, L)
+                         : orderedIteratorCursor(std::move(Argument), L);
+    return snapshot(std::move(Cursor), L);
   }
 
   Expression stepOrderedIteratorBy(Expression Node, Expression Offset, bool Reverse, SourceLocation L) {
@@ -27301,7 +27318,7 @@ class FunctionLowering {
     return Current;
   }
 
-  Expression countOrderedIteratorSteps(Expression Current, Expression Last, SourceLocation L) {
+  Expression countOrderedIteratorSteps(Expression Current, Expression Last, bool Forward, SourceLocation L) {
     const auto Difference = type(A.Context.getPointerDiffType(), L);
     auto Count = snapshot(A.zero(A.Context.getPointerDiffType(), L), L);
     const auto Check = labelName(), Step = labelName(), Done = labelName();
@@ -27309,7 +27326,7 @@ class FunctionLowering {
     label(Check, L);
     branch(binary("!=", Current, Last, "bool", L), Step, Done, L);
     label(Step, L);
-    assign(Current, stepOrderedIterator(Current, true, L), L);
+    assign(Current, stepOrderedIterator(Current, Forward, L), L);
     assign(Count, binary("+", Count, one(Difference, L), Difference, L), L);
     jump(Check, L);
     label(Done, L);
