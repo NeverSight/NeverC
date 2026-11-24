@@ -139508,8 +139508,12 @@ static bool unorderedSetInputPointer(QualType Type, QualType Key, const ASTConte
   const auto *Pointer = Type->getAs<PointerType>();
   if (!Pointer || Type.hasQualifiers()) return false;
   const auto Element = Pointer->getPointeeType();
-  return !Element.isVolatileQualified() && Element.getAddressSpace() == LangAS::Default &&
-         Context.hasSameUnqualifiedType(Element, Key);
+  if (Element.isVolatileQualified() || Element.getAddressSpace() != LangAS::Default)
+    return false;
+  if (Context.hasSameUnqualifiedType(Element, Key)) return true;
+  return (Context.hasSameType(Key, Context.IntTy) || Context.hasSameType(Key, Context.UnsignedIntTy)) &&
+      (Context.hasSameUnqualifiedType(Element, Context.ShortTy) ||
+       Context.hasSameUnqualifiedType(Element, Context.LongTy));
 }
 
 static bool unorderedSetRangeIterator(const State &S, const SourceManager &SM,

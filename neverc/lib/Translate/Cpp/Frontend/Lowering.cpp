@@ -27245,7 +27245,7 @@ class FunctionLowering {
     branch(binary("!=", Cursor, End, "bool", L), Insert, Done, L);
     label(Insert, L);
     auto Key = Iterator ? dereference(unorderedIteratorValue(Cursor, *Iterator, L), L)
-                        : dereference(Cursor, L);
+                        : cast(dereference(Cursor, L), type(Table.KeyType, L), L);
     unorderedInsertNode(Place, Table, std::move(Key), std::nullopt, false, L);
     auto Next = Iterator ? unorderedAdvanceIterator(Cursor, *Iterator, *First, L)
                          : binary("+", Cursor, one(type(A.Context.getPointerDiffType(), L), L), type(Input, L), L);
