@@ -4655,6 +4655,7 @@ struct UtilityOrderedSetStorage {
   uint64_t NodeBytes, ValueOffsetBytes, MappedOffsetBytes;
   bool Multi;
   clang::QualType MappedPairType, MappedValueType;
+  bool Descending;
 };
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
@@ -4785,6 +4786,7 @@ struct UtilityOrderedValueComparator {
   const clang::CXXRecordDecl *Record, *Owner;
   const clang::FieldDecl *Comparator;
   UtilityPairRecord Pair;
+  bool Descending;
 };
 std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorRecord(
     const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
@@ -4792,7 +4794,7 @@ std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorRecor
 const clang::MemberExpr *approvedOrderedValueComparatorFactory(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
+std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 

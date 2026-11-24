@@ -136105,6 +136105,19 @@ static bool orderedMappedValueType(const ASTContext &Context, QualType Type) {
          Context.hasSameType(Type, Context.LongLongTy);
 }
 
+static std::optional<bool> orderedComparatorDirection(const State &S,
+    const SourceManager &SM, QualType Type, QualType Key, const ASTContext &Context) {
+  const auto *Record = Type.isNull() ? nullptr : Type->getAsCXXRecordDecl();
+  if (!Record || !Record->getIdentifier()) return std::nullopt;
+  const auto Name = Record->getName();
+  if (Name != "less" && Name != "greater") return std::nullopt;
+  const auto *Policy = associativeTypeIdentity(S, SM, Record, Name,
+      "__functional/operations.h", "__fwd/functional.h", 1);
+  if (!Policy || !Context.hasSameType(Policy->getTemplateArgs().get(0).getAsType(), Key))
+    return std::nullopt;
+  return Name == "greater";
+}
+
 bool approvedAssociativeContainerMetadataRecord(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Record,
     const ASTContext &Context) {
@@ -136138,7 +136151,7 @@ bool approvedAssociativeContainerMetadataRecord(
     if (!PolicyFor(1, "hash", "__functional/hash.h") ||
         !PolicyFor(2, "equal_to", "__functional/operations.h"))
       return false;
-  } else if (!PolicyFor(Map ? 2 : 1, "less", "__functional/operations.h")) {
+  } else if (!orderedComparatorDirection(S, SM, Args.get(Map ? 2 : 1).getAsType(), Key, Context)) {
     return false;
   }
   const auto *Allocator = associativeTypeIdentity(
@@ -136850,9 +136863,13 @@ static std::optional<UtilityOrderedSetStorage> checkedOrderedTreeStorage(
   } else if (!Context.hasSameType(Element, Context.IntTy)) {
     return std::nullopt;
   }
+  const auto &Args = cast<ClassTemplateSpecializationDecl>(Record)->getTemplateArgs();
+  const auto Descending = orderedComparatorDirection(S, SM,
+      Args.get(Mapped ? 2 : 1).getAsType(), Args.get(0).getAsType(), Context);
+  if (!Descending) return std::nullopt;
   return UtilityOrderedSetStorage{Record, Tree, NodeType, LinkType, SentinelType,
       uint64_t(Context.getTypeSizeInChars(NodeType).getQuantity()), KeyOffset / Byte, MappedOffset / Byte,
-      Record->getName() == "multiset" || Record->getName() == "multimap", MappedPairType, MappedValueType};
+      Record->getName() == "multiset" || Record->getName() == "multimap", MappedPairType, MappedValueType, *Descending};
 }
 
 std::optional<UtilityOrderedSetStorage> approvedUtilityOrderedSetStorage(
@@ -137787,9 +137804,12 @@ static std::optional<UtilityInitializerListRecord> orderedSetListParameter(
     return std::nullopt;
   const auto Type = Ctor->getParamDecl(1)->getType();
   const auto Policy = Type.getNonReferenceType().getUnqualifiedType();
-  const auto *Less = associativeTypeIdentity(S, SM, Policy->getAsCXXRecordDecl(),
-      "less", "__functional/operations.h", "__fwd/functional.h", 1);
-  if (!Less || !Context.hasSameType(Less->getTemplateArgs().get(0).getAsType(), Context.IntTy) ||
+  const auto *OwnerSpec = dyn_cast<ClassTemplateSpecializationDecl>(Record);
+  const unsigned PolicyIndex = Header == "map" ? 2 : 1;
+  if (!OwnerSpec || OwnerSpec->getTemplateArgs().size() <= PolicyIndex ||
+      OwnerSpec->getTemplateArgs().get(PolicyIndex).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Policy, OwnerSpec->getTemplateArgs().get(PolicyIndex).getAsType()) ||
+      !orderedComparatorDirection(S, SM, Policy, Context.IntTy, Context) ||
       !Context.hasSameType(Type, Context.getLValueReferenceType(Policy.withConst())))
     return std::nullopt;
   const auto Input = Ctor->getParamDecl(0)->getType();
@@ -138304,9 +138324,12 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeConstructor(
   if (Header != "map" && Header != "set") return std::nullopt;
   const auto Type = Ctor->getParamDecl(2)->getType();
   const auto Policy = Type.getNonReferenceType().getUnqualifiedType();
-  const auto *Less = associativeTypeIdentity(S, SM, Policy->getAsCXXRecordDecl(),
-      "less", "__functional/operations.h", "__fwd/functional.h", 1);
-  if (!Less || !Context.hasSameType(Less->getTemplateArgs().get(0).getAsType(), Context.IntTy) ||
+  const auto *OwnerSpec = dyn_cast<ClassTemplateSpecializationDecl>(Record);
+  const unsigned PolicyIndex = Header == "map" ? 2 : 1;
+  if (!OwnerSpec || OwnerSpec->getTemplateArgs().size() <= PolicyIndex ||
+      OwnerSpec->getTemplateArgs().get(PolicyIndex).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Policy, OwnerSpec->getTemplateArgs().get(PolicyIndex).getAsType()) ||
+      !orderedComparatorDirection(S, SM, Policy, Context.IntTy, Context) ||
       !Context.hasSameType(Type, Context.getLValueReferenceType(Policy.withConst())))
     return std::nullopt;
   return orderedSetRangeInput(S, SM, Ctor, Record, Header, Context);
@@ -140914,7 +140937,9 @@ std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorRecor
   if (!Pair || !Context.hasSameType(Pair->First->getType(), Arguments.get(0).getAsType().withConst()) ||
       !Context.hasSameType(Pair->Second->getType(), Arguments.get(1).getAsType()))
     return std::nullopt;
-  return UtilityOrderedValueComparator{Record, Owner, Field, *Pair};
+  const auto Descending = orderedComparatorDirection(S, SM, Field->getType(), Arguments.get(0).getAsType(), Context);
+  if (!Descending) return std::nullopt;
+  return UtilityOrderedValueComparator{Record, Owner, Field, *Pair, *Descending};
 }
 
 const MemberExpr *approvedOrderedValueComparatorFactory(
@@ -140965,7 +140990,7 @@ const MemberExpr *approvedOrderedValueComparatorFactory(
       ? Member : nullptr;
 }
 
-std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
+std::optional<UtilityOrderedValueComparator> approvedOrderedValueComparatorCall(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   const auto *Operator = dyn_cast_or_null<CXXOperatorCallExpr>(Call);
   const auto *Method = Operator ? dyn_cast_or_null<CXXMethodDecl>(Operator->getDirectCallee()) : nullptr;
@@ -140995,7 +141020,7 @@ std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
   const auto *Less = dyn_cast_or_null<BinaryOperator>(orderedExpression(orderedReturn(Compare)));
   if (!Field || Field->getMemberDecl() != Info->Comparator ||
       !isa_and_nonnull<CXXThisExpr>(orderedExpression(Field->getBase())) ||
-      !Less || Less->getOpcode() != BO_LT ||
+      !Less || Less->getOpcode() != (Info->Descending ? BO_GT : BO_LT) ||
       !orderedParameter(Less->getLHS(), Compare->getParamDecl(0)) ||
       !orderedParameter(Less->getRHS(), Compare->getParamDecl(1)))
     return std::nullopt;
@@ -141007,7 +141032,7 @@ std::optional<UtilityPairRecord> approvedOrderedValueComparatorCall(
         !Context.hasSameUnqualifiedType(Call->getArg(I + 1)->getType(), PairType))
       return std::nullopt;
   }
-  return Info->Pair;
+  return Info;
 }
 
 static std::optional<FunctionalObjectRecord> approvedEmptyHashSetPolicyQuery(
