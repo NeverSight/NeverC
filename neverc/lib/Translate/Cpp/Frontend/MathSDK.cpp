@@ -59527,7 +59527,7 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   auto Iterator = Function->getParamDecl(0)->getType();
   auto Distance = Parameter->getType();
   const auto Reverse = approvedUtilityReverseIteratorRecord(
-      S, SM, Iterator->getAsCXXRecordDecl(), Context);
+      S, SM, Iterator->getAsCXXRecordDecl(), Context, true);
   const auto Wrapped = approvedUtilityWrapIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
   const auto Unordered = approvedUtilityUnorderedMapIteratorRecord(
@@ -59535,7 +59535,9 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
   const auto *Init = selectedDefaultArgument(Default, Context);
   if (!Origin || Origin->Root != "libcxx" ||
       Origin->Path != "__iterator/next.h" ||
-      (!utilityObjectPointer(Context, Iterator) && !Reverse && !Wrapped && !Unordered) ||
+      (!utilityObjectPointer(Context, Iterator) && !Reverse && !Wrapped &&
+       !Unordered && !approvedOrderedSetIteratorRecord(
+                         S, SM, Iterator->getAsCXXRecordDecl(), Context)) ||
       !Distance->isIntegralType(Context) ||
       Context.getTypeSize(Distance) > 64 ||
       !Context.hasSameType(Distance, Context.getPointerDiffType()) ||
@@ -134601,6 +134603,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return std::nullopt;
     return std::pair{Array->ElementType, Array->Size};
   };
+  auto OrderedOwner = [&](QualType Parameter) -> std::optional<UtilityOrderedSetStorage> {
+    if (!Parameter->isLValueReferenceType()) return std::nullopt;
+    const auto Type = Parameter->getPointeeType();
+    const auto *Record = Type->getAsCXXRecordDecl();
+    if (!Record || !Record->getIdentifier() || Type.isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Type))
+      return std::nullopt;
+    const auto Name = Record->getName();
+    if (Name == "map" || Name == "multimap")
+      return approvedUtilityOrderedMapStorage(S, SM, Record, Context);
+    return approvedUtilityOrderedSetStorage(S, SM, Record, Context);
+  };
   if ((Origin->Path == "__iterator/access.h" ||
        Origin->Path == "__iterator/data.h" ||
        Origin->Path == "__iterator/size.h" ||
@@ -134608,6 +134622,16 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 1 && Function->getNumParams() == 1) {
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
+    if (const auto Owner = OrderedOwner(Parameter); Owner && Call->isPRValue() && Same(Call->getType(), Result)) {
+      if (Origin->Path == "__iterator/access.h" &&
+          (Name == "begin" || Name == "cbegin" || Name == "end" || Name == "cend") &&
+          approvedOrderedSetIteratorRecord(S, SM, Result->getAsCXXRecordDecl(), Context, &*Owner))
+        return Name == "end" || Name == "cend" ? UtilityOperation::IteratorEnd : UtilityOperation::IteratorBegin;
+      if (Origin->Path == "__iterator/size.h" && Name == "size" && Same(Result, Context.getSizeType()))
+        return UtilityOperation::IteratorSize;
+      if (Origin->Path == "__iterator/empty.h" && Name == "empty" && Result->isBooleanType())
+        return UtilityOperation::IteratorEmpty;
+    }
     const auto Range =
         IteratorRange(Parameter->isReferenceType() ? Parameter->getPointeeType()
                                                    : QualType());
@@ -134643,6 +134667,12 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->isPRValue()) {
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
+    if (const auto Owner = OrderedOwner(Parameter); Owner && Same(Call->getType(), Result)) {
+      const auto Reverse = ReverseFor(Result, true);
+      if (Reverse && !Reverse->OrderedElementType.isNull() &&
+          approvedOrderedSetIteratorRecord(S, SM, Reverse->IteratorType->getAsCXXRecordDecl(), Context, &*Owner))
+        return Name == "rend" || Name == "crend" ? UtilityOperation::IteratorREnd : UtilityOperation::IteratorRBegin;
+    }
     const auto Range =
         IteratorRange(Parameter->isReferenceType() ? Parameter->getPointeeType()
                                                    : QualType());
@@ -134665,11 +134695,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Type->isFunctionPointerType() &&
            !Type->getPointeeType()->isVoidType();
   };
-  auto PointerOrReverse = [&](QualType Type) {
-    return ObjectPointer(Type) || ReverseFor(Type).has_value() ||
+  auto NavigableIterator = [&](QualType Type) {
+    return ObjectPointer(Type) || ReverseFor(Type, true).has_value() ||
            approvedUtilityWrapIteratorRecord(S, SM, Type->getAsCXXRecordDecl(),
-                                             Context)
-               .has_value();
+                                             Context).has_value() ||
+           approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
   };
   if (Origin->Path == "__iterator/advance.h" && Name == "advance" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
@@ -134677,7 +134707,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     auto Iterator = Function->getParamDecl(0)->getType();
     auto Distance = Function->getParamDecl(1)->getType();
     if (Iterator->isLValueReferenceType() &&
-        PointerOrReverse(Iterator->getPointeeType()) &&
+        NavigableIterator(Iterator->getPointeeType()) &&
         !Iterator->getPointeeType().isConstQualified() &&
         Distance->isIntegralType(Context) &&
         Context.getTypeSize(Distance) <= 64 &&
@@ -134692,7 +134722,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Same(Call->getType(), Function->getReturnType())) {
     auto First = Function->getParamDecl(0)->getType();
     auto Last = Function->getParamDecl(1)->getType();
-    if (PointerOrReverse(First) && Same(First, Last) &&
+    if (NavigableIterator(First) && Same(First, Last) &&
         Same(Call->getArg(0)->getType(), First) &&
         Same(Call->getArg(1)->getType(), Last))
       return UtilityOperation::IteratorDistance;
@@ -134703,7 +134733,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Function->getNumParams() == 2 && Call->isPRValue()) {
     auto Iterator = Function->getParamDecl(0)->getType();
     auto Distance = Function->getParamDecl(1)->getType();
-    if (PointerOrReverse(Iterator) &&
+    if (NavigableIterator(Iterator) &&
         Same(Distance, Context.getPointerDiffType()) &&
         Same(Call->getType(), Iterator) &&
         Same(Function->getReturnType(), Iterator) &&
@@ -134775,7 +134805,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 1 && Function->getNumParams() == 1 &&
       Call->isPRValue()) {
     auto Iterator = Function->getParamDecl(0)->getType();
-    if (PointerOrReverse(Iterator) && Same(Call->getType(), Iterator) &&
+    if (NavigableIterator(Iterator) && Same(Call->getType(), Iterator) &&
         Same(Function->getReturnType(), Iterator) &&
         Same(Call->getArg(0)->getType(), Iterator))
       return UtilityOperation::IteratorPrev;

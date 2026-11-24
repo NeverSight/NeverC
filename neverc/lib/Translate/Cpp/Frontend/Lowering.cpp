@@ -18286,6 +18286,21 @@ class FunctionLowering {
     case UtilityOperation::IteratorEmpty:
     case UtilityOperation::IteratorData: {
       const auto *Source = Call->getArg(0);
+      if (approvedOrderedContainerRuntimeRecord(A.S, A.Sources, Source->getType()->getAsCXXRecordDecl(), A.Context)) {
+        const auto Parameter = Call->getDirectCallee()->getParamDecl(0)->getType();
+        auto Place = dereference(argument(Source, Parameter), L);
+        if (Operation == UtilityOperation::IteratorSize || Operation == UtilityOperation::IteratorEmpty) {
+          auto Size = orderedContainerMember(std::move(Place), "nct_ordered_size", L);
+          if (Operation == UtilityOperation::IteratorSize) return Size;
+          return binary("==", std::move(Size), A.zero(A.Context.getSizeType(), L), "bool", L);
+        }
+        auto Node = Operation == UtilityOperation::IteratorEnd
+            ? orderedTreeSentinel(std::move(Place), L)
+            : orderedContainerMember(std::move(Place), "nct_ordered_begin", L);
+        auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        assign(orderedIteratorCursor(Output, L), std::move(Node), L);
+        return Output;
+      }
       const auto *Native = A.Context.getAsConstantArrayType(Source->getType());
       auto Array = ArrayFor(Source->getType());
       if (!Native && !Array)
@@ -18331,7 +18346,17 @@ class FunctionLowering {
                                   type(A.Context.getPointerDiffType(), L), L),
                              L);
       auto Iterator = dereference(std::move(IteratorAddress), L);
-      auto Reverse = ReverseFor(IteratorType);
+      if (approvedOrderedSetIteratorRecord(A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context)) {
+        auto Cursor = orderedIteratorCursor(std::move(Iterator), L);
+        assign(Cursor, stepOrderedIteratorBy(Cursor, std::move(Offset), false, L), L);
+        return {};
+      }
+      auto Reverse = ReverseFor(IteratorType, true);
+      if (Reverse && !Reverse->OrderedElementType.isNull()) {
+        auto Slot = ReverseCurrent(std::move(Iterator), *Reverse);
+        assign(Slot, stepOrderedIteratorBy(Slot, std::move(Offset), true, L), L);
+        return {};
+      }
       const auto Wrapped = approvedUtilityWrapIteratorRecord(
           A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context);
       if (Reverse) {
@@ -18358,9 +18383,18 @@ class FunctionLowering {
       return {};
     }
     case UtilityOperation::IteratorDistance: {
+      const auto Type = Call->getArg(0)->getType();
+      auto Reverse = ReverseFor(Type, true);
+      const bool OrderedReverse = Reverse && !Reverse->OrderedElementType.isNull();
+      if (OrderedReverse ||
+          approvedOrderedSetIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context)) {
+        const auto *Layout = OrderedReverse ? &*Reverse : nullptr;
+        auto First = loadOrderedIteratorArgument(Call, 0, L, Layout);
+        auto Last = loadOrderedIteratorArgument(Call, 1, L, Layout);
+        return countOrderedIteratorSteps(std::move(First), std::move(Last), !OrderedReverse, L);
+      }
       auto First = AlgorithmRangeValue(0).first;
       auto Last = AlgorithmRangeValue(1).first;
-      auto Reverse = ReverseFor(Call->getArg(0)->getType());
       if (Reverse) {
         auto FirstCurrent =
             snapshot(ReverseCurrent(std::move(First), *Reverse), L);
@@ -18377,23 +18411,37 @@ class FunctionLowering {
     }
     case UtilityOperation::IteratorNext:
     case UtilityOperation::IteratorPrev: {
-      auto IteratorRange = AlgorithmRangeValue(0);
-      auto Iterator = std::move(IteratorRange.first);
-      Expression Offset;
-      if (Call->getNumArgs() == 1) {
-        Offset = quantity(1, type(A.Context.getPointerDiffType(), L), L);
-      } else {
+      const auto LoadOffset = [&]() {
+        const auto Difference = type(A.Context.getPointerDiffType(), L);
+        if (Call->getNumArgs() == 1)
+          return quantity(1, Difference, L);
         const auto *Distance = Call->getArg(1);
         if (const auto *Default = dyn_cast<CXXDefaultArgExpr>(Distance))
           Distance = selectedDefaultArgument(Default, A.Context);
         if (!Distance)
           reject(L, "iterator offset",
                  "The selected iterator distance is unavailable.");
-        Offset = snapshot(cast(expression(Distance),
-                               type(A.Context.getPointerDiffType(), L), L),
-                          L);
+        return snapshot(cast(expression(Distance), Difference, L), L);
+      };
+      const auto Type = Call->getArg(0)->getType();
+      auto Reverse = ReverseFor(Type, true);
+      const bool OrderedReverse = Reverse && !Reverse->OrderedElementType.isNull();
+      if (OrderedReverse ||
+          approvedOrderedSetIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context)) {
+        const auto *Layout = OrderedReverse ? &*Reverse : nullptr;
+        auto Input = loadOrderedIteratorArgument(Call, 0, L, Layout);
+        auto Offset = LoadOffset();
+        const bool WalkBack = OrderedReverse != (Operation == UtilityOperation::IteratorPrev);
+        auto Position = stepOrderedIteratorBy(std::move(Input), std::move(Offset), WalkBack, L);
+        if (OrderedReverse)
+          return ReverseValue(std::move(Position), *Reverse);
+        auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        assign(orderedIteratorCursor(Output, L), std::move(Position), L);
+        return Output;
       }
-      auto Reverse = ReverseFor(Call->getArg(0)->getType());
+      auto IteratorRange = AlgorithmRangeValue(0);
+      auto Iterator = std::move(IteratorRange.first);
+      auto Offset = LoadOffset();
       if (Reverse) {
         auto Current =
             snapshot(ReverseCurrent(std::move(Iterator), *Reverse), L);
@@ -18418,6 +18466,22 @@ class FunctionLowering {
       const bool Member = Operation == UtilityOperation::ArrayRBegin ||
                           Operation == UtilityOperation::ArrayREnd;
       const auto *Source = Member ? MemberObject() : Call->getArg(0);
+      if (!Member &&
+          approvedOrderedContainerRuntimeRecord(A.S, A.Sources, Source->getType()->getAsCXXRecordDecl(), A.Context)) {
+        const auto Reverse = approvedUtilityReverseIteratorRecord(
+            A.S, A.Sources, Call->getType()->getAsCXXRecordDecl(), A.Context, true);
+        if (!Reverse || Reverse->OrderedElementType.isNull())
+          reject(L, "ordered reverse access", "The checked reverse cursor layout is required.");
+        const auto Parameter = Call->getDirectCallee()->getParamDecl(0)->getType();
+        auto Place = dereference(argument(Source, Parameter), L);
+        auto Node = Operation == UtilityOperation::IteratorRBegin
+            ? orderedTreeSentinel(std::move(Place), L)
+            : orderedContainerMember(std::move(Place), "nct_ordered_begin", L);
+        auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        assign(reverseIteratorSlot(Output, Reverse->Legacy, *Reverse, L), Node, L);
+        assign(reverseIteratorSlot(Output, Reverse->Current, *Reverse, L), std::move(Node), L);
+        return Output;
+      }
       const auto *Native =
           Source ? A.Context.getAsConstantArrayType(Source->getType())
                  : nullptr;
@@ -27256,6 +27320,54 @@ class FunctionLowering {
     auto Stored = fieldStorage(std::move(Place), Field, L);
     if (!Info.OrderedElementType.isNull()) return orderedIteratorCursor(std::move(Stored), L);
     return Info.WrappedCurrent ? fieldStorage(std::move(Stored), Info.WrappedCurrent, L) : Stored;
+  }
+
+  Expression loadOrderedIteratorArgument(const CallExpr *Call, unsigned Index, SourceLocation L,
+      const UtilityReverseIteratorRecord *Layout) {
+    const auto Parameter = Call->getDirectCallee()->getParamDecl(Index)->getType();
+    auto Argument = dereference(argument(Call->getArg(Index), Parameter), L);
+    auto Cursor = Layout ? reverseIteratorSlot(std::move(Argument), Layout->Current, *Layout, L)
+                         : orderedIteratorCursor(std::move(Argument), L);
+    return snapshot(std::move(Cursor), L);
+  }
+
+  Expression stepOrderedIteratorBy(Expression Node, Expression Offset, bool Reverse, SourceLocation L) {
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    const auto Zero = A.zero(A.Context.getPointerDiffType(), L);
+    auto Current = snapshot(std::move(Node), L);
+    auto Remaining = snapshot(std::move(Offset), L);
+    const auto Check = labelName(), Direction = labelName(), Forward = labelName(),
+               Backward = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("==", Remaining, Zero, "bool", L), Done, Direction, L);
+    label(Direction, L);
+    branch(binary(">", Remaining, Zero, "bool", L), Forward, Backward, L);
+    label(Forward, L);
+    assign(Current, stepOrderedIterator(Current, !Reverse, L), L);
+    assign(Remaining, binary("-", Remaining, one(Difference, L), Difference, L), L);
+    jump(Check, L);
+    label(Backward, L);
+    assign(Current, stepOrderedIterator(Current, Reverse, L), L);
+    assign(Remaining, binary("+", Remaining, one(Difference, L), Difference, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Current;
+  }
+
+  Expression countOrderedIteratorSteps(Expression Current, Expression Last, bool Forward, SourceLocation L) {
+    const auto Difference = type(A.Context.getPointerDiffType(), L);
+    auto Count = snapshot(A.zero(A.Context.getPointerDiffType(), L), L);
+    const auto Check = labelName(), Step = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, Last, "bool", L), Step, Done, L);
+    label(Step, L);
+    assign(Current, stepOrderedIterator(Current, Forward, L), L);
+    assign(Count, binary("+", Count, one(Difference, L), Difference, L), L);
+    jump(Check, L);
+    label(Done, L);
+    return Count;
   }
 
   Expression stepOrderedIterator(Expression Node, bool Forward, SourceLocation L) {
