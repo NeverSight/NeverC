@@ -75,7 +75,7 @@
     "TranslateTest.CoreV2UnorderedSetUnsignedKeyNodeTransferRetainsUnsignedPayloadAndAddressRunAtBothOptimizations",
     "TranslateTest.CoreV2UnorderedSetUnsignedKeyAlternateUnsignedHashRemainsUnsupportedRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "a5ddd1fe6e53f82facecbd1237242b0926e8170a3a5aa4c6dae75302b9027724",
   "maintained_original_sha256": "b537c8295007d1c8b9bef82c985bc3b7db2f5701d9b9b24e3650c6a0d456962e",
@@ -87,5 +87,10 @@
   "current_registry_count": 8655,
   "current_python_registry_tests": 246,
   "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "b50c790b71c3ef5cf58ea26b38ef18f865f34be936537b8881a439a1504fe7b1",
+  "source_proof_sha256": "369e42114506e11940c8f3676f38126db4fcb3b4e32143cd641c270aca48cf88"
 }

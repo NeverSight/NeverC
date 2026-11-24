@@ -109,14 +109,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-list-assignment-custom-comparator-remains-unsupported",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int lhs, int rhs) const { return lhs > rhs; }\n};\nvoid assign(std::map<int, int, Reverse> &values) { values = {{1, 7}, {1, 8}}; }\n",
-      "source_sha256": "3928bf69997340da27cc04522bddc07852441e10cf8cc999d18a357afffc8b57",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-emplace-exact-int-reuses-the-existing-key-without-allocating",
       "expected": "accept",
       "public_header": "set",
@@ -141,6 +133,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-map-list-assignment-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int lhs, int rhs) const { return lhs > rhs; }\n};\nvoid assign(std::map<int, int, Reverse> &values) { values = {{1, 7}, {1, 8}}; }\n",
+      "source_sha256": "3928bf69997340da27cc04522bddc07852441e10cf8cc999d18a357afffc8b57",
+      "kind": "source-body-guard"
+    },
+    {
       "name": "ordered-set-emplace-converting-key-remains-unsupported",
       "expected": "reject",
       "public_header": "set",
@@ -160,7 +160,7 @@
     "TranslateTest.CoreV2OrderedMapListAssignmentCustomComparatorRemainsUnsupportedRejected",
     "TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyRemainsUnsupportedRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "045b8bf332dc81fa11c018ca5e0360fe683be8e2808d3e61e89dac547bce4905",
   "maintained_original_sha256": "7f999b85b761decd27f7e336a4ae778552062c84936b797d0d834c864a31f26a",
@@ -172,5 +172,10 @@
   "current_registry_count": 8757,
   "current_python_registry_tests": 256,
   "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "ordered-list-assign-and-emplace": "fefd9316cfc570d68252c8f81f3251485376c14200db77e2834760c6bc6c1910"
+  },
+  "native_reference_authentication_sha256": "e14506aa90b5390f72dd8349936361bf9c529c737c9078b7aad37c5cdf2f6b13",
+  "source_proof_sha256": "369e42114506e11940c8f3676f38126db4fcb3b4e32143cd641c270aca48cf88"
 }
