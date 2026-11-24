@@ -1114,7 +1114,7 @@ enum class UtilityOperation {
   UnorderedMapInsertRange,
   UnorderedTableCopyAssign,
   UnorderedTableMoveAssign,
-  UnorderedTableGetAllocator,
+  AssociativeGetAllocator,
   AssociativePolicy,
   UnorderedIteratorDereference,
   UnorderedIteratorArrow,
@@ -4599,7 +4599,7 @@ bool approvedUtilityUnorderedTableDefaultArgument(
 std::optional<FunctionalObjectRecord> approvedUtilityAssociativePolicyQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
-std::optional<UtilityAllocatorRecord> approvedUtilityUnorderedTableAllocatorQuery(
+std::optional<UtilityAllocatorRecord> approvedUtilityAssociativeAllocatorQuery(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 std::optional<UtilityUnorderedMapConstructionKind>
@@ -4738,7 +4738,7 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListAssignment(
     const clang::ASTContext &Context);
 struct UtilityOrderedSetRangeInput {
   UtilityOrderedSetStorage Storage;
-  clang::QualType PointerType;
+  clang::QualType IteratorType;
   std::optional<UtilityPairRecord> Pair;
 };
 std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
@@ -4757,7 +4757,7 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCount(
 bool approvedOrderedContainerRuntimeRecord(const State &S,
     const clang::SourceManager &SM, const clang::CXXRecordDecl *Record,
     const clang::ASTContext &Context);
-bool approvedOrderedContainerDefaultConstruction(const State &S,
+bool approvedOrderedContainerEmptyConstruction(const State &S,
     const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context, llvm::StringRef *Failure = nullptr);
 bool approvedOrderedContainerDestructor(const State &S,
