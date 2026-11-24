@@ -9701,7 +9701,9 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   if (!utilityAnyInlineScalar(Payload, Context))
     return nullptr;
   const auto ConstValue = Payload.withConst();
-  const bool Reference = Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue));
+  const bool MutableReference = Context.hasSameType(Result, Context.getLValueReferenceType(Payload));
+  const bool Reference = MutableReference ||
+      Context.hasSameType(Result, Context.getLValueReferenceType(ConstValue));
   if (!Context.hasSameType(Result, Args->get(0).getAsType()) ||
       (!Reference && !Context.hasSameType(Result, Payload)) ||
       Call->isLValue() != Reference || !Context.hasSameType(Call->getType(), Result.getNonReferenceType()))
@@ -9716,7 +9718,8 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
     return nullptr;
   const bool Const = Local->getType().isConstQualified();
   const auto Owner = Context.getRecordType(Any);
-  if ((!Const && (Reference || !anySingleUseLocal(S, SM, Local, Receiver))) ||
+  if ((Const && MutableReference) ||
+      (!Const && !anySingleUseLocal(S, SM, Local, Receiver)) ||
       !Context.hasSameType(F->getParamDecl(0)->getType(),
                            Context.getLValueReferenceType(Const ? Owner.withConst() : Owner)))
     return nullptr;
