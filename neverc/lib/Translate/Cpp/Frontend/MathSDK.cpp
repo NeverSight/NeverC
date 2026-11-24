@@ -137868,21 +137868,28 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeInput(
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Record, Context)
                               : approvedUtilityOrderedSetStorage(S, SM, Record, Context);
   if (!Storage) return std::nullopt;
+  std::optional<UtilityPairRecord> Pair;
   if (Iterator->isPointerType()) {
     const auto Element = Iterator->getPointeeType();
     const auto Value = Mapped ? Storage->MappedPairType : Context.IntTy;
-    if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst()))
-      return std::nullopt;
+    if (!Context.hasSameType(Element, Value) && !Context.hasSameType(Element, Value.withConst())) {
+      if (!Mapped) return std::nullopt;
+      Pair = approvedUtilityPairRecord(S, SM, Element->getAsCXXRecordDecl(), Context);
+      if (!Pair || !Context.hasSameType(Pair->First->getType(), Context.IntTy) ||
+          !Context.hasSameType(Pair->Second->getType(), Context.IntTy))
+        return std::nullopt;
+      const auto Input = Context.getRecordType(Pair->Record);
+      if (!Context.hasSameType(Element, Input) && !Context.hasSameType(Element, Input.withConst()))
+        return std::nullopt;
+    }
   } else if (!approvedOrderedSetIteratorRecord(
                  S, SM, Iterator->getAsCXXRecordDecl(), Context, &*Storage)) {
     return std::nullopt;
   }
-  std::optional<UtilityPairRecord> Pair;
-  if (Mapped) {
+  if (Mapped && !Pair)
     Pair = approvedUtilityPairRecord(S, SM, Storage->MappedPairType->getAsCXXRecordDecl(), Context);
-    if (!Pair || !Pair->Record->hasTrivialDestructor())
-      return std::nullopt;
-  }
+  if (Mapped && (!Pair || !Pair->Record->hasTrivialDestructor()))
+    return std::nullopt;
   return UtilityOrderedSetRangeInput{*Storage, Iterator, Pair};
 }
 
@@ -137909,6 +137916,16 @@ static std::optional<UtilityOrderedSetRangeInput> orderedSetRangeMethod(
         !orderedParameter(Compare->getLHS(), First) || !orderedParameter(Compare->getRHS(), Last) ||
         !Step || Step->getOpcode() != UO_PreInc || !orderedParameter(Step->getSubExpr(), First))
       return std::nullopt;
+    if (Input->Pair && Context.hasSameType(Input->Pair->First->getType(), Context.IntTy)) {
+      const auto *Insert = dyn_cast_or_null<CXXMemberCallExpr>(
+          orderedExpression(dyn_cast<Expr>(Loop->getBody())));
+      const auto *Element = Insert && Insert->getNumArgs() == 2
+          ? dyn_cast_or_null<UnaryOperator>(orderedExpression(Insert->getArg(1))) : nullptr;
+      if (!Element || Element->getOpcode() != UO_Deref ||
+          !Context.hasSameType(Element->getType(), Input->IteratorType->getPointeeType()) ||
+          !orderedParameter(Element->getSubExpr(), First))
+        return std::nullopt;
+    }
   } else {
     auto Check = [&](const Expr *E) {
       return checkedOrderedIteratorOperator(
