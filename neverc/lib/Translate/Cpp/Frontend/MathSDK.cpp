@@ -7430,6 +7430,16 @@ static bool variantForward(const State &S, const SourceManager &SM, const Expr *
   return Context.hasSameType(Call->getDirectCallee()->getReturnType(), P->getType());
 }
 
+static bool variantObjectPointerToVoid(QualType From, QualType To) {
+  const auto Pointee = From->getPointeeType();
+  const auto Destination = To->getPointeeType();
+  return From->isPointerType() && To->isPointerType() &&
+         !Pointee.isNull() && Pointee->isObjectType() && !Pointee.isVolatileQualified() &&
+         !Destination.isNull() && Destination->isVoidType() && !Destination.isVolatileQualified() &&
+         Pointee.getAddressSpace() == LangAS::Default && Destination.getAddressSpace() == LangAS::Default &&
+         (!Pointee.isConstQualified() || Destination.isConstQualified());
+}
+
 static bool variantStoredAlternative(const State &S, const SourceManager &SM,
     const CXXConstructExpr *Data, const UtilityVariantRecord &V, unsigned Index,
     unsigned Arity, const ASTContext &Context) {
@@ -7481,9 +7491,23 @@ static bool variantStoredAlternative(const State &S, const SourceManager &SM,
     } else if (!Selected->isDefaultConstructor() || !Build->requiresZeroInitialization()) {
       return false;
     }
-  } else if (Arity ? !variantForward(S, SM, Initialization, Item->getParamDecl(1), Context)
-                   : !isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens())) {
-    return false;
+  } else if (!Arity) {
+    if (!isa<ImplicitValueInitExpr, CXXScalarValueInitExpr>(Initialization->IgnoreParens()))
+      return false;
+  } else {
+    const auto *Parameter = Item->getParamDecl(1);
+    const auto From = Parameter->getType().getNonReferenceType();
+    const auto To = Alt->getType();
+    if (!Context.hasSameUnqualifiedType(From, To)) {
+      const auto *Conversion = dyn_cast<ImplicitCastExpr>(Initialization->IgnoreParens());
+      if (!variantObjectPointerToVoid(From, To) || !Conversion || Conversion->getCastKind() != CK_BitCast ||
+          !Context.hasSameUnqualifiedType(Conversion->getType(), To) ||
+          !Context.hasSameUnqualifiedType(Conversion->getSubExpr()->getType(), From))
+        return false;
+      Initialization = Conversion->getSubExpr();
+    }
+    if (!variantForward(S, SM, Initialization, Parameter, Context))
+      return false;
   }
   return true;
 }
@@ -7562,7 +7586,8 @@ std::optional<UtilityVariantConstruction> approvedUtilityVariantConstruction(
     return std::nullopt;
   if (Input && (!C->getParamDecl(Offset)->getType()->isReferenceType() ||
                 !variantForward(S, SM, Impl->getArg(1), C->getParamDecl(Offset), Context) ||
-                !Context.hasSameUnqualifiedType(Input->getType(), Variant->Alternatives[*I]->getType())))
+                (!Context.hasSameUnqualifiedType(Input->getType(), Variant->Alternatives[*I]->getType()) &&
+                 (!Requested || !variantObjectPointerToVoid(Input->getType(), Variant->Alternatives[*I]->getType())))))
     return std::nullopt;
   // Inherited constructors introduce no user-written arguments. Confirm each
   // selecting declaration ends in the exact storage base constructor.
@@ -8158,7 +8183,8 @@ std::optional<UtilityVariantAssignment> approvedUtilityVariantAssignment(
   return UtilityVariantAssignment{Receiver,Input,Arrow,isa<CXXOperatorCallExpr>(Call)};
 }
 
-// A variant swap with arithmetic alternatives cannot select a user ADL swap.
+// Fundamental values, pointers to fundamental types, and pinned monostate
+// cannot select a user ADL swap.
 // Authenticate both wrappers and their exact pinned, instantiated implementation.
 static const FunctionDecl *variantSwapDefinition(
     const State &S, const SourceManager &SM, const FunctionDecl *F,
@@ -8214,10 +8240,18 @@ std::optional<UtilityVariantSwap> approvedUtilityVariantSwap(
       !Context.hasSameType(Type, Right->getType()) ||
       Swap->getParent()->getCanonicalDecl() != V->Record->getCanonicalDecl() ||
       !V->Record->isTriviallyCopyable() ||
-      llvm::any_of(V->Alternatives, [](const FieldDecl *Field) {
+      llvm::any_of(V->Alternatives, [&](const FieldDecl *Field) {
         const auto Element = Field->getType();
-        return Element.isConstQualified() || !Element->isArithmeticType() ||
-               !isa<BuiltinType>(Element.getCanonicalType().getTypePtr());
+        if (Element.isConstQualified())
+          return true;
+        if (const auto *Pointer = Element->getAs<PointerType>()) {
+          const auto Pointee = Pointer->getPointeeType();
+          return Pointee.getAddressSpace() != LangAS::Default ||
+                 !isa<BuiltinType>(Pointee.getCanonicalType().getTypePtr());
+        }
+        if (isa<BuiltinType>(Element.getCanonicalType().getTypePtr()))
+          return !Element->isArithmeticType() && !Element->isNullPtrType();
+        return !approvedUtilityMonostateMetadata(S, SM, Element->getAsCXXRecordDecl(), Context);
       }))
     return std::nullopt;
   const auto Reference = Context.getLValueReferenceType(Type);
@@ -8757,6 +8791,17 @@ static bool anyMoveOperand(const State &S, const SourceManager &SM, const Expr *
 static const FunctionDecl *anyPinnedDefinition(const State &S, const SourceManager &SM,
     const FunctionDecl *F, llvm::StringRef Name, unsigned Arity, llvm::StringRef Path);
 
+llvm::SmallVector<UtilityAnyPointerScalar, 6> utilityAnyPointerScalars(const ASTContext &Context) {
+  return {
+      {Context.VoidPtrTy, {18, UtilityAnyVoidPointer}},
+      {Context.getPointerType(Context.VoidTy.withConst()), {19, UtilityAnyConstVoidPointer}},
+      {Context.NullPtrTy, {20, UtilityAnyNullPointer}},
+      {Context.getPointerType(Context.BoolTy), {21, "nct_any_bool_pointer"}},
+      {Context.getPointerType(Context.IntTy), {22, "nct_any_int_pointer"}},
+      {Context.getPointerType(Context.IntTy.withConst()), {23, "nct_any_const_int_pointer"}},
+  };
+}
+
 std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
     const ASTContext &Context) {
   if (Type.isNull())
@@ -8814,16 +8859,11 @@ std::optional<UtilityAnyScalar> utilityAnyInlineScalar(QualType Type,
   if (Context.hasSameType(Type, Context.Char32Ty) &&
       Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32)
     return UtilityAnyScalar{17, UtilityAnyChar32};
-  const auto ConstVoidPointer = Context.getPointerType(Context.VoidTy.withConst());
-  if ((Context.hasSameType(Type, Context.VoidPtrTy) || Context.hasSameType(Type, ConstVoidPointer) ||
-       Context.hasSameType(Type, Context.NullPtrTy)) &&
-      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64) {
-    if (Context.hasSameType(Type, Context.VoidPtrTy))
-      return UtilityAnyScalar{18, UtilityAnyVoidPointer};
-    if (Context.hasSameType(Type, ConstVoidPointer))
-      return UtilityAnyScalar{19, UtilityAnyConstVoidPointer};
-    return UtilityAnyScalar{20, UtilityAnyNullPointer};
-  }
+  if ((Type->isPointerType() || Type->isNullPtrType()) &&
+      Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64)
+    for (const auto &[Candidate, Scalar] : utilityAnyPointerScalars(Context))
+      if (Context.hasSameType(Type, Candidate))
+        return Scalar;
   return std::nullopt;
 }
 
