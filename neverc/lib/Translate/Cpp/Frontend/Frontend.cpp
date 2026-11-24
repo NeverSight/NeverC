@@ -14542,11 +14542,10 @@ bool Adapter::requireUtilityReverseIterator(const CXXRecordDecl *Record,
     return false;
   }
   auto Iterator =
-      approvedUtilityReverseIteratorRecord(S, Sources, Record, Context);
+      approvedUtilityReverseIteratorRecord(S, Sources, Record, Context, true);
   if (!Iterator) {
     reject(Location, "standard library record",
-           "Only the pinned std::reverse_iterator<T*> record layout is "
-           "admitted.",
+           "The pinned reverse iterator layout and a checked underlying iterator are required.",
            "TR0203");
     return false;
   }
@@ -19534,7 +19533,7 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
           return;
         }
         if (const auto Iterator = approvedUtilityReverseIteratorRecord(
-                A.S, A.Sources, Declaration, A.Context)) {
+                A.S, A.Sources, Declaration, A.Context, true)) {
           // Its checked iterator fields and empty base supply the SDK layout.
           // Retain the stored iterator's source without borrowing private
           // field/base TypeLocs or consuming the pointed-to object's layout.
@@ -31748,7 +31747,7 @@ static void orderCoreV2Records(Adapter &A) {
       return;
     State[I] = Visit::Active;
     const bool UtilityReverse =
-        approvedUtilityReverseIteratorRecord(A.S, A.Sources, R, A.Context)
+        approvedUtilityReverseIteratorRecord(A.S, A.Sources, R, A.Context, true)
             .has_value();
     auto UtilityTuple =
         approvedUtilityTupleRecord(A.S, A.Sources, R, A.Context);
@@ -32165,7 +32164,7 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
     json::Array Fields;
     const bool UtilityReverse =
         S.coreV2() &&
-        approvedUtilityReverseIteratorRecord(S, Sources, R, Context)
+        approvedUtilityReverseIteratorRecord(S, Sources, R, Context, true)
             .has_value();
     auto UtilityTuple =
         S.coreV2() ? approvedUtilityTupleRecord(S, Sources, R, Context)
