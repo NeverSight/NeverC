@@ -1315,6 +1315,7 @@ enum class UtilityOperation {
   OrderedSetCopyAssign,
   OrderedSetInsert,
   OrderedSetInsertList,
+  OrderedSetInsertRange,
   OrderedSetIterator,
   OrderedSetMutation,
   OrderedSetSwap,
@@ -4721,6 +4722,17 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListConstruction(
     const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetListInput> approvedOrderedSetListInsertion(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+struct UtilityOrderedSetRangeInput {
+  UtilityOrderedSetStorage Storage;
+  clang::QualType PointerType;
+  std::optional<UtilityPairRecord> Pair;
+};
+std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeInsertion(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetRangeInput> approvedOrderedSetRangeConstruction(
+    const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
 bool approvedOrderedSetSelectedBody(const State &S,
     const clang::SourceManager &SM, const clang::FunctionDecl *Function,

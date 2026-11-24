@@ -27620,6 +27620,34 @@ class FunctionLowering {
     return Mapped;
   }
 
+  void insertOrderedSetElement(Expression Place, Expression Element,
+      const UtilityOrderedSetStorage &Storage, const std::optional<UtilityPairRecord> &Pair,
+      SourceLocation L) {
+    if (!Pair) {
+      insertOrderedSetKey(std::move(Place), std::move(Element), Storage, L);
+      return;
+    }
+    auto Key = fieldStorage(Element, Pair->First, L);
+    auto Value = fieldStorage(std::move(Element), Pair->Second, L);
+    auto Result = insertOrderedSetKey(std::move(Place), std::move(Key), Storage, L);
+    initializeOrderedMappedValue(std::move(Result), std::move(Value), Storage, L);
+  }
+
+  void insertOrderedSetRange(Expression Place, Expression Current, Expression End,
+      const UtilityOrderedSetRangeInput &Info, SourceLocation L) {
+    const auto Pointer = type(Info.PointerType, L);
+    const auto Index = type(A.Context.getPointerDiffType(), L);
+    const auto Check = labelName(), Read = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, std::move(End), "bool", L), Read, Done, L);
+    label(Read, L);
+    insertOrderedSetElement(Place, dereference(Current, L), Info.Storage, Info.Pair, L);
+    assign(Current, binary("+", Current, one(Index, L), Pointer, L), L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
   void insertOrderedSetList(Expression Place, Expression Begin, Expression Length,
       const UtilityOrderedSetListInput &Info, SourceLocation L) {
     const auto Pointer = type(Info.List.Begin->getType(), L);
@@ -27631,14 +27659,7 @@ class FunctionLowering {
     branch(binary("<", Position, Length, "bool", L), Read, Done, L);
     label(Read, L);
     auto Element = dereference(binary("+", Begin, Position, Pointer, L), L);
-    if (Info.Pair) {
-      auto Key = fieldStorage(Element, Info.Pair->First, L);
-      auto Value = fieldStorage(std::move(Element), Info.Pair->Second, L);
-      auto Result = insertOrderedSetKey(Place, std::move(Key), Info.Storage, L);
-      initializeOrderedMappedValue(std::move(Result), std::move(Value), Info.Storage, L);
-    } else {
-      insertOrderedSetKey(Place, std::move(Element), Info.Storage, L);
-    }
+    insertOrderedSetElement(Place, std::move(Element), Info.Storage, Info.Pair, L);
     assign(Position, binary("+", Position, one(Size, L), Size, L), L);
     jump(Check, L);
     label(Done, L);
@@ -30495,6 +30516,16 @@ class FunctionLowering {
       const auto *Method = clang::cast<CXXMemberCallExpr>(Call)->getMethodDecl();
       auto Other = snapshot(argument(Call->getArg(0), Method->getParamDecl(0)->getType()), L);
       swapOrderedOwners(dereference(std::move(Address), L), dereference(std::move(Other), L), L);
+      return {};
+    }
+    if (Operation == UtilityOperation::OrderedSetInsertRange) {
+      const auto Info = approvedOrderedSetRangeInsertion(A.S, A.Sources, Call, A.Context);
+      if (!Info) reject(L, "ordered range insertion", "The exact checked pointer range is required.");
+      const auto *Reference = clang::cast<MemberExpr>(Call->getCallee()->IgnoreParenImpCasts());
+      auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
+      auto Begin = snapshot(argument(Call->getArg(0), Info->PointerType), L);
+      auto End = snapshot(argument(Call->getArg(1), Info->PointerType), L);
+      insertOrderedSetRange(std::move(Place), std::move(Begin), std::move(End), *Info, L);
       return {};
     }
     if (Operation == UtilityOperation::OrderedSetInsertList) {
@@ -40482,6 +40513,14 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       const auto *Ctor = C->getConstructor();
       auto From = snapshot(argument(C->getArg(0), Ctor->getParamDecl(0)->getType()), L);
       moveOrderedOwner(std::move(Place), dereference(std::move(From), L), L);
+      return;
+    }
+    if (const auto Info = approvedOrderedSetRangeConstruction(A.S, A.Sources, C, A.Context)) {
+      auto Begin = snapshot(argument(C->getArg(0), Info->PointerType), L);
+      auto End = snapshot(argument(C->getArg(1), Info->PointerType), L);
+      argument(C->getArg(2), C->getConstructor()->getParamDecl(2)->getType());
+      initializeOrderedContainer(Place, L);
+      insertOrderedSetRange(std::move(Place), std::move(Begin), std::move(End), *Info, L);
       return;
     }
     if (const auto Info = approvedOrderedSetListConstruction(A.S, A.Sources, C, A.Context)) {
