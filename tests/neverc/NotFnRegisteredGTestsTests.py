@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_swap_visit_and_any_registered = cls.registered
+        cls.variant_swap_visit_and_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_swap_visit_and_any_original = cls.adapter.restore_original_gtests(cls.variant_swap_visit_and_any_registered,
+                                                                        cls.variant_swap_visit_and_any_suffix)
+        cls.registered = cls.adapter.restore_variant_swap_visit_and_any_history(cls.variant_swap_visit_and_any_registered)
         cls.variant_assignment_and_pointer_registered = cls.registered
         cls.variant_assignment_and_pointer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_assignment_and_pointer_original = cls.adapter.restore_original_gtests(cls.variant_assignment_and_pointer_registered,
@@ -3659,6 +3664,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_assignment_and_pointer_history(self.variant_assignment_and_pointer_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_assignment_and_pointer_registered, self.variant_assignment_and_pointer_suffix + b' ')
+
+
+    def test_variant_swap_visit_and_any_retains_published_bodies(self):
+        self.assertEqual(self.variant_swap_visit_and_any_original + self.variant_swap_visit_and_any_suffix, self.variant_swap_visit_and_any_registered)
+        self.assertEqual(self.adapter.restore_variant_swap_visit_and_any_history(self.variant_swap_visit_and_any_original),
+                         self.variant_assignment_and_pointer_original)
+        output, evidence = self.extractor.extract(self.variant_swap_visit_and_any_original, ['TranslateTest.CoreV2VariantSwapSameAlternativeKeepsObjectAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapDifferentTagsAndWidthsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapSelfWithDuplicateAlternativesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapPointerReceiverEvaluatesOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitFourNonuniformAlternativesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitFourReferenceArgumentsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitSixAtMatrixEntryLimitRunAtBothOptimizations', 'TranslateTest.CoreV2AnyVoidPointerConstructionAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2AnyConstVoidPointerMutableSlotRunAtBothOptimizations', 'TranslateTest.CoreV2AnyNullptrPayloadAndNullVoidPointerRunAtBothOptimizations', 'TranslateTest.CoreV2AnyVoidPointerAssignmentAndSwapTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapUnsupportedCustomAlternativeGuardRejected', 'TranslateTest.CoreV2VariantSwapStandaloneSdkAddressGuardRejected', 'TranslateTest.CoreV2VariantVisitFourAboveMatrixEntryLimitRejected', 'TranslateTest.CoreV2AnyUncheckedObjectPointerPayloadGuardRejected', 'TranslateTest.CoreV2AnyUncheckedFunctionPointerPayloadGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8998)
+        self.assertEqual(evidence['selected_count'], 16)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-swap-different-tags-and-widths', output)
+        self.assertIn(b'any-unchecked-function-pointer-payload-guard', output)
+
+    def test_variant_swap_visit_and_any_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_swap_visit_and_any_history(self.variant_swap_visit_and_any_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_swap_visit_and_any_registered, self.variant_swap_visit_and_any_suffix + b' ')
 
 
 if __name__ == '__main__':

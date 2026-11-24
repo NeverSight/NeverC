@@ -30326,6 +30326,7 @@ public:
               approvedUtilityVariantGetIf(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantHolds(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
+              approvedUtilityVariantSwap(A.S, A.Sources, Call, A.Context).has_value() ||
               approvedUtilityVariantValueAssignment(A.S, A.Sources, Call, A.Context).has_value() ||
               A.S.UnevaluatedFunctionalCalls.count(Call) ||
               A.S.UnevaluatedMemoryCalls.count(Call) ||
@@ -31085,6 +31086,17 @@ public:
           checkBinding(VariantAssignment->Receiver, true);
         checkBinding(VariantAssignment->Source, true);
         A.type(VariantAssignment->Source->getType(), L);
+        return true;
+      }
+      if (const auto Swap = approvedUtilityVariantSwap(A.S, A.Sources, C, A.Context)) {
+        if (Swap->Arrow) {
+          if (temporaryArrayBase(Swap->Left, true))
+            A.reject(L, "variant receiver", "Expected a live variant object.");
+        } else {
+          checkBinding(Swap->Left, false);
+        }
+        checkBinding(Swap->Right, false);
+        A.type(Swap->Type, L);
         return true;
       }
       if (const auto Emplace = approvedUtilityVariantEmplace(A.S, A.Sources, C, A.Context)) {
@@ -32112,7 +32124,14 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
               json::Object{{"name", UtilityAnyChar16.str()},
                            {"type", type(Context.Char16Ty, R->getLocation())}},
               json::Object{{"name", UtilityAnyChar32.str()},
-                           {"type", type(Context.Char32Ty, R->getLocation())}}}},
+                           {"type", type(Context.Char32Ty, R->getLocation())}},
+              json::Object{{"name", UtilityAnyVoidPointer.str()},
+                           {"type", type(Context.VoidPtrTy, R->getLocation())}},
+              json::Object{{"name", UtilityAnyConstVoidPointer.str()},
+                           {"type", type(Context.getPointerType(Context.VoidTy.withConst()),
+                                         R->getLocation())}},
+              json::Object{{"name", UtilityAnyNullPointer.str()},
+                           {"type", type(Context.NullPtrTy, R->getLocation())}}}},
           {"layout", json::Object{
               {"size_bits", Context.getTypeSize(StorageType)},
               {"abi_align_bits", Context.getTypeAlign(StorageType)},
@@ -32120,7 +32139,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
                   uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
                   uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
                   uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
-                  uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0)}},
+                  uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0), uint64_t(0),
+                  uint64_t(0), uint64_t(0), uint64_t(0)}},
               {"union", true}}}});
       RecordData.push_back(json::Object{
           {"id", name(R)}, {"loc", loc(R->getLocation())},

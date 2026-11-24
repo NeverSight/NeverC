@@ -18526,3 +18526,11 @@ original variant lvalue. Operator syntax and named member calls preserve
 their respective operand evaluation order. Checked equality and inequality
 compare active object pointers, including null and const cases, and compare
 the active index before reading a matching pointer alternative.
+
+## Variant swap, multi-operand visitation and inline any pointer values
+
+Checked member and free variant swap exchange arithmetic alternatives and
+preserve the active payload address when the tag stays the same. Visitation
+accepts more operands within the existing 64-entry dispatch limit. The inline
+any carrier preserves distinct payload types for void pointers, pointers to
+const void, and std::nullptr_t.

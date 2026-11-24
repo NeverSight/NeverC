@@ -2796,6 +2796,32 @@ def restore_variant_assignment_and_pointer_history(source):
     return restored
 
 
+R19_VARIANT_SWAP_VISIT_AND_ANY_REGISTERED_SHA256 = 'ab307d4382c7141bfefc6a90ff79c6b2262d0ee0c30bd8609c21853d384f9041'
+R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SHA256 = 'e83883bf27998e02e5d2916ccf055f341aec21a540bfcb6f9296597fa9cad1b4'
+R19_VARIANT_SWAP_VISIT_AND_ANY_PREVIOUS_REGISTERED_SHA256 = '5a2f3407ce162e8376d700ba842774a69134f621dea7e5182d44d82ef176a443'
+R19_VARIANT_SWAP_VISIT_AND_ANY_PREVIOUS_MAINTAINED_SHA256 = '1d18ba863fcaff673fc35427a1d69732c4f6ec4c833bdb34774f2e70ce4a9414'
+R19_VARIANT_SWAP_VISIT_AND_ANY_ADDITIONS_SHA256 = 'fbb8928fd6afe2932808bd62e798bc03ce809fe2b52372c905204cbbef69f141'
+R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SIZE = 20750549
+R19_VARIANT_SWAP_VISIT_AND_ANY_ADDITIONS_SIZE = 17330
+
+
+def restore_variant_swap_visit_and_any_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_SWAP_VISIT_AND_ANY_REGISTERED_SHA256, R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SHA256}
+    stop = R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_SWAP_VISIT_AND_ANY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_SWAP_VISIT_AND_ANY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantVisitAcceptsFourOperands) {\n  const auto Source = tmpFile("variant-three-visit-four-operands.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c, int d) { return a + b + c + d; }\nint f(Value& a, Value& b, Value& c, Value& d) { return std::visit(combine, a, b, c, d); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantVisitAcceptsFourOperands) {\n  const auto Source = tmpFile("variant-three-visit-four-operands.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c, int d) { return a + b + c + d; }\nint f(Value& a, Value& b, Value& c, Value& d) { return std::visit(combine, a, b, c, d); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantThreeVisitFourOperandsRejected) {\n  const auto Source = tmpFile("variant-three-visit-four-operands.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c, int d) { return a + b + c + d; }\nint f(Value& a, Value& b, Value& c, Value& d) { return std::visit(combine, a, b, c, d); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_SWAP_VISIT_AND_ANY_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_SWAP_VISIT_AND_ANY_REGISTERED_SHA256
+             else R19_VARIANT_SWAP_VISIT_AND_ANY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -3411,6 +3437,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_VARIANT_ASSIGNMENT_AND_POINTER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_SWAP_VISIT_AND_ANY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
