@@ -1315,6 +1315,7 @@ enum class UtilityOperation {
   OrderedMapCompareValues,
   OrderedSetCount,
   OrderedMapSubscript,
+  OrderedMapBoundedAt,
   OrderedSetCopyAssign,
   OrderedSetMoveAssign,
   OrderedSetMerge,
@@ -4724,6 +4725,9 @@ bool approvedOrderedMapSelectedBody(const State &S, const clang::SourceManager &
     const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetStorage> approvedOrderedMapSubscript(const State &S,
     const clang::SourceManager &SM, const clang::CallExpr *Call, const clang::ASTContext &Context);
+std::optional<UtilityOrderedSetStorage> approvedOrderedMapBoundedAt(
+    const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
+    const clang::ASTContext &Context);
 std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);

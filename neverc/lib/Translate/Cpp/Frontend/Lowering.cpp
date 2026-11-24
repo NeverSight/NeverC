@@ -31031,6 +31031,17 @@ class FunctionLowering {
       label(Done, L);
       return Place;
     }
+    if (Operation == UtilityOperation::OrderedMapBoundedAt) {
+      const auto Info = approvedOrderedMapBoundedAt(A.S, A.Sources, Call, A.Context);
+      if (!Info) reject(L, "map at", "A checked key in the const owner's initializer list is required.");
+      const auto *Member = clang::cast<CXXMemberCallExpr>(Call);
+      const auto *Reference = clang::cast<MemberExpr>(Member->getCallee()->IgnoreParenImpCasts());
+      auto Place = dereference(snapshot(unorderedSetReceiverPointer(Reference, L), L), L);
+      auto Key = argument(Call->getArg(0), Member->getMethodDecl()->getParamDecl(0)->getType());
+      auto Node = orderedSetBoundary(std::move(Place), dereference(std::move(Key), L), *Info,
+                                     OrderedSetIteratorOperation::Find, L);
+      return nodeFieldAt(std::move(Node), Call->getType(), Info->MappedOffsetBytes, L);
+    }
     if (Operation == UtilityOperation::OrderedMapSubscript) {
       const auto Info = approvedOrderedMapSubscript(A.S, A.Sources, Call, A.Context);
       if (!Info) reject(L, "map subscript", "The exact checked tree and selected SDK subscript are required.");

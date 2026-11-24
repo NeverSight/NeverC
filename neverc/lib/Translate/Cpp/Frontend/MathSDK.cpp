@@ -124022,6 +124022,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedUtilityListCall(S, SM, Call, Context)) return UtilityOperation::List;
   if (approvedOrderedSetCount(S, SM, Call, Context)) return UtilityOperation::OrderedSetCount;
   if (approvedOrderedMapSubscript(S, SM, Call, Context)) return UtilityOperation::OrderedMapSubscript;
+  if (approvedOrderedMapBoundedAt(S, SM, Call, Context)) return UtilityOperation::OrderedMapBoundedAt;
   if (approvedOrderedSetAssignment(S, SM, Call, Context, false)) return UtilityOperation::OrderedSetCopyAssign;
   if (approvedOrderedSetAssignment(S, SM, Call, Context, true)) return UtilityOperation::OrderedSetMoveAssign;
   if (approvedOrderedSetMerge(S, SM, Call, Context)) return UtilityOperation::OrderedSetMerge;
@@ -137866,6 +137867,115 @@ std::optional<UtilityOrderedSetListInput> approvedOrderedSetListConstruction(
       !SelectedBody(S, SM, Destructor, Record, Context) || !SelectedBody(S, SM, Ctor, Record, Context))
     return std::nullopt;
   return UtilityOrderedSetListInput{*Table, *List, Pair};
+}
+
+static bool orderedMapAtBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const UtilityOrderedSetListInput &Input,
+    const ASTContext &Context) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  if (!Body || Body->size() != 4) return false;
+  const auto Statements = Body->body_begin();
+  auto Variable = [](const Stmt *Statement) -> const VarDecl * {
+    const auto *Declaration = dyn_cast<DeclStmt>(Statement);
+    return Declaration && Declaration->isSingleDecl()
+        ? dyn_cast<VarDecl>(Declaration->getSingleDecl()) : nullptr;
+  };
+  auto Reads = [](const Expr *Value, const VarDecl *Variable) {
+    const auto *Reference = dyn_cast_or_null<DeclRefExpr>(orderedExpression(Value));
+    return Reference && Reference->getDecl() == Variable;
+  };
+  const auto *Parent = Variable(Statements[0]);
+  const auto *Child = Variable(Statements[1]);
+  const auto *Search = Child ? dyn_cast_or_null<CXXMemberCallExpr>(
+      orderedExpression(Child->getInit())) : nullptr;
+  const auto *Find = orderedTreeMethod(S, SM, Search, Input.Storage.Tree, "__find_equal", 2);
+  const auto *Tree = Search ? dyn_cast_or_null<MemberExpr>(
+      orderedExpression(Search->getImplicitObjectArgument())) : nullptr;
+  if (!Parent || Parent->hasInit() || !Find || !Find->isConst() || !Tree ||
+      Tree->getMemberDecl() != orderedTreeField(Method->getParent(), "__tree_") ||
+      !isa_and_nonnull<CXXThisExpr>(orderedExpression(Tree->getBase())) ||
+      !Reads(Search->getArg(0), Parent) || !orderedParameter(Search->getArg(1), Method->getParamDecl(0)) ||
+      !approvedOrderedMapSelectedBody(S, SM, Find, Method->getParent(), Context))
+    return false;
+
+  const auto *Branch = dyn_cast<IfStmt>(Statements[2]);
+  const auto *Condition = Branch ? dyn_cast_or_null<BinaryOperator>(
+      orderedExpression(Branch->getCond())) : nullptr;
+  if (!Branch || Branch->getInit() || Branch->getConditionVariable() || Branch->getElse() ||
+      !Condition || Condition->getOpcode() != BO_EQ || !Reads(Condition->getLHS(), Child) ||
+      !isa_and_nonnull<CXXNullPtrLiteralExpr>(orderedExpression(Condition->getRHS())))
+    return false;
+  const auto *Failure = utilityArrayFailureCall(S, SM, Branch->getThen(), "__throw_out_of_range", "stdexcept", 1);
+  const auto *Message = Failure ? dyn_cast_or_null<StringLiteral>(
+      orderedExpression(Failure->getArg(0))) : nullptr;
+  if (!Message || Message->getString() != "map::at:  key not found")
+    return false;
+
+  const auto *Return = dyn_cast<ReturnStmt>(Statements[3]);
+  const auto *Second = Return ? dyn_cast_or_null<MemberExpr>(
+      orderedExpression(Return->getRetValue())) : nullptr;
+  const auto *Read = Second ? dyn_cast_or_null<CXXMemberCallExpr>(
+      orderedExpression(Second->getBase())) : nullptr;
+  const auto *MethodRead = Read ? Read->getMethodDecl() : nullptr;
+  const auto *Value = Read ? dyn_cast_or_null<MemberExpr>(
+      orderedExpression(Read->getImplicitObjectArgument())) : nullptr;
+  const auto *Node = Value ? dyn_cast_or_null<CXXStaticCastExpr>(
+      orderedExpression(Value->getBase())) : nullptr;
+  return Second && Second->getMemberDecl() == Input.Pair->Second && MethodRead &&
+      MethodRead->getIdentifier() && MethodRead->getName() == "__get_value" &&
+      !MethodRead->isStatic() && !MethodRead->isVirtual() &&
+      !Read->getNumArgs() && orderedPinnedFunction(S, SM, MethodRead, "map") &&
+      Context.hasSameType(MethodRead->getReturnType(), Context.getLValueReferenceType(Input.Storage.MappedPairType)) &&
+      Value && Value->getMemberDecl() == orderedTreeField(Input.Storage.NodeType->getAsCXXRecordDecl(), "__value_") &&
+      Node && Node->getType()->isPointerType() &&
+      Context.hasSameUnqualifiedType(Node->getType()->getPointeeType(), Input.Storage.NodeType) &&
+      Reads(Node->getSubExpr(), Child);
+}
+
+std::optional<UtilityOrderedSetStorage> approvedOrderedMapBoundedAt(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
+  const auto *Method = Member ? Member->getMethodDecl() : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getName() != "at" ||
+      !Method->isConst() || Method->isVolatile() || Method->isStatic() || Method->isVirtual() ||
+      Method->getPrimaryTemplate() || Method->getNumParams() != 1 || Call->getNumArgs() != 1 ||
+      !Call->isLValue() || !orderedPinnedFunction(S, SM, Method, "map") ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())))
+    return std::nullopt;
+  const auto *Reference = dyn_cast_or_null<MemberExpr>(orderedExpression(Member->getCallee()));
+  const auto *Owner = Reference && !Reference->isArrow() ? dyn_cast_or_null<DeclRefExpr>(
+      orderedExpression(Reference->getBase())) : nullptr;
+  const auto *Variable = Owner ? dyn_cast<VarDecl>(Owner->getDecl()) : nullptr;
+  if (!Variable || !Variable->hasLocalStorage() || !S.owns(SM, Variable->getLocation()) ||
+      !S.owns(SM, Reference->getMemberLoc()) ||
+      !Context.hasSameType(Variable->getType(), Context.getRecordType(Method->getParent()).withConst()))
+    return std::nullopt;
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Variable->getInit()));
+  const auto Input = approvedOrderedSetListConstruction(S, SM, Construction, Context);
+  if (!Input || !Input->Pair || !Context.hasSameType(Call->getType(), Input->Storage.MappedValueType.withConst()) ||
+      !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Call->getType())))
+    return std::nullopt;
+  const auto *List = dyn_cast_or_null<CXXStdInitializerListExpr>(orderedExpression(Construction->getArg(0)));
+  const auto Elements = approvedUtilityInitializerListExpression(S, SM, List, Context);
+  const auto *Initializers = Elements ? dyn_cast_or_null<InitListExpr>(
+      orderedExpression(Elements->Backing->getSubExpr())) : nullptr;
+  const auto *Argument = orderedExpression(Call->getArg(0));
+  const auto Key = Argument ? Argument->getIntegerConstantExpr(Context) : std::nullopt;
+  if (!Initializers || !Key) return std::nullopt;
+  // A direct const local owner cannot erase or replace an inserted key.
+  // Authenticate the dead throwing branch before lowering the checked lookup.
+  const bool ContainsKey = llvm::any_of(Initializers->inits(), [&](const Expr *Entry) {
+    const auto *Pair = dyn_cast_or_null<CXXConstructExpr>(orderedExpression(Entry));
+    if (!Pair || Pair->getNumArgs() != 2 ||
+        !Context.hasSameUnqualifiedType(Pair->getType(), Input->Storage.MappedPairType) ||
+        approvedUtilityPairConstruction(S, SM, Pair, Context) != UtilityPairConstruction::Elements)
+      return false;
+    const auto *First = orderedExpression(Pair->getArg(0));
+    const auto Candidate = First ? First->getIntegerConstantExpr(Context) : std::nullopt;
+    return Candidate && Candidate->getExtValue() == Key->getExtValue();
+  });
+  if (!ContainsKey || !orderedMapAtBody(S, SM, Method, *Input, Context)) return std::nullopt;
+  return Input->Storage;
 }
 
 static std::optional<UtilityOrderedSetListInput> orderedSetMemberListInput(
