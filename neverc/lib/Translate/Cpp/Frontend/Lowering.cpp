@@ -30519,9 +30519,10 @@ class FunctionLowering {
       assign(orderedIteratorCursor(Result, L), std::move(Node), L);
       return Result;
     }
-    if (Operation == UtilityOperation::OrderedSetCopyAssign) {
-      const auto Info = approvedOrderedSetCopyAssignment(A.S, A.Sources, Call, A.Context);
-      if (!Info) reject(L, "ordered set assignment", "The exact checked storage and SDK assignment are required.");
+    if (Operation == UtilityOperation::OrderedSetCopyAssign || Operation == UtilityOperation::OrderedSetMoveAssign) {
+      const bool Move = Operation == UtilityOperation::OrderedSetMoveAssign;
+      const auto Info = approvedOrderedSetAssignment(A.S, A.Sources, Call, A.Context, Move);
+      if (!Info) reject(L, "ordered container assignment", "The exact checked storage and SDK assignment are required.");
       const auto *Method = clang::cast<CXXMethodDecl>(Call->getDirectCallee());
       const auto *Member = dyn_cast<CXXMemberCallExpr>(Call);
       const auto *Object = Member ? Member->getImplicitObjectArgument() : Call->getArg(0);
@@ -30533,6 +30534,14 @@ class FunctionLowering {
           : address(lvalue(Object), Object->getType(), L), L);
       if (!SourceAddress) SourceAddress = snapshot(argument(Input, Method->getParamDecl(0)->getType()), L);
       auto Place = dereference(Receiver, L);
+      if (Move) {
+        releaseOrderedSet(Place, *Info, L);
+        // Reset the old owner before reading the incoming fields. For
+        // self-move the incoming owner is the same now-empty object.
+        initializeOrderedContainer(Place, L);
+        moveOrderedOwner(Place, dereference(std::move(*SourceAddress), L), L);
+        return Place;
+      }
       const auto Copy = labelName(), Done = labelName();
       branch(binary("!=", cast(Receiver, "ptr:void", L), cast(*SourceAddress, "ptr:void", L), "bool", L),
              Copy, Done, L);

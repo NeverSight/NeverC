@@ -123989,7 +123989,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   if (approvedUtilityListCall(S, SM, Call, Context)) return UtilityOperation::List;
   if (approvedOrderedSetCount(S, SM, Call, Context)) return UtilityOperation::OrderedSetCount;
   if (approvedOrderedMapSubscript(S, SM, Call, Context)) return UtilityOperation::OrderedMapSubscript;
-  if (approvedOrderedSetCopyAssignment(S, SM, Call, Context)) return UtilityOperation::OrderedSetCopyAssign;
+  if (approvedOrderedSetAssignment(S, SM, Call, Context, false)) return UtilityOperation::OrderedSetCopyAssign;
+  if (approvedOrderedSetAssignment(S, SM, Call, Context, true)) return UtilityOperation::OrderedSetMoveAssign;
   if (approvedOrderedSetInsertion(S, SM, Call, Context)) return UtilityOperation::OrderedSetInsert;
   if (approvedOrderedSetIteratorCall(S, SM, Call, Context)) return UtilityOperation::OrderedSetIterator;
   if (approvedOrderedSetMutation(S, SM, Call, Context)) return UtilityOperation::OrderedSetMutation;
@@ -137206,10 +137207,11 @@ std::optional<UtilityOrderedSetMutation> approvedOrderedSetMutation(
   return UtilityOrderedSetMutation{Operation, *Storage, Reference};
 }
 
-std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const State &S,
-    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+std::optional<UtilityOrderedSetStorage> approvedOrderedSetAssignment(const State &S,
+    const SourceManager &SM, const CallExpr *Call, const ASTContext &Context, bool Move) {
   const auto *Method = Call ? dyn_cast_or_null<CXXMethodDecl>(Call->getDirectCallee()) : nullptr;
-  if (!Method || !Method->isCopyAssignmentOperator() || Method->getNumParams() != 1 ||
+  if (!Method || (Move ? !Method->isMoveAssignmentOperator() : !Method->isCopyAssignmentOperator()) ||
+      Method->getNumParams() != 1 ||
       Method->isConst() || Method->isVolatile() || Method->isVirtual() ||
       !Call->isLValue())
     return std::nullopt;
@@ -137229,11 +137231,14 @@ std::optional<UtilityOrderedSetStorage> approvedOrderedSetCopyAssignment(const S
   if (!S.owns(SM, Site)) return std::nullopt;
   const auto Receiver = Operator && Operator->getArg(0)->isLValue() ? Operator->getArg(0)->getType()
       : associativeMemberReceiverType(Reference);
+  const auto *Source = Call->getArg(Offset);
+  const auto Parameter = Move ? Context.getRValueReferenceType(Type)
+                              : Context.getLValueReferenceType(Type.withConst());
   if (Receiver.isNull() || !Context.hasSameType(Receiver, Type) ||
       !Context.hasSameType(Call->getType(), Type) ||
       !Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Type)) ||
-      !Context.hasSameType(Method->getParamDecl(0)->getType(), Context.getLValueReferenceType(Type.withConst())) ||
-      !Context.hasSameUnqualifiedType(Call->getArg(Offset)->getType(), Type))
+      !Context.hasSameType(Method->getParamDecl(0)->getType(), Parameter) ||
+      !Context.hasSameUnqualifiedType(Source->getType(), Type) || (Move && !Source->isXValue()))
     return std::nullopt;
   const bool Mapped = Header == "map";
   const auto Storage = Mapped ? approvedUtilityOrderedMapStorage(S, SM, Owner, Context)
