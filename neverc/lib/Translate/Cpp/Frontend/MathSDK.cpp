@@ -136113,7 +136113,9 @@ static std::optional<bool> orderedComparatorDirection(const State &S,
   if (Name != "less" && Name != "greater") return std::nullopt;
   const auto *Policy = associativeTypeIdentity(S, SM, Record, Name,
       "__functional/operations.h", "__fwd/functional.h", 1);
-  if (!Policy || !Context.hasSameType(Policy->getTemplateArgs().get(0).getAsType(), Key))
+  if (!Policy) return std::nullopt;
+  const auto Operand = Policy->getTemplateArgs().get(0).getAsType();
+  if (!Context.hasSameType(Operand, Key) && !Context.hasSameType(Operand, Context.VoidTy))
     return std::nullopt;
   return Name == "greater";
 }
