@@ -149,22 +149,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "unordered-set-member-receivers-range-with-user-hash",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nstruct Hash { unsigned operator()(int n) const { return static_cast<unsigned>(n); } };\nint main() {\n  int input = 3;\n  std::unordered_set<int, Hash> values(&input, &input + 1, 16, Hash{});\n  return values.empty();\n}\n",
-      "source_sha256": "784a4476d8be5d2fc1223a23db5de582c57bba70f1f5e0dfc510ea231e55a623",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-set-member-receivers-bucketed-list-with-unapproved-key-type",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<long> values({3L, 7L}, 8);\n  return values.empty();\n}\n",
-      "source_sha256": "21f951004573ca1f33cadc4bb42e6942af45cb59e16b50d3d662a2cc2083fdf1",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "unordered-set-member-receivers-member-pointer-expressions-evaluate-once",
       "expected": "accept",
       "public_header": "unordered_set",
@@ -195,6 +179,22 @@
       "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> left{4, 5}, right{8};\n  left.reserve(16);\n  const int* address = &*left.find(5);\n  auto* receiver = &left;\n  receiver->swap(right);\n  return receiver->count(8) != 1 || right.bucket_count() < 16 || &*right.find(5) != address;\n}\n",
       "source_sha256": "5e9bccbac7437b3a5656437e8d941d698d2d959f8e7943fff31730bc6a0c4029",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-range-with-user-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned operator()(int n) const { return static_cast<unsigned>(n); } };\nint main() {\n  int input = 3;\n  std::unordered_set<int, Hash> values(&input, &input + 1, 16, Hash{});\n  return values.empty();\n}\n",
+      "source_sha256": "784a4476d8be5d2fc1223a23db5de582c57bba70f1f5e0dfc510ea231e55a623",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-member-receivers-bucketed-list-with-unapproved-key-type",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<long> values({3L, 7L}, 8);\n  return values.empty();\n}\n",
+      "source_sha256": "21f951004573ca1f33cadc4bb42e6942af45cb59e16b50d3d662a2cc2083fdf1",
+      "kind": "source-body-guard"
     },
     {
       "name": "unordered-set-member-receivers-user-hash-pointer-member",
@@ -228,7 +228,7 @@
     "TranslateTest.CoreV2UnorderedSetMemberReceiversUserHashPointerMemberRejected",
     "TranslateTest.CoreV2UnorderedSetMemberReceiversUnapprovedKeyPointerMemberRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "af259a5994e7dedc5dedb4eef6e5ebc2abbe2266e62574ce2498fc3edc51ae8e",
   "maintained_original_sha256": "518897789c68d3c75c2040ed9f914fde53c7dee14830d0891ba1f5c465b1ac89",
@@ -240,5 +240,10 @@
   "current_registry_count": 8624,
   "current_python_registry_tests": 238,
   "native_reference_selected_executions": 18,
-  "planned_generated_c23_executions": 18
+  "planned_generated_c23_executions": 18,
+  "native_reference_proofs": {
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "31c201f5a40fdafd3e983ad51a3581d75b60aa6bb8d8e1806220dd949b029592",
+  "source_proof_sha256": "5fcf023df22ac5de2b8a947e02d64847ad3488ac822713d733c53e42e3c0b13f"
 }
