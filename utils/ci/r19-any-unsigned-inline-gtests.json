@@ -102,6 +102,14 @@
       "source_sha256": "0482a4d11d2161b1f300cbe43d483febd87f889cabfe8aa23ee49fa10d08fda0"
     },
     {
+      "name": "any-unsigned-inline-unsigned-long-is-not-unsigned-int",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n",
+      "source_sha256": "cab308e39ba48962531dfc1c595c35f1a2a1b5d12eae9d2affdade59499ac429"
+    },
+    {
       "name": "any-unsigned-inline-unproved-signed-value-cast",
       "expected": "reject",
       "public_header": "any",
@@ -124,14 +132,6 @@
       "kind": "source-body-guard",
       "source": "#define __create changed_unsigned_handler\n#include <any>\n#undef __create\nint main() {\n  std::any value(17u);\n  return value.has_value();\n}\n",
       "source_sha256": "d69f04153656e8ed04790890904adcec848f93e7ddfa6063f743427b47e506c9"
-    },
-    {
-      "name": "any-unsigned-inline-unsigned-long-is-not-unsigned-int",
-      "expected": "accept",
-      "public_header": "any",
-      "kind": "cpp17-operation",
-      "source": "#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n",
-      "source_sha256": "cab308e39ba48962531dfc1c595c35f1a2a1b5d12eae9d2affdade59499ac429"
     }
   ],
   "new_gtest_names": [
@@ -144,7 +144,7 @@
     "TranslateTest.CoreV2AnyUnsignedInlineUnprovedUnsignedValueCastRejected",
     "TranslateTest.CoreV2AnyUnsignedInlineRenamedUnsignedHandlerRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "769b880fef30544e4680b9908080551b995f36369ba080d1e5fa14a733b0502c",
   "maintained_original_sha256": "f19e1177591283d289bfd01e07fb890c63cb715e9c631b27490566f78912a0cc",
@@ -156,5 +156,11 @@
   "current_registry_count": 8286,
   "current_python_registry_tests": 158,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "any-long-inline": "2b933e9d9a0ead958777527d3c269d679640bb100e0f9d75ff780a4225fe911b",
+    "any-unsigned-inline": "d183d51ba4f675770fcde9a1f24355715e9b559f2f065455e7b240356c6a3367"
+  },
+  "native_reference_authentication_sha256": "89401e6855a5b801ec64d4e7788265d846b6fdd6d02bd1fac05c23dc5b80e9e9",
+  "source_proof_sha256": "7f57d82cbb91272569973ec064d194105f1096b650f29ec1f22e7ef598355394"
 }
