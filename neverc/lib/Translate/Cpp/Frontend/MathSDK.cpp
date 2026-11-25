@@ -54455,6 +54455,15 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       }
     }
     if (M->isConst()) return std::nullopt;
+    if (Name == "resize" && M->getReturnType()->isVoidType() &&
+        (M->getNumParams() == 1 || M->getNumParams() == 2) &&
+        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) {
+      if (M->getNumParams() == 1) return UtilityForwardListOperation::Resize;
+      if (Context.hasSameType(M->getParamDecl(1)->getType(),
+                              Context.getLValueReferenceType(Context.IntTy.withConst())))
+        return UtilityForwardListOperation::ResizeFill;
+      return std::nullopt;
+    }
     if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
         forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return UtilityForwardListOperation::PushFront;
@@ -54917,6 +54926,23 @@ bool forwardListInputAssignmentBody(const CXXMethodDecl *Method, UtilityForwardL
          variantParameter(Insert->getArg(2), Definition->getParamDecl(1));
 }
 
+bool forwardListResizeBody(const CXXMethodDecl *Method) {
+  const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  if (!Body || Body->size() != 6 || !isa<ForStmt>(*(Body->body_begin() + 4)))
+    return false;
+  const auto *Choose = dyn_cast<IfStmt>(Body->body_back());
+  const auto *EraseExpr = Choose ? dyn_cast<Expr>(Choose->getThen()) : nullptr;
+  const auto *Erase = EraseExpr
+      ? dyn_cast<CXXMemberCallExpr>(EraseExpr->IgnoreUnlessSpelledInSource()) : nullptr;
+  const auto *EraseMethod = Erase ? Erase->getMethodDecl() : nullptr;
+  const auto *Grow = Choose ? dyn_cast_or_null<CompoundStmt>(Choose->getElse()) : nullptr;
+  return EraseMethod && EraseMethod->getIdentifier() && EraseMethod->getName() == "erase_after" &&
+         Erase->getNumArgs() == 2 && EraseMethod->getNumParams() == 2 &&
+         EraseMethod->getParent()->getCanonicalDecl() == Definition->getParent()->getCanonicalDecl() &&
+         Grow && Grow->size() == 2 && isa<IfStmt>(Grow->body_back());
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -55108,6 +55134,9 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   if ((*Operation == UtilityForwardListOperation::AssignCount ||
        *Operation == UtilityForwardListOperation::AssignPointerRange) &&
       !forwardListInputAssignmentBody(Method, *Operation))
+    return std::nullopt;
+  if ((*Operation == UtilityForwardListOperation::Resize || *Operation == UtilityForwardListOperation::ResizeFill) &&
+      !forwardListResizeBody(Method))
     return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;

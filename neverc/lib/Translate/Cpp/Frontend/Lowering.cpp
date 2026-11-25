@@ -27214,6 +27214,37 @@ class FunctionLowering {
     releaseForwardListChain(Output, Info, L);
     jump(Done, L); label(Done, L);
   }
+  void resizeForwardListStorage(Expression Place, Expression Count, Expression ValueReference,
+                                const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Remaining = snapshot(cast(std::move(Count), "u64", L), L);
+    auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
+    auto Current = snapshot(dereference(Link, L), L);
+    const auto Check = labelName(), Keep = labelName(), Resize = labelName();
+    const auto Trim = labelName(), GrowCheck = labelName(), Grow = labelName(), Done = labelName();
+    auto Decrement = [&] {
+      assign(Remaining, binary("-", Remaining, quantity(1, "u64", L), "u64", L), L);
+    };
+    jump(Check, L); label(Check, L);
+    branch(binary("&&", cast(Current, "bool", L), cast(Remaining, "bool", L), "bool", L), Keep, Resize, L);
+    label(Keep, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    assign(Current, dereference(Link, L), L);
+    Decrement();
+    jump(Check, L); label(Resize, L);
+    branch(cast(Current, "bool", L), Trim, GrowCheck, L);
+    label(Trim, L);
+    initializeZero(dereference(Link, L), A.Context.VoidPtrTy, L);
+    releaseForwardListChain(Current, Info, L);
+    jump(Done, L); label(GrowCheck, L);
+    branch(cast(Remaining, "bool", L), Grow, Done, L);
+    label(Grow, L);
+    auto Node = forwardListCreateNode(ValueReference, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    // The SDK resize loop appends each node before the next allocation.
+    assign(dereference(Link, L), Node, L);
+    assign(Link, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
+    Decrement();
+    jump(GrowCheck, L); label(Done, L);
+  }
   void transferForwardListStorage(Expression Place, Expression Source, SourceLocation L) {
     auto Head = snapshot(forwardListMember(Source, false, L), L);
     assign(forwardListMember(Place, false, L), std::move(Head), L);
@@ -27306,6 +27337,19 @@ class FunctionLowering {
       auto Current = snapshot(cast(Operands[0], Pointer, L), L);
       auto End = snapshot(cast(Operands[1], Pointer, L), L);
       assignForwardListStorage(Place, {std::move(Current), std::move(End), ForwardListInput::PointerRange}, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Resize ||
+        Operation == UtilityForwardListOperation::ResizeFill) {
+      Expression ValueReference;
+      if (Operation == UtilityForwardListOperation::ResizeFill) {
+        ValueReference = Operands[1];
+      } else {
+        auto Value = temporary(type(A.Context.IntTy, L), L);
+        initializeZero(Value, A.Context.IntTy, L);
+        ValueReference = address(Value, A.Context.IntTy, L);
+      }
+      resizeForwardListStorage(Place, Operands[0], std::move(ValueReference), Owner->Node, L);
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::MoveAssign) {
