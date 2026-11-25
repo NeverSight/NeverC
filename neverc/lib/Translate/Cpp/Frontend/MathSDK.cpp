@@ -20,6 +20,7 @@
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/raw_ostream.h"
 #include <deque>
 #include <functional>
 #include <set>
@@ -52779,22 +52780,91 @@ static std::optional<UtilityBitsetCall> bitsetStringResultCall(
   return UtilityBitsetCall{UtilityOperation::BitsetToString, 0, Receiver, 0, M->getParent()};
 }
 
-static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
-                                        const Expr *Receiver, QualType Result,
-                                        const ASTContext &Context) {
-  if (!Receiver) return false;
+static bool bitsetOnlyLocalReferenceUse(const State &S, const SourceManager &SM,
+    const VarDecl *Reference, const DeclRefExpr *Use) {
+  const auto *Owner = dyn_cast<FunctionDecl>(Reference->getDeclContext());
+  const auto *Body = Owner ? Owner->getBody() : nullptr;
+  if (!Body || !S.owns(SM, Owner->getLocation()))
+    return false;
+  const auto *Identity = Reference->getCanonicalDecl();
+  unsigned Nodes = 0;
+  bool Found = false;
+  const auto Check = [&](auto &&Self, const Stmt *Statement, unsigned Depth) -> bool {
+    if (!Statement)
+      return true;
+    if (Depth >= 64 || ++Nodes > 200000)
+      return false;
+    if (const auto *Read = dyn_cast<DeclRefExpr>(Statement);
+        Read && Read->getDecl()->getCanonicalDecl() == Identity) {
+      if (Read != Use || Found)
+        return false;
+      Found = true;
+    }
+    if (const auto *Lambda = dyn_cast<LambdaExpr>(Statement))
+      for (const auto &Capture : Lambda->captures())
+        if (Capture.capturesVariable() && Capture.getCapturedVar()->getCanonicalDecl() == Identity)
+          return false;
+    for (const auto *Child : Statement->children())
+      if (!Self(Self, Child, Depth + 1))
+        return false;
+    return true;
+  };
+  return Check(Check, Body, 0) && Found;
+}
+
+static bool bitsetUnsignedSourceFits(const State &S, const SourceManager &SM,
+                                     const Expr *Receiver, QualType Result, const ASTContext &Context,
+                                     unsigned Depth, unsigned &Nodes) {
+  if (!Receiver || Depth >= 16 || ++Nodes > 64)
+    return false;
   const Expr *Value = Receiver->IgnoreParenImpCasts();
+  llvm::errs() << "bitset unsigned trace depth=" << Depth << " input=" << Receiver->getStmtClassName()
+               << " stripped=" << Value->getStmtClassName() << "\n";
+  if (const auto *Conditional = dyn_cast<ConditionalOperator>(Value)) {
+    if (!Conditional->isGLValue() || !Conditional->getType().isConstQualified())
+      return false;
+    return bitsetUnsignedSourceFits(S, SM, Conditional->getTrueExpr(), Result, Context, Depth + 1, Nodes) &&
+           bitsetUnsignedSourceFits(S, SM, Conditional->getFalseExpr(), Result, Context, Depth + 1, Nodes);
+  }
   if (const auto *Reference = dyn_cast<DeclRefExpr>(Value)) {
     const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
+    if (Variable)
+      llvm::errs() << "bitset unsigned trace local=" << Variable->hasLocalStorage()
+                   << " init=" << (Variable->hasInit() ? Variable->getInit()->getStmtClassName() : "missing")
+                   << " owned=" << S.owns(SM, Variable->getLocation()) << "\n";
     if (!Variable || isa<ParmVarDecl>(Variable) || Variable->isImplicit() ||
         !Variable->hasLocalStorage() || !Variable->hasInit() || !S.owns(SM, Variable->getLocation()))
       return false;
-    const auto Type = Variable->getType();
-    if (Type->isReferenceType() || !Type.isConstQualified() || Type.isVolatileQualified() ||
+    const auto Binding = Variable->getType();
+    const auto Type = Binding.getNonReferenceType();
+    if (Binding->isRValueReferenceType() || !Type.isConstQualified() || Type.isVolatileQualified() ||
         Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
       return false;
     const auto Bitset = approvedUtilityBitsetRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
-    if (!Bitset || (Bitset->Storage && Bitset->Storage->isMutable())) return false;
+    if (!Bitset || (Bitset->Storage && Bitset->Storage->isMutable()))
+      return false;
+    llvm::errs() << "bitset unsigned trace reference=" << Binding->isReferenceType()
+                 << " const=" << Type.isConstQualified() << "\n";
+    if (Binding->isLValueReferenceType()) {
+      const auto *Init = Variable->getInit()->IgnoreParenImpCasts();
+      if (const auto *Cleanup = dyn_cast<ExprWithCleanups>(Init))
+        Init = Cleanup->getSubExpr()->IgnoreParenImpCasts();
+      llvm::errs() << "bitset unsigned trace normalized initializer=" << Init->getStmtClassName() << "\n";
+      if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Init)) {
+        llvm::errs() << "bitset unsigned trace extending=" << (Temporary->getExtendingDecl() == Variable)
+                     << " automatic=" << (Temporary->getStorageDuration() == SD_Automatic)
+                     << " type=" << Context.hasSameUnqualifiedType(Temporary->getType(), Type)
+                     << " const=" << Temporary->getType().isConstQualified()
+                     << " sole-use=" << bitsetOnlyLocalReferenceUse(S, SM, Variable, Reference) << "\n";
+        if (Temporary->getExtendingDecl() != Variable || Temporary->getStorageDuration() != SD_Automatic ||
+            !Context.hasSameUnqualifiedType(Temporary->getType(), Type) ||
+            (!Temporary->getType().isConstQualified() && !bitsetOnlyLocalReferenceUse(S, SM, Variable, Reference)))
+          return false;
+      } else if (!isa<DeclRefExpr, ConditionalOperator>(Init)) {
+        return false;
+      }
+      return bitsetUnsignedSourceFits(S, SM, Init, Result, Context, Depth + 1, Nodes);
+    }
     Value = Variable->getInit()->IgnoreImplicit()->IgnoreParens();
   }
   if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Value))
@@ -52805,6 +52875,8 @@ static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
     Value = Cast->getSubExpr()->IgnoreImplicit()->IgnoreParens();
   }
   const auto *Constructor = dyn_cast<CXXConstructExpr>(Value);
+  llvm::errs() << "bitset unsigned trace source=" << Value->getStmtClassName()
+               << " args=" << (Constructor ? Constructor->getNumArgs() : 0) << "\n";
   const auto Width = Context.getTypeSize(Result);
   if (Constructor && (Constructor->getNumArgs() == 4 ||
                       Constructor->getNumArgs() == 5)) {
@@ -52824,8 +52896,14 @@ static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
     return true;
   }
   const auto Construction = approvedUtilityBitsetConstruction(S, SM, Constructor, Context);
-  if (Construction == UtilityBitsetConstruction::Default) return true;
-  if (Construction != UtilityBitsetConstruction::UnsignedValue) return false;
+  llvm::errs() << "bitset unsigned trace selected=" << bool(Construction)
+               << " width=" << Width << "\n";
+  if (Construction == UtilityBitsetConstruction::Default)
+    return true;
+  if (Construction == UtilityBitsetConstruction::Copy)
+    return bitsetUnsignedSourceFits(S, SM, Constructor->getArg(0), Result, Context, Depth + 1, Nodes);
+  if (Construction != UtilityBitsetConstruction::UnsignedValue)
+    return false;
   // The pinned constructor clears all bits above the converted unsigned operand.
   // A const local with the same non-mutable layout retains that bound.
   if (Width >= Context.getTypeSize(Context.UnsignedLongLongTy)) return true;
@@ -52836,6 +52914,15 @@ static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
       Evaluated.Val.getInt().getActiveBits() <= Width)
     return true;
   return bitsetBoundedPosition(Argument, Context, uint64_t(1) << Width);
+}
+
+static bool bitsetReceiverFitsUnsigned(const State &S, const SourceManager &SM,
+                                        const Expr *Receiver, QualType Result,
+                                        const ASTContext &Context) {
+  unsigned Nodes = 0;
+  const bool Fits = bitsetUnsignedSourceFits(S, SM, Receiver, Result, Context, 0, Nodes);
+  llvm::errs() << "bitset unsigned trace bound=" << Fits << "\n";
+  return Fits;
 }
 
 std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
@@ -52934,6 +53021,9 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
   const auto *Member = dyn_cast_or_null<CXXMemberCallExpr>(Call);
   const auto *M = Member ? Member->getMethodDecl() : nullptr;
   const auto Info = M ? approvedUtilityBitsetRecord(S, SM, M->getParent(), Context) : std::nullopt;
+  if (M && M->getIdentifier() && (M->getName() == "to_ulong" || M->getName() == "to_ullong"))
+    llvm::errs() << "bitset unsigned trace method=" << M->getName()
+                 << " record=" << bool(Info) << " pinned=" << bitsetPinnedFunction(S, SM, M) << "\n";
   if (!Info || (!directMethodReference(Call) || !S.owns(SM, directMethodReference(Call)->getExprLoc())) || !M->getIdentifier() || M->isStatic() || M->isVariadic() || !bitsetPinnedFunction(S, SM, M)) return std::nullopt;
   const auto Name = M->getName();
   const auto Result = M->getReturnType();
@@ -52944,8 +53034,11 @@ std::optional<UtilityBitsetCall> approvedUtilityBitsetCall(
   if (NeedsOverflowProof && !bitsetReceiverFitsUnsigned(S, SM,
       Member->getImplicitObjectArgument(), Result, Context))
     return std::nullopt;
-  if (!bitsetSourceGraph(S, SM, M, /*KnownValidText=*/false, /*StringResult=*/nullptr,
-                         NeedsOverflowProof))
+  const bool Graph = bitsetSourceGraph(S, SM, M, /*KnownValidText=*/false,
+                                      /*StringResult=*/nullptr, NeedsOverflowProof);
+  if (ToUnsigned)
+    llvm::errs() << "bitset unsigned trace method-graph=" << Graph << "\n";
+  if (!Graph)
     return std::nullopt;
   if (ToUnsigned) return UtilityBitsetCall{UtilityOperation::BitsetToUnsigned, 0};
   if (M->isConst() && M->getNumParams() == 0 && Call->getNumArgs() == 0) {
