@@ -55,6 +55,14 @@
       "source_sha256": "d032e8ba82c220a3a5fcee0b21be7ea8c4b045faa7f3a277d583798e3e928d7e",
       "original_case_source_sha256": "d032e8ba82c220a3a5fcee0b21be7ea8c4b045faa7f3a277d583798e3e928d7e",
       "gtest_body_sha256": "faa14f065a076d35ef0f6ef97942c1bd9ddb57fdb588c00f7d41411489d63c73"
+    },
+    {
+      "name": "forward-list-move-allocator-overload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListMovesWithExplicitAllocator",
+      "expected": "accept",
+      "source_sha256": "1b731c02e249177e7e0cdb8fbe36ce3897799d692e57b5b08f2308d6c4edc3d3",
+      "original_case_source_sha256": "1b731c02e249177e7e0cdb8fbe36ce3897799d692e57b5b08f2308d6c4edc3d3",
+      "gtest_body_sha256": "91cf4b73d562ffc5934dd892852d26897111c27c4cd3ba62b1949995d7f3486d"
     }
   ],
   "negative_cases": [
@@ -73,14 +81,6 @@
       "source_sha256": "5d25f0f9e0bddbbcc98b71098117930db196f319a3eae6844f087517549d7cbe",
       "original_case_source_sha256": "5d25f0f9e0bddbbcc98b71098117930db196f319a3eae6844f087517549d7cbe",
       "gtest_body_sha256": "d85968671fc694a06468f147c2ae43ff7f1742dc6e4b98d10cd541c8516bac8c"
-    },
-    {
-      "name": "forward-list-move-allocator-overload-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListMoveAllocatorOverloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "1b731c02e249177e7e0cdb8fbe36ce3897799d692e57b5b08f2308d6c4edc3d3",
-      "original_case_source_sha256": "1b731c02e249177e7e0cdb8fbe36ce3897799d692e57b5b08f2308d6c4edc3d3",
-      "gtest_body_sha256": "3ef06908d006a2a4d1c9fdfaf8f6ea87e5998121338742e039d24a4d081892a1"
     },
     {
       "name": "forward-list-move-other-element-guard",
@@ -149,6 +149,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "forward-list-move-allocator-overload-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <memory>\n#include <utility>\nint main() {\n  std::forward_list<int> original{2, 4};\n  std::forward_list<int> moved(std::move(original), std::allocator<int>{});\n  return moved.front() != 2;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "1b731c02e249177e7e0cdb8fbe36ce3897799d692e57b5b08f2308d6c4edc3d3",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "variant-visit-source-cast-effectful-body-guard",
       "public_header": "variant",
       "expected": "reject",
@@ -163,14 +171,6 @@
       "source": "#include <variant>\nusing Value = std::variant<int>;\nValue other(9);\nValue&& forward_value(Value&) { return static_cast<Value&&>(other); }\nint read(int value) { return value; }\nint test(Value& item) { return std::visit(read, forward_value(item)); }\n",
       "kind": "source-body-guard",
       "source_sha256": "5d25f0f9e0bddbbcc98b71098117930db196f319a3eae6844f087517549d7cbe"
-    },
-    {
-      "name": "forward-list-move-allocator-overload-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\n#include <memory>\n#include <utility>\nint main() {\n  std::forward_list<int> original{2, 4};\n  std::forward_list<int> moved(std::move(original), std::allocator<int>{});\n  return moved.front() != 2;\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "1b731c02e249177e7e0cdb8fbe36ce3897799d692e57b5b08f2308d6c4edc3d3",
-      "kind": "source-body-guard"
     },
     {
       "name": "forward-list-move-other-element-guard",
@@ -189,9 +189,9 @@
     "TranslateTest.CoreV2ForwardListMovedFromOwnerCanBeReusedRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListMoveEmptyOwnerRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListCopyConstructsIndependentNodes",
+    "TranslateTest.CoreV2ForwardListMovesWithExplicitAllocator",
     "TranslateTest.CoreV2VariantVisitSourceCastEffectfulBodyGuardRejected",
     "TranslateTest.CoreV2VariantVisitSourceCastOtherOwnerGuardRejected",
-    "TranslateTest.CoreV2ForwardListMoveAllocatorOverloadGuardRejected",
     "TranslateTest.CoreV2ForwardListMoveOtherElementGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -205,13 +205,14 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9098,
   "current_python_registry_tests": 304,
-  "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14,
+  "native_reference_selected_executions": 16,
+  "planned_generated_c23_executions": 16,
   "native_reference_proofs": {
+    "forward-list-allocator-construction": "886a3b2dada00de22afd59bffe60cba8ebe4194b4763f6e232b28575807e8b21",
     "forward-list-copy-construction": "249c85116cfea0315bbafd7b806d9ee69743cf91defc23b76d96b37f2ea294a0",
     "forward-list-move-constructor-replay": "6f36e0318aa48c9c908c6a7259ae485d49de0401956bff6d19afff137239fcda",
     "variant-visit-source-cast": "60ad484f72f71325661936be434bd345bd167232d8060e6d735bb0d0fbf0232a"
   },
-  "native_reference_authentication_sha256": "2bb7631384933c74e0e696a8fa486a7a033cebddb3a9973f09f264047261dba6",
-  "source_proof_sha256": "88ce911bdc45758f452228996e296e587fb083592380488a1e14db1b1a74d87e"
+  "native_reference_authentication_sha256": "85f49b730015078516f476e6e5328d3ca23e0c7f3956eafe3949ae08e52f5423",
+  "source_proof_sha256": "fc8032f630f76dcb4baf833e88c74ad68240b6b5e0653368175bdc8ca079204c"
 }

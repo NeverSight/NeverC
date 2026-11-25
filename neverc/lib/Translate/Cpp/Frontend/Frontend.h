@@ -4013,13 +4013,14 @@ std::optional<UtilityForwardListIteratorRecord> approvedUtilityForwardListIterat
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
 enum class UtilityForwardListConstruction {
-  Default, Allocator, InitializerList, PointerRange, Count, FillCount, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
+  Default, Allocator, InitializerList, PointerRange, IteratorRange, Count, FillCount, Copy, Move, AllocatorMove, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityForwardListOperation {
-  Empty, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, EraseRange, Clear, MoveAssign,
+  Empty, GetAllocator, MaxSize, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, EraseRange, Clear, MoveAssign,
   SpliceAll, SpliceOne, SpliceRange, EmplaceFront, EmplaceAfter,
-  Reverse, Swap, FreeSwap, CopyAssign, AssignInitializerList, AssignInitializerListOperator, AssignCount, AssignPointerRange, Merge, Sort, RemoveValue, Unique, Resize, ResizeFill,
-  InsertAfterCount, InsertAfterInitializerList, InsertAfterPointerRange,
+  Reverse, Swap, FreeSwap, CopyAssign, AssignInitializerList, AssignInitializerListOperator, AssignCount, AssignPointerRange, AssignIteratorRange, Merge, Sort, RemoveValue, Unique, Resize, ResizeFill,
+  InsertAfterCount, InsertAfterInitializerList, InsertAfterPointerRange, InsertAfterIteratorRange,
+  OwnerEqual, OwnerNotEqual, OwnerLess, OwnerGreater, OwnerLessEqual, OwnerGreaterEqual,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement,
   IteratorEqual, IteratorNotEqual, IteratorAssign
 };
@@ -4029,6 +4030,7 @@ struct UtilityForwardListCall {
   const clang::Expr *Receiver = nullptr;
   const clang::FunctionDecl *Function = nullptr;
   unsigned ArgumentOffset = 0;
+  std::optional<uint64_t> Maximum = std::nullopt;
 };
 std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruction(
     const State &S, const clang::SourceManager &SM,

@@ -18655,3 +18655,9 @@ preserve equal-element ordering and retained node addresses.
 The default-allocator forward_list<int> accepts checked count and pointer-range
 constructors. The constructors allocate independent nodes and preserve
 the original range, including empty input.
+
+## Forward list comparisons, allocator and iterator operations
+
+The default-allocator forward_list<int> supports equality and lexicographical
+ordering, allocator queries and explicit allocator copy and move. Checked
+iterator ranges also support construction, assignment and insertion.

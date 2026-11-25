@@ -27102,7 +27102,7 @@ class FunctionLowering {
     return Node;
   }
   struct ForwardListInput {
-    enum Kind { Nodes, CountedArray, RepeatedValue, PointerRange };
+    enum Kind { Nodes, CountedArray, RepeatedValue, PointerRange, IteratorRange };
     Expression Current;
     std::optional<Expression> Limit;
     Kind Mode = Nodes;
@@ -27123,18 +27123,23 @@ class FunctionLowering {
     auto Last = snapshot(cast(std::move(End), Pointer, L), L);
     return {std::move(Current), std::move(Last), ForwardListInput::PointerRange};
   }
+  ForwardListInput forwardListIteratorInput(Expression First, Expression Last, SourceLocation L) {
+    auto Current = snapshot(forwardListMember(dereference(std::move(First), L), true, L), L);
+    auto Limit = snapshot(forwardListMember(dereference(std::move(Last), L), true, L), L);
+    return {std::move(Current), std::move(Limit), ForwardListInput::IteratorRange};
+  }
   Expression forwardListHasInput(const ForwardListInput &Input, SourceLocation L) {
     if (Input.Mode == ForwardListInput::Nodes) return cast(Input.Current, "bool", L);
-    if (Input.Mode == ForwardListInput::PointerRange)
+    if (Input.Mode == ForwardListInput::PointerRange || Input.Mode == ForwardListInput::IteratorRange)
       return binary("!=", Input.Current, *Input.Limit, "bool", L);
     return cast(*Input.Limit, "bool", L);
   }
   Expression forwardListInputReference(const ForwardListInput &Input, SourceLocation L) {
-    if (Input.Mode != ForwardListInput::Nodes) return Input.Current;
+    if (Input.Mode != ForwardListInput::Nodes && Input.Mode != ForwardListInput::IteratorRange) return Input.Current;
     return address(forwardListValue(Input.Current, true, L), A.Context.IntTy.withConst(), L);
   }
   void advanceForwardListInput(const ForwardListInput &Input, SourceLocation L) {
-    if (Input.Mode == ForwardListInput::Nodes) {
+    if (Input.Mode == ForwardListInput::Nodes || Input.Mode == ForwardListInput::IteratorRange) {
       assign(Input.Current, forwardListNext(Input.Current, L), L);
       return;
     }
@@ -27520,6 +27525,33 @@ class FunctionLowering {
     assign(forwardListNext(First, L), End, L);
     jump(Done, L); label(Done, L);
   }
+  Expression compareForwardListOwners(Expression Left, Expression Right, bool Ordered, bool Invert, SourceLocation L) {
+    auto LeftNode = snapshot(forwardListMember(Left, false, L), L);
+    auto RightNode = snapshot(forwardListMember(Right, false, L), L);
+    auto Result = temporary("bool", L);
+    const auto Check = labelName(), Compare = labelName(), Advance = labelName();
+    const auto Different = labelName(), End = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(combineForwardListConditions("&", cast(LeftNode, "bool", L), cast(RightNode, "bool", L), L), Compare, End, L);
+    label(Compare, L);
+    branch(binary("==", forwardListValue(LeftNode, true, L), forwardListValue(RightNode, true, L), "bool", L),
+        Advance, Different, L);
+    label(Advance, L);
+    assign(LeftNode, forwardListNext(LeftNode, L), L);
+    assign(RightNode, forwardListNext(RightNode, L), L);
+    jump(Check, L);
+    label(Different, L);
+    assign(Result, Ordered ? binary("<", forwardListValue(LeftNode, true, L),
+        forwardListValue(RightNode, true, L), "bool", L) : boolean(false, L), L);
+    jump(Done, L);
+    label(End, L);
+    assign(Result, Ordered ? combineForwardListConditions("&", binary("==", LeftNode, A.zero(A.Context.VoidPtrTy, L), "bool", L),
+        cast(RightNode, "bool", L), L) : binary("==", LeftNode, RightNode, "bool", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Invert ? binary("==", Result, boolean(false, L), "bool", L) : Result;
+  }
   Expression utilityForwardListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityForwardListCall(A.S, A.Sources, Call, A.Context);
@@ -27542,6 +27574,16 @@ class FunctionLowering {
       Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
           Proof->Function->getParamDecl(I)->getType()), L));
     if (AssignmentSyntax) CaptureReceiver();
+    if (Operation == UtilityForwardListOperation::OwnerEqual || Operation == UtilityForwardListOperation::OwnerNotEqual ||
+        Operation == UtilityForwardListOperation::OwnerLess || Operation == UtilityForwardListOperation::OwnerGreater ||
+        Operation == UtilityForwardListOperation::OwnerLessEqual || Operation == UtilityForwardListOperation::OwnerGreaterEqual) {
+      const bool Ordered = Operation != UtilityForwardListOperation::OwnerEqual && Operation != UtilityForwardListOperation::OwnerNotEqual;
+      const bool Swap = Operation == UtilityForwardListOperation::OwnerGreater || Operation == UtilityForwardListOperation::OwnerLessEqual;
+      const bool Invert = Operation == UtilityForwardListOperation::OwnerNotEqual ||
+          Operation == UtilityForwardListOperation::OwnerLessEqual || Operation == UtilityForwardListOperation::OwnerGreaterEqual;
+      return compareForwardListOwners(dereference(Operands[Swap ? 1 : 0], L), dereference(Operands[Swap ? 0 : 1], L),
+          Ordered, Invert, L);
+    }
     if (Operation == UtilityForwardListOperation::IteratorEqual ||
         Operation == UtilityForwardListOperation::IteratorNotEqual) {
       auto Left = forwardListMember(dereference(Operands[0], L), true, L);
@@ -27606,6 +27648,11 @@ class FunctionLowering {
       assignForwardListStorage(Place, {Operands[1], std::move(Count), ForwardListInput::RepeatedValue}, Owner->Node, L);
       return Expression{};
     }
+    if (Operation == UtilityForwardListOperation::AssignIteratorRange) {
+      auto Input = forwardListIteratorInput(Operands[0], Operands[1], L);
+      assignForwardListStorage(Place, Input, Owner->Node, L);
+      return Expression{};
+    }
     if (Operation == UtilityForwardListOperation::AssignPointerRange) {
       auto Input = forwardListPointerInput(Operands[0], Operands[1], L);
       assignForwardListStorage(Place, Input, Owner->Node, L);
@@ -27654,6 +27701,16 @@ class FunctionLowering {
       destroyForwardListStorage(Place, Owner->Node, L);
       transferForwardListStorage(Place, Source, L);
       return Place;
+    }
+    if (Operation == UtilityForwardListOperation::GetAllocator) {
+      auto Allocator = temporary(type(Call->getType(), L), L);
+      initializeZero(Allocator, Call->getType(), L);
+      return Allocator;
+    }
+    if (Operation == UtilityForwardListOperation::MaxSize) {
+      if (!Proof->Maximum)
+        reject(L, "forward-list max_size", "The authenticated node allocator capacity is required.");
+      return quantity(*Proof->Maximum, type(Call->getType(), L), L);
     }
     if (Operation == UtilityForwardListOperation::Empty)
       return binary("==", forwardListMember(Place, false, L), A.zero(A.Context.VoidPtrTy, L), "bool", L);
@@ -27726,7 +27783,8 @@ class FunctionLowering {
     }
     if (Operation == UtilityForwardListOperation::InsertAfterCount ||
         Operation == UtilityForwardListOperation::InsertAfterInitializerList ||
-        Operation == UtilityForwardListOperation::InsertAfterPointerRange) {
+        Operation == UtilityForwardListOperation::InsertAfterPointerRange ||
+        Operation == UtilityForwardListOperation::InsertAfterIteratorRange) {
       auto Position = snapshot(forwardListMember(dereference(Operands.front(), L), true, L), L);
       auto LastInserted = snapshot(Position, L);
       auto Input = [&]() -> ForwardListInput {
@@ -27736,6 +27794,8 @@ class FunctionLowering {
         }
         if (Operation == UtilityForwardListOperation::InsertAfterPointerRange)
           return forwardListPointerInput(Operands[1], Operands[2], L);
+        if (Operation == UtilityForwardListOperation::InsertAfterIteratorRange)
+          return forwardListIteratorInput(Operands[1], Operands[2], L);
         const auto *Record = Method->getParamDecl(1)->getType()->getAsCXXRecordDecl();
         return forwardListInitializerInput(dereference(Operands[1], L), Record, L);
       }();
@@ -41605,7 +41665,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "forward-list construction", "The checked integer owner layout is required.");
-      if (*Kind == UtilityForwardListConstruction::Move) {
+      if (*Kind == UtilityForwardListConstruction::Move || *Kind == UtilityForwardListConstruction::AllocatorMove) {
         auto Source = dereference(Operands.front(), L);
         transferForwardListStorage(Place, Source, L);
         return;
@@ -41621,6 +41681,11 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         auto Count = snapshot(cast(Operands[0], "u64", L), L);
         insertForwardListChain(forwardListMember(Place, false, L),
             {Operands[1], std::move(Count), ForwardListInput::RepeatedValue}, Owner->Node, L);
+        return;
+      }
+      if (*Kind == UtilityForwardListConstruction::IteratorRange) {
+        auto Input = forwardListIteratorInput(Operands[0], Operands[1], L);
+        insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);
         return;
       }
       if (*Kind == UtilityForwardListConstruction::PointerRange) {
