@@ -121,6 +121,15 @@
       "original_case_source_sha256": "e0892fc38a02517da549dfb6589038c3c0a4f2c29b11099974eae84edb84cae5",
       "gtest_body_sha256": "b737de32e762cebd9a1e7881a556cb2b4f1100b85c75d91ea4882635e99bc492",
       "source_only": true
+    },
+    {
+      "name": "variant-three-visit-temporary-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAcceptsOwnedTemporaryOperand",
+      "expected": "accept",
+      "source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
+      "original_case_source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
+      "gtest_body_sha256": "e719beb8bea565fc1f7f14c856b5f9328e1546212d4c872ebd65b7a3931a2536",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -163,14 +172,6 @@
       "source_sha256": "08702b481cd5eb7f2d8b2c5ecca5f353ee92b61ac88177e0c77540254ea93715",
       "original_case_source_sha256": "08702b481cd5eb7f2d8b2c5ecca5f353ee92b61ac88177e0c77540254ea93715",
       "gtest_body_sha256": "aed4030efd589927c25c7cad157254d0de2db934809adf83fe6651d0bf29af17"
-    },
-    {
-      "name": "variant-three-visit-temporary-operand",
-      "formal_test_name": "TranslateTest.CoreV2VariantThreeVisitTemporaryOperandRejected",
-      "expected": "reject",
-      "source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
-      "original_case_source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
-      "gtest_body_sha256": "59663a9315ddc66f6a45c6581dd0679f1771ff2f9d6d32b2b05f6b1d61c96ac2"
     },
     {
       "name": "variant-three-visit-matrix-capacity",
@@ -303,6 +304,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "variant-three-visit-temporary-operand",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c) { return a + b + c; }\nint f(Value& a, Value& b) { return std::visit(combine, a, b, Value(2)); }\n",
+      "expected": "accept",
+      "source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "any-int-make-renamed-installation-guard",
       "expected": "reject",
       "source": "#define __create changed_int_installation\n#include <any>\n#undef __create\nbool f() {\n  auto a = std::make_any<int>(7);\n  return a.has_value();\n}\n",
@@ -343,14 +352,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "variant-three-visit-temporary-operand",
-      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c) { return a + b + c; }\nint f(Value& a, Value& b) { return std::visit(combine, a, b, Value(2)); }\n",
-      "expected": "reject",
-      "source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
-      "public_header": "variant",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "variant-three-visit-matrix-capacity",
       "source": "#include <variant>\nusing Value = std::variant<signed char, short, int, long>;\nusing Wider = std::variant<signed char, short, int, long, bool>;\nlong combine(long a, long b, long c) { return a + b + c; }\nlong f(Value& a, Value& b, Wider& c) { return std::visit(combine, a, b, c); }\n",
       "expected": "reject",
@@ -375,12 +376,12 @@
     "TranslateTest.CoreV2VariantThreeVisitAliasedOperandsAndVoidRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyAssignLongAcceptsFunctionBody",
     "TranslateTest.CoreV2VariantVisitAcceptsFourOperands",
+    "TranslateTest.CoreV2VariantVisitAcceptsOwnedTemporaryOperand",
     "TranslateTest.CoreV2AnyIntMakeRenamedInstallationGuardRejected",
     "TranslateTest.CoreV2AnyIntCastWithoutActiveStateEvidenceRejected",
     "TranslateTest.CoreV2ScopedAllocatorRenamedStorageCopyGuardRejected",
     "TranslateTest.CoreV2ScopedAllocatorInnerPackCopyGuardRejected",
     "TranslateTest.CoreV2VariantThreeVisitRenamedValuelessGuardRejected",
-    "TranslateTest.CoreV2VariantThreeVisitTemporaryOperandRejected",
     "TranslateTest.CoreV2VariantThreeVisitMatrixCapacityRejected"
   ],
   "source_proof_gate_pending": false,
@@ -402,5 +403,5 @@
     "three-variant-visit": "cba2d9fe01d703b8356cdc0f0050500243cc6029bc27b87eeda3b636823d8f69"
   },
   "native_reference_authentication_sha256": "133196c0f84bf0621378163efef0ec281c8bac24cc52e9a78f4b401a38f10299",
-  "source_proof_sha256": "f6927d39d36f8cfdcd39f96ac393d2f4b9252a47df36a53a452a862548657f05"
+  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
 }

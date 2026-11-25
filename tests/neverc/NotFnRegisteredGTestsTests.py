@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_temporaries_and_any_references_registered = cls.registered
+        cls.variant_temporaries_and_any_references_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_temporaries_and_any_references_original = cls.adapter.restore_original_gtests(cls.variant_temporaries_and_any_references_registered,
+                                                                        cls.variant_temporaries_and_any_references_suffix)
+        cls.registered = cls.adapter.restore_variant_temporaries_and_any_references_history(cls.variant_temporaries_and_any_references_registered)
         cls.variant_swap_and_any_typed_pointers_registered = cls.registered
         cls.variant_swap_and_any_typed_pointers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_swap_and_any_typed_pointers_original = cls.adapter.restore_original_gtests(cls.variant_swap_and_any_typed_pointers_registered,
@@ -3705,6 +3710,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_swap_and_any_typed_pointers_history(self.variant_swap_and_any_typed_pointers_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_swap_and_any_typed_pointers_registered, self.variant_swap_and_any_typed_pointers_suffix + b' ')
+
+
+    def test_variant_temporaries_and_any_references_retains_published_bodies(self):
+        self.assertEqual(self.variant_temporaries_and_any_references_original + self.variant_temporaries_and_any_references_suffix, self.variant_temporaries_and_any_references_registered)
+        self.assertEqual(self.adapter.restore_variant_temporaries_and_any_references_history(self.variant_temporaries_and_any_references_original),
+                         self.variant_swap_and_any_typed_pointers_original)
+        output, evidence = self.extractor.extract(self.variant_temporaries_and_any_references_original, ['TranslateTest.CoreV2VariantVisitTemporaryEvaluatesItsInitializerOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitTemporarySelectsOwnedVisitorCallRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitTemporaryWithMutableLiveOperandRunAtBothOptimizations', 'TranslateTest.CoreV2AnyActiveMutableReferenceWritesItsSlotRunAtBothOptimizations', 'TranslateTest.CoreV2AnyActiveFloatReferenceIncrementsPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2AnyActiveWideReferenceIncrementsPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2AnyActiveUtfReferenceWritesPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitTemporaryReferenceParameterGuardRejected', 'TranslateTest.CoreV2VariantVisitNonowningXvalueOperandGuardRejected', 'TranslateTest.CoreV2AnyActiveMutableReferenceWrongTypeGuardRejected', 'TranslateTest.CoreV2AnyActiveMutableReferenceAliasedResetGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9019)
+        self.assertEqual(evidence['selected_count'], 11)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-temporary-evaluates-its-initializer-once', output)
+        self.assertIn(b'any-active-utf-reference-writes-payload', output)
+
+    def test_variant_temporaries_and_any_references_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_temporaries_and_any_references_history(self.variant_temporaries_and_any_references_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_temporaries_and_any_references_registered, self.variant_temporaries_and_any_references_suffix + b' ')
 
 
 if __name__ == '__main__':

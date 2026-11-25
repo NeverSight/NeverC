@@ -39,6 +39,15 @@
       "source_sha256": "7f9d9369b48c2dd3da8def061fa4c1c41c59b33f89462e7b504836c6a1edc1f1",
       "original_case_source_sha256": "7f9d9369b48c2dd3da8def061fa4c1c41c59b33f89462e7b504836c6a1edc1f1",
       "gtest_body_sha256": "bf327051afcad6b27a065df81c903a045dd179eaaf1378c7c73d0b9533658876"
+    },
+    {
+      "name": "any-narrow-inline-mutable-narrow-value-cast",
+      "formal_test_name": "TranslateTest.CoreV2AnyNarrowMutableReferenceKeepsOriginalExitCode",
+      "expected": "accept",
+      "source_sha256": "03634f8048807e163046bd5a65bfda70fc5d3dbf8d071a91f15681d2433ec68a",
+      "original_case_source_sha256": "03634f8048807e163046bd5a65bfda70fc5d3dbf8d071a91f15681d2433ec68a",
+      "gtest_body_sha256": "3d301497fd4eec12ea0b5e9a4fa89ac18e364850772a334d0a0b149a8ab1e765",
+      "expected_exit_code": 7
     }
   ],
   "negative_cases": [
@@ -49,14 +58,6 @@
       "source_sha256": "6210a6a77dc56db2462e415f678081ee826bbf051174cbbfd0f6382f2b1b59a5",
       "original_case_source_sha256": "6210a6a77dc56db2462e415f678081ee826bbf051174cbbfd0f6382f2b1b59a5",
       "gtest_body_sha256": "0e4a587e76b5d30263a09db4eeb37e014881fb989c1f3853f0b216250642d123"
-    },
-    {
-      "name": "any-narrow-inline-mutable-narrow-value-cast",
-      "formal_test_name": "TranslateTest.CoreV2AnyNarrowInlineMutableNarrowValueCastRejected",
-      "expected": "reject",
-      "source_sha256": "03634f8048807e163046bd5a65bfda70fc5d3dbf8d071a91f15681d2433ec68a",
-      "original_case_source_sha256": "03634f8048807e163046bd5a65bfda70fc5d3dbf8d071a91f15681d2433ec68a",
-      "gtest_body_sha256": "ee3ecc266d674805be267c5525e8c0a436f387104199bda4ca56cd3237a25f3b"
     },
     {
       "name": "any-narrow-inline-narrow-tag-mismatch-value-cast",
@@ -109,19 +110,19 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "any-narrow-inline-mutable-narrow-value-cast",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() { std::any value = static_cast<short>(7); return std::any_cast<short&>(value); }\n",
+      "source_sha256": "03634f8048807e163046bd5a65bfda70fc5d3dbf8d071a91f15681d2433ec68a",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "any-narrow-inline-different-small-record",
       "expected": "reject",
       "public_header": "any",
       "source": "#include <any>\nstruct Tiny { unsigned char value; };\nint main() { std::any value = Tiny{1}; return !value.has_value(); }\n",
       "source_sha256": "6210a6a77dc56db2462e415f678081ee826bbf051174cbbfd0f6382f2b1b59a5",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "any-narrow-inline-mutable-narrow-value-cast",
-      "expected": "reject",
-      "public_header": "any",
-      "source": "#include <any>\nint main() { std::any value = static_cast<short>(7); return std::any_cast<short&>(value); }\n",
-      "source_sha256": "03634f8048807e163046bd5a65bfda70fc5d3dbf8d071a91f15681d2433ec68a",
       "kind": "source-body-guard"
     },
     {
@@ -139,8 +140,8 @@
     "TranslateTest.CoreV2AnyNarrowInlineSignedNarrowValueCastsRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyNarrowInlineUnsignedNarrowReferenceAndResetRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyNarrowMutableReferenceKeepsOriginalExitCode",
     "TranslateTest.CoreV2AnyNarrowInlineDifferentSmallRecordRejected",
-    "TranslateTest.CoreV2AnyNarrowInlineMutableNarrowValueCastRejected",
     "TranslateTest.CoreV2AnyNarrowInlineNarrowTagMismatchValueCastRejected"
   ],
   "source_proof_gate_pending": false,
@@ -154,12 +155,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 8416,
   "current_python_registry_tests": 190,
-  "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
   "native_reference_proofs": {
+    "any-active-mutable-reference": "48c5bf01bc62c9cc06f7956355c46a38b033a773d095c14cffbf7ba449c26bc1",
     "any-character-inline": "1f4c35b6952538c886237a85a4416b7aa1bd6cbd838d1ff00d93b6bc6e5aa66b",
     "any-narrow-inline": "df17f805c449d1ac70296f02c861816b6a5e80e1f00ada8f49692432544e490d"
   },
-  "native_reference_authentication_sha256": "0ae997369c006e1ba5711bacaf0413a1bbc7ea22673d857f159226aaa0d3fc59",
-  "source_proof_sha256": "f6927d39d36f8cfdcd39f96ac393d2f4b9252a47df36a53a452a862548657f05"
+  "native_reference_authentication_sha256": "62bc0bfd82ea946738d152b2fb6be674b55d613cb93e5bb70bc89728a41e594c",
+  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
 }

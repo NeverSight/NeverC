@@ -18542,3 +18542,11 @@ pointer type. Checked in-place construction verifies the selected implicit
 object-to-void pointer conversion before storing the payload. The inline any
 carrier retains distinct bool pointer, int pointer and const int pointer
 payload types and the address of the matching slot.
+
+## Variant temporaries and mutable any references
+
+Checked visitation materializes an owned temporary variant for the full
+expression. The selected visitor takes the temporary's active alternative
+by value. Mutable any casts bind to the existing inline scalar slot after
+the translator has verified the exact initialized payload type and the
+owner's single use. The resulting reference can update that slot.

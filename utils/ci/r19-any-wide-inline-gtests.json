@@ -47,17 +47,18 @@
       "source_sha256": "2c113d049099dc8e982ee63523a8271aca610ce3d9eaefabb5bbfb49bf5ce57d",
       "original_case_source_sha256": "2c113d049099dc8e982ee63523a8271aca610ce3d9eaefabb5bbfb49bf5ce57d",
       "gtest_body_sha256": "48c0d8f61b1c56f2da8f3c560f4156547991545c3c1e872ca1402711e55c137f"
+    },
+    {
+      "name": "any-wide-inline-mutable-wide-reference",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideMutableReferenceAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "410d6adf39af8706ecc5af2062cdd9ea22672774d9c5ba2090ccb08cc9e4560e",
+      "original_case_source_sha256": "410d6adf39af8706ecc5af2062cdd9ea22672774d9c5ba2090ccb08cc9e4560e",
+      "gtest_body_sha256": "06f9c3be7b2dab9b84dc54aaf6012ae5930d65a47ec8eea82cb2baa9faff4be4",
+      "source_only": true
     }
   ],
   "negative_cases": [
-    {
-      "name": "any-wide-inline-mutable-wide-reference",
-      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineMutableWideReferenceRejected",
-      "expected": "reject",
-      "source_sha256": "410d6adf39af8706ecc5af2062cdd9ea22672774d9c5ba2090ccb08cc9e4560e",
-      "original_case_source_sha256": "410d6adf39af8706ecc5af2062cdd9ea22672774d9c5ba2090ccb08cc9e4560e",
-      "gtest_body_sha256": "9e9a022751ea2b7b3c774fa746cabf8c8dbb056cbd110bae73d9ed92f9f26bf3"
-    },
     {
       "name": "any-wide-inline-unknown-wide-value",
       "formal_test_name": "TranslateTest.CoreV2AnyWideInlineUnknownWideValueRejected",
@@ -134,11 +135,11 @@
     },
     {
       "name": "any-wide-inline-mutable-wide-reference",
-      "expected": "reject",
+      "expected": "accept",
       "public_header": "any",
       "source": "#include <any>\nlong long edit() {\n  std::any value{5LL};\n  return ++std::any_cast<long long&>(value);\n}\n",
       "source_sha256": "410d6adf39af8706ecc5af2062cdd9ea22672774d9c5ba2090ccb08cc9e4560e",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "any-wide-inline-unknown-wide-value",
@@ -172,7 +173,7 @@
     "TranslateTest.CoreV2AnyWideInlineWideUnsignedEmplaceRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyWideInlineWideTagsAndSwapRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyWideInlineWideInputOnceRunAtBothOptimizations",
-    "TranslateTest.CoreV2AnyWideInlineMutableWideReferenceRejected",
+    "TranslateTest.CoreV2AnyWideMutableReferenceAcceptsFunctionBody",
     "TranslateTest.CoreV2AnyWideInlineUnknownWideValueRejected",
     "TranslateTest.CoreV2AnyWideInlineMismatchedWideValueRejected",
     "TranslateTest.CoreV2AnyWideInlineRecordConversionRejected"
@@ -194,5 +195,5 @@
     "any-wide-inline": "41b503dcf958f4c11a294a1d0d53e1f7e495cdb4f582663bfc7a93708d6a909f"
   },
   "native_reference_authentication_sha256": "68da5aae40de021f0af799d2193d07a5ee785322354bcbeec21610c8fe07cb40",
-  "source_proof_sha256": "f6927d39d36f8cfdcd39f96ac393d2f4b9252a47df36a53a452a862548657f05"
+  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
 }

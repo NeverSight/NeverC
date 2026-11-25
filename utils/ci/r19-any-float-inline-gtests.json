@@ -31,6 +31,15 @@
       "source_sha256": "ce4c0ed665beedd37504c72ca0dcf34cfae6698d47b782c58949497848018922",
       "original_case_source_sha256": "ce4c0ed665beedd37504c72ca0dcf34cfae6698d47b782c58949497848018922",
       "gtest_body_sha256": "ededa2ea49d2ce460b022463e408f5e977a59751be10110fee410e8ff88ba372"
+    },
+    {
+      "name": "any-float-inline-mutable-reference",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatMutableReferenceAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac",
+      "original_case_source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac",
+      "gtest_body_sha256": "2d299dae54f16cbf7aa3837cc33f4e857db65ffef1f134008a256a18efb52d21",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -41,14 +50,6 @@
       "source_sha256": "c0269975181a7672ef2c6f9eb5b110eb945cd34fc310183fd4a448f7bc9ddd99",
       "original_case_source_sha256": "c0269975181a7672ef2c6f9eb5b110eb945cd34fc310183fd4a448f7bc9ddd99",
       "gtest_body_sha256": "f4bb67c28ab89b6a87400cc61071be12cbbb6aaeb87554d4f174d5b12c8afdb5"
-    },
-    {
-      "name": "any-float-inline-mutable-reference",
-      "formal_test_name": "TranslateTest.CoreV2AnyFloatInlineMutableReferenceRejected",
-      "expected": "reject",
-      "source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac",
-      "original_case_source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac",
-      "gtest_body_sha256": "e5c5514d3e0f215e10b875491f71ff341b4852d0f8dccca14bfcfa034dee4292"
     },
     {
       "name": "any-float-inline-unknown-active-value",
@@ -101,20 +102,20 @@
       "source_sha256": "ce4c0ed665beedd37504c72ca0dcf34cfae6698d47b782c58949497848018922"
     },
     {
+      "name": "any-float-inline-mutable-reference",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nfloat edit() {\n  std::any value{1.5f};\n  return ++std::any_cast<float&>(value);\n}\n",
+      "source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac"
+    },
+    {
       "name": "any-float-inline-long-double-owner",
       "expected": "reject",
       "public_header": "any",
       "kind": "source-body-guard",
       "source": "#include <any>\nint main() {\n  auto value = std::make_any<long double>(1.0L);\n  return !value.has_value();\n}\n",
       "source_sha256": "c0269975181a7672ef2c6f9eb5b110eb945cd34fc310183fd4a448f7bc9ddd99"
-    },
-    {
-      "name": "any-float-inline-mutable-reference",
-      "expected": "reject",
-      "public_header": "any",
-      "kind": "source-body-guard",
-      "source": "#include <any>\nfloat edit() {\n  std::any value{1.5f};\n  return ++std::any_cast<float&>(value);\n}\n",
-      "source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac"
     },
     {
       "name": "any-float-inline-unknown-active-value",
@@ -138,8 +139,8 @@
     "TranslateTest.CoreV2AnyFloatInlineImmutableValueRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyFloatInlineFactoryEmplaceResetRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyFloatInlineCopyMoveAndAssignRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFloatMutableReferenceAcceptsFunctionBody",
     "TranslateTest.CoreV2AnyFloatInlineLongDoubleOwnerRejected",
-    "TranslateTest.CoreV2AnyFloatInlineMutableReferenceRejected",
     "TranslateTest.CoreV2AnyFloatInlineUnknownActiveValueRejected",
     "TranslateTest.CoreV2AnyFloatInlineMismatchedImmutableValueRejected"
   ],
@@ -160,5 +161,5 @@
     "any-float-inline": "a2fa22dff59b7ddf67741d9437a84a047d379e615608ca024fa55c2d78bfcf66"
   },
   "native_reference_authentication_sha256": "2c8942cc7af5a4014d7d85f45df4376e75873cf53387c9874671b84082a2f315",
-  "source_proof_sha256": "f6927d39d36f8cfdcd39f96ac393d2f4b9252a47df36a53a452a862548657f05"
+  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
 }
