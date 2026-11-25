@@ -54349,6 +54349,10 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
     return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, C->getParent(), Context)) {
     if (!C->getNumParams()) return UtilityForwardListConstruction::Default;
+    if (C->getNumParams() == 1 && C->isCopyConstructor() &&
+        Context.hasSameType(C->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Owner->Record).withConst())))
+      return UtilityForwardListConstruction::Copy;
     if (C->getNumParams() == 1 && C->isMoveConstructor() &&
         Context.hasSameType(C->getParamDecl(0)->getType(),
             Context.getRValueReferenceType(Context.getRecordType(Owner->Record))))
@@ -54387,6 +54391,11 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
   if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
       !forwardListFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, M->getParent(), Context)) {
+    const auto OwnerType = Context.getRecordType(Owner->Record);
+    if (!M->isConst() && M->isMoveAssignmentOperator() && M->getNumParams() == 1 &&
+        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(OwnerType)) &&
+        Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(OwnerType)))
+      return UtilityForwardListOperation::MoveAssign;
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
     if (!M->getNumParams()) {
@@ -54703,6 +54712,39 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
 }
 
 namespace {
+bool forwardListMoveAssignmentBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  if (!Body || Body->size() != 2) return false;
+  const auto *Call = dyn_cast<CXXMemberCallExpr>(Body->body_front());
+  const auto *Selected = Call ? Call->getMethodDecl() : nullptr;
+  if (!Selected || !Selected->getIdentifier() || Selected->getName() != "__move_assign" ||
+      Selected->getParent()->getCanonicalDecl() != Method->getParent()->getCanonicalDecl() ||
+      Selected->getNumParams() != 2 || Call->getNumArgs() != 2 ||
+      !Call->getImplicitObjectArgument() ||
+      !isa<CXXThisExpr>(Call->getImplicitObjectArgument()->IgnoreParenImpCasts()) ||
+      !forwardListFunctionDeclarations(S, SM, Selected) ||
+      !variantParameter(Call->getArg(0), Definition->getParamDecl(0)))
+    return false;
+  const auto *Tag = forwardListSpecialization(S, SM,
+      forwardListRecordType(Selected->getParamDecl(1)->getType()),
+      "integral_constant", "__type_traits/integral_constant.h");
+  if (!Tag) return false;
+  const auto &Args = Tag->getTemplateArgs();
+  if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Args[0].getAsType(), Context.BoolTy) ||
+      Args[1].getKind() != TemplateArgument::Integral ||
+      !Context.hasSameType(Args[1].getIntegralType(), Context.BoolTy) ||
+      !Args[1].getAsIntegral().getBoolValue())
+    return false;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Dereference = Return && Return->getRetValue()
+      ? dyn_cast<UnaryOperator>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  return Dereference && Dereference->getOpcode() == UO_Deref &&
+         isa<CXXThisExpr>(Dereference->getSubExpr()->IgnoreParenImpCasts());
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -54831,6 +54873,20 @@ std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruc
       !forwardListSourceGraph(S, SM, C, Context, *Node) ||
       (*Kind == UtilityForwardListConstruction::Move && !forwardListMoveBody(S, SM, C, *Node, Context)))
     return std::nullopt;
+  if (*Kind == UtilityForwardListConstruction::Copy) {
+    const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(C->getDefinition());
+    const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+    if (!Body || Body->size() != 1 || Definition->getNumCtorInitializers() != 1)
+      return std::nullopt;
+    const auto *Base = *Definition->init_begin();
+    const auto *Insert = dyn_cast<CXXMemberCallExpr>(Body->body_front());
+    const auto *Method = Insert ? Insert->getMethodDecl() : nullptr;
+    if (!Base->isBaseInitializer() || Base->isBaseVirtual() || !Method ||
+        !Method->getIdentifier() || Method->getName() != "insert_after" ||
+        Method->getParent()->getCanonicalDecl() != Definition->getParent()->getCanonicalDecl() ||
+        !Method->getPrimaryTemplate() || Insert->getNumArgs() != 3)
+      return std::nullopt;
+  }
   for (unsigned I = 0; I != C->getNumParams(); ++I) {
     const auto Parameter = C->getParamDecl(I)->getType();
     const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : Parameter;
@@ -54867,6 +54923,9 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   const auto Operation = forwardListMethodSignature(S, SM, Method, Context);
   const auto Node = Method ? forwardListReceiverNode(S, SM, Method->getParent(), Context) : std::nullopt;
   if (!Operation || !Node || !forwardListSourceGraph(S, SM, Method, Context, *Node)) return std::nullopt;
+  if (*Operation == UtilityForwardListOperation::MoveAssign &&
+      !forwardListMoveAssignmentBody(S, SM, Method, Context))
+    return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
   if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {

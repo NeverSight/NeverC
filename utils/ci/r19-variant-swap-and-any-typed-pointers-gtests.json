@@ -195,5 +195,5 @@
     "variant-swap-void-pointer-replay": "7cc782131e87916d742c366f6d10ac68affd3e3e44b456746310864bb846dcdc"
   },
   "native_reference_authentication_sha256": "a0819bafdca6cf20e2712f701ed27d93c11d1cf4cf901034fb0dd15af9829286",
-  "source_proof_sha256": "2f4384d0910900c60905fdbf52aa3fdaa2b460f48cfdf1ecfa9847915d12d63a"
+  "source_proof_sha256": "351ea3f24d0f47273b3afdccef354e2b16e72f7884498d4a4792fed3304f7884"
 }

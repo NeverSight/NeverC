@@ -406538,7 +406538,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListCopyKeepsIndependentOwnerGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListCopyConstructsIndependentNodes) {
   const auto Source = tmpFile("forward-list-copy-keeps-independent-owner-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int main() {
@@ -406547,10 +406547,17 @@ int main() {
   return &copied.front() == &original.front();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-copy-keeps-independent-owner-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-copy-keeps-independent-owner-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListMoveAllocatorOverloadGuardRejected) {
@@ -406578,6 +406585,265 @@ int main() {
   std::forward_list<long> original{1L, 2L};
   std::forward_list<long> moved(std::move(original));
   return moved.front() != 1L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMoveAssignmentRetainsNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-move-assignment-retains-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+
+int main() {
+  std::forward_list<int> input{3, 4};
+  std::forward_list<int> output{9, 8};
+  const int *first = &input.front();
+  auto &assigned = (output = std::move(input));
+  if (&assigned != &output || &output.front() != first || !input.empty())
+    return 1;
+  auto cursor = output.begin();
+  ++cursor;
+  if (*cursor != 4)
+    return 2;
+  input.push_front(7);
+  return input.front() != 7 || output.front() != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-move-assignment-retains-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-move-assignment-retains-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMoveAssignmentEvaluationOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-move-assignment-evaluation-order.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+
+using List = std::forward_list<int>;
+
+List &mark(List &owner, int &trace, int digit) {
+  trace = trace * 10 + digit;
+  return owner;
+}
+
+int main() {
+  List from{4};
+  List into{5};
+  int trace = 0;
+  mark(into, trace, 2) = std::move(mark(from, trace, 1));
+  if (trace != 12 || !from.empty() || into.front() != 4)
+    return 1;
+  trace = 0;
+  mark(from, trace, 2).operator=(std::move(mark(into, trace, 1)));
+  return trace != 21 || !into.empty() || from.front() != 4;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-move-assignment-evaluation-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-move-assignment-evaluation-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMoveAssignmentEmptySourceRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-move-assignment-empty-source.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+
+int main() {
+  std::forward_list<int> from;
+  std::forward_list<int> into{9, 10};
+  into = std::move(from);
+  if (!into.empty() || !from.empty())
+    return 1;
+  into.push_front(11);
+  return into.front() != 11 || !from.empty();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-move-assignment-empty-source.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-move-assignment-empty-source" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMoveAssignmentConstSourceGuardRejected) {
+  const auto Source = tmpFile("forward-list-move-assignment-const-source-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+int main() {
+  const std::forward_list<int> from{3};
+  std::forward_list<int> into{8};
+  into = std::move(from);
+  return into.front() != 3;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCopyAssignmentGuardRejected) {
+  const auto Source = tmpFile("forward-list-copy-assignment-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  std::forward_list<int> from{3};
+  std::forward_list<int> into{8};
+  into = from;
+  return into.front() != 3;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMoveAssignmentNonIntGuardRejected) {
+  const auto Source = tmpFile("forward-list-move-assignment-non-int-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+int main() {
+  std::forward_list<long> from{3};
+  std::forward_list<long> into;
+  into = std::move(from);
+  return into.front() != 3;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCopyReadsConstOwnerInOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-copy-reads-const-owner-in-order.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const std::forward_list<int> source{3, 7, 11};
+  std::forward_list<int> copy(source);
+  auto cursor = copy.begin();
+  if (*cursor != 3 || &*cursor == &source.front()) return 1;
+  ++cursor;
+  if (*cursor != 7) return 2;
+  *cursor = 9;
+  auto sourceCursor = source.begin();
+  ++sourceCursor;
+  if (*sourceCursor != 7) return 3;
+  ++cursor;
+  if (*cursor != 11) return 4;
+  ++cursor;
+  return cursor != copy.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-copy-reads-const-owner-in-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-copy-reads-const-owner-in-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCopyEmptyIndependentOwnerRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-copy-empty-independent-owner.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  std::forward_list<int> source;
+  std::forward_list<int> copy(source);
+  if (!source.empty() || !copy.empty()) return 1;
+  source.push_front(13);
+  copy.push_front(17);
+  return source.front() != 13 || copy.front() != 17;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-copy-empty-independent-owner.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-copy-empty-independent-owner" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCopyExplicitAllocatorGuardRejected) {
+  const auto Source = tmpFile("forward-list-copy-explicit-allocator-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <memory>
+int main() {
+  std::forward_list<int> source{2, 4};
+  std::forward_list<int> copy(source, std::allocator<int>{});
+  return copy.front() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCopyOtherElementGuardRejected) {
+  const auto Source = tmpFile("forward-list-copy-other-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const std::forward_list<long> source{7L};
+  std::forward_list<long> copy(source);
+  return copy.front() != 7L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCopySourceAllocatorGuardRejected) {
+  const auto Source = tmpFile("forward-list-copy-source-allocator-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <memory>
+template <class T> struct LocalAllocator : std::allocator<T> {
+  using value_type = T;
+  LocalAllocator() = default;
+  template <class U> LocalAllocator(const LocalAllocator<U> &) {}
+  template <class U> struct rebind { using other = LocalAllocator<U>; };
+};
+int main() {
+  std::forward_list<int, LocalAllocator<int>> source{7};
+  std::forward_list<int, LocalAllocator<int>> copy(source);
+  return copy.front() != 7;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

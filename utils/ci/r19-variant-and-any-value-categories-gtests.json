@@ -282,5 +282,5 @@
     "variant-integral-forwarding": "110c2a8639d896398a8df8061e0795e2170d024994bde2fc83ed211ae6b8a244"
   },
   "native_reference_authentication_sha256": "9cbbf8179798a6263758b547fc2a7fe47b16640564dc51a27f51bff9a231c50c",
-  "source_proof_sha256": "2f4384d0910900c60905fdbf52aa3fdaa2b460f48cfdf1ecfa9847915d12d63a"
+  "source_proof_sha256": "351ea3f24d0f47273b3afdccef354e2b16e72f7884498d4a4792fed3304f7884"
 }

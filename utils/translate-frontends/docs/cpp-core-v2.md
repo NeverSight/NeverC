@@ -18615,3 +18615,10 @@ Variant visitation follows source functions that return a checked cast
 of the same live argument. Move construction of a default-allocator
 forward_list<int> transfers its checked node chain, preserving node
 addresses and leaving the source empty for reuse.
+
+## Forward list move assignment and copy construction
+
+Default-allocator forward_list<int> move assignment releases the former
+destination chain and transfers the source nodes with their identities.
+Checked copy construction reads the source values in order and creates
+an independent chain. The copy also accepts a const source.

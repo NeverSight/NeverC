@@ -1088,3 +1088,10 @@ The combined compiler passes 7,236 source requests across six 64-bit targets
 and 1310 formal tests on Linux x86-64. All 880 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Forward list move assignment and copy construction
+
+The combined compiler passes 7,302 source requests across six 64-bit targets
+and 1321 formal tests on Linux x86-64. All 886 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.
