@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-multimap-node-handles-extract-iterator-and-reinsert-mutated-mapped-value",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapNodeHandlesExtractIteratorAndReinsertMutatedMappedValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "557863fbfa49e6670cd7c19ef444ef26b85fcc3af82271f48445cd20c5fd6773",
+      "original_case_source_sha256": "557863fbfa49e6670cd7c19ef444ef26b85fcc3af82271f48445cd20c5fd6773",
+      "gtest_body_sha256": "40933471496961d701e322e01e2db158a027cefd2854b24980851064665a7667"
+    },
+    {
+      "name": "unordered-multimap-node-handles-rejected-unique-insertion-returns-handle-for-multimap",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapNodeHandlesRejectedUniqueInsertionReturnsHandleForMultimapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "29ae011b92e445a0b06ebd197d074a0f9ebc44164b8aa022d163d54dd433a538",
+      "original_case_source_sha256": "29ae011b92e445a0b06ebd197d074a0f9ebc44164b8aa022d163d54dd433a538",
+      "gtest_body_sha256": "ec223c6df28d7683a0d3e0b86359f88a4b7dd1cff447fd96fcbc64c51808474a"
+    },
+    {
+      "name": "unordered-multimap-node-handles-empty-extraction-and-insertion-return-end",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapNodeHandlesEmptyExtractionAndInsertionReturnEndRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "58b5bfa774e70a1847915e658d461f7d6a96da3678fb6411c5b2648fbf37c9b3",
+      "original_case_source_sha256": "58b5bfa774e70a1847915e658d461f7d6a96da3678fb6411c5b2648fbf37c9b3",
+      "gtest_body_sha256": "4583090b1b819da4818df56f7dec63fae83f6c13583b856e7e30d2a3843770cb"
+    },
+    {
+      "name": "ordered-pointer-observers-map-size-empty-and-maximum",
+      "formal_test_name": "TranslateTest.CoreV2OrderedPointerObserversMapSizeEmptyAndMaximumRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a4b2645ad035fb23c4d4eed72aa40baa930232972c4aae5d204c2d14ac6bbf7d",
+      "original_case_source_sha256": "a4b2645ad035fb23c4d4eed72aa40baa930232972c4aae5d204c2d14ac6bbf7d",
+      "gtest_body_sha256": "fcc0830d9c6cfaac8c633a09a134339914f333a71979ca29c87362938aecd372"
+    },
+    {
+      "name": "ordered-pointer-observers-multimap-pointer-key-comparator-evaluates-receiver",
+      "formal_test_name": "TranslateTest.CoreV2OrderedPointerObserversMultimapPointerKeyComparatorEvaluatesReceiverRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "84bbb1c5a6676778101ffdbc81c2c8c154545b7519e0dd6605c28c197f4d89bf",
+      "original_case_source_sha256": "84bbb1c5a6676778101ffdbc81c2c8c154545b7519e0dd6605c28c197f4d89bf",
+      "gtest_body_sha256": "c3879566db322454e856b8588a42243ae3d59baa17ba5c4f5bbcd9dd57a36113"
+    },
+    {
+      "name": "ordered-pointer-observers-multiset-pointer-value-comparator",
+      "formal_test_name": "TranslateTest.CoreV2OrderedPointerObserversMultisetPointerValueComparatorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cfc31788abf4ff877558cbd80101370a3aef4bf96382774aeea65f87021a54fc",
+      "original_case_source_sha256": "cfc31788abf4ff877558cbd80101370a3aef4bf96382774aeea65f87021a54fc",
+      "gtest_body_sha256": "666adc2684f8f87ea43062654b70f1e00379af66429583a0b621188b2c47396b"
+    },
+    {
+      "name": "unordered-multimap-node-handles-mapped-node-with-unapproved-value-type",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f920b619c93b14e14234adf89b5718c506cf3a4a3e3838d23ba17d4b7d51536c",
+      "original_case_source_sha256": "f920b619c93b14e14234adf89b5718c506cf3a4a3e3838d23ba17d4b7d51536c",
+      "gtest_body_sha256": "79f7620a5d43a1264974bb0b824e2e4f139d21aadd256f8d66fb1c5eb9d8c754"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-pointer-observers-custom-ordered-compare-pointer",
+      "formal_test_name": "TranslateTest.CoreV2OrderedPointerObserversCustomOrderedComparePointerRejected",
+      "expected": "reject",
+      "source_sha256": "6ceac9d5b311aef857be7965f33e5be3811368446da4ee6411723d27f9c6a100",
+      "original_case_source_sha256": "6ceac9d5b311aef857be7965f33e5be3811368446da4ee6411723d27f9c6a100",
+      "gtest_body_sha256": "40bde16708e14f8faf566fb34f7bddac0c1441618f5fe90f7ea2cb6e34837404"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-multimap-node-handles-extract-iterator-and-reinsert-mutated-mapped-value",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  std::unordered_multimap<int, int> values{{3, 5}, {3, 9}, {6, 12}};\n  auto where = values.find(3);\n  const int* address = &where->second;\n  auto node = values.extract(where);\n  if (node.empty() || values.count(3) != 1) return 1;\n  node.key() = 6;\n  node.mapped() = 17;\n  const auto inserted = values.insert(std::move(node));\n  return !node.empty() || inserted->first != 6 || inserted->second != 17 ||\n         &inserted->second != address || values.count(6) != 2;\n}\n",
+      "source_sha256": "557863fbfa49e6670cd7c19ef444ef26b85fcc3af82271f48445cd20c5fd6773",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-node-handles-rejected-unique-insertion-returns-handle-for-multimap",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  std::unordered_multimap<int, int> source{{3, 17}, {3, 22}};\n  std::unordered_map<int, int> unique{{3, 5}};\n  auto node = source.extract(3);\n  const auto payload = node.mapped();\n  auto rejected = unique.insert(std::move(node));\n  if (rejected.inserted || rejected.position->second != 5 ||\n      rejected.node.empty() || rejected.node.key() != 3 || rejected.node.mapped() != payload) return 1;\n  auto inserted = source.insert(source.find(3), std::move(rejected.node));\n  return !rejected.node.empty() || inserted->second != payload || source.count(3) != 2;\n}\n",
+      "source_sha256": "29ae011b92e445a0b06ebd197d074a0f9ebc44164b8aa022d163d54dd433a538",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-node-handles-empty-extraction-and-insertion-return-end",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  std::unordered_multimap<int, int> values{{3, 11}};\n  auto absent = values.extract(9);\n  const auto inserted = values.insert(std::move(absent));\n  return bool(absent) || inserted != values.end() || values.count(3) != 1;\n}\n",
+      "source_sha256": "58b5bfa774e70a1847915e658d461f7d6a96da3678fb6411c5b2648fbf37c9b3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-pointer-observers-map-size-empty-and-maximum",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Table = std::map<int, int>;\nconst Table* observe(const Table& values, unsigned& calls) { ++calls; return &values; }\nint main() {\n  const Table values;\n  unsigned calls = 0;\n  const auto maximum = observe(values, calls)->max_size();\n  const auto* pointer = &values;\n  return calls != 1 || maximum != values.max_size() || !pointer->empty() || pointer->size() != 0;\n}\n",
+      "source_sha256": "a4b2645ad035fb23c4d4eed72aa40baa930232972c4aae5d204c2d14ac6bbf7d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-pointer-observers-multimap-pointer-key-comparator-evaluates-receiver",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Table = std::multimap<int, int>;\nconst Table* observe(const Table& values, unsigned& calls) { ++calls; return &values; }\nint main() {\n  const Table values;\n  unsigned calls = 0;\n  auto compare = observe(values, calls)->key_comp();\n  return calls != 1 || !compare(-2, 7) || compare(7, -2);\n}\n",
+      "source_sha256": "84bbb1c5a6676778101ffdbc81c2c8c154545b7519e0dd6605c28c197f4d89bf",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-pointer-observers-multiset-pointer-value-comparator",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::multiset<int> values;\n  const auto* pointer = &values;\n  return !pointer->value_comp()(3, 7) || pointer->key_comp()(3, 3) || !pointer->empty();\n}\n",
+      "source_sha256": "cfc31788abf4ff877558cbd80101370a3aef4bf96382774aeea65f87021a54fc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-node-handles-mapped-node-with-unapproved-value-type",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> values{{3, 11L}};\n  auto node = values.extract(3);\n  return node.mapped() != 11L;\n}\n",
+      "source_sha256": "f920b619c93b14e14234adf89b5718c506cf3a4a3e3838d23ba17d4b7d51536c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-pointer-observers-custom-ordered-compare-pointer",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Greater { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  const std::map<int, int, Greater> values;\n  return (&values)->key_comp()(1, 2);\n}\n",
+      "source_sha256": "6ceac9d5b311aef857be7965f33e5be3811368446da4ee6411723d27f9c6a100",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedMultimapNodeHandlesExtractIteratorAndReinsertMutatedMappedValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapNodeHandlesRejectedUniqueInsertionReturnsHandleForMultimapRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapNodeHandlesEmptyExtractionAndInsertionReturnEndRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedPointerObserversMapSizeEmptyAndMaximumRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedPointerObserversMultimapPointerKeyComparatorEvaluatesReceiverRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedPointerObserversMultisetPointerValueComparatorRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedPointerObserversCustomOrderedComparePointerRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "a2e8418b1982b3a0c7696e11137caf0e7a8aa7e01dbb12bd86f4bb35d003ee49",
+  "maintained_original_sha256": "92b5b5e9b171ff0c9f887fe4669f900809ff206624fc5e08df2c516d5dd33175",
+  "previous_registered_source_sha256": "5154f39ad36ff5cf9458d53e32b1e84016330df198e3af32b5efdac45ec7d06b",
+  "previous_maintained_original_sha256": "ad6cdfb5806a10416b5bec0e8a1c2d7f4e700c8a7bd317d057ae676eb7e52e68",
+  "restorer_sha256": "3647e1b135517b227cc8ee4035501c3a9b6e4a661e41c98ea4e621976fefb5da",
+  "extractor_sha256": "38286938c9df850f7deb8e40d217eccd829d6cf323d2a828200ecb15976f9752",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8651,
+  "current_python_registry_tests": 244,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "associative-node-and-observer": "01a51550b23988021155c9e25097f908e2e9eaa0e96593d5ac4a97c116f7a759",
+    "unordered-map-wide-mapped": "a277fa7cd60cbb7628d63cec83f9dfbada19f9b3987d1d367d42072a0704e5af"
+  },
+  "native_reference_authentication_sha256": "2f32867c11d930549a5749f5ca1a048f0d7762fc619bd95eb621dd02c2c49b4a",
+  "source_proof_sha256": "747c7fc5a065650287ccf63eb447b9b2bc34bee8bb820b2c815b9911dfbad0b1"
+}
