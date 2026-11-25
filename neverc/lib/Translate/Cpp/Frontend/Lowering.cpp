@@ -34757,10 +34757,10 @@ class FunctionLowering {
         storeAnyScalar(Place, Made->Record, Made->ValueType, std::move(Value), L);
         return Place;
       }
-      if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
+      if (const auto Active = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
         const auto Payload = Call->getType();
-        auto Slot = anyScalarField(lvalue(Call->getArg(0)), Any, Payload, checkedAnyScalar(Payload, L), L);
-        return Call->isLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
+        auto Slot = anyScalarField(lvalue(Active->Owner), Active->Record, Payload, checkedAnyScalar(Payload, L), L);
+        return Call->isGLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
       }
       if (const auto *Any = approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context))
         return anyCheckedPointerCast(Call, Any, L);
@@ -34885,16 +34885,20 @@ class FunctionLowering {
       if (const auto Visit = approvedUtilityVariantVisit(A.S, A.Sources, Call, A.Context)) {
         const auto *Visitor = Call->getArg(0);
         const bool Object = Visit->Callable->getPointeeType()->isRecordType();
-        auto Input = Object ? snapshot(address(lvalue(Visitor), Visitor->getType(), L), L)
-                            : captureUtilityConstructorArgument(Visitor, Visit->Callable);
+        Expression Input;
+        if (!Visit->InlineLambda)
+          Input = Object ? snapshot(address(lvalue(Visitor), Visitor->getType(), L), L)
+                         : captureUtilityConstructorArgument(Visitor, Visit->Callable);
         std::vector<Expression> Places;
         for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
           const auto *Operand = Call->getArg(I + 1);
           auto Receiver = snapshot(address(lvalue(Operand), Operand->getType(), L), L);
           Places.push_back(dereference(std::move(Receiver), L));
         }
-        auto Callable = Object ? std::move(Input)
-                               : snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
+        Expression Callable;
+        if (!Visit->InlineLambda)
+          Callable = Object ? std::move(Input)
+                            : snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
         std::vector<Expression> Indices, Slots;
         for (unsigned I = 0; I < Visit->Variants.size(); ++I)
           Indices.push_back(snapshot(fieldStorage(Places[I], Visit->Variants[I].Index, L), L));
@@ -34911,6 +34915,25 @@ class FunctionLowering {
         auto Select = [&](auto &&Self, unsigned Dimension) -> void {
           if (Dimension == Visit->Variants.size()) {
             const auto *Method = Visit->Methods[Entry++];
+            if (Visit->InlineLambda) {
+              llvm::SmallVector<const Decl *, 4> Parameters;
+              auto Restore = llvm::make_scope_exit([&] {
+                for (const auto *Parameter : Parameters)
+                  this->Storage.erase(Parameter);
+              });
+              for (unsigned I = 0; I < Slots.size(); ++I) {
+                const auto *Param = Method->getParamDecl(I);
+                const auto *Key = Param->getCanonicalDecl();
+                if (this->Storage.count(Key))
+                  reject(L, "variant visitor parameter", "Expected a fresh inline visitor parameter.");
+                this->Storage.emplace(Key, snapshot(cast(Slots[I], type(Param->getType(), L), L), L));
+                Parameters.push_back(Key);
+              }
+              const auto *Body = llvm::cast<CompoundStmt>(Method->getBody());
+              const auto *Return = llvm::cast<ReturnStmt>(Body->body_front());
+              assign(Result, expression(Return->getRetValue()), L);
+              return;
+            }
             json::Array Arguments;
             if (Method)
               Arguments.push_back(snapshot(cast(Callable, type(Method->getThisType(), L), L), L));
@@ -41033,6 +41056,13 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "forward-list construction", "The checked integer owner layout is required.");
+      if (*Kind == UtilityForwardListConstruction::Move) {
+        auto Source = dereference(Operands.front(), L);
+        auto Head = snapshot(forwardListMember(Source, false, L), L);
+        assign(forwardListMember(Place, false, L), std::move(Head), L);
+        assign(forwardListMember(Source, false, L), A.zero(A.Context.VoidPtrTy, L), L);
+        return;
+      }
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
       if (*Kind != UtilityForwardListConstruction::InitializerList) return;
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
