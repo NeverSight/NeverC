@@ -34757,10 +34757,10 @@ class FunctionLowering {
         storeAnyScalar(Place, Made->Record, Made->ValueType, std::move(Value), L);
         return Place;
       }
-      if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
+      if (const auto Active = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
         const auto Payload = Call->getType();
-        auto Slot = anyScalarField(lvalue(Call->getArg(0)), Any, Payload, checkedAnyScalar(Payload, L), L);
-        return Call->isLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
+        auto Slot = anyScalarField(lvalue(Active->Owner), Active->Record, Payload, checkedAnyScalar(Payload, L), L);
+        return Call->isGLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
       }
       if (const auto *Any = approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context))
         return anyCheckedPointerCast(Call, Any, L);
