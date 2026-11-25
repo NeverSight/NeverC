@@ -18636,3 +18636,16 @@ The default-allocator forward_list<int> supports whole-list, single-node
 and range splice_after, including the checked same-owner cases. Range
 erase_after keeps its last iterator and unlinks the removed nodes before
 deallocation. Integer emplacement returns the selected element or iterator.
+
+## Forward list assignments, range insertion, resizing, and removal
+
+The default-allocator forward_list<int> supports initializer-list, count and
+pointer-range assignment, along with bulk insert_after and both resize forms.
+Remove preserves aliased values until the erased nodes can be released safely.
+Default unique keeps the first node in each run of equal values.
+
+## Stable forward list merge and sort
+
+The default-allocator forward_list<int> merges sorted owners and sorts
+their nodes in place with the pinned default comparator. Both operations
+preserve equal-element ordering and retained node addresses.

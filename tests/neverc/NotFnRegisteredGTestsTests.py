@@ -43,6 +43,16 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.forward_list_merge_and_sort_registered = cls.registered
+        cls.forward_list_merge_and_sort_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_merge_and_sort_original = cls.adapter.restore_original_gtests(cls.forward_list_merge_and_sort_registered,
+                                                                        cls.forward_list_merge_and_sort_suffix)
+        cls.registered = cls.adapter.restore_forward_list_merge_and_sort_history(cls.forward_list_merge_and_sort_registered)
+        cls.forward_list_assignment_insert_resize_remove_registered = cls.registered
+        cls.forward_list_assignment_insert_resize_remove_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_assignment_insert_resize_remove_original = cls.adapter.restore_original_gtests(cls.forward_list_assignment_insert_resize_remove_registered,
+                                                                        cls.forward_list_assignment_insert_resize_remove_suffix)
+        cls.registered = cls.adapter.restore_forward_list_assignment_insert_resize_remove_history(cls.forward_list_assignment_insert_resize_remove_registered)
         cls.forward_list_splice_erase_and_emplace_registered = cls.registered
         cls.forward_list_splice_erase_and_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.forward_list_splice_erase_and_emplace_original = cls.adapter.restore_original_gtests(cls.forward_list_splice_erase_and_emplace_registered,
@@ -4004,6 +4014,42 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_forward_list_splice_erase_and_emplace_history(self.forward_list_splice_erase_and_emplace_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.forward_list_splice_erase_and_emplace_registered, self.forward_list_splice_erase_and_emplace_suffix + b' ')
+
+
+    def test_forward_list_assignment_insert_resize_remove_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_assignment_insert_resize_remove_original + self.forward_list_assignment_insert_resize_remove_suffix, self.forward_list_assignment_insert_resize_remove_registered)
+        self.assertEqual(self.adapter.restore_forward_list_assignment_insert_resize_remove_history(self.forward_list_assignment_insert_resize_remove_original),
+                         self.forward_list_splice_erase_and_emplace_original)
+        output, evidence = self.extractor.extract(self.forward_list_assignment_insert_resize_remove_original, ['TranslateTest.CoreV2ForwardListInitializerAssignmentReusesPrefixRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInitializerAssignCopiesNamedCarrierRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInitializerAssignmentObeysCallOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListAssignCountGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListAssignPointerRangeGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCountAssignmentReadsAliasedValueBeforeErasureRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPointerAssignmentGrowsAndTruncatesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInsertCountReturnsLastOrPositionRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInsertInitializerRangePreservesOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInsertPointerRangeReturnsExactIteratorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListResizeValueInitializesAndKeepsPrefixRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListResizeFillPreservesExistingValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListResizeCapturesReceiverBeforeCountRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRemoveAcceptsAnAliasedValueRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUniqueKeepsFirstInEachRunRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListFilterAllNoneAndEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInitializerAssignmentOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListAssignConvertedPointerElementsGuardRejected', 'TranslateTest.CoreV2ForwardListAssignOtherInputIteratorGuardRejected', 'TranslateTest.CoreV2ForwardListInsertRangeConvertedPointerGuardRejected', 'TranslateTest.CoreV2ForwardListInsertRangeOtherIteratorGuardRejected', 'TranslateTest.CoreV2ForwardListInsertCountOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListResizeDefaultOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListResizeFillOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListResizeIndirectMemberGuardRejected', 'TranslateTest.CoreV2ForwardListRemovePredicateGuardRejected', 'TranslateTest.CoreV2ForwardListUniqueCustomPredicateGuardRejected', 'TranslateTest.CoreV2ForwardListFilterOtherElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9169)
+        self.assertEqual(evidence['selected_count'], 28)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-initializer-assignment-reuses-prefix', output)
+        self.assertIn(b'forward-list-filter-other-element-guard', output)
+
+    def test_forward_list_assignment_insert_resize_remove_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_assignment_insert_resize_remove_history(self.forward_list_assignment_insert_resize_remove_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_assignment_insert_resize_remove_registered, self.forward_list_assignment_insert_resize_remove_suffix + b' ')
+
+
+    def test_forward_list_merge_and_sort_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_merge_and_sort_original + self.forward_list_merge_and_sort_suffix, self.forward_list_merge_and_sort_registered)
+        self.assertEqual(self.adapter.restore_forward_list_merge_and_sort_history(self.forward_list_merge_and_sort_original),
+                         self.forward_list_assignment_insert_resize_remove_original)
+        output, evidence = self.extractor.extract(self.forward_list_merge_and_sort_original, ['TranslateTest.CoreV2ForwardListDefaultMergeIsStableAcrossOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultMergeRvalueAndSelfRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultMergeEmptyAndTailEdgesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultSortPreservesDuplicateOrderAndAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultSortOrdersSignedValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultSortEmptySingletonAndSortedRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMergeCustomComparatorGuardRejected', 'TranslateTest.CoreV2ForwardListMergeRvalueCustomComparatorGuardRejected', 'TranslateTest.CoreV2ForwardListMergeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListSortCustomFunctionGuardRejected', 'TranslateTest.CoreV2ForwardListSortCustomObjectGuardRejected', 'TranslateTest.CoreV2ForwardListSortOtherElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9181)
+        self.assertEqual(evidence['selected_count'], 12)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-default-merge-is-stable-across-owners', output)
+        self.assertIn(b'forward-list-sort-other-element-guard', output)
+
+    def test_forward_list_merge_and_sort_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_merge_and_sort_history(self.forward_list_merge_and_sort_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_merge_and_sort_registered, self.forward_list_merge_and_sort_suffix + b' ')
 
 
 if __name__ == '__main__':

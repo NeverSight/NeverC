@@ -27101,23 +27101,68 @@ class FunctionLowering {
     assign(forwardListValue(Node, false, L), dereference(ValueReference, L), L);
     return Node;
   }
-  void insertForwardListChain(Expression Link, Expression Input,
-                              const UtilityForwardListNodeRecord &Info, SourceLocation L) {
-    auto Current = temporary("ptr:void", L);
+  struct ForwardListInput {
+    enum Kind { Nodes, CountedArray, RepeatedValue, PointerRange };
+    Expression Current;
+    std::optional<Expression> Limit;
+    Kind Mode = Nodes;
+  };
+
+  ForwardListInput forwardListInitializerInput(Expression Carrier, const CXXRecordDecl *Record,
+                                                SourceLocation L) {
+    const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources, Record, A.Context);
+    if (!List || !A.Context.hasSameType(List->ElementType, A.Context.IntTy))
+      reject(L, "forward-list initializer", "The pinned integer initializer-list carrier is required.");
+    auto Current = snapshot(fieldStorage(Carrier, List->Begin, L), L);
+    auto Remaining = snapshot(cast(fieldStorage(std::move(Carrier), List->Size, L), "u64", L), L);
+    return {std::move(Current), std::move(Remaining), ForwardListInput::CountedArray};
+  }
+  ForwardListInput forwardListPointerInput(Expression First, Expression End, SourceLocation L) {
+    const auto Pointer = type(A.Context.getPointerType(A.Context.IntTy.withConst()), L);
+    auto Current = snapshot(cast(std::move(First), Pointer, L), L);
+    auto Last = snapshot(cast(std::move(End), Pointer, L), L);
+    return {std::move(Current), std::move(Last), ForwardListInput::PointerRange};
+  }
+  Expression forwardListHasInput(const ForwardListInput &Input, SourceLocation L) {
+    if (Input.Mode == ForwardListInput::Nodes) return cast(Input.Current, "bool", L);
+    if (Input.Mode == ForwardListInput::PointerRange)
+      return binary("!=", Input.Current, *Input.Limit, "bool", L);
+    return cast(*Input.Limit, "bool", L);
+  }
+  Expression forwardListInputReference(const ForwardListInput &Input, SourceLocation L) {
+    if (Input.Mode != ForwardListInput::Nodes) return Input.Current;
+    return address(forwardListValue(Input.Current, true, L), A.Context.IntTy.withConst(), L);
+  }
+  void advanceForwardListInput(const ForwardListInput &Input, SourceLocation L) {
+    if (Input.Mode == ForwardListInput::Nodes) {
+      assign(Input.Current, forwardListNext(Input.Current, L), L);
+      return;
+    }
+    if (Input.Mode != ForwardListInput::RepeatedValue) {
+      auto One = quantity(1, type(A.Context.getPointerDiffType(), L), L);
+      auto Next = index(Input.Current, std::move(One), "int", L);
+      assign(Input.Current, address(std::move(Next), A.Context.IntTy.withConst(), L), L);
+    }
+    if (Input.Mode != ForwardListInput::PointerRange)
+      assign(*Input.Limit, binary("-", *Input.Limit, quantity(1, "u64", L), "u64", L), L);
+  }
+  void insertForwardListChain(Expression Link, const ForwardListInput &Input,
+                              const UtilityForwardListNodeRecord &Info, SourceLocation L,
+                              std::optional<Expression> LastInserted = std::nullopt) {
     auto First = temporary("ptr:void", L);
     auto LastLink = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
-    assign(Current, std::move(Input), L);
     initializeZero(First, A.Context.VoidPtrTy, L);
     assign(LastLink, address(First, A.Context.VoidPtrTy, L), L);
     const auto Check = labelName(), Add = labelName(), Done = labelName();
     jump(Check, L); label(Check, L);
-    branch(cast(Current, "bool", L), Add, Done, L);
+    branch(forwardListHasInput(Input, L), Add, Done, L);
     label(Add, L);
-    auto Value = address(forwardListValue(Current, true, L), A.Context.IntTy.withConst(), L);
+    auto Value = forwardListInputReference(Input, L);
     auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Info, L);
     assign(dereference(LastLink, L), Node, L);
     assign(LastLink, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
-    assign(Current, forwardListNext(Current, L), L);
+    if (LastInserted) assign(*LastInserted, Node, L);
+    advanceForwardListInput(Input, L);
     jump(Check, L); label(Done, L);
     // The range insertion attaches the detached chain after construction.
     const auto Publish = labelName(), Finish = labelName();
@@ -27172,25 +27217,23 @@ class FunctionLowering {
     auto RightValue = cast(std::move(Right), "int", L);
     return cast(binary(Operation, std::move(LeftValue), std::move(RightValue), "int", L), "bool", L);
   }
-  void assignForwardListStorage(Expression Place, Expression Source,
+  void assignForwardListStorage(Expression Place, const ForwardListInput &Input,
                                  const UtilityForwardListNodeRecord &Info, SourceLocation L) {
-    auto Input = temporary("ptr:void", L);
     auto Output = temporary("ptr:void", L);
     auto Link = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
-    assign(Input, forwardListMember(Source, false, L), L);
     assign(Link, address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
     assign(Output, dereference(Link, L), L);
     const auto Check = labelName(), Replace = labelName(), Resize = labelName();
     const auto Grow = labelName(), Shrink = labelName(), Done = labelName();
     jump(Check, L); label(Check, L);
-    branch(combineForwardListConditions("&", cast(Input, "bool", L), cast(Output, "bool", L), L), Replace, Resize, L);
+    branch(combineForwardListConditions("&", forwardListHasInput(Input, L), cast(Output, "bool", L), L), Replace, Resize, L);
     label(Replace, L);
-    assign(forwardListValue(Output, false, L), forwardListValue(Input, true, L), L);
-    assign(Input, forwardListNext(Input, L), L);
+    assign(forwardListValue(Output, false, L), dereference(forwardListInputReference(Input, L), L), L);
+    advanceForwardListInput(Input, L);
     assign(Link, address(forwardListNext(Output, L), A.Context.VoidPtrTy, L), L);
     assign(Output, dereference(Link, L), L);
     jump(Check, L); label(Resize, L);
-    branch(cast(Input, "bool", L), Grow, Shrink, L);
+    branch(forwardListHasInput(Input, L), Grow, Shrink, L);
     label(Grow, L);
     insertForwardListChain(dereference(Link, L), Input, Info, L);
     jump(Done, L); label(Shrink, L);
@@ -27198,6 +27241,198 @@ class FunctionLowering {
     initializeZero(dereference(Link, L), A.Context.VoidPtrTy, L);
     releaseForwardListChain(Output, A.zero(A.Context.VoidPtrTy, L), Info, L);
     jump(Done, L); label(Done, L);
+  }
+  void resizeForwardListStorage(Expression Place, Expression Count, Expression ValueReference,
+                                const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Remaining = snapshot(cast(std::move(Count), "u64", L), L);
+    auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
+    auto Current = snapshot(dereference(Link, L), L);
+    const auto Check = labelName(), Keep = labelName(), Resize = labelName();
+    const auto Trim = labelName(), GrowCheck = labelName(), Grow = labelName(), Done = labelName();
+    auto Decrement = [&] {
+      assign(Remaining, binary("-", Remaining, quantity(1, "u64", L), "u64", L), L);
+    };
+    jump(Check, L); label(Check, L);
+    branch(combineForwardListConditions("&", cast(Current, "bool", L), cast(Remaining, "bool", L), L), Keep, Resize, L);
+    label(Keep, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    assign(Current, dereference(Link, L), L);
+    Decrement();
+    jump(Check, L); label(Resize, L);
+    branch(cast(Current, "bool", L), Trim, GrowCheck, L);
+    label(Trim, L);
+    initializeZero(dereference(Link, L), A.Context.VoidPtrTy, L);
+    releaseForwardListChain(Current, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    jump(Done, L); label(GrowCheck, L);
+    branch(cast(Remaining, "bool", L), Grow, Done, L);
+    label(Grow, L);
+    auto Node = forwardListCreateNode(ValueReference, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    // The SDK resize loop appends each node before the next allocation.
+    assign(dereference(Link, L), Node, L);
+    assign(Link, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
+    Decrement();
+    jump(GrowCheck, L); label(Done, L);
+  }
+  Expression detachForwardListMatches(Expression Link, Expression First, Expression Reference,
+                                      Expression Removed, SourceLocation L) {
+    auto Last = snapshot(First, L);
+    auto Following = snapshot(forwardListNext(Last, L), L);
+    const auto Check = labelName(), Compare = labelName(), Extend = labelName(), Detach = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Following, "bool", L), Compare, Detach, L);
+    label(Compare, L);
+    branch(binary("==", forwardListValue(Following, true, L), dereference(Reference, L), "bool", L),
+        Extend, Detach, L);
+    label(Extend, L);
+    assign(Last, Following, L);
+    assign(Following, forwardListNext(Last, L), L);
+    jump(Check, L); label(Detach, L);
+    // The SDK splices each removed run onto the front of its release list.
+    assign(forwardListNext(Last, L), Removed, L);
+    assign(Removed, First, L);
+    assign(Link, Following, L);
+    return Following;
+  }
+  void removeForwardListValues(Expression Place, Expression Reference,
+                               const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Removed = temporary("ptr:void", L);
+    initializeZero(Removed, A.Context.VoidPtrTy, L);
+    auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
+    auto Current = temporary("ptr:void", L);
+    const auto Check = labelName(), Compare = labelName(), Remove = labelName();
+    const auto Advance = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    assign(Current, dereference(Link, L), L);
+    branch(cast(Current, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(binary("==", forwardListValue(Current, true, L), dereference(Reference, L), "bool", L),
+        Remove, Advance, L);
+    label(Remove, L);
+    assign(Current, detachForwardListMatches(dereference(Link, L), Current, Reference, Removed, L), L);
+    branch(cast(Current, "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Done, L);
+    // The value reference may designate an element that was removed.
+    releaseForwardListChain(Removed, A.zero(A.Context.VoidPtrTy, L), Info, L);
+  }
+  void uniqueForwardListValues(Expression Place, const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Removed = temporary("ptr:void", L);
+    initializeZero(Removed, A.Context.VoidPtrTy, L);
+    auto Current = snapshot(forwardListMember(Place, false, L), L);
+    const auto Check = labelName(), Inspect = labelName(), Compare = labelName();
+    const auto Remove = labelName(), Advance = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Current, "bool", L), Inspect, Done, L);
+    label(Inspect, L);
+    auto Link = forwardListNext(Current, L);
+    auto Successor = snapshot(Link, L);
+    branch(cast(Successor, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    auto Reference = snapshot(address(forwardListValue(Current, true, L), A.Context.IntTy.withConst(), L), L);
+    branch(binary("==", forwardListValue(Successor, true, L), dereference(Reference, L), "bool", L),
+        Remove, Advance, L);
+    label(Remove, L);
+    assign(Current, detachForwardListMatches(Link, Successor, Reference, Removed, L), L);
+    jump(Check, L); label(Advance, L);
+    assign(Current, Successor, L);
+    jump(Check, L); label(Done, L);
+    releaseForwardListChain(Removed, A.zero(A.Context.VoidPtrTy, L), Info, L);
+  }
+  Expression mergeForwardListChains(Expression LeftHead, Expression RightHead, SourceLocation L) {
+    auto Left = snapshot(std::move(LeftHead), L), Right = snapshot(std::move(RightHead), L);
+    auto Head = temporary("ptr:void", L);
+    auto Link = snapshot(address(Head, A.Context.VoidPtrTy, L), L);
+    auto Item = temporary("ptr:void", L);
+    const auto Check = labelName(), Compare = labelName(), PickLeft = labelName();
+    const auto PickRight = labelName(), Attach = labelName(), Tail = labelName();
+    const auto LeftTail = labelName(), RightTail = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(combineForwardListConditions("&", cast(Left, "bool", L), cast(Right, "bool", L), L), Compare, Tail, L);
+    label(Compare, L);
+    // Equal elements from the destination precede those from the source.
+    branch(binary("<", forwardListValue(Right, true, L), forwardListValue(Left, true, L), "bool", L),
+        PickRight, PickLeft, L);
+    label(PickLeft, L);
+    assign(Item, Left, L);
+    assign(Left, forwardListNext(Left, L), L);
+    jump(Attach, L); label(PickRight, L);
+    assign(Item, Right, L);
+    assign(Right, forwardListNext(Right, L), L);
+    jump(Attach, L); label(Attach, L);
+    assign(dereference(Link, L), Item, L);
+    assign(Link, address(forwardListNext(Item, L), A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Tail, L);
+    branch(cast(Left, "bool", L), LeftTail, RightTail, L);
+    label(LeftTail, L);
+    assign(dereference(Link, L), Left, L);
+    jump(Done, L); label(RightTail, L);
+    assign(dereference(Link, L), Right, L);
+    jump(Done, L); label(Done, L);
+    return Head;
+  }
+  Expression splitForwardListRun(Expression Head, Expression Width, SourceLocation L) {
+    auto Node = snapshot(std::move(Head), L);
+    auto Rest = temporary("ptr:void", L);
+    initializeZero(Rest, A.Context.VoidPtrTy, L);
+    auto Remaining = snapshot(binary("-", Width, quantity(1, "u64", L), "u64", L), L);
+    const auto Walk = labelName(), CheckNext = labelName(), Advance = labelName();
+    const auto Split = labelName(), Done = labelName();
+    branch(cast(Node, "bool", L), Walk, Done, L);
+    label(Walk, L);
+    branch(cast(Remaining, "bool", L), CheckNext, Split, L);
+    label(CheckNext, L);
+    auto Next = snapshot(forwardListNext(Node, L), L);
+    branch(cast(Next, "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(Node, Next, L);
+    assign(Remaining, binary("-", Remaining, quantity(1, "u64", L), "u64", L), L);
+    jump(Walk, L); label(Split, L);
+    assign(Rest, forwardListNext(Node, L), L);
+    initializeZero(forwardListNext(Node, L), A.Context.VoidPtrTy, L);
+    jump(Done, L); label(Done, L);
+    return Rest;
+  }
+  void sortForwardListStorage(Expression Place, SourceLocation L) {
+    auto Head = snapshot(forwardListMember(Place, false, L), L);
+    auto Width = snapshot(quantity(1, "u64", L), L);
+    auto Unsorted = temporary("ptr:void", L);
+    auto Output = temporary("ptr:void", L);
+    auto More = temporary("bool", L);
+    auto Link = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
+    const auto Start = labelName(), Check = labelName(), Merge = labelName(), Walk = labelName();
+    const auto Advance = labelName(), NextPair = labelName(), Pass = labelName();
+    const auto Widen = labelName(), Done = labelName();
+    jump(Start, L); label(Start, L);
+    assign(Unsorted, Head, L);
+    initializeZero(Output, A.Context.VoidPtrTy, L);
+    initializeZero(More, A.Context.BoolTy, L);
+    assign(Link, address(Output, A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Check, L);
+    branch(cast(Unsorted, "bool", L), Merge, Pass, L);
+    label(Merge, L);
+    auto Left = snapshot(Unsorted, L);
+    auto Right = splitForwardListRun(Left, Width, L);
+    auto Rest = splitForwardListRun(Right, Width, L);
+    assign(More, combineForwardListConditions("|", More, cast(Rest, "bool", L), L), L);
+    auto Merged = mergeForwardListChains(Left, Right, L);
+    assign(dereference(Link, L), Merged, L);
+    auto Current = snapshot(Merged, L);
+    jump(Walk, L); label(Walk, L);
+    branch(cast(Current, "bool", L), Advance, NextPair, L);
+    label(Advance, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    assign(Current, dereference(Link, L), L);
+    jump(Walk, L); label(NextPair, L);
+    assign(Unsorted, Rest, L);
+    jump(Check, L); label(Pass, L);
+    assign(Head, Output, L);
+    branch(More, Widen, Done, L);
+    label(Widen, L);
+    // A following pair exists only when the list has more than twice this width.
+    assign(Width, binary("+", Width, Width, "u64", L), L);
+    jump(Start, L); label(Done, L);
+    assign(forwardListMember(Place, false, L), Head, L);
   }
   void transferForwardListStorage(Expression Place, Expression Source, SourceLocation L) {
     auto Head = snapshot(forwardListMember(Source, false, L), L);
@@ -27299,7 +27534,8 @@ class FunctionLowering {
     };
     const bool AssignmentSyntax = isa<CXXOperatorCallExpr>(Call) &&
         (Operation == UtilityForwardListOperation::MoveAssign ||
-         Operation == UtilityForwardListOperation::CopyAssign);
+         Operation == UtilityForwardListOperation::CopyAssign ||
+         Operation == UtilityForwardListOperation::AssignInitializerListOperator);
     if (!AssignmentSyntax) CaptureReceiver();
     std::vector<Expression> Operands;
     for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
@@ -27352,9 +27588,66 @@ class FunctionLowering {
       branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(Operands.front(), "ptr:void", L), "bool", L),
           Copy, Done, L);
       label(Copy, L);
-      assignForwardListStorage(Place, dereference(Operands.front(), L), Owner->Node, L);
+      auto Head = snapshot(forwardListMember(dereference(Operands.front(), L), false, L), L);
+      assignForwardListStorage(Place, {std::move(Head), std::nullopt}, Owner->Node, L);
       jump(Done, L); label(Done, L);
       return Place;
+    }
+    if (Operation == UtilityForwardListOperation::AssignInitializerList ||
+        Operation == UtilityForwardListOperation::AssignInitializerListOperator) {
+      const auto *Record = Method->getParamDecl(0)->getType()->getAsCXXRecordDecl();
+      auto Input = forwardListInitializerInput(dereference(Operands.front(), L), Record, L);
+      assignForwardListStorage(Place, Input, Owner->Node, L);
+      if (Operation == UtilityForwardListOperation::AssignInitializerListOperator) return Place;
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::AssignCount) {
+      auto Count = snapshot(cast(Operands[0], "u64", L), L);
+      assignForwardListStorage(Place, {Operands[1], std::move(Count), ForwardListInput::RepeatedValue}, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::AssignPointerRange) {
+      auto Input = forwardListPointerInput(Operands[0], Operands[1], L);
+      assignForwardListStorage(Place, Input, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Resize ||
+        Operation == UtilityForwardListOperation::ResizeFill) {
+      Expression ValueReference;
+      if (Operation == UtilityForwardListOperation::ResizeFill) {
+        ValueReference = Operands[1];
+      } else {
+        auto Value = temporary(type(A.Context.IntTy, L), L);
+        initializeZero(Value, A.Context.IntTy, L);
+        ValueReference = address(Value, A.Context.IntTy, L);
+      }
+      resizeForwardListStorage(Place, Operands[0], std::move(ValueReference), Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::RemoveValue) {
+      removeForwardListValues(Place, Operands[0], Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Unique) {
+      uniqueForwardListValues(Place, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Sort) {
+      sortForwardListStorage(Place, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Merge) {
+      const auto Merge = labelName(), Done = labelName();
+      branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(Operands.front(), "ptr:void", L), "bool", L),
+          Merge, Done, L);
+      label(Merge, L);
+      auto Destination = forwardListMember(Place, false, L);
+      auto Source = forwardListMember(dereference(Operands.front(), L), false, L);
+      auto Head = mergeForwardListChains(Destination, Source, L);
+      assign(Destination, Head, L);
+      initializeZero(Source, A.Context.VoidPtrTy, L);
+      jump(Done, L); label(Done, L);
+      return Expression{};
     }
     if (Operation == UtilityForwardListOperation::MoveAssign) {
       auto Source = dereference(Operands.front(), L);
@@ -27430,6 +27723,24 @@ class FunctionLowering {
       auto First = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
       auto End = snapshot(forwardListMember(dereference(Operands[1], L), true, L), L);
       return eraseForwardListRange(*Owner, Method->getReturnType(), std::move(First), std::move(End), L);
+    }
+    if (Operation == UtilityForwardListOperation::InsertAfterCount ||
+        Operation == UtilityForwardListOperation::InsertAfterInitializerList ||
+        Operation == UtilityForwardListOperation::InsertAfterPointerRange) {
+      auto Position = snapshot(forwardListMember(dereference(Operands.front(), L), true, L), L);
+      auto LastInserted = snapshot(Position, L);
+      auto Input = [&]() -> ForwardListInput {
+        if (Operation == UtilityForwardListOperation::InsertAfterCount) {
+          auto Count = snapshot(cast(Operands[1], "u64", L), L);
+          return {Operands[2], std::move(Count), ForwardListInput::RepeatedValue};
+        }
+        if (Operation == UtilityForwardListOperation::InsertAfterPointerRange)
+          return forwardListPointerInput(Operands[1], Operands[2], L);
+        const auto *Record = Method->getParamDecl(1)->getType()->getAsCXXRecordDecl();
+        return forwardListInitializerInput(dereference(Operands[1], L), Record, L);
+      }();
+      insertForwardListChain(forwardListNext(Position, L), Input, Owner->Node, L, LastInserted);
+      return forwardListIterator(Method->getReturnType(), std::move(LastInserted), L);
     }
     const bool Insert = Operation == UtilityForwardListOperation::InsertAfter;
     const bool Erase = Operation == UtilityForwardListOperation::EraseAfter;
@@ -41301,46 +41612,14 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
       if (*Kind == UtilityForwardListConstruction::Copy) {
-        insertForwardListChain(forwardListMember(Place, false, L),
-            forwardListMember(dereference(Operands.front(), L), false, L), Owner->Node, L);
+        auto Head = snapshot(forwardListMember(dereference(Operands.front(), L), false, L), L);
+        insertForwardListChain(forwardListMember(Place, false, L), {std::move(Head), std::nullopt}, Owner->Node, L);
         return;
       }
       if (*Kind != UtilityForwardListConstruction::InitializerList) return;
-      const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
-          C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-      if (!List) reject(L, "forward-list initializer", "The pinned integer initializer-list carrier is required.");
-      auto Input = snapshot(fieldStorage(dereference(Operands[0], L), List->Begin, L), L);
-      auto Count = snapshot(fieldStorage(dereference(Operands[0], L), List->Size, L), L);
-      auto Position = temporary("u64", L);
-      assign(Position, quantity(0, "u64", L), L);
-      auto First = temporary("ptr:void", L), Last = temporary("ptr:void", L);
-      initializeZero(First, A.Context.VoidPtrTy, L);
-      initializeZero(Last, A.Context.VoidPtrTy, L);
-      const auto Check = labelName(), Add = labelName(), Link = labelName(),
-          SetFirst = labelName(), Advance = labelName(), Built = labelName(),
-          Commit = labelName(), Done = labelName();
-      jump(Check, L); label(Check, L);
-      branch(binary("<", Position, Count, "bool", L), Add, Built, L);
-      label(Add, L);
-      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), "int", L),
-          A.Context.IntTy.withConst(), L);
-      auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Owner->Node, L);
-      branch(cast(First, "bool", L), Link, SetFirst, L);
-      label(Link, L);
-      assign(forwardListNext(Last, L), Node, L);
-      jump(Advance, L); label(SetFirst, L);
-      assign(First, Node, L);
-      jump(Advance, L); label(Advance, L);
-      assign(Last, Node, L);
-      assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
-      jump(Check, L); label(Built, L);
-      branch(cast(First, "bool", L), Commit, Done, L);
-      label(Commit, L);
-      // SDK initializer-list construction builds a detached chain first and
-      // exposes it through the owner only after every allocation succeeds.
-      assign(forwardListNext(Last, L), forwardListMember(Place, false, L), L);
-      assign(forwardListMember(Place, false, L), First, L);
-      jump(Done, L); label(Done, L);
+      auto Input = forwardListInitializerInput(dereference(Operands.front(), L),
+          C->getArg(0)->getType()->getAsCXXRecordDecl(), L);
+      insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);
       return;
     }
 
