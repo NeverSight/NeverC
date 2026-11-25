@@ -29181,6 +29181,144 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
+  void listFilterValueStorage(Expression Place, const UtilityListRecord &Info,
+      const std::optional<Expression> &Value, SourceLocation L) {
+    auto Removed = temporary(type(A.Context.getRecordType(Info.Record), L), L);
+    initializeListStorage(Removed, L);
+    auto RemovedEnd = snapshot(listSentinel(Removed, L), L);
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto Current = temporary("ptr:void", L);
+    assign(Current, listMember(Place, "nct_list_next", L), L);
+    const auto Check = labelName(), Visit = labelName(), Transfer = labelName();
+    const auto Keep = labelName(), Advance = labelName(), Finish = labelName();
+    std::optional<Expression> Previous;
+    if (!Value) {
+      const auto KeepFirst = labelName();
+      branch(binary("!=", Current, End, "bool", L), KeepFirst, Finish, L);
+      label(KeepFirst, L);
+      Previous = temporary("ptr:void", L);
+      assign(*Previous, Current, L);
+      assign(Current, snapshot(listLink(Current, false, L), L), L);
+    }
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Current, End, "bool", L), Visit, Finish, L);
+    label(Visit, L);
+    auto Node = snapshot(Current, L);
+    auto Next = snapshot(listLink(Node, false, L), L);
+    auto Compare = Value ? *Value : listValue(*Previous, true, L);
+    branch(binary("==", listValue(Node, true, L), Compare, "bool", L), Transfer, Keep, L);
+    label(Transfer, L);
+    // Keep unlinked nodes alive while the value can still alias one of them.
+    listRelinkSpliceRange(RemovedEnd, Node, Node, Next, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("-", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    assign(listMember(Removed, "nct_list_size", L),
+        binary("+", listMember(Removed, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    jump(Advance, L);
+    label(Keep, L);
+    if (Previous) assign(*Previous, Node, L);
+    jump(Advance, L);
+    label(Advance, L);
+    assign(Current, Next, L);
+    jump(Check, L);
+    label(Finish, L);
+    destroyListStorage(Removed, Info.Node, L);
+  }
+
+  void listMergeValueStorage(Expression Place, Expression Source, SourceLocation L) {
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto SourceEnd = snapshot(listSentinel(Source, L), L);
+    const auto Start = labelName(), CheckLeft = labelName(), CheckRight = labelName();
+    const auto Compare = labelName(), Move = labelName(), Keep = labelName(), Tail = labelName(), Done = labelName();
+    branch(binary("!=", End, SourceEnd, "bool", L), Start, Done, L);
+    label(Start, L);
+    auto Left = temporary("ptr:void", L), Right = temporary("ptr:void", L);
+    assign(Left, listMember(Place, "nct_list_next", L), L);
+    assign(Right, listMember(Source, "nct_list_next", L), L);
+    jump(CheckLeft, L); label(CheckLeft, L);
+    branch(binary("!=", Left, End, "bool", L), CheckRight, Tail, L);
+    label(CheckRight, L);
+    branch(binary("!=", Right, SourceEnd, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(binary("<", listValue(Right, true, L), listValue(Left, true, L), "bool", L), Move, Keep, L);
+    label(Move, L);
+    auto Node = snapshot(Right, L);
+    assign(Right, snapshot(listLink(Node, false, L), L), L);
+    listSpliceOneValueStorage(Place, Source, Left, Node, L);
+    jump(CheckLeft, L);
+    label(Keep, L);
+    assign(Left, snapshot(listLink(Left, false, L), L), L);
+    jump(CheckLeft, L);
+    label(Tail, L);
+    listSpliceAllValueStorage(Place, Source, End, L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void listSortValueStorage(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Length = snapshot(listMember(Place, "nct_list_size", L), L);
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto Width = temporary(Size, L), LeftCount = temporary(Size, L), RightCount = temporary(Size, L);
+    auto First = temporary("ptr:void", L), Left = temporary("ptr:void", L), Right = temporary("ptr:void", L);
+    assign(Width, quantity(1, Size, L), L);
+    const auto Pass = labelName(), Split = labelName(), CheckSplit = labelName();
+    const auto CheckSplitWidth = labelName(), SplitStep = labelName(), BeginMerge = labelName();
+    const auto CheckRight = labelName(), CheckRightWidth = labelName(), CheckLeft = labelName();
+    const auto Compare = labelName(), Transfer = labelName(), Keep = labelName(), Advance = labelName();
+    const auto NextPair = labelName(), PassEnd = labelName(), Grow = labelName(), Done = labelName();
+    branch(binary(">", Length, Width, "bool", L), Pass, Done, L);
+    label(Pass, L);
+    assign(First, listMember(Place, "nct_list_next", L), L);
+    jump(Split, L); label(Split, L);
+    assign(Right, First, L);
+    assign(LeftCount, quantity(0, Size, L), L);
+    jump(CheckSplit, L); label(CheckSplit, L);
+    branch(binary("!=", Right, End, "bool", L), CheckSplitWidth, PassEnd, L);
+    label(CheckSplitWidth, L);
+    branch(binary("<", LeftCount, Width, "bool", L), SplitStep, BeginMerge, L);
+    label(SplitStep, L);
+    assign(Right, snapshot(listLink(Right, false, L), L), L);
+    assign(LeftCount, binary("+", LeftCount, quantity(1, Size, L), Size, L), L);
+    jump(CheckSplit, L);
+    label(BeginMerge, L);
+    assign(Left, First, L);
+    assign(RightCount, quantity(0, Size, L), L);
+    jump(CheckRight, L); label(CheckRight, L);
+    branch(binary("!=", Right, End, "bool", L), CheckRightWidth, PassEnd, L);
+    label(CheckRightWidth, L);
+    branch(binary("<", RightCount, Width, "bool", L), CheckLeft, NextPair, L);
+    label(CheckLeft, L);
+    branch(binary("!=", LeftCount, quantity(0, Size, L), "bool", L), Compare, Advance, L);
+    label(Compare, L);
+    branch(binary("<", listValue(Right, true, L), listValue(Left, true, L), "bool", L), Transfer, Keep, L);
+    label(Transfer, L);
+    auto Node = snapshot(Right, L);
+    auto After = snapshot(listLink(Node, false, L), L);
+    listRelinkSpliceRange(Left, Node, Node, After, L);
+    // The moved node's next now points into the left run.
+    assign(Right, After, L);
+    assign(RightCount, binary("+", RightCount, quantity(1, Size, L), Size, L), L);
+    jump(CheckRight, L);
+    label(Keep, L);
+    assign(Left, snapshot(listLink(Left, false, L), L), L);
+    assign(LeftCount, binary("-", LeftCount, quantity(1, Size, L), Size, L), L);
+    jump(CheckRight, L);
+    label(Advance, L);
+    assign(Right, snapshot(listLink(Right, false, L), L), L);
+    assign(RightCount, binary("+", RightCount, quantity(1, Size, L), Size, L), L);
+    jump(CheckRight, L);
+    label(NextPair, L);
+    assign(First, Right, L);
+    jump(Split, L);
+    label(PassEnd, L);
+    branch(binary("<", Width, binary("-", Length, Width, Size, L), "bool", L), Grow, Done, L);
+    label(Grow, L);
+    assign(Width, binary("+", Width, Width, Size, L), L);
+    jump(Pass, L);
+    label(Done, L);
+  }
+
   void listSwapValueStorage(Expression Left, Expression Right, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     auto LeftFirst = snapshot(listMember(Left, "nct_list_next", L), L);
@@ -29372,6 +29510,20 @@ class FunctionLowering {
           listSpliceRangeValueStorage(Place, Source, Position, First, After, L);
         }
       }
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::Remove || Operation == UtilityListOperation::Unique) {
+      std::optional<Expression> Value;
+      if (Operation == UtilityListOperation::Remove) Value = dereference(Operands[0], L);
+      listFilterValueStorage(Place, *Owner, Value, L);
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::Merge) {
+      listMergeValueStorage(Place, dereference(Operands[0], L), L);
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::Sort) {
+      listSortValueStorage(Place, L);
       return Expression{};
     }
     if (Operation == UtilityListOperation::Swap) {

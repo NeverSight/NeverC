@@ -56394,6 +56394,19 @@ std::optional<UtilityListOperation> listMethodSignature(
       }
     }
     if (M->isConst()) return std::nullopt;
+    if (M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
+      if (Name == "remove" && M->getNumParams() == 1 && !M->getParamDecl(0)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())))
+        return UtilityListOperation::Remove;
+      if (Name == "unique" && !M->getNumParams()) return UtilityListOperation::Unique;
+      if (Name == "sort" && !M->getNumParams()) return UtilityListOperation::Sort;
+      if (Name == "merge" && M->getNumParams() == 1 && !M->getParamDecl(0)->hasDefaultArg()) {
+        const auto Source = M->getParamDecl(0)->getType();
+        if (Context.hasSameType(Source, Context.getLValueReferenceType(Type)) ||
+            Context.hasSameType(Source, Context.getRValueReferenceType(Type)))
+          return UtilityListOperation::Merge;
+      }
+    }
     if (Name == "splice" && M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
       const auto Count = M->getNumParams();
       if (Count < 2 || Count > 4) return std::nullopt;
