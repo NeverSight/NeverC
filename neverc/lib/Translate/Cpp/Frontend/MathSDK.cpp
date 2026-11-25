@@ -54418,11 +54418,18 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       }
     }
     if (M->isConst()) return std::nullopt;
-    if (Name == "splice_after" && M->getNumParams() == 2 && M->getReturnType()->isVoidType() &&
+    if (Name == "splice_after" && M->getNumParams() >= 2 && M->getNumParams() <= 4 &&
+        M->getReturnType()->isVoidType() &&
         forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
         (Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(OwnerType)) ||
-         Context.hasSameType(M->getParamDecl(1)->getType(), Context.getRValueReferenceType(OwnerType))))
-      return UtilityForwardListOperation::SpliceAll;
+         Context.hasSameType(M->getParamDecl(1)->getType(), Context.getRValueReferenceType(OwnerType)))) {
+      if (M->getNumParams() == 2) return UtilityForwardListOperation::SpliceAll;
+      if (!forwardListIteratorType(S, SM, M->getParamDecl(2)->getType(), Owner->Node, true, Context))
+        return std::nullopt;
+      if (M->getNumParams() == 3) return UtilityForwardListOperation::SpliceOne;
+      if (forwardListIteratorType(S, SM, M->getParamDecl(3)->getType(), Owner->Node, true, Context))
+        return UtilityForwardListOperation::SpliceRange;
+    }
     if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
         forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return UtilityForwardListOperation::PushFront;

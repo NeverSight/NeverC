@@ -27173,6 +27173,42 @@ class FunctionLowering {
     initializeZero(forwardListMember(Source, false, L), A.Context.VoidPtrTy, L);
     jump(Done, L); label(Done, L);
   }
+  void spliceForwardListNode(Expression Position, Expression Predecessor, SourceLocation L) {
+    auto Node = snapshot(forwardListNext(Predecessor, L), L);
+    const auto Transfer = labelName(), Done = labelName();
+    auto Distinct = binary("&&", binary("!=", Position, Predecessor, "bool", L),
+        binary("!=", Position, Node, "bool", L), "bool", L);
+    branch(std::move(Distinct), Transfer, Done, L);
+    label(Transfer, L);
+    assign(forwardListNext(Predecessor, L), forwardListNext(Node, L), L);
+    assign(forwardListNext(Node, L), forwardListNext(Position, L), L);
+    assign(forwardListNext(Position, L), Node, L);
+    jump(Done, L); label(Done, L);
+  }
+  void spliceForwardListRange(Expression Position, Expression First, Expression End, SourceLocation L) {
+    const auto Scan = labelName(), Check = labelName(), Step = labelName();
+    const auto Transfer = labelName(), Nonempty = labelName(), Done = labelName();
+    auto Distinct = binary("&&", binary("!=", First, End, "bool", L),
+        binary("!=", Position, First, "bool", L), "bool", L);
+    branch(std::move(Distinct), Scan, Done, L);
+    label(Scan, L);
+    auto Tail = temporary("ptr:void", L);
+    assign(Tail, First, L);
+    jump(Check, L); label(Check, L);
+    auto Next = snapshot(forwardListNext(Tail, L), L);
+    branch(binary("!=", Next, End, "bool", L), Step, Nonempty, L);
+    label(Step, L);
+    assign(Tail, Next, L);
+    jump(Check, L); label(Nonempty, L);
+    branch(binary("!=", First, Tail, "bool", L), Transfer, Done, L);
+    label(Transfer, L);
+    // The range can belong to the receiving list. Link it before
+    // restoring the source predecessor's successor.
+    assign(forwardListNext(Tail, L), forwardListNext(Position, L), L);
+    assign(forwardListNext(Position, L), forwardListNext(First, L), L);
+    assign(forwardListNext(First, L), End, L);
+    jump(Done, L); label(Done, L);
+  }
   Expression utilityForwardListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityForwardListCall(A.S, A.Sources, Call, A.Context);
@@ -27253,6 +27289,18 @@ class FunctionLowering {
     if (Operation == UtilityForwardListOperation::SpliceAll) {
       auto Position = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
       spliceForwardListChain(std::move(Position), dereference(Operands[1], L), L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::SpliceOne ||
+        Operation == UtilityForwardListOperation::SpliceRange) {
+      auto Position = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
+      auto First = snapshot(forwardListMember(dereference(Operands[2], L), true, L), L);
+      if (Operation == UtilityForwardListOperation::SpliceOne) {
+        spliceForwardListNode(std::move(Position), std::move(First), L);
+      } else {
+        auto End = snapshot(forwardListMember(dereference(Operands[3], L), true, L), L);
+        spliceForwardListRange(std::move(Position), std::move(First), std::move(End), L);
+      }
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::Clear) {
