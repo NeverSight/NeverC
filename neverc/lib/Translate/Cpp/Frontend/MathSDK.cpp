@@ -54431,9 +54431,13 @@ std::optional<UtilityForwardListOperation> forwardListInsertRangeSignature(
       !forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner.Node, true, Context) ||
       !forwardListIteratorType(S, SM, M->getReturnType(), Owner.Node, false, Context))
     return std::nullopt;
-  if (M->getPrimaryTemplate())
-    return forwardListPointerInputSignature(M, 1, Context)
-        ? std::optional{UtilityForwardListOperation::InsertAfterPointerRange} : std::nullopt;
+  if (M->getPrimaryTemplate()) {
+    if (forwardListPointerInputSignature(M, 1, Context))
+      return UtilityForwardListOperation::InsertAfterPointerRange;
+    if (forwardListIteratorInputSignature(S, SM, M, 1, Owner.Node, Context))
+      return UtilityForwardListOperation::InsertAfterIteratorRange;
+    return std::nullopt;
+  }
   const auto Input = M->getParamDecl(1)->getType();
   if (M->getNumParams() == 3) {
     if (Context.hasSameType(Input, Context.getSizeType()) &&
@@ -54457,8 +54461,12 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
     if (const auto Insert = forwardListInsertRangeSignature(S, SM, M, *Owner, Context))
       return Insert;
     if (M->getPrimaryTemplate() && !M->isConst() && M->getIdentifier() && M->getName() == "assign" &&
-        M->getReturnType()->isVoidType() && forwardListPointerInputSignature(M, 0, Context))
-      return UtilityForwardListOperation::AssignPointerRange;
+        M->getReturnType()->isVoidType()) {
+      if (forwardListPointerInputSignature(M, 0, Context))
+        return UtilityForwardListOperation::AssignPointerRange;
+      if (forwardListIteratorInputSignature(S, SM, M, 0, Owner->Node, Context))
+        return UtilityForwardListOperation::AssignIteratorRange;
+    }
     if (!M->isConst() && M->getIdentifier() && M->getName() == "assign" &&
         !M->getPrimaryTemplate() && M->getReturnType()->isVoidType() && M->getNumParams() == 2 &&
         Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) &&
@@ -54939,7 +54947,17 @@ bool forwardListInitializerAssignmentBody(const State &S, const SourceManager &S
          isa<CXXThisExpr>(Dereference->getSubExpr()->IgnoreParenImpCasts());
 }
 
-bool forwardListInputAssignmentBody(const CXXMethodDecl *Method, UtilityForwardListOperation Operation) {
+bool forwardListBoundParameter(const Expr *Operand, const ParmVarDecl *Parameter, bool Iterator,
+                               const ASTContext &Context) {
+  if (variantParameter(Operand, Parameter)) return true;
+  const auto *Copy = Iterator ? dyn_cast<CXXConstructExpr>(Operand->IgnoreParenImpCasts()) : nullptr;
+  return Copy && Copy->getNumArgs() == 1 && Copy->getConstructor()->isCopyOrMoveConstructor() &&
+         Copy->getConstructor()->isTrivial() && Context.hasSameType(Copy->getType(), Parameter->getType()) &&
+         variantParameter(Copy->getArg(0), Parameter);
+}
+
+bool forwardListInputAssignmentBody(const CXXMethodDecl *Method,
+    UtilityForwardListOperation Operation, const ASTContext &Context) {
   const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
   const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
   if (!Body) return false;
@@ -54955,11 +54973,12 @@ bool forwardListInputAssignmentBody(const CXXMethodDecl *Method, UtilityForwardL
            Selected->getParent()->getCanonicalDecl() == Definition->getParent()->getCanonicalDecl()
         ? Call : nullptr;
   };
-  if (Operation == UtilityForwardListOperation::AssignPointerRange) {
+  const bool Iterator = Operation == UtilityForwardListOperation::AssignIteratorRange;
+  if (Iterator || Operation == UtilityForwardListOperation::AssignPointerRange) {
     const auto *Range = Body->size() == 1
         ? CheckedCall(Body->body_front(), "__assign_with_sentinel", 2) : nullptr;
-    return Range && variantParameter(Range->getArg(0), Definition->getParamDecl(0)) &&
-           variantParameter(Range->getArg(1), Definition->getParamDecl(1));
+    return Range && forwardListBoundParameter(Range->getArg(0), Definition->getParamDecl(0), Iterator, Context) &&
+           forwardListBoundParameter(Range->getArg(1), Definition->getParamDecl(1), Iterator, Context);
   }
   const auto *Resize = Body->size() == 5 ? dyn_cast<IfStmt>(Body->body_back()) : nullptr;
   const auto *Insert = Resize ? CheckedCall(Resize->getThen(), "insert_after", 3) : nullptr;
@@ -55002,7 +55021,8 @@ bool forwardListInsertRangeBody(const State &S, const SourceManager &SM,
     Position = Copy->getArg(0);
   }
   if (!variantParameter(Position, Definition->getParamDecl(0))) return false;
-  if (Operation == UtilityForwardListOperation::InsertAfterPointerRange) {
+  if (Operation == UtilityForwardListOperation::InsertAfterPointerRange ||
+      Operation == UtilityForwardListOperation::InsertAfterIteratorRange) {
     if (Selected->getName() != "__insert_after_with_sentinel" || !Selected->getPrimaryTemplate())
       return false;
     for (unsigned I = 1; I != 3; ++I) {
@@ -55033,15 +55053,6 @@ bool forwardListInsertRangeBody(const State &S, const SourceManager &SM,
       return false;
   }
   return true;
-}
-
-bool forwardListBoundParameter(const Expr *Operand, const ParmVarDecl *Parameter, bool Iterator,
-                               const ASTContext &Context) {
-  if (variantParameter(Operand, Parameter)) return true;
-  const auto *Copy = Iterator ? dyn_cast<CXXConstructExpr>(Operand->IgnoreParenImpCasts()) : nullptr;
-  return Copy && Copy->getNumArgs() == 1 && Copy->getConstructor()->isCopyOrMoveConstructor() &&
-         Copy->getConstructor()->isTrivial() && Context.hasSameType(Copy->getType(), Parameter->getType()) &&
-         variantParameter(Copy->getArg(0), Parameter);
 }
 
 bool forwardListRangeConstructionBody(const State &S, const SourceManager &SM,
@@ -55264,12 +55275,14 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       !forwardListInitializerAssignmentBody(S, SM, Method, Context))
     return std::nullopt;
   if ((*Operation == UtilityForwardListOperation::AssignCount ||
-       *Operation == UtilityForwardListOperation::AssignPointerRange) &&
-      !forwardListInputAssignmentBody(Method, *Operation))
+       *Operation == UtilityForwardListOperation::AssignPointerRange ||
+       *Operation == UtilityForwardListOperation::AssignIteratorRange) &&
+      !forwardListInputAssignmentBody(Method, *Operation, Context))
     return std::nullopt;
   if ((*Operation == UtilityForwardListOperation::InsertAfterCount ||
        *Operation == UtilityForwardListOperation::InsertAfterInitializerList ||
-       *Operation == UtilityForwardListOperation::InsertAfterPointerRange) &&
+       *Operation == UtilityForwardListOperation::InsertAfterPointerRange ||
+       *Operation == UtilityForwardListOperation::InsertAfterIteratorRange) &&
       !forwardListInsertRangeBody(S, SM, Method, *Operation, Context))
     return std::nullopt;
   const Expr *Receiver = nullptr;
