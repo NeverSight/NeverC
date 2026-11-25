@@ -4016,7 +4016,7 @@ enum class UtilityForwardListConstruction {
   Default, Allocator, InitializerList, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityForwardListOperation {
-  Empty, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, Clear, MoveAssign, CopyAssign, AssignInitializerList, AssignInitializerListOperator, AssignCount, AssignPointerRange, Merge,
+  Empty, GetAllocator, MaxSize, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, Clear, MoveAssign, CopyAssign, AssignInitializerList, AssignInitializerListOperator, AssignCount, AssignPointerRange, Merge,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement,
   IteratorEqual, IteratorNotEqual, IteratorAssign
 };
@@ -4026,6 +4026,7 @@ struct UtilityForwardListCall {
   const clang::Expr *Receiver = nullptr;
   const clang::FunctionDecl *Function = nullptr;
   unsigned ArgumentOffset = 0;
+  std::optional<uint64_t> Maximum = std::nullopt;
 };
 std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruction(
     const State &S, const clang::SourceManager &SM,

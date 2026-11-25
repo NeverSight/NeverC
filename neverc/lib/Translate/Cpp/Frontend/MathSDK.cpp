@@ -54399,6 +54399,44 @@ bool forwardListPointerAssignmentSignature(const CXXMethodDecl *M, const ASTCont
           Context.hasSameType(Type, Context.getPointerType(Context.IntTy.withConst())));
 }
 
+std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context, llvm::StringRef Header,
+    llvm::StringRef NodeName, const CXXRecordDecl *ForwardListNode = nullptr);
+
+bool forwardListAllocatorMember(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Owner, const CXXRecordDecl *Node, const Expr *Value, const ASTContext &Context) {
+  const auto *Read = Value ? dyn_cast<MemberExpr>(Value->IgnoreParenImpCasts()) : nullptr;
+  const auto *Member = Read ? dyn_cast<FieldDecl>(Read->getMemberDecl()) : nullptr;
+  if (!Member || !Member->getIdentifier() || Member->getName() != "__alloc_" ||
+      !forwardListPinned(S, SM, Member, "forward_list") || !isa<CXXThisExpr>(Read->getBase()->IgnoreParenImpCasts()) ||
+      Owner->getNumBases() != 1)
+    return false;
+  const auto *Base = forwardListRecordType(Owner->bases_begin()->getType());
+  if (!Base || Base->getCanonicalDecl() != Member->getParent()->getCanonicalDecl()) return false;
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM, forwardListRecordType(Member->getType()), Context);
+  return Allocator && Context.hasSameType(Allocator->ElementType, Context.getRecordType(Node));
+}
+
+bool forwardListGetAllocatorBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const UtilityForwardListNodeRecord &Node, const ASTContext &Context) {
+  const auto *Definition = Method->getDefinition();
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *Value = Return && Return->getRetValue() ? Return->getRetValue()->IgnoreUnlessSpelledInSource() : nullptr;
+  if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Value))
+    Value = Cast->getSubExpr()->IgnoreParenImpCasts();
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Value);
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Allocator = Constructor
+      ? approvedUtilityAllocatorRecord(S, SM, Constructor->getParent(), Context) : std::nullopt;
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy) ||
+      !Context.hasSameType(Construction->getType(), Method->getReturnType()) ||
+      Construction->getNumArgs() != 1 || Constructor->getNumParams() != 1 ||
+      !forwardListPinned(S, SM, Constructor, "__memory/allocator.h"))
+    return false;
+  return forwardListAllocatorMember(S, SM, Method->getParent(), Node.Record, Construction->getArg(0), Context);
+}
+
 std::optional<UtilityForwardListOperation> forwardListMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
@@ -54436,6 +54474,13 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
     if (!M->getNumParams()) {
+      if (M->isConst() && Name == "max_size" && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
+        return UtilityForwardListOperation::MaxSize;
+      if (M->isConst() && Name == "get_allocator" && !M->getReturnType()->isReferenceType()) {
+        const auto Allocator = approvedUtilityAllocatorRecord(S, SM, forwardListRecordType(M->getReturnType()), Context);
+        if (Allocator && Context.hasSameType(Allocator->ElementType, Context.IntTy))
+          return UtilityForwardListOperation::GetAllocator;
+      }
       if (Name == "empty" && M->isConst() && Context.hasSameType(M->getReturnType(), Context.BoolTy))
         return UtilityForwardListOperation::Empty;
       if ((Name == "begin" || Name == "end" || Name == "before_begin") &&
@@ -55145,6 +55190,13 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   const auto Operation = forwardListMethodSignature(S, SM, Method, Context);
   const auto Node = Method ? forwardListReceiverNode(S, SM, Method->getParent(), Context) : std::nullopt;
   if (!Operation || !Node || !forwardListSourceGraph(S, SM, Method, Context, *Node)) return std::nullopt;
+  if (*Operation == UtilityForwardListOperation::GetAllocator && !forwardListGetAllocatorBody(S, SM, Method, *Node, Context))
+    return std::nullopt;
+  std::optional<uint64_t> Maximum;
+  if (*Operation == UtilityForwardListOperation::MaxSize) {
+    Maximum = containerNodeMaximum(S, SM, Method, Context, "forward_list", "__forward_list_node", Node->Record);
+    if (!Maximum) return std::nullopt;
+  }
   if (*Operation == UtilityForwardListOperation::MoveAssign &&
       !forwardListMoveAssignmentBody(S, SM, Method, Context))
     return std::nullopt;
@@ -55178,7 +55230,7 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
-  return UtilityForwardListCall{*Operation, Receiver, Function, Offset};
+  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum};
 }
 
 
@@ -137834,7 +137886,7 @@ bool orderedEmptyTreeSource(const State &S, const SourceManager &SM,
 
 std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager &SM,
     const CXXMethodDecl *Method, const ASTContext &Context,
-    llvm::StringRef Header, llvm::StringRef NodeName) {
+    llvm::StringRef Header, llvm::StringRef NodeName, const CXXRecordDecl *ForwardListNode) {
   const auto Size = Context.getSizeType();
   const auto Difference = Context.getPointerDiffType();
   const unsigned Bits = Context.getTypeSize(Size);
@@ -137855,23 +137907,30 @@ std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager
   const auto Traits = approvedUtilityAllocatorTraitsRecord(S, SM, TraitsMethod->getParent(), Context);
   if (!Traits) return std::nullopt;
   const auto *Storage = Method->getParent();
-  const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(TraitsCall->getArg(0)));
-  const auto *ReadMethod = Read ? Read->getMethodDecl() : nullptr;
-  const auto *AllocatorField = orderedTreeField(Storage, "__node_alloc_");
-  const auto *ReadField = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(ReadMethod)));
   const auto Allocator = Context.getRecordType(Traits->Allocator.Record);
   const auto AllocatorReference = Context.getLValueReferenceType(Allocator.withConst());
-  if (!ReadMethod || !ReadMethod->getIdentifier() || ReadMethod->getName() != "__node_alloc" ||
-      !ReadMethod->isConst() || ReadMethod->isStatic() || ReadMethod->isVirtual() ||
-      ReadMethod->getNumParams() || Read->getNumArgs() || !orderedReceiver(Read) ||
-      ReadMethod->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl() ||
-      !orderedPinnedFunction(S, SM, ReadMethod, Header) ||
-      !AllocatorField || !ReadField || ReadField->getMemberDecl() != AllocatorField ||
-      !isa_and_nonnull<CXXThisExpr>(orderedExpression(ReadField->getBase())) ||
-      !Context.hasSameType(AllocatorField->getType(), Allocator) ||
-      !Context.hasSameType(ReadMethod->getReturnType(), AllocatorReference) ||
-      !Context.hasSameType(TraitsMethod->getParamDecl(0)->getType(), AllocatorReference))
+  if (!Context.hasSameType(TraitsMethod->getParamDecl(0)->getType(), AllocatorReference))
     return std::nullopt;
+  if (ForwardListNode) {
+    if (Header != "forward_list" ||
+        !forwardListAllocatorMember(S, SM, Storage, ForwardListNode, TraitsCall->getArg(0), Context))
+      return std::nullopt;
+  } else {
+    const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(TraitsCall->getArg(0)));
+    const auto *ReadMethod = Read ? Read->getMethodDecl() : nullptr;
+    const auto *AllocatorField = orderedTreeField(Storage, "__node_alloc_");
+    const auto *ReadField = dyn_cast_or_null<MemberExpr>(orderedExpression(orderedReturn(ReadMethod)));
+    if (!ReadMethod || !ReadMethod->getIdentifier() || ReadMethod->getName() != "__node_alloc" ||
+        !ReadMethod->isConst() || ReadMethod->isStatic() || ReadMethod->isVirtual() ||
+        ReadMethod->getNumParams() || Read->getNumArgs() || !orderedReceiver(Read) ||
+        ReadMethod->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl() ||
+        !orderedPinnedFunction(S, SM, ReadMethod, Header) ||
+        !AllocatorField || !ReadField || ReadField->getMemberDecl() != AllocatorField ||
+        !isa_and_nonnull<CXXThisExpr>(orderedExpression(ReadField->getBase())) ||
+        !Context.hasSameType(AllocatorField->getType(), Allocator) ||
+        !Context.hasSameType(ReadMethod->getReturnType(), AllocatorReference))
+      return std::nullopt;
+  }
 
   const auto *LeafCall = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(orderedReturn(TraitsMethod)));
   const auto *Leaf = LeafCall ? LeafCall->getMethodDecl() : nullptr;

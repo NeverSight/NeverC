@@ -27359,6 +27359,16 @@ class FunctionLowering {
       transferForwardListStorage(Place, Source, L);
       return Place;
     }
+    if (Operation == UtilityForwardListOperation::GetAllocator) {
+      auto Allocator = temporary(type(Call->getType(), L), L);
+      initializeZero(Allocator, Call->getType(), L);
+      return Allocator;
+    }
+    if (Operation == UtilityForwardListOperation::MaxSize) {
+      if (!Proof->Maximum)
+        reject(L, "forward-list max_size", "The authenticated node allocator capacity is required.");
+      return quantity(*Proof->Maximum, type(Call->getType(), L), L);
+    }
     if (Operation == UtilityForwardListOperation::Empty)
       return binary("==", forwardListMember(Place, false, L), A.zero(A.Context.VoidPtrTy, L), "bool", L);
     if (Operation == UtilityForwardListOperation::Begin ||
