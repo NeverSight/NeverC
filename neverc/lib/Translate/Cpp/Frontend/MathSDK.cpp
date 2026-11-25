@@ -10943,9 +10943,21 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     if (!Definition || !Definition->getIdentifier() || Definition->isUnion() ||
         Definition->isLambda() || Definition->isLocalClass() || Definition->isDynamicClass() ||
         Definition->getNumBases() || !S.owns(SM, Definition->getLocation()) ||
-        !Operand->isLValue() || !Parameter->isLValueReferenceType() ||
         !Context.hasSameType(Type, Operand->getType()))
       return std::nullopt;
+    if (Operand->isLValue()) {
+      if (!Parameter->isLValueReferenceType())
+        return std::nullopt;
+    } else {
+      // The selected call uses the object while its full expression is live.
+      const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Operand->IgnoreParens());
+      if (!Temporary || !Parameter->isRValueReferenceType() ||
+          Result->isReferenceType() || !Definition->hasTrivialDestructor() ||
+          Temporary->getStorageDuration() != SD_FullExpression || Temporary->getExtendingDecl() ||
+          !Temporary->getSubExpr()->isPRValue() ||
+          !Context.hasSameType(Temporary->getSubExpr()->getType(), Type))
+        return std::nullopt;
+    }
     ObjectType = Type;
   } else {
     if (!Type->isFunctionType() && !Type->isFunctionPointerType())
