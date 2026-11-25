@@ -27230,6 +27230,27 @@ class FunctionLowering {
       destroyForwardListStorage(Place, Owner->Node, L);
       return Expression{};
     }
+    const bool EmplaceAfter = Operation == UtilityForwardListOperation::EmplaceAfter;
+    if (EmplaceAfter || Operation == UtilityForwardListOperation::EmplaceFront) {
+      auto Link = EmplaceAfter
+          ? forwardListNext(snapshot(forwardListMember(dereference(Operands[0], L), true, L), L), L)
+          : forwardListMember(Place, false, L);
+      const unsigned PositionArgs = EmplaceAfter ? 1 : 0;
+      Expression ValueReference;
+      if (Operands.size() == PositionArgs) {
+        auto Value = temporary(type(A.Context.IntTy, L), L);
+        initializeZero(Value, A.Context.IntTy, L);
+        ValueReference = address(Value, A.Context.IntTy, L);
+      } else {
+        ValueReference = Operands[PositionArgs];
+      }
+      auto Next = snapshot(Link, L);
+      auto Node = forwardListCreateNode(std::move(ValueReference), std::move(Next), Owner->Node, L);
+      assign(Link, Node, L);
+      auto Inserted = snapshot(Link, L);
+      if (EmplaceAfter) return forwardListIterator(Method->getReturnType(), std::move(Inserted), L);
+      return forwardListValue(std::move(Inserted), false, L);
+    }
     const bool Insert = Operation == UtilityForwardListOperation::InsertAfter;
     const bool Erase = Operation == UtilityForwardListOperation::EraseAfter;
     if (Insert || Erase || Operation == UtilityForwardListOperation::PushFront ||

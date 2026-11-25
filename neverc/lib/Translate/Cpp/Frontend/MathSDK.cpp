@@ -54385,12 +54385,55 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
   return std::nullopt;
 }
 
+std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
+    const UtilityForwardListRecord &Owner, const ASTContext &Context) {
+  if (!Method->getIdentifier() || Method->isConst() ||
+      Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return std::nullopt;
+  const auto Name = Method->getName();
+  const bool After = Name == "emplace_after";
+  if (!After && Name != "emplace_front") return std::nullopt;
+  const auto *Parameters = Method->getPrimaryTemplate()->getTemplateParameters();
+  const auto *TypePack = Parameters->size() == 1
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!TypePack || !TypePack->isParameterPack() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Pack)
+    return std::nullopt;
+  const auto Pack = Arguments->get(0).pack_elements();
+  const unsigned Offset = After ? 1 : 0;
+  if (Pack.size() > 1 || Method->getNumParams() != Offset + Pack.size())
+    return std::nullopt;
+  if (After) {
+    if (!forwardListIteratorType(S, SM, Method->getReturnType(), Owner.Node, false, Context) ||
+        !forwardListIteratorType(S, SM, Method->getParamDecl(0)->getType(), Owner.Node, true, Context))
+      return std::nullopt;
+  } else if (!Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Context.IntTy))) {
+    return std::nullopt;
+  }
+  if (!Pack.empty()) {
+    if (Pack[0].getKind() != TemplateArgument::Type) return std::nullopt;
+    const auto Type = Pack[0].getAsType();
+    const auto LValue = Context.getLValueReferenceType(Context.IntTy);
+    const auto ConstLValue = Context.getLValueReferenceType(Context.IntTy.withConst());
+    const bool IsValue = Context.hasSameType(Type, Context.IntTy);
+    if (!IsValue && !Context.hasSameType(Type, LValue) && !Context.hasSameType(Type, ConstLValue))
+      return std::nullopt;
+    const auto Parameter = IsValue ? Context.getRValueReferenceType(Context.IntTy) : Type;
+    if (!Context.hasSameType(Method->getParamDecl(Offset)->getType(), Parameter))
+      return std::nullopt;
+  }
+  return After ? UtilityForwardListOperation::EmplaceAfter : UtilityForwardListOperation::EmplaceFront;
+}
+
 std::optional<UtilityForwardListOperation> forwardListMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
-  if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
+  if (!M || M->isStatic() || M->isVolatile() ||
       !forwardListFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, M->getParent(), Context)) {
+    if (M->getPrimaryTemplate()) return forwardListEmplaceSignature(S, SM, M, *Owner, Context);
     const auto OwnerType = Context.getRecordType(Owner->Record);
     if (!M->isConst() && M->isMoveAssignmentOperator() && M->getNumParams() == 1 &&
         Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(OwnerType)) &&
@@ -54431,6 +54474,7 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       return UtilityForwardListOperation::InsertAfter;
     return std::nullopt;
   }
+  if (M->getPrimaryTemplate()) return std::nullopt;
   const auto I = approvedUtilityForwardListIteratorRecord(S, SM, M->getParent(), Context);
   if (!I || !M->isOverloadedOperator()) return std::nullopt;
   const auto IteratorType = Context.getRecordType(I->Record);
