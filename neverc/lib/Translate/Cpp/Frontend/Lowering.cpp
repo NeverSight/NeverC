@@ -27214,6 +27214,72 @@ class FunctionLowering {
     releaseForwardListChain(Output, Info, L);
     jump(Done, L); label(Done, L);
   }
+  Expression detachForwardListMatches(Expression Link, Expression First, Expression Reference,
+                                      Expression Removed, SourceLocation L) {
+    auto Last = snapshot(First, L);
+    auto Following = snapshot(forwardListNext(Last, L), L);
+    const auto Check = labelName(), Compare = labelName(), Extend = labelName(), Detach = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Following, "bool", L), Compare, Detach, L);
+    label(Compare, L);
+    branch(binary("==", forwardListValue(Following, true, L), dereference(Reference, L), "bool", L),
+        Extend, Detach, L);
+    label(Extend, L);
+    assign(Last, Following, L);
+    assign(Following, forwardListNext(Last, L), L);
+    jump(Check, L); label(Detach, L);
+    // The SDK splices each removed run onto the front of its release list.
+    assign(forwardListNext(Last, L), Removed, L);
+    assign(Removed, First, L);
+    assign(Link, Following, L);
+    return Following;
+  }
+  void removeForwardListValues(Expression Place, Expression Reference,
+                               const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Removed = temporary("ptr:void", L);
+    initializeZero(Removed, A.Context.VoidPtrTy, L);
+    auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
+    auto Current = temporary("ptr:void", L);
+    const auto Check = labelName(), Compare = labelName(), Remove = labelName();
+    const auto Advance = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    assign(Current, dereference(Link, L), L);
+    branch(cast(Current, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(binary("==", forwardListValue(Current, true, L), dereference(Reference, L), "bool", L),
+        Remove, Advance, L);
+    label(Remove, L);
+    assign(Current, detachForwardListMatches(dereference(Link, L), Current, Reference, Removed, L), L);
+    branch(cast(Current, "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Done, L);
+    // The value reference may designate an element that was removed.
+    releaseForwardListChain(Removed, Info, L);
+  }
+  void uniqueForwardListValues(Expression Place, const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Removed = temporary("ptr:void", L);
+    initializeZero(Removed, A.Context.VoidPtrTy, L);
+    auto Current = snapshot(forwardListMember(Place, false, L), L);
+    const auto Check = labelName(), Inspect = labelName(), Compare = labelName();
+    const auto Remove = labelName(), Advance = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Current, "bool", L), Inspect, Done, L);
+    label(Inspect, L);
+    auto Link = forwardListNext(Current, L);
+    auto Successor = snapshot(Link, L);
+    branch(cast(Successor, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    auto Reference = snapshot(address(forwardListValue(Current, true, L), A.Context.IntTy.withConst(), L), L);
+    branch(binary("==", forwardListValue(Successor, true, L), dereference(Reference, L), "bool", L),
+        Remove, Advance, L);
+    label(Remove, L);
+    assign(Current, detachForwardListMatches(Link, Successor, Reference, Removed, L), L);
+    jump(Check, L); label(Advance, L);
+    assign(Current, Successor, L);
+    jump(Check, L); label(Done, L);
+    releaseForwardListChain(Removed, Info, L);
+  }
   void transferForwardListStorage(Expression Place, Expression Source, SourceLocation L) {
     auto Head = snapshot(forwardListMember(Source, false, L), L);
     assign(forwardListMember(Place, false, L), std::move(Head), L);
@@ -27306,6 +27372,14 @@ class FunctionLowering {
       auto Current = snapshot(cast(Operands[0], Pointer, L), L);
       auto End = snapshot(cast(Operands[1], Pointer, L), L);
       assignForwardListStorage(Place, {std::move(Current), std::move(End), ForwardListInput::PointerRange}, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::RemoveValue) {
+      removeForwardListValues(Place, Operands[0], Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Unique) {
+      uniqueForwardListValues(Place, Owner->Node, L);
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::MoveAssign) {

@@ -54455,6 +54455,11 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       }
     }
     if (M->isConst()) return std::nullopt;
+    if (Name == "remove" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
+        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())))
+      return UtilityForwardListOperation::RemoveValue;
+    if (Name == "unique" && !M->getNumParams() && M->getReturnType()->isVoidType())
+      return UtilityForwardListOperation::Unique;
     if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
         forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return UtilityForwardListOperation::PushFront;
@@ -54917,6 +54922,33 @@ bool forwardListInputAssignmentBody(const CXXMethodDecl *Method, UtilityForwardL
          variantParameter(Insert->getArg(2), Definition->getParamDecl(1));
 }
 
+bool forwardListFilterBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, UtilityForwardListOperation Operation) {
+  const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Return = Body && !Body->body_empty() ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  if (!Return || !Return->getRetValue()) return false;
+  if (Operation == UtilityForwardListOperation::RemoveValue) {
+    const auto *Count = dyn_cast<CStyleCastExpr>(Return->getRetValue()->IgnoreParens());
+    return Body->size() == 5 && isa<ForStmt>(*(Body->body_begin() + 3)) &&
+           Count && Count->getCastKind() == CK_ToVoid;
+  }
+  const auto *Delegate = Body->size() == 1
+      ? dyn_cast<CXXMemberCallExpr>(Return->getRetValue()->IgnoreUnlessSpelledInSource()) : nullptr;
+  const auto *Selected = Delegate ? Delegate->getMethodDecl() : nullptr;
+  const auto *Receiver = Delegate ? Delegate->getImplicitObjectArgument() : nullptr;
+  if (!Selected || !Selected->getIdentifier() || Selected->getName() != "unique" ||
+      !Selected->getPrimaryTemplate() || Selected->getNumParams() != 1 ||
+      !Selected->getReturnType()->isVoidType() || Delegate->getNumArgs() != 1 || !Receiver ||
+      !isa<CXXThisExpr>(Receiver->IgnoreParenImpCasts()) ||
+      Selected->getParent()->getCanonicalDecl() != Definition->getParent()->getCanonicalDecl())
+    return false;
+  const auto *Comparator = forwardListRecordType(Selected->getParamDecl(0)->getType());
+  return Comparator && Comparator->getIdentifier() && Comparator->getName() == "__equal_to" &&
+         forwardListStd(Comparator->getDeclContext()) && Comparator->isEmpty() &&
+         forwardListPinned(S, SM, Comparator, "__algorithm/comp.h");
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -55108,6 +55140,9 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   if ((*Operation == UtilityForwardListOperation::AssignCount ||
        *Operation == UtilityForwardListOperation::AssignPointerRange) &&
       !forwardListInputAssignmentBody(Method, *Operation))
+    return std::nullopt;
+  if ((*Operation == UtilityForwardListOperation::RemoveValue || *Operation == UtilityForwardListOperation::Unique) &&
+      !forwardListFilterBody(S, SM, Method, *Operation))
     return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
