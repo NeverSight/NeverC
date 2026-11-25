@@ -15633,6 +15633,8 @@ class Allowlist : public RecursiveASTVisitor<Allowlist> {
   std::map<const Expr *, const CallExpr *> TupleCatQueryExpressions;
   std::map<const CallExpr *, std::set<const Type *>> TupleCatQueryTypes;
   std::set<const CXXConstructExpr *> PendingTupleConstructorQueries;
+  std::set<const CXXConstructExpr *> PendingAnySizeofConstructions;
+  std::map<const CXXConstructExpr *, const Expr *> AnySizeofConstructions;
   std::vector<const CXXMethodDecl *> ConsumedConditionalMoveSignatures;
   std::set<const CXXMethodDecl *> QueuedConditionalMoveSignatures;
   std::vector<const CXXMethodDecl *> ConsumedSpecialMemberSignatures;
@@ -24415,6 +24417,12 @@ public:
         continue;
       }
       if (!UtilityConstruction && !ApprovedUtilityCall && !owned(Selected)) {
+        if (Construction && approvedUtilityAnySizeofConstruction(A.S, A.Sources, Construction, A.Context)) {
+          if (PendingAnySizeofConstructions.insert(Construction).second)
+            A.chargeExpansion(1, Source.Location);
+          SelectedCallSources[Source.Expression].push_back(&Source);
+          continue;
+        }
         // Retention precedes lexical query indexing; this candidate is inert
         // until the complete original query and successful deduction close.
         if (!Construction || !approvedUtilityTupleConstructionSignature(A.S, A.Sources, Construction, A.Context, A.SpecialMembers, A.OperationTraits)) {
@@ -24428,6 +24436,51 @@ public:
       SelectedCallSources[Source.Expression].push_back(&Source);
     }
   }
+  bool finishAnySizeofConstructions() {
+    for (const auto *Construction : PendingAnySizeofConstructions)
+      if (!AnySizeofConstructions.count(Construction)) {
+        A.reject(Construction->getExprLoc(), "any constructor query",
+                 "A deferred SDK signature requires its exact lexical sizeof operand.");
+        return false;
+      }
+    for (const auto &[Construction, Operand] : AnySizeofConstructions) {
+      const auto *Constructor = Construction->getConstructor();
+      const auto SelectedRows = SelectedCallSources.find(Construction);
+      const auto *Primary = Constructor->getPrimaryTemplate();
+      if (!IndexedUnevaluatedSources.count(Operand) ||
+          !approvedUtilityAnySizeofConstruction(A.S, A.Sources, Construction, A.Context) ||
+          !Primary || SelectedRows == SelectedCallSources.end() || SelectedRows->second.empty())
+        return false;
+      const TemplateUseSource *First = nullptr;
+      for (const auto *Selected : sourceCandidates(SelectedRows->second)) {
+        if (Selected->Expression != Construction || Selected->Function != Constructor ||
+            !A.S.owns(A.Sources, Selected->Location))
+          return false;
+        const auto Sources = FunctionSources.find({Constructor, Selected->Location.getRawEncoding()});
+        if (Sources == FunctionSources.end() || Sources->second.empty())
+          return false;
+        for (const auto *Source : sourceCandidates(Sources->second)) {
+          if ((First && !equivalentUse(*First, *Source)) ||
+              Source->Kind != TemplateSourceKind::Function ||
+              !Source->Template ||
+              Source->Template->getCanonicalDecl() != Primary->getCanonicalDecl() ||
+              Source->DefaultsOverflow ||
+              !Source->ParameterTypes.empty() ||
+              !sameArguments(Source->Canonical, Constructor->getTemplateSpecializationArgs()) ||
+              !sameCanonicalArguments(Source->Canonical, Source->Sugared)) {
+            A.reject(Construction->getExprLoc(), "any constructor query",
+                     "The selected SDK constructor requires its successful deduction and signature source.");
+            return false;
+          }
+          First = Source;
+        }
+      }
+      if (!First)
+        return false;
+    }
+    return A.S.Diagnostics.empty();
+  }
+
   bool finishTupleConstructorQueries() {
     for (const auto *Construction : PendingTupleConstructorQueries)
       if (!TupleConstructorQueryRoots.count(Construction)) {
@@ -30051,8 +30104,15 @@ public:
       registerUnevaluatedOperations(Query->getOperand());
     if (const auto *Query = dyn_cast<UnaryExprOrTypeTraitExpr>(S);
         Query && Query->getKind() == UETT_SizeOf && !Query->isArgumentType() &&
-        !Query->getTypeOfArgument()->isVariablyModifiedType())
-      registerUnevaluatedOperations(Query->getArgumentExpr());
+        !Query->getTypeOfArgument()->isVariablyModifiedType()) {
+      const auto *Operand = Query->getArgumentExpr();
+      registerUnevaluatedOperations(Operand);
+      const auto *Construction = dyn_cast<CXXConstructExpr>(Operand->IgnoreParens()->IgnoreImplicit()->IgnoreParens());
+      if (A.S.owns(A.Sources, Query->getExprLoc()) &&
+          approvedUtilityAnySizeofConstruction(A.S, A.Sources, Construction, A.Context) &&
+          AnySizeofConstructions.emplace(Construction, Operand).second)
+        A.chargeExpansion(1, Construction->getExprLoc());
+    }
     collectOperationSource(S);
     if (!ImplicitInitializerOwner.isValid() && !A.S.owns(A.Sources, S->getBeginLoc()))
       return true;
@@ -30753,22 +30813,21 @@ public:
                      "Expected a type-form query using the authenticated SDK layout.", "TR0203");
         }
         else if (pinnedUtilityVariantType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
-          if (Query->isArgumentType() &&
-              approvedUtilityVariantRecord(A.S, A.Sources, Value, A.Context))
+          if (approvedUtilityVariantRecord(A.S, A.Sources, Value, A.Context))
             A.checkQueryType(Operand, Query->getExprLoc(), true, true);
           else
             A.reject(Query->getExprLoc(), "variant size and alignment",
-                     "Expected a type-form query using the authenticated SDK variant layout.",
+                     "Expected a query using the authenticated SDK variant layout.",
                      "TR0203");
         }
         else if (pinnedUtilityAnyType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
-          if (Query->isArgumentType() && !Value.isVolatileQualified() && !Value.isRestrictQualified() &&
+          if (!Value.isVolatileQualified() && !Value.isRestrictQualified() &&
               Value.getAddressSpace() == LangAS::Default &&
               approvedUtilityAnyMetadata(A.S, A.Sources, Value->getAsCXXRecordDecl(), A.Context))
             A.checkQueryType(Operand, Query->getExprLoc(), true, true);
           else
             A.reject(Query->getExprLoc(), "any size and alignment",
-                     "Expected a type-form query using the authenticated SDK layout.", "TR0203");
+                     "Expected a query using the authenticated SDK any layout.", "TR0203");
         }
         else if (const auto Value = A.Context.getBaseElementType(Operand.getNonReferenceType());
                  pinnedAssociativeContainerType(A.S, A.Sources, Value->getAsCXXRecordDecl())) {
@@ -31145,9 +31204,9 @@ public:
         A.type(C->getType(), L);
         return true;
       }
-      if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, C, A.Context)) {
-        checkBinding(C->getArg(0), false);
-        A.type(A.Context.getRecordType(Any), L);
+      if (const auto Active = approvedUtilityAnyActiveValueCast(A.S, A.Sources, C, A.Context)) {
+        checkBinding(Active->Owner, false);
+        A.type(A.Context.getRecordType(Active->Record), L);
         A.type(C->getType(), L);
         return true;
       }
@@ -31488,6 +31547,8 @@ public:
                    "translation unit.",
                    "TR0203");
     if (const auto *C = dyn_cast<CXXConstructExpr>(S)) {
+      if (AnySizeofConstructions.count(C))
+        return true; // RAV visits each written argument in the unevaluated context.
       if (const auto Query = TupleConstructorQueryRoots.find(C);
           Query != TupleConstructorQueryRoots.end()) {
         if (!IndexedUnevaluatedSources.count(Query->second) ||
@@ -32050,6 +32111,8 @@ void Adapter::run(llvm::ArrayRef<ExplicitFunctionInstantiationSource> InputDirec
   bool Traversed = Check.TraverseDecl(Context.getTranslationUnitDecl());
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishTupleConstructorQueries();
+  if (Traversed && S.Diagnostics.empty())
+    Traversed = Check.finishAnySizeofConstructions();
   if (Traversed && S.Diagnostics.empty())
     Traversed = Check.finishGeneratedMethods();
   if (!Traversed && S.Diagnostics.empty())
