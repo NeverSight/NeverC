@@ -3500,6 +3500,7 @@ struct UtilityVariantVisit {
   std::vector<clang::QualType> Arguments;
   clang::QualType Result;
   std::vector<const clang::CXXMethodDecl *> Methods;
+  bool InlineLambda = false;
 };
 std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
@@ -3593,7 +3594,7 @@ struct UtilityAnyPointerScalar {
   clang::QualType Type;
   UtilityAnyScalar Scalar;
 };
-llvm::SmallVector<UtilityAnyPointerScalar, 6> utilityAnyPointerScalars(
+llvm::SmallVector<UtilityAnyPointerScalar, 37> utilityAnyPointerScalars(
     const clang::ASTContext &Context);
 std::optional<UtilityAnyScalar> utilityAnyInlineScalar(clang::QualType Type,
     const clang::ASTContext &Context);
@@ -3611,6 +3612,8 @@ struct UtilityAnyIntegerConstruction {
   const clang::Expr *Input;
   clang::QualType Parameter;
 };
+bool approvedUtilityAnySizeofConstruction(const State &S, const clang::SourceManager &SM,
+    const clang::CXXConstructExpr *Construction, const clang::ASTContext &Context);
 std::optional<UtilityAnyIntegerConstruction> approvedUtilityAnyIntegerConstruction(
     const State &S, const clang::SourceManager &SM, const clang::CXXConstructExpr *Construction,
     const clang::ASTContext &Context);
@@ -3652,7 +3655,12 @@ std::optional<UtilityAnyCall> approvedUtilityAnyCall(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 
-const clang::CXXRecordDecl *approvedUtilityAnyActiveValueCast(
+struct UtilityAnyActiveCast {
+  const clang::CXXRecordDecl *Record;
+  const clang::DeclRefExpr *Owner;
+};
+
+std::optional<UtilityAnyActiveCast> approvedUtilityAnyActiveValueCast(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
     const clang::ASTContext &Context);
 const clang::CXXRecordDecl *approvedUtilityAnyPointerCast(
@@ -4005,10 +4013,14 @@ std::optional<UtilityForwardListIteratorRecord> approvedUtilityForwardListIterat
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
 enum class UtilityForwardListConstruction {
-  Default, Allocator, InitializerList, IteratorDefault, IteratorCopy, IteratorConstConversion
+  Default, Allocator, InitializerList, PointerRange, IteratorRange, Count, FillCount, Copy, Move, AllocatorMove, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityForwardListOperation {
-  Empty, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, Clear,
+  Empty, GetAllocator, MaxSize, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, EraseRange, Clear, MoveAssign,
+  SpliceAll, SpliceOne, SpliceRange, EmplaceFront, EmplaceAfter,
+  Reverse, Swap, FreeSwap, CopyAssign, AssignInitializerList, AssignInitializerListOperator, AssignCount, AssignPointerRange, AssignIteratorRange, Merge, Sort, RemoveValue, Unique, Resize, ResizeFill,
+  InsertAfterCount, InsertAfterInitializerList, InsertAfterPointerRange, InsertAfterIteratorRange,
+  OwnerEqual, OwnerNotEqual, OwnerLess, OwnerGreater, OwnerLessEqual, OwnerGreaterEqual,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement,
   IteratorEqual, IteratorNotEqual, IteratorAssign
 };
@@ -4018,6 +4030,7 @@ struct UtilityForwardListCall {
   const clang::Expr *Receiver = nullptr;
   const clang::FunctionDecl *Function = nullptr;
   unsigned ArgumentOffset = 0;
+  std::optional<uint64_t> Maximum = std::nullopt;
 };
 std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruction(
     const State &S, const clang::SourceManager &SM,
