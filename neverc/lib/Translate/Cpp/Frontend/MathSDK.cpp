@@ -6897,6 +6897,29 @@ static bool utilityVariantAlternativeType(const State &S, const SourceManager &S
           approvedUtilityMonostateMetadata(S, SM, T->getAsCXXRecordDecl(), Context));
 }
 
+static bool variantTrivialRecordAlternative(const State &S, const SourceManager &SM,
+    QualType Type, const ASTContext &Context) {
+  if (Type.hasLocalQualifiers() || Type.getAddressSpace() != LangAS::Default)
+    return false;
+  const auto *Decl = Type->getAsCXXRecordDecl();
+  const auto *Record = Decl ? Decl->getDefinition() : nullptr;
+  if (!Record || !Record->getIdentifier() || Record->isUnion() || Record->isLocalClass() ||
+      Record->getNumBases() || !Record->isAggregate() || !Record->isStandardLayout() ||
+      !Record->isTriviallyCopyable() || !Record->hasTrivialDefaultConstructor() ||
+      !Record->hasTrivialDestructor() || Record->field_empty() ||
+      !llvm::all_of(Record->redecls(), [&](const auto *Redecl) {
+        return S.owns(SM, Redecl->getLocation());
+      }))
+    return false;
+  return llvm::all_of(Record->fields(), [&](const FieldDecl *Field) {
+    const auto Value = Field->getType();
+    return Field->getIdentifier() && Field->getAccess() == AS_public &&
+           !Field->isBitField() && !Field->isMutable() && !Field->hasInClassInitializer() &&
+           !Value.hasLocalQualifiers() && Value.getAddressSpace() == LangAS::Default &&
+           utilityScalar(Context, Value);
+  });
+}
+
 bool pinnedUtilityVariantType(const State &S, const SourceManager &SM,
                               const CXXRecordDecl *Record) {
   const auto *Variant = dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
@@ -7012,7 +7035,8 @@ std::optional<UtilityVariantRecord> approvedUtilityVariantRecord(const State &S,
   };
   for (const auto &Alternative : Alternatives) {
     const auto T = Alternative.getAsType();
-    if (!utilityVariantAlternativeType(S, SM, T, Context))
+    if (!utilityVariantAlternativeType(S, SM, T, Context) &&
+        !variantTrivialRecordAlternative(S, SM, T, Context))
       return std::nullopt;
   }
 
@@ -7476,14 +7500,21 @@ static bool variantStoredAlternative(const State &S, const SourceManager &SM,
   const auto *Initialization = variantMemberInit(Item, Alt);
   if (!Initialization)
     return false;
-  if (const auto *Empty = Alt->getType()->getAsCXXRecordDecl()) {
+  if (const auto *Record = Alt->getType()->getAsCXXRecordDecl()) {
     const auto *Build = variantConstruct(Initialization);
     const auto *Selected = Build ? Build->getConstructor() : nullptr;
-    if (!approvedUtilityMonostateConstruction(S, SM, Build, Context) ||
+    if (!Selected || Build->getNumArgs() != Arity ||
         !Context.hasSameType(Build->getType(), Alt->getType()) ||
-        Selected->getParent()->getCanonicalDecl() != Empty->getCanonicalDecl() ||
-        !variantDeclaration(S, SM, Selected, "__variant/monostate.h"))
+        Selected->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
       return false;
+    if (variantTrivialRecordAlternative(S, SM, Alt->getType(), Context)) {
+      if (!Selected->isDefaulted() || !Selected->isTrivial() ||
+          !S.owns(SM, Selected->getLocation()))
+        return false;
+    } else if (!approvedUtilityMonostateConstruction(S, SM, Build, Context) ||
+               !variantDeclaration(S, SM, Selected, "__variant/monostate.h")) {
+      return false;
+    }
     if (Arity) {
       if (Arity != 1 || !Selected->isCopyOrMoveConstructor() ||
           !variantForward(S, SM, Build->getArg(0), Item->getParamDecl(1), Context))
@@ -9692,28 +9723,39 @@ const CXXRecordDecl *approvedUtilityAnyPointerCast(const State &S, const SourceM
   return anyPointerCast(S, SM, Call->getDirectCallee(), Context, true);
 }
 
-static bool anySingleUseLocal(const State &S, const SourceManager &SM,
-                              const VarDecl *Local, const DeclRefExpr *Use) {
+static const CXXRecordDecl *checkedAnyActiveValueCast(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool CheckOwnerUses);
+
+static bool anyCastsKeepActiveLocal(const State &S, const SourceManager &SM,
+    const VarDecl *Local, const DeclRefExpr *Use, const ASTContext &Context) {
   const auto *Owner = dyn_cast<FunctionDecl>(Local->getDeclContext());
   const auto *Body = Owner ? Owner->getBody() : nullptr;
   const auto AfterInitializer = SM.getExpansionLoc(Local->getEndLoc());
-  const auto AtUse = SM.getExpansionLoc(Use->getExprLoc());
-  if (!Body || !S.owns(SM, Owner->getLocation()) || AfterInitializer.isInvalid() || AtUse.isInvalid() ||
-      !SM.isBeforeInTranslationUnit(AfterInitializer, AtUse))
+  if (!Body || !S.owns(SM, Owner->getLocation()) || AfterInitializer.isInvalid())
     return false;
   const auto *Identity = Local->getCanonicalDecl();
   unsigned Nodes = 0;
   bool Found = false;
-  // The only reference is consumed by the authenticated value cast, so
-  // no assignment or borrowed access can change the active payload.
+  // Each use of the owner must be an authenticated cast of its initial
+  // payload type. A returned scalar reference can only modify that payload.
   const auto Scan = [&](auto &&Self, const Stmt *Statement, unsigned Depth) -> bool {
     if (!Statement) return true;
     if (Depth >= 64 || ++Nodes > 200000) return false;
-    if (const auto *Read = dyn_cast<DeclRefExpr>(Statement);
-        Read && Read->getDecl()->getCanonicalDecl() == Identity) {
-      if (Read != Use || Found) return false;
-      Found = true;
+    if (const auto *Call = dyn_cast<CallExpr>(Statement); Call && Call->getNumArgs() == 1) {
+      const auto *Read = anyReference(Call->getArg(0));
+      if (Read && Read->getDecl()->getCanonicalDecl() == Identity) {
+        const auto Location = SM.getExpansionLoc(Read->getExprLoc());
+        if (Location.isInvalid() || !SM.isBeforeInTranslationUnit(AfterInitializer, Location) ||
+            (Found && Read == Use) || !checkedAnyActiveValueCast(S, SM, Call, Context, false))
+          return false;
+        Found = Found || Read == Use;
+        return true;
+      }
     }
+    if (const auto *Read = dyn_cast<DeclRefExpr>(Statement);
+        Read && Read->getDecl()->getCanonicalDecl() == Identity)
+      return false;
     if (const auto *Lambda = dyn_cast<LambdaExpr>(Statement))
       for (const auto &Capture : Lambda->captures())
         if (Capture.capturesVariable() && Capture.getCapturedVar()->getCanonicalDecl() == Identity)
@@ -9725,8 +9767,9 @@ static bool anySingleUseLocal(const State &S, const SourceManager &SM,
   return Scan(Scan, Body, 0) && Found;
 }
 
-const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
-    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+static const CXXRecordDecl *checkedAnyActiveValueCast(
+    const State &S, const SourceManager &SM, const CallExpr *Call,
+    const ASTContext &Context, bool CheckOwnerUses) {
   if (!S.coreV2() || !Call || Call->getNumArgs() != 1)
     return nullptr;
   const auto *Original = Call->getDirectCallee();
@@ -9759,7 +9802,7 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
   const bool Const = Local->getType().isConstQualified();
   const auto Owner = Context.getRecordType(Any);
   if ((Const && MutableReference) ||
-      (!Const && !anySingleUseLocal(S, SM, Local, Receiver)) ||
+      (!Const && CheckOwnerUses && !anyCastsKeepActiveLocal(S, SM, Local, Receiver, Context)) ||
       !Context.hasSameType(F->getParamDecl(0)->getType(),
                            Context.getLValueReferenceType(Const ? Owner.withConst() : Owner)))
     return nullptr;
@@ -9809,6 +9852,11 @@ const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
          anySelectedVariable(Access->getSubExpr(), Pointer) &&
          Context.hasSameType(Value->getType(), Call->getType()) && Value->isLValue() == Reference
       ? Any : nullptr;
+}
+
+const CXXRecordDecl *approvedUtilityAnyActiveValueCast(
+    const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
+  return checkedAnyActiveValueCast(S, SM, Call, Context, true);
 }
 
 static const CXXMethodDecl *variantEmplaceDefinition(const State &S,
@@ -10633,7 +10681,9 @@ static bool variantVisitParameter(const State &S, const SourceManager &SM,
   const auto Value = Parameter.getNonReferenceType();
   return !Parameter->isRValueReferenceType() && !Value.isVolatileQualified() &&
          !Value.isRestrictQualified() && Value.getAddressSpace() == LangAS::Default &&
-         utilityVariantAlternativeType(S, SM, Value, Context);
+         (utilityVariantAlternativeType(S, SM, Value, Context) ||
+          (Parameter->isLValueReferenceType() &&
+           variantTrivialRecordAlternative(S, SM, Value.getUnqualifiedType(), Context)));
 }
 
 static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APValue &Entry,
@@ -10642,7 +10692,9 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
     QualType Object, QualType Result, const CXXMethodDecl *&SelectedMethod,
     const ASTContext &Context) {
   const auto *Target = variantVisitDispatchTarget(S, SM, Entry, Capture, Variants, Indices, Context);
-  if (!Target || !Context.hasSameType(Target->getType(), Result))
+  if (!Target || !Context.hasSameType(Target->getType(), Result.getNonReferenceType()) ||
+      Target->isLValue() != Result->isLValueReferenceType() ||
+      Target->isXValue() != Result->isRValueReferenceType())
     return false;
   const unsigned Count = Variants.size();
   const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
@@ -10859,7 +10911,9 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     if (!V || V->Alternatives.empty() || V->Alternatives.size() > 8 ||
         V->Alternatives.size() > MaxMatrixEntries / MatrixEntries ||
         llvm::any_of(V->Alternatives, [&](const FieldDecl *F) {
-          return !variantVisitParameter(S, SM, F->getType(), Context);
+          const auto Alternative = F->getType();
+          return !variantVisitParameter(S, SM, Alternative, Context) &&
+                 !variantTrivialRecordAlternative(S, SM, Alternative, Context);
         }))
       return std::nullopt;
     MatrixEntries *= V->Alternatives.size();
@@ -10870,7 +10924,15 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     return std::nullopt;
   const auto Type = Parameter.getNonReferenceType();
   const auto Result = Visit->getReturnType();
-  if (Type.isVolatileQualified() || !(Result->isIntegerType() || Result->isVoidType()))
+  const auto Referent = Result.getNonReferenceType();
+  const bool BorrowedResult = Result->isReferenceType() &&
+      !Referent.isVolatileQualified() && !Referent.isRestrictQualified() &&
+      Referent.getAddressSpace() == LangAS::Default && utilityScalar(Context, Referent) &&
+      llvm::all_of(Visit->parameters().drop_front(), [](const ParmVarDecl *Operand) {
+        return Operand->getType()->isLValueReferenceType();
+      });
+  if (Type.isVolatileQualified() ||
+      !(Result->isIntegerType() || Result->isVoidType() || BorrowedResult))
     return std::nullopt;
   const auto *Object = Type->getAsCXXRecordDecl();
   std::vector<QualType> Inputs;

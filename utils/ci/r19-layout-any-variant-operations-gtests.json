@@ -63,6 +63,15 @@
       "source_sha256": "05fa05e4845281edf3b73ac858b9da0d60cc1992055bd01567fd194f729755c0",
       "original_case_source_sha256": "05fa05e4845281edf3b73ac858b9da0d60cc1992055bd01567fd194f729755c0",
       "gtest_body_sha256": "54545ec44a129740460acc5ba0021ede4f13e3bc194a797fcaf63547eaf83374"
+    },
+    {
+      "name": "variant-emplace-source-owned-record",
+      "formal_test_name": "TranslateTest.CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody",
+      "expected": "accept",
+      "source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
+      "original_case_source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
+      "gtest_body_sha256": "e5a5c5b976a6fda90a5d2127b5aa3c1f1e8b5935c789ecc2120e7a85314e7a57",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -89,14 +98,6 @@
       "source_sha256": "4fcc28e497fdde13e49cdfa7e18ca3d969a561db3a714859fd6c5c665cc09f58",
       "original_case_source_sha256": "4fcc28e497fdde13e49cdfa7e18ca3d969a561db3a714859fd6c5c665cc09f58",
       "gtest_body_sha256": "76b0cc717e75e40cd6ab2a5d603ab6a33a39af71411eb24fb50382e83a4db55c"
-    },
-    {
-      "name": "variant-emplace-source-owned-record",
-      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceSourceOwnedRecordRejected",
-      "expected": "reject",
-      "source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
-      "original_case_source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
-      "gtest_body_sha256": "28b4c204cb3e411e0680bfe1e52a03d35dead5d19c38cbd04e1b9aab781a0a20"
     }
   ],
   "new_gtest_names": [
@@ -108,10 +109,10 @@
     "TranslateTest.CoreV2VariantEmplacePointerZeroRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantEmplaceEmptyAlternativeRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantEmplaceReceiverBeforeInputRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody",
     "TranslateTest.CoreV2MonostateComparisonSdkAddressRejected",
     "TranslateTest.CoreV2VariantEmplaceWideningOperandRejected",
-    "TranslateTest.CoreV2VariantEmplaceVolatileOperandRejected",
-    "TranslateTest.CoreV2VariantEmplaceSourceOwnedRecordRejected"
+    "TranslateTest.CoreV2VariantEmplaceVolatileOperandRejected"
   ],
   "source_cases": [
     {
@@ -179,6 +180,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "variant-emplace-source-owned-record",
+      "source": "#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n",
+      "expected": "accept",
+      "source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "monostate-comparison-sdk-address",
       "public_header": "variant",
       "source": "#include <variant>\nint f() {\n  using Compare = bool (*)(std::monostate, std::monostate) noexcept;\n  auto call = static_cast<Compare>(&std::operator==);\n  return call({}, {});\n}\n",
@@ -199,14 +208,6 @@
       "source": "#include <variant>\nint f() {\n  std::variant<int, long> value;\n  volatile long source = 11;\n  return value.emplace<long>(source);\n}\n",
       "expected": "reject",
       "source_sha256": "4fcc28e497fdde13e49cdfa7e18ca3d969a561db3a714859fd6c5c665cc09f58",
-      "public_header": "variant",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "variant-emplace-source-owned-record",
-      "source": "#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n",
-      "expected": "reject",
-      "source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
       "public_header": "variant",
       "kind": "source-body-guard"
     }
@@ -233,5 +234,5 @@
     "variant-monostate": "8667d3acb39d6c128cfef45c419d722b98a60057a681a1601dc544aa41c18161"
   },
   "native_reference_authentication_sha256": "274314d32fb7d7f9eadd6f44b8392b311919b0579d697e04747256f3e9c1f49f",
-  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
+  "source_proof_sha256": "5d91a6a9065074b92e3ed7473b63e2d5f9fed7aba021ba3d3734017810ba7f10"
 }

@@ -127,17 +127,17 @@
       "source_sha256": "f4cfe0f468d883f60a802efae14e07e19c334e56066723684658efe091e7a127",
       "original_case_source_sha256": "f4cfe0f468d883f60a802efae14e07e19c334e56066723684658efe091e7a127",
       "gtest_body_sha256": "64a6321e2d17922e07b4a32f41165cbae9efea42e621b9ba5c57e717765cb1f4"
+    },
+    {
+      "name": "variant-objects-class-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantAggregateAlternativeRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2644d8a49f8f8d5b04f95e9d982e07c1ff3a8db404a897ad504b87da1594d570",
+      "original_case_source_sha256": "2644d8a49f8f8d5b04f95e9d982e07c1ff3a8db404a897ad504b87da1594d570",
+      "gtest_body_sha256": "d6de6b3a06715e19ee0e85fd61c60633e0d9f1318cc16a56be23bb6eabc891c7"
     }
   ],
   "negative_cases": [
-    {
-      "name": "variant-objects-class-alternative",
-      "formal_test_name": "TranslateTest.CoreV2VariantObjectsClassAlternativeRejected",
-      "expected": "reject",
-      "source_sha256": "2644d8a49f8f8d5b04f95e9d982e07c1ff3a8db404a897ad504b87da1594d570",
-      "original_case_source_sha256": "2644d8a49f8f8d5b04f95e9d982e07c1ff3a8db404a897ad504b87da1594d570",
-      "gtest_body_sha256": "50dcfb06bfa88aac424c43a987168301c82d80568f4ee344596eb87c63c783b7"
-    },
     {
       "name": "variant-objects-const-alternative",
       "formal_test_name": "TranslateTest.CoreV2VariantObjectsConstAlternativeRejected",
@@ -220,7 +220,7 @@
     "TranslateTest.CoreV2VariantObjectsMoveAndSelfAssignmentRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantObjectsConstGetByIndexRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantObjectsConstGetByTypeRunAtBothOptimizations",
-    "TranslateTest.CoreV2VariantObjectsClassAlternativeRejected",
+    "TranslateTest.CoreV2VariantAggregateAlternativeRunsAtBothOptimizations",
     "TranslateTest.CoreV2VariantObjectsConstAlternativeRejected",
     "TranslateTest.CoreV2VariantObjectsAlteredDiscriminantRejected",
     "TranslateTest.CoreV2VariantObjectsUnprovedConversionRejected",
@@ -230,8 +230,8 @@
     "TranslateTest.CoreV2VariantObjectsConstGetAlteredHelperRejected",
     "TranslateTest.CoreV2VariantObjectsGetIfReplacedAddressBodyRejected"
   ],
-  "native_reference_selected_executions": 32,
-  "planned_generated_c23_executions": 32,
+  "native_reference_selected_executions": 34,
+  "planned_generated_c23_executions": 34,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
   "source_proof_gate_pending": false,
@@ -401,11 +401,11 @@
     },
     {
       "name": "variant-objects-class-alternative",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <variant>\nstruct Payload { int field; };\nextern \"C\" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n",
       "source_sha256": "2644d8a49f8f8d5b04f95e9d982e07c1ff3a8db404a897ad504b87da1594d570",
       "public_header": "variant",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "variant-objects-const-alternative",
@@ -473,8 +473,9 @@
     }
   ],
   "native_reference_proofs": {
-    "variant-scalar-runtime": "07ea60a20ba37e38c9239712660b6c63e9c4c8598061d0af9c36008b349c6e29"
+    "variant-scalar-runtime": "07ea60a20ba37e38c9239712660b6c63e9c4c8598061d0af9c36008b349c6e29",
+    "variant-trivial-aggregate": "171f91b042bcb654e07f2b9b81d48d75ca2539963b11755e24601b71d3317a94"
   },
-  "native_reference_authentication_sha256": "68105ab54a9a64dbcd40188322155616330df0f755d3fbc69d49c9cdc8d1a297",
-  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
+  "native_reference_authentication_sha256": "9ccc4c3b07ea987eada3cb4f8963feb322f1750a1a2d2e20b917337858504d47",
+  "source_proof_sha256": "5d91a6a9065074b92e3ed7473b63e2d5f9fed7aba021ba3d3734017810ba7f10"
 }

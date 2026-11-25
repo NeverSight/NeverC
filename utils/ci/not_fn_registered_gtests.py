@@ -2888,6 +2888,36 @@ def restore_variant_temporaries_and_any_references_history(source):
     return restored
 
 
+R19_VARIANT_AND_ANY_OBJECTS_REGISTERED_SHA256 = '6c8f8fdd9fad8c417eb6fbb85441efde19d2baab6c1dce99ddd405a58986abc1'
+R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SHA256 = '0900451648aa61cc024f0d051071bdc8b7afb25c758ce6884588c79c65402be2'
+R19_VARIANT_AND_ANY_OBJECTS_PREVIOUS_REGISTERED_SHA256 = '79ff43760d160576bec03ce6e60d3037c02f7455c8c2bfa9c2595d185e0e99e4'
+R19_VARIANT_AND_ANY_OBJECTS_PREVIOUS_MAINTAINED_SHA256 = '537f4693223fffb776096f73b1fe10a33f2e97eeebf84a4301dffe9cf4af64dd'
+R19_VARIANT_AND_ANY_OBJECTS_ADDITIONS_SHA256 = 'b4430f6396c7dbe04f4c5e217fce5d6a985683438bb0dc66b93ef2f76f70faae'
+R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SIZE = 20796754
+R19_VARIANT_AND_ANY_OBJECTS_ADDITIONS_SIZE = 24049
+
+
+def restore_variant_and_any_objects_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_AND_ANY_OBJECTS_REGISTERED_SHA256, R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SHA256}
+    stop = R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_AND_ANY_OBJECTS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_AND_ANY_OBJECTS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody) {\n  const auto Source = tmpFile("variant-emplace-source-owned-record.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody) {\n  const auto Source = tmpFile("variant-emplace-source-owned-record.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantEmplaceSourceOwnedRecordRejected) {\n  const auto Source = tmpFile("variant-emplace-source-owned-record.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantAggregateAlternativeRunsAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-class-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nstruct Payload { int field; };\nextern "C" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-class-alternative.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-class-alternative" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantAggregateAlternativeRunsAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-class-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nstruct Payload { int field; };\nextern "C" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-class-alternative.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-class-alternative" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2VariantObjectsClassAlternativeRejected) {\n  const auto Source = tmpFile("variant-objects-class-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nstruct Payload { int field; };\nextern "C" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantVisitReferenceResultAcceptsFunctionBody) {\n  const auto Source = tmpFile("variant-visit-alternatives-reference-result.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantVisitReferenceResultAcceptsFunctionBody) {\n  const auto Source = tmpFile("variant-visit-alternatives-reference-result.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantVisitAlternativesReferenceResultRejected) {\n  const auto Source = tmpFile("variant-visit-alternatives-reference-result.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_AND_ANY_OBJECTS_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_AND_ANY_OBJECTS_REGISTERED_SHA256
+             else R19_VARIANT_AND_ANY_OBJECTS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -3524,6 +3554,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_AND_ANY_OBJECTS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

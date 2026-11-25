@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_and_any_objects_registered = cls.registered
+        cls.variant_and_any_objects_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_and_any_objects_original = cls.adapter.restore_original_gtests(cls.variant_and_any_objects_registered,
+                                                                        cls.variant_and_any_objects_suffix)
+        cls.registered = cls.adapter.restore_variant_and_any_objects_history(cls.variant_and_any_objects_registered)
         cls.variant_temporaries_and_any_references_registered = cls.registered
         cls.variant_temporaries_and_any_references_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_temporaries_and_any_references_original = cls.adapter.restore_original_gtests(cls.variant_temporaries_and_any_references_registered,
@@ -3728,6 +3733,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_temporaries_and_any_references_history(self.variant_temporaries_and_any_references_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_temporaries_and_any_references_registered, self.variant_temporaries_and_any_references_suffix + b' ')
+
+
+    def test_variant_and_any_objects_retains_published_bodies(self):
+        self.assertEqual(self.variant_and_any_objects_original + self.variant_and_any_objects_suffix, self.variant_and_any_objects_registered)
+        self.assertEqual(self.adapter.restore_variant_and_any_objects_history(self.variant_and_any_objects_original),
+                         self.variant_temporaries_and_any_references_original)
+        output, evidence = self.extractor.extract(self.variant_and_any_objects_original, ['TranslateTest.CoreV2VariantVisitMutableReferenceResultAliasesPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitConstReferenceResultSelectsOverloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitRvalueReferenceResultPreservesIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AnyRepeatedActiveValueAndReferenceCastsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyRepeatedActiveCastsReferenceSameSlotRunAtBothOptimizations', 'TranslateTest.CoreV2AnyRepeatedActiveCastInLoopRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTrivialAggregateDefaultInitializesMembersRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTrivialAggregateInPlaceCopyPreservesMembersRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTrivialAggregateCopyPreservesActivePayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAggregateMutablePayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitConstAggregateSelectsOverloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitMultipleLiveAggregatePayloadsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantAggregateEmplaceDefaultPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantAggregateEmplaceCopiesPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitReferenceResultBorrowsTemporaryGuardRejected', 'TranslateTest.CoreV2VariantVisitVolatileReferenceResultGuardRejected', 'TranslateTest.CoreV2AnyRepeatedActiveCastsWithResetGuardRejected', 'TranslateTest.CoreV2AnyRepeatedActiveCastsWithRetaggingGuardRejected', 'TranslateTest.CoreV2AnyRepeatedActiveCastsWithWrongSiblingGuardRejected', 'TranslateTest.CoreV2VariantUncheckedBitFieldRecordAlternativeGuardRejected', 'TranslateTest.CoreV2VariantNontrivialRecordInitializationGuardRejected', 'TranslateTest.CoreV2VariantVisitAggregateTemporaryReferenceGuardRejected', 'TranslateTest.CoreV2VariantVisitAggregateImplicitCopyGuardRejected', 'TranslateTest.CoreV2VariantVisitVolatileAggregateReferenceGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9043)
+        self.assertEqual(evidence['selected_count'], 24)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-mutable-reference-result-aliases-payload', output)
+        self.assertIn(b'variant-aggregate-emplace-copies-payload', output)
+
+    def test_variant_and_any_objects_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_and_any_objects_history(self.variant_and_any_objects_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_and_any_objects_registered, self.variant_and_any_objects_suffix + b' ')
 
 
 if __name__ == '__main__':

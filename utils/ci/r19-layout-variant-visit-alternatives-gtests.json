@@ -31,6 +31,15 @@
       "source_sha256": "9214fe1e9611dc5299abe81886fa3f48d91bec637673f12511edec684772fab5",
       "original_case_source_sha256": "9214fe1e9611dc5299abe81886fa3f48d91bec637673f12511edec684772fab5",
       "gtest_body_sha256": "73e447e60789faea56341e3169580fe95a6466d8869852c5b20a0640335a769f"
+    },
+    {
+      "name": "variant-visit-alternatives-reference-result",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitReferenceResultAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5",
+      "original_case_source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5",
+      "gtest_body_sha256": "d78033fa4cb89e3d19b4be941dea6650b955cb41e28d52960392cc4df9843e6e",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -57,14 +66,6 @@
       "source_sha256": "b2838cde1a4412115fd3d4b83f3a7616a46d412ac2ff48eba2fef00640157ad3",
       "original_case_source_sha256": "b2838cde1a4412115fd3d4b83f3a7616a46d412ac2ff48eba2fef00640157ad3",
       "gtest_body_sha256": "15bb1b81ded414c7eac31015c00f66989372f89714dda4efe42bff02bb1c01e7"
-    },
-    {
-      "name": "variant-visit-alternatives-reference-result",
-      "formal_test_name": "TranslateTest.CoreV2VariantVisitAlternativesReferenceResultRejected",
-      "expected": "reject",
-      "source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5",
-      "original_case_source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5",
-      "gtest_body_sha256": "c11f76f38bf4455a1d552eab8f5780ad9ea394d946e7a0b8830259ea21c21184"
     }
   ],
   "source_cases": [
@@ -101,6 +102,14 @@
       "source_sha256": "9214fe1e9611dc5299abe81886fa3f48d91bec637673f12511edec684772fab5"
     },
     {
+      "name": "variant-visit-alternatives-reference-result",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n",
+      "source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5"
+    },
+    {
       "name": "variant-visit-alternatives-renamed-exhaustive-check",
       "expected": "reject",
       "public_header": "variant",
@@ -123,14 +132,6 @@
       "kind": "source-body-guard",
       "source": "#include <variant>\nint read(const volatile int& value) { return value; }\nint f(std::variant<int>& state) { return std::visit(read, state); }\n",
       "source_sha256": "b2838cde1a4412115fd3d4b83f3a7616a46d412ac2ff48eba2fef00640157ad3"
-    },
-    {
-      "name": "variant-visit-alternatives-reference-result",
-      "expected": "reject",
-      "public_header": "variant",
-      "kind": "source-body-guard",
-      "source": "#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n",
-      "source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5"
     }
   ],
   "new_gtest_names": [
@@ -138,10 +139,10 @@
     "TranslateTest.CoreV2VariantVisitAlternativesMixedConstAndMutableBindingsRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantVisitAlternativesMonostateValueCopyRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantVisitAlternativesExactPointerAndFloatingAlternativesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitReferenceResultAcceptsFunctionBody",
     "TranslateTest.CoreV2VariantVisitAlternativesRenamedExhaustiveCheckRejected",
     "TranslateTest.CoreV2VariantVisitAlternativesReferenceToConvertedTemporaryRejected",
-    "TranslateTest.CoreV2VariantVisitAlternativesVolatileReferenceRejected",
-    "TranslateTest.CoreV2VariantVisitAlternativesReferenceResultRejected"
+    "TranslateTest.CoreV2VariantVisitAlternativesVolatileReferenceRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -160,5 +161,5 @@
     "variant-visit-alternatives": "47b6eb40b4b1e406e9e19f0c1b81c9ee8afa0aaa14b17225a9e75f717422a18b"
   },
   "native_reference_authentication_sha256": "f64b24b4e51ea2ba6061d574fcbcf274e35f914b8ed9fab8ff0572b85c8d64f6",
-  "source_proof_sha256": "bc286561b266fb7ff7eb4a3cc4ffd60f8280224e93f3e2a377fc43a224a2fe6b"
+  "source_proof_sha256": "5d91a6a9065074b92e3ed7473b63e2d5f9fed7aba021ba3d3734017810ba7f10"
 }

@@ -18550,3 +18550,12 @@ expression. The selected visitor takes the temporary's active alternative
 by value. Mutable any casts bind to the existing inline scalar slot after
 the translator has verified the exact initialized payload type and the
 owner's single use. The resulting reference can update that slot.
+
+## Variant aggregates and reference visitors
+
+A variant can store a checked source-owned trivial aggregate. Default
+construction, copying and emplacement preserve the active payload and
+its layout. A checked visitor can return a reference to a live variant
+payload. A visitor can also take a trivial aggregate payload by const
+or mutable reference. Repeated casts on a local any use its initialized
+inline slot while the compiler can prove its active type.
