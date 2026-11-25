@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-float-inline-pointer-write",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatInlinePointerWriteRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3ccbaac46c4d5cb29acdafc2d40b5acc1bae0cb61629ed721c7569e6192e6941",
+      "original_case_source_sha256": "3ccbaac46c4d5cb29acdafc2d40b5acc1bae0cb61629ed721c7569e6192e6941",
+      "gtest_body_sha256": "533afd6d27cf0cea2bf3919cceec76c0f8d887e62093336d2b9184e86049a4fa"
+    },
+    {
+      "name": "any-float-inline-immutable-value",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatInlineImmutableValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ebccb3f2ff3d00b6cf7f23c0e9208e44799d170efc77bf0fe511b2cbdc6cdb98",
+      "original_case_source_sha256": "ebccb3f2ff3d00b6cf7f23c0e9208e44799d170efc77bf0fe511b2cbdc6cdb98",
+      "gtest_body_sha256": "f44aa948b757f60c7831da6475c394f3478731905ca95cca5297f870ca2363f7"
+    },
+    {
+      "name": "any-float-inline-factory-emplace-reset",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatInlineFactoryEmplaceResetRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1ba3fe601d6c59fb3b005152b4b723c77158cf2c0ec5decf96afa8986d6edacd",
+      "original_case_source_sha256": "1ba3fe601d6c59fb3b005152b4b723c77158cf2c0ec5decf96afa8986d6edacd",
+      "gtest_body_sha256": "055c4efe2e9d98e96ec9a60abd9c8ab159f9f6b43d49b2c4bca170b916219a9f"
+    },
+    {
+      "name": "any-float-inline-copy-move-and-assign",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatInlineCopyMoveAndAssignRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ce4c0ed665beedd37504c72ca0dcf34cfae6698d47b782c58949497848018922",
+      "original_case_source_sha256": "ce4c0ed665beedd37504c72ca0dcf34cfae6698d47b782c58949497848018922",
+      "gtest_body_sha256": "ededa2ea49d2ce460b022463e408f5e977a59751be10110fee410e8ff88ba372"
+    },
+    {
+      "name": "any-float-inline-mutable-reference",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatMutableReferenceAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac",
+      "original_case_source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac",
+      "gtest_body_sha256": "2d299dae54f16cbf7aa3837cc33f4e857db65ffef1f134008a256a18efb52d21",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-float-inline-long-double-owner",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatInlineLongDoubleOwnerRejected",
+      "expected": "reject",
+      "source_sha256": "c0269975181a7672ef2c6f9eb5b110eb945cd34fc310183fd4a448f7bc9ddd99",
+      "original_case_source_sha256": "c0269975181a7672ef2c6f9eb5b110eb945cd34fc310183fd4a448f7bc9ddd99",
+      "gtest_body_sha256": "f4bb67c28ab89b6a87400cc61071be12cbbb6aaeb87554d4f174d5b12c8afdb5"
+    },
+    {
+      "name": "any-float-inline-unknown-active-value",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatInlineUnknownActiveValueRejected",
+      "expected": "reject",
+      "source_sha256": "0841afe5e40c995e34e4b7d62a9acde90419d70a8c97144e2f5ce02cb0b64507",
+      "original_case_source_sha256": "0841afe5e40c995e34e4b7d62a9acde90419d70a8c97144e2f5ce02cb0b64507",
+      "gtest_body_sha256": "0b43ea9ddd73c2a282cdc26615b3188f643aaa58ba4a6ef6c7613639d7bcbbe7"
+    },
+    {
+      "name": "any-float-inline-mismatched-immutable-value",
+      "formal_test_name": "TranslateTest.CoreV2AnyFloatInlineMismatchedImmutableValueRejected",
+      "expected": "reject",
+      "source_sha256": "7589ac4b5a22618124746a6430fabdeab01eefafa30fc179a43a2cc8e0d6b731",
+      "original_case_source_sha256": "7589ac4b5a22618124746a6430fabdeab01eefafa30fc179a43a2cc8e0d6b731",
+      "gtest_body_sha256": "27f738a44db5fa574e39e4602e48a3a9f061fbc9ed32df6a0f323a091e23c39a"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "any-float-inline-pointer-write",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  std::any value{1.25f};\n  float* slot = std::any_cast<float>(&value);\n  if (!slot || *slot != 1.25f || std::any_cast<double>(&value)) return 1;\n  *slot = 2.5f;\n  const std::any* view = &value;\n  const float* saved = std::any_cast<float>(view);\n  return !saved || *saved != 2.5f || std::any_cast<bool>(&value);\n}\n",
+      "source_sha256": "3ccbaac46c4d5cb29acdafc2d40b5acc1bae0cb61629ed721c7569e6192e6941"
+    },
+    {
+      "name": "any-float-inline-immutable-value",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  const std::any value(std::in_place_type<float>, 1.5f);\n  float copied = std::any_cast<float>(value);\n  const float& viewed = std::any_cast<const float&>(value);\n  return copied != 1.5f || viewed != copied;\n}\n",
+      "source_sha256": "ebccb3f2ff3d00b6cf7f23c0e9208e44799d170efc77bf0fe511b2cbdc6cdb98"
+    },
+    {
+      "name": "any-float-inline-factory-emplace-reset",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  auto value = std::make_any<float>(3.25f);\n  auto* first = std::any_cast<float>(&value);\n  if (!first || *first != 3.25f) return 1;\n  value.emplace<unsigned int>(7u);\n  if (std::any_cast<float>(&value)) return 2;\n  float& second = value.emplace<float>(-0.5f);\n  if (second != -0.5f || std::any_cast<unsigned int>(&value)) return 3;\n  value.reset();\n  return value.has_value() || std::any_cast<float>(&value) != nullptr;\n}\n",
+      "source_sha256": "1ba3fe601d6c59fb3b005152b4b723c77158cf2c0ec5decf96afa8986d6edacd"
+    },
+    {
+      "name": "any-float-inline-copy-move-and-assign",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  std::any source{4.75f};\n  std::any copy = source;\n  std::any moved = static_cast<std::any&&>(copy);\n  std::any target{false};\n  target = moved;\n  auto* a = std::any_cast<float>(&source);\n  auto* b = std::any_cast<float>(&target);\n  if (!a || !b || *a != 4.75f || *b != 4.75f) return 1;\n  target = true;\n  auto* flag = std::any_cast<bool>(&target);\n  return !flag || !*flag || std::any_cast<float>(&target) != nullptr;\n}\n",
+      "source_sha256": "ce4c0ed665beedd37504c72ca0dcf34cfae6698d47b782c58949497848018922"
+    },
+    {
+      "name": "any-float-inline-mutable-reference",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nfloat edit() {\n  std::any value{1.5f};\n  return ++std::any_cast<float&>(value);\n}\n",
+      "source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac"
+    },
+    {
+      "name": "any-float-inline-long-double-owner",
+      "expected": "reject",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source": "#include <any>\nint main() {\n  auto value = std::make_any<long double>(1.0L);\n  return !value.has_value();\n}\n",
+      "source_sha256": "c0269975181a7672ef2c6f9eb5b110eb945cd34fc310183fd4a448f7bc9ddd99"
+    },
+    {
+      "name": "any-float-inline-unknown-active-value",
+      "expected": "reject",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source": "#include <any>\nfloat read(const std::any& value) { return std::any_cast<float>(value); }\n",
+      "source_sha256": "0841afe5e40c995e34e4b7d62a9acde90419d70a8c97144e2f5ce02cb0b64507"
+    },
+    {
+      "name": "any-float-inline-mismatched-immutable-value",
+      "expected": "reject",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source": "#include <any>\nfloat read() {\n  const std::any value{1u};\n  return std::any_cast<float>(value);\n}\n",
+      "source_sha256": "7589ac4b5a22618124746a6430fabdeab01eefafa30fc179a43a2cc8e0d6b731"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyFloatInlinePointerWriteRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFloatInlineImmutableValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFloatInlineFactoryEmplaceResetRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFloatInlineCopyMoveAndAssignRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFloatMutableReferenceAcceptsFunctionBody",
+    "TranslateTest.CoreV2AnyFloatInlineLongDoubleOwnerRejected",
+    "TranslateTest.CoreV2AnyFloatInlineUnknownActiveValueRejected",
+    "TranslateTest.CoreV2AnyFloatInlineMismatchedImmutableValueRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "c36266a7928342a5d83595fd908886b67fb1cbb2748be1f9299b981d25b866b2",
+  "maintained_original_sha256": "5ef4d0491c68e82841467b5fd534a89ec5330e0220fc1c33babab7cf342c9e37",
+  "previous_registered_source_sha256": "5a11ec42863f8163b0bbc9ccd2394433bff0c33ae95e5d66534a82c224916271",
+  "previous_maintained_original_sha256": "4ea24098e82989877d78a96781e0fcd959889139da7c31491c27a2eceb946f60",
+  "restorer_sha256": "8674bbe83cc7741c1ee7d3ddfadaeb7683d24567852b5f0185fc91e79d80859a",
+  "extractor_sha256": "396122a9d583fa6d8580d97efc0a62af81cd67ec1d39014f811ad8ee9d23a5dc",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8334,
+  "current_python_registry_tests": 170,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "any-float-inline": "a2fa22dff59b7ddf67741d9437a84a047d379e615608ca024fa55c2d78bfcf66"
+  },
+  "native_reference_authentication_sha256": "2c8942cc7af5a4014d7d85f45df4376e75873cf53387c9874671b84082a2f315",
+  "source_proof_sha256": "97a9eb6f2bf9596a2ee3dcba58637750db04adcf1b9ea008d66db4130f225e10"
+}
