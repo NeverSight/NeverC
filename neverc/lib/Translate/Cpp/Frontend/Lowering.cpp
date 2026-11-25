@@ -27214,6 +27214,38 @@ class FunctionLowering {
     releaseForwardListChain(Output, Info, L);
     jump(Done, L); label(Done, L);
   }
+  Expression mergeForwardListChains(Expression LeftHead, Expression RightHead, SourceLocation L) {
+    auto Left = snapshot(std::move(LeftHead), L), Right = snapshot(std::move(RightHead), L);
+    auto Head = temporary("ptr:void", L);
+    auto Link = snapshot(address(Head, A.Context.VoidPtrTy, L), L);
+    auto Item = temporary("ptr:void", L);
+    const auto Check = labelName(), Compare = labelName(), PickLeft = labelName();
+    const auto PickRight = labelName(), Attach = labelName(), Tail = labelName();
+    const auto LeftTail = labelName(), RightTail = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(binary("&&", cast(Left, "bool", L), cast(Right, "bool", L), "bool", L), Compare, Tail, L);
+    label(Compare, L);
+    // Equal elements from the destination precede those from the source.
+    branch(binary("<", forwardListValue(Right, true, L), forwardListValue(Left, true, L), "bool", L),
+        PickRight, PickLeft, L);
+    label(PickLeft, L);
+    assign(Item, Left, L);
+    assign(Left, forwardListNext(Left, L), L);
+    jump(Attach, L); label(PickRight, L);
+    assign(Item, Right, L);
+    assign(Right, forwardListNext(Right, L), L);
+    jump(Attach, L); label(Attach, L);
+    assign(dereference(Link, L), Item, L);
+    assign(Link, address(forwardListNext(Item, L), A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Tail, L);
+    branch(cast(Left, "bool", L), LeftTail, RightTail, L);
+    label(LeftTail, L);
+    assign(dereference(Link, L), Left, L);
+    jump(Done, L); label(RightTail, L);
+    assign(dereference(Link, L), Right, L);
+    jump(Done, L); label(Done, L);
+    return Head;
+  }
   void transferForwardListStorage(Expression Place, Expression Source, SourceLocation L) {
     auto Head = snapshot(forwardListMember(Source, false, L), L);
     assign(forwardListMember(Place, false, L), std::move(Head), L);
@@ -27306,6 +27338,19 @@ class FunctionLowering {
       auto Current = snapshot(cast(Operands[0], Pointer, L), L);
       auto End = snapshot(cast(Operands[1], Pointer, L), L);
       assignForwardListStorage(Place, {std::move(Current), std::move(End), ForwardListInput::PointerRange}, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Merge) {
+      const auto Merge = labelName(), Done = labelName();
+      branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(Operands.front(), "ptr:void", L), "bool", L),
+          Merge, Done, L);
+      label(Merge, L);
+      auto Destination = forwardListMember(Place, false, L);
+      auto Source = forwardListMember(dereference(Operands.front(), L), false, L);
+      auto Head = mergeForwardListChains(Destination, Source, L);
+      assign(Destination, Head, L);
+      initializeZero(Source, A.Context.VoidPtrTy, L);
+      jump(Done, L); label(Done, L);
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::MoveAssign) {
