@@ -56387,6 +56387,8 @@ std::optional<UtilityListOperation> listMethodSignature(
         return Name == "front" ? UtilityListOperation::Front : UtilityListOperation::Back;
       if (!M->isConst() && M->getReturnType()->isVoidType()) {
         if (Name == "clear") return UtilityListOperation::Clear;
+        if (Name == "reverse" && M->getRefQualifier() == RQ_None)
+          return UtilityListOperation::Reverse;
         if (Name == "pop_front") return UtilityListOperation::PopFront;
         if (Name == "pop_back") return UtilityListOperation::PopBack;
       }
@@ -56396,9 +56398,13 @@ std::optional<UtilityListOperation> listMethodSignature(
         listIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return Name == "push_front" ? UtilityListOperation::PushFront : UtilityListOperation::PushBack;
     if (!listIteratorType(S, SM, M->getReturnType(), Owner->Node, false, Context)) return std::nullopt;
-    if (Name == "erase" && M->getNumParams() == 1 &&
-        listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context))
-      return UtilityListOperation::Erase;
+    if (Name == "erase" && M->getRefQualifier() == RQ_None &&
+        (M->getNumParams() == 1 || M->getNumParams() == 2) &&
+        listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context)) {
+      if (M->getNumParams() == 1) return UtilityListOperation::Erase;
+      if (listIteratorType(S, SM, M->getParamDecl(1)->getType(), Owner->Node, true, Context))
+        return UtilityListOperation::EraseRange;
+    }
     if (Name == "insert" && M->getNumParams() == 2 &&
         listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
         listIntegerValueParameter(M->getParamDecl(1)->getType(), Context))

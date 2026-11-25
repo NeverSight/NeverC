@@ -29049,6 +29049,28 @@ class FunctionLowering {
     return Next;
   }
 
+  void listEraseRange(Expression Place, Expression First, Expression End,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Unlink = labelName(), Release = labelName(), Done = labelName();
+    branch(binary("!=", First, End, "bool", L), Unlink, Done, L);
+    label(Unlink, L);
+    auto Before = snapshot(listLink(First, true, L), L);
+    assign(listLink(Before, false, L), End, L);
+    assign(listLink(End, true, L), Before, L);
+    auto Current = temporary("ptr:void", L);
+    assign(Current, First, L);
+    jump(Release, L);
+    label(Release, L);
+    auto Removed = snapshot(Current, L);
+    assign(Current, snapshot(listLink(Removed, false, L), L), L);
+    auto Count = listMember(Place, "nct_list_size", L);
+    assign(Count, binary("-", Count, quantity(1, Size, L), Size, L), L);
+    listReleaseNode(Removed, Info, L);
+    branch(binary("!=", Current, End, "bool", L), Release, Done, L);
+    label(Done, L);
+  }
+
   void destroyListStorage(Expression Place, const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Release = labelName(), Check = labelName(), Element = labelName(), Done = labelName();
     const auto Size = type(A.Context.getSizeType(), L);
@@ -29127,6 +29149,32 @@ class FunctionLowering {
     };
     Install(Left, RightFirst, RightLast, RightSize, LeftEnd);
     Install(Right, LeftFirst, LeftLast, LeftSize, RightEnd);
+  }
+
+  void reverseListStorage(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Start = labelName(), SwapLinks = labelName(), SwapSentinel = labelName(), Done = labelName();
+    branch(binary(">", listMember(Place, "nct_list_size", L), quantity(1, Size, L), "bool", L),
+           Start, Done, L);
+    label(Start, L);
+    auto Sentinel = snapshot(listSentinel(Place, L), L);
+    auto Node = temporary("ptr:void", L);
+    assign(Node, listMember(Place, "nct_list_next", L), L);
+    jump(SwapLinks, L);
+    label(SwapLinks, L);
+    auto Previous = snapshot(listLink(Node, true, L), L);
+    auto Next = snapshot(listLink(Node, false, L), L);
+    assign(listLink(Node, true, L), Next, L);
+    assign(listLink(Node, false, L), Previous, L);
+    assign(Node, Next, L);
+    branch(binary("!=", Node, Sentinel, "bool", L), SwapLinks, SwapSentinel, L);
+    label(SwapSentinel, L);
+    auto Last = snapshot(listMember(Place, "nct_list_prev", L), L);
+    auto First = snapshot(listMember(Place, "nct_list_next", L), L);
+    assign(listMember(Place, "nct_list_prev", L), First, L);
+    assign(listMember(Place, "nct_list_next", L), Last, L);
+    jump(Done, L);
+    label(Done, L);
   }
 
   void listAssignValueStorage(Expression Place, Expression Source,
@@ -29267,6 +29315,10 @@ class FunctionLowering {
     if (Operation == UtilityListOperation::Front || Operation == UtilityListOperation::Back)
       return listValue(snapshot(listMember(Place,
           Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Method->isConst(), L);
+    if (Operation == UtilityListOperation::Reverse) {
+      reverseListStorage(Place, L);
+      return Expression{};
+    }
     if (Operation == UtilityListOperation::Clear) {
       destroyListStorage(Place, Owner->Node, L);
       return Expression{};
@@ -29282,6 +29334,12 @@ class FunctionLowering {
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);
       return Insert ? listIterator(Method->getReturnType(), Node, L) : Expression{};
+    }
+    if (Operation == UtilityListOperation::EraseRange) {
+      auto First = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
+      auto End = snapshot(listIteratorMember(dereference(Operands[1], L), L), L);
+      listEraseRange(Place, First, End, Owner->Node, L);
+      return listIterator(Method->getReturnType(), End, L);
     }
     const bool Erase = Operation == UtilityListOperation::Erase;
     if (Erase || Operation == UtilityListOperation::PopFront || Operation == UtilityListOperation::PopBack) {
