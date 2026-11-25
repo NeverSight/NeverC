@@ -41245,6 +41245,18 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return;
       }
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
+      if (*Kind == UtilityForwardListConstruction::Count) {
+        auto Zero = temporary(type(A.Context.IntTy, L), L);
+        initializeZero(Zero, A.Context.IntTy, L);
+        resizeForwardListStorage(Place, Operands[0], address(Zero, A.Context.IntTy, L), Owner->Node, L);
+        return;
+      }
+      if (*Kind == UtilityForwardListConstruction::FillCount) {
+        auto Count = snapshot(cast(Operands[0], "u64", L), L);
+        insertForwardListChain(forwardListMember(Place, false, L),
+            {Operands[1], std::move(Count), ForwardListInput::RepeatedValue}, Owner->Node, L);
+        return;
+      }
       if (*Kind == UtilityForwardListConstruction::Copy) {
         auto Head = snapshot(forwardListMember(dereference(Operands.front(), L), false, L), L);
         insertForwardListChain(forwardListMember(Place, false, L), {std::move(Head), std::nullopt}, Owner->Node, L);
