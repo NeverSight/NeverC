@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-swap-monostate-and-integer",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapMonostateAndIntegerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "be54aa31b44d672959b005b312d1dd59b78385431ed5865c0e3e3d65f14c8d44",
+      "original_case_source_sha256": "be54aa31b44d672959b005b312d1dd59b78385431ed5865c0e3e3d65f14c8d44",
+      "gtest_body_sha256": "9f9cde8b673a1f87fcbbeb6e350430d094ad86965b9f4bbf7f8fbec8c55472a7"
+    },
+    {
+      "name": "variant-swap-built-in-pointer-with-null",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapBuiltInPointerWithNullRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "529f23e151da2f5a41c24ed6e94bb474915d06afabaaa7590c7ce7a4f1451ec0",
+      "original_case_source_sha256": "529f23e151da2f5a41c24ed6e94bb474915d06afabaaa7590c7ce7a4f1451ec0",
+      "gtest_body_sha256": "8552c2a38c61074e6fe7e0cd4474730a31acac6123d5dddbe74ad0a9ac8c0a44"
+    },
+    {
+      "name": "variant-swap-nullptr-and-void-pointer",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapNullptrAndVoidPointerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "323d769b5e70824056b1e4bc912daeffc20e50f1a7c47443ca4b7e1e85f502c6",
+      "original_case_source_sha256": "323d769b5e70824056b1e4bc912daeffc20e50f1a7c47443ca4b7e1e85f502c6",
+      "gtest_body_sha256": "5edfa8cb16a0358b20e5a0615e2bcb24ab15a1df78a77620829f6cc175b9eb6b"
+    },
+    {
+      "name": "variant-swap-self-with-duplicate-monostate",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapSelfWithDuplicateMonostateRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4129801a403f6dc985c5bf92f469b9e171385325dfe85ab78ca5c5c1df9d705e",
+      "original_case_source_sha256": "4129801a403f6dc985c5bf92f469b9e171385325dfe85ab78ca5c5c1df9d705e",
+      "gtest_body_sha256": "27de31065ec7a608c7a91cfaca98f6795266825450ff58af550c23acf91681bd"
+    },
+    {
+      "name": "any-int-pointer-mutable-slot-and-cv-identity",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntPointerMutableSlotAndCvIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "446d3d7f69977182f904b8e0a5196a8e7aa213bb5754587322c749979de796f1",
+      "original_case_source_sha256": "446d3d7f69977182f904b8e0a5196a8e7aa213bb5754587322c749979de796f1",
+      "gtest_body_sha256": "a02b456d64e1506b78d0791de1debb8468c53a4d472fe54b87846988a194fd2c"
+    },
+    {
+      "name": "any-const-int-and-bool-pointers-swap",
+      "formal_test_name": "TranslateTest.CoreV2AnyConstIntAndBoolPointersSwapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5e46bee0523ae64b35941e1fc1a01e8af43d1a1132a88130bbfa953ffa39d902",
+      "original_case_source_sha256": "5e46bee0523ae64b35941e1fc1a01e8af43d1a1132a88130bbfa953ffa39d902",
+      "gtest_body_sha256": "1a43bbafcae27cc752e4a6a2f32c248db3edfe70079f76ee9540a70f1e570244"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-swap-unchecked-associated-pointer-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapUncheckedAssociatedPointerGuardRejected",
+      "expected": "reject",
+      "source_sha256": "94c1505db2076c780f57ff2b11b3ccde7cb8b1e1ddd6368132dd0eb5b2d8f630",
+      "original_case_source_sha256": "94c1505db2076c780f57ff2b11b3ccde7cb8b1e1ddd6368132dd0eb5b2d8f630",
+      "gtest_body_sha256": "edf077d94c366ae08913bfa110ed9bf6b3ce7257682c6063c1b7b047b5ac19a0"
+    },
+    {
+      "name": "variant-swap-unchecked-associated-enum-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapUncheckedAssociatedEnumGuardRejected",
+      "expected": "reject",
+      "source_sha256": "7dd65e1ce59e86a507b1127d642d7323a4d6f51be9552190383790c1ef7d83d5",
+      "original_case_source_sha256": "7dd65e1ce59e86a507b1127d642d7323a4d6f51be9552190383790c1ef7d83d5",
+      "gtest_body_sha256": "a0dd37c85d66790754872b40c73d322532b1eda6b7e68c2322aa6a803722b041"
+    },
+    {
+      "name": "any-unchecked-record-pointer-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyUncheckedRecordPointerPayloadGuardRejected",
+      "expected": "reject",
+      "source_sha256": "142d3067db562341619fa7b3ff04d085f5374074599d3a2120afa11e9db8b7fd",
+      "original_case_source_sha256": "142d3067db562341619fa7b3ff04d085f5374074599d3a2120afa11e9db8b7fd",
+      "gtest_body_sha256": "9ed05892058154ca78a0c46bff2883eb1ebc2a877831759739a2450200d2ae9e"
+    },
+    {
+      "name": "any-unchecked-volatile-int-pointer-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyUncheckedVolatileIntPointerPayloadGuardRejected",
+      "expected": "reject",
+      "source_sha256": "3065badd5df55764034c292196aca053005c610eebe6615682cf9a049f301cce",
+      "original_case_source_sha256": "3065badd5df55764034c292196aca053005c610eebe6615682cf9a049f301cce",
+      "gtest_body_sha256": "b1c8e9ca51be0695e87bec1427d6e31d2ca2b0e921177a79928ec0e095e7ac7f"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-swap-monostate-and-integer",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<std::monostate, int>;\n  Value empty, number{33};\n  empty.swap(number);\n  const auto* count = std::get_if<1>(&empty);\n  if (!count || *count != 33 || !std::get_if<0>(&number)) return 1;\n  std::swap(empty, number);\n  count = std::get_if<1>(&number);\n  return !std::get_if<0>(&empty) || !count || *count != 33;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "be54aa31b44d672959b005b312d1dd59b78385431ed5865c0e3e3d65f14c8d44"
+    },
+    {
+      "name": "variant-swap-built-in-pointer-with-null",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  const int count = 15;\n  using Value = std::variant<int, const int*>;\n  Value left{&count}, right{static_cast<const int*>(nullptr)};\n  auto* first = std::get_if<1>(&left);\n  auto* second = std::get_if<1>(&right);\n  if (!first || !second) return 1;\n  left.swap(right);\n  return std::get_if<1>(&left) != first || std::get_if<1>(&right) != second ||\n         *first != nullptr || *second != &count;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "529f23e151da2f5a41c24ed6e94bb474915d06afabaaa7590c7ce7a4f1451ec0"
+    },
+    {
+      "name": "variant-swap-nullptr-and-void-pointer",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  int data = 82;\n  using Value = std::variant<void*, decltype(nullptr)>;\n  Value left{std::in_place_index<0>, &data};\n  Value right{std::in_place_index<1>};\n  std::swap(left, right);\n  auto* pointer = std::get_if<0>(&right);\n  return !std::get_if<1>(&left) || !pointer || *pointer != &data;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "323d769b5e70824056b1e4bc912daeffc20e50f1a7c47443ca4b7e1e85f502c6"
+    },
+    {
+      "name": "variant-swap-self-with-duplicate-monostate",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<std::monostate, std::monostate>;\n  Value object{std::in_place_index<1>};\n  auto* address = std::get_if<1>(&object);\n  if (!address) return 1;\n  object.swap(object);\n  return object.index() != 1 || std::get_if<1>(&object) != address;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "4129801a403f6dc985c5bf92f469b9e171385325dfe85ab78ca5c5c1df9d705e"
+    },
+    {
+      "name": "any-int-pointer-mutable-slot-and-cv-identity",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  int first = 18, second = 52;\n  std::any value{&first};\n  auto* slot = std::any_cast<int*>(&value);\n  if (!slot || *slot != &first || std::any_cast<const int*>(&value) ||\n      std::any_cast<void*>(&value))\n    return 1;\n  *slot = &second;\n  const std::any& read = value;\n  const auto* address = std::any_cast<int*>(&read);\n  return address != slot || *address != &second;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "446d3d7f69977182f904b8e0a5196a8e7aa213bb5754587322c749979de796f1"
+    },
+    {
+      "name": "any-const-int-and-bool-pointers-swap",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  const int number = 39;\n  bool flag = false;\n  const int* pointer = &number;\n  std::any first{std::in_place_type<const int*>, pointer};\n  std::any second{&flag};\n  first.swap(second);\n  auto* boolean = std::any_cast<bool*>(&first);\n  auto* constant = std::any_cast<const int*>(&second);\n  if (!boolean || !constant || *boolean != &flag || *constant != &number ||\n      std::any_cast<int*>(&second) || std::any_cast<bool*>(&second))\n    return 1;\n  **boolean = true;\n  return !flag;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "5e46bee0523ae64b35941e1fc1a01e8af43d1a1132a88130bbfa953ffa39d902"
+    },
+    {
+      "name": "variant-swap-unchecked-associated-pointer-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nnamespace payload {\nstruct Item { int n; };\nvoid swap(Item*& left, Item*& right) noexcept { left = right; }\n}\nusing Value = std::variant<int, payload::Item*>;\nvoid exchange(Value& left, Value& right) { left.swap(right); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "94c1505db2076c780f57ff2b11b3ccde7cb8b1e1ddd6368132dd0eb5b2d8f630"
+    },
+    {
+      "name": "variant-swap-unchecked-associated-enum-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nnamespace payload {\nenum class Code { first, second };\nvoid swap(Code& left, Code& right) noexcept { left = right; }\n}\nusing Value = std::variant<int, payload::Code>;\nvoid exchange(Value& left, Value& right) { left.swap(right); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "7dd65e1ce59e86a507b1127d642d7323a4d6f51be9552190383790c1ef7d83d5"
+    },
+    {
+      "name": "any-unchecked-record-pointer-payload-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nstruct Payload { int data; };\nvoid hold(Payload* input) { std::any value{input}; }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "142d3067db562341619fa7b3ff04d085f5374074599d3a2120afa11e9db8b7fd"
+    },
+    {
+      "name": "any-unchecked-volatile-int-pointer-payload-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nvoid hold(volatile int* input) { std::any value{input}; }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "3065badd5df55764034c292196aca053005c610eebe6615682cf9a049f301cce"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantSwapMonostateAndIntegerRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSwapBuiltInPointerWithNullRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSwapNullptrAndVoidPointerRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSwapSelfWithDuplicateMonostateRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntPointerMutableSlotAndCvIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyConstIntAndBoolPointersSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSwapUncheckedAssociatedPointerGuardRejected",
+    "TranslateTest.CoreV2VariantSwapUncheckedAssociatedEnumGuardRejected",
+    "TranslateTest.CoreV2AnyUncheckedRecordPointerPayloadGuardRejected",
+    "TranslateTest.CoreV2AnyUncheckedVolatileIntPointerPayloadGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f77b76b823c42a24ca3a2cb9a60a3badfee0ac9ccce5d120234d1ffe55d959cd",
+  "maintained_original_sha256": "95cf9aef09bac395384e711aebe3775ea05f12f467f09c9123abab6b0e8aee35",
+  "previous_registered_source_sha256": "ab307d4382c7141bfefc6a90ff79c6b2262d0ee0c30bd8609c21853d384f9041",
+  "previous_maintained_original_sha256": "e83883bf27998e02e5d2916ccf055f341aec21a540bfcb6f9296597fa9cad1b4",
+  "restorer_sha256": "3be3b087641bb95aa4d9738d13a89e8716c7568756a9d2f45023fe864519b611",
+  "extractor_sha256": "3f8aad644dcdd8956e72e32f2f58efa95582dd76bea267fcc72e9f027fd3338a",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9008,
+  "current_python_registry_tests": 284,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "any-integer-pointer-values": "3cc63e628ea4625533ed2535b5a93c89b4d29439f9d68843e90ac9a2c66c9348",
+    "variant-swap-void-pointer-replay": "7cc782131e87916d742c366f6d10ac68affd3e3e44b456746310864bb846dcdc"
+  },
+  "native_reference_authentication_sha256": "a0819bafdca6cf20e2712f701ed27d93c11d1cf4cf901034fb0dd15af9829286",
+  "source_proof_sha256": "88ce911bdc45758f452228996e296e587fb083592380488a1e14db1b1a74d87e"
+}

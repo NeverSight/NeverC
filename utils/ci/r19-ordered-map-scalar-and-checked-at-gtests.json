@@ -1,0 +1,510 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-map-long-layout-follows-target-width",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapLongLayoutFollowsTargetWidthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "56cda1adc587dc9192226bd64c59627c01bf9cc0a87a8a5cc23d1cfb814d7e7d",
+      "original_case_source_sha256": "56cda1adc587dc9192226bd64c59627c01bf9cc0a87a8a5cc23d1cfb814d7e7d",
+      "gtest_body_sha256": "f473a9fe598cff675a2dce7cb317f58a4e5f11f2246b292d8179525911c22444"
+    },
+    {
+      "name": "ordered-map-unsigned-long-long-compares-above-signed-maximum",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapUnsignedLongLongComparesAboveSignedMaximumRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "eca6b394b85a8fc0bc5ff1332abf3a8fe818d1f464f4df1093048abd53f0a6e2",
+      "original_case_source_sha256": "eca6b394b85a8fc0bc5ff1332abf3a8fe818d1f464f4df1093048abd53f0a6e2",
+      "gtest_body_sha256": "d4fcfe7130c83e9af66a0ebb4ff50a48d087dc022dc88db346cdcf9c71004813"
+    },
+    {
+      "name": "ordered-map-uint-node-and-comparison",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapUintNodeAndComparisonRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4edf3102b02621e7cd10e4050e5a9f79d8f2d9dc07f6e89ab86d98f4bbb9863d",
+      "original_case_source_sha256": "4edf3102b02621e7cd10e4050e5a9f79d8f2d9dc07f6e89ab86d98f4bbb9863d",
+      "gtest_body_sha256": "054918d1afe879a2804b8bb4fd5b0973cebbbfa3817593990089f7586fcc100e"
+    },
+    {
+      "name": "ordered-map-ulong-and-size-t",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapUlongAndSizeTRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f08e13a0e8c5b6817a5d7d294822e84a4aa59ec0311eb5172d17442887a2cd92",
+      "original_case_source_sha256": "f08e13a0e8c5b6817a5d7d294822e84a4aa59ec0311eb5172d17442887a2cd92",
+      "gtest_body_sha256": "17376d0455e0c184cb291b14873cd2da5ee14a147d3d2a821a5f43651cd88388"
+    },
+    {
+      "name": "ordered-multimap-ushort-and-map-short",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapUshortAndMapShortRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3481a36d6b25cfc242098c89c9ba1f85bf2ae9ec2d4bae0e639ed6a25fcad61e",
+      "original_case_source_sha256": "3481a36d6b25cfc242098c89c9ba1f85bf2ae9ec2d4bae0e639ed6a25fcad61e",
+      "gtest_body_sha256": "a51c29e564813aceac8fbb1d247e4678ee2faed04f4377703afcc02c9317800d"
+    },
+    {
+      "name": "ordered-map-bool-and-character-values",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapBoolAndCharacterValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "768af3674ae62871aa19d28bc9c34fe073db21dee496e7a2c12936a521c8f146",
+      "original_case_source_sha256": "768af3674ae62871aa19d28bc9c34fe073db21dee496e7a2c12936a521c8f146",
+      "gtest_body_sha256": "68cbdb27c800045dbb6a3c5bc296e2d96d650ee665438e55776a481056d4e5b7"
+    },
+    {
+      "name": "climits-matches-cxx-integer-limits",
+      "formal_test_name": "TranslateTest.CoreV2ClimitsMatchesCxxIntegerLimitsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "68c711d3a65b16d570c9971c86ed5b7d2e1d4b5a6bbad2c14267f77dfa0cc678",
+      "original_case_source_sha256": "68c711d3a65b16d570c9971c86ed5b7d2e1d4b5a6bbad2c14267f77dfa0cc678",
+      "gtest_body_sha256": "8db8931c6bc050a381c1c741ec64942f4fca9ca666d54195dd29be7e98399cf2"
+    },
+    {
+      "name": "climits-long-width-follows-target",
+      "formal_test_name": "TranslateTest.CoreV2ClimitsLongWidthFollowsTargetRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c46d3906dcb1c572d5a4d2443590642d8bfb709215a71539fe1a72d0bec05651",
+      "original_case_source_sha256": "c46d3906dcb1c572d5a4d2443590642d8bfb709215a71539fe1a72d0bec05651",
+      "gtest_body_sha256": "6c112d3c5d0d4f61f269233ec4fb1fc03412f5a8dcbdd6b9dca967940fc520b2"
+    },
+    {
+      "name": "ordered-map-long-stores-climits-extremes",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapLongStoresClimitsExtremesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "493e170d93de95732b5eb0265881d919e28b5f4946c09ccfb5b275522dfd5276",
+      "original_case_source_sha256": "493e170d93de95732b5eb0265881d919e28b5f4946c09ccfb5b275522dfd5276",
+      "gtest_body_sha256": "df68960979861f9f8993dabea3e16a47af2937ab1b449189c71280053f24352e"
+    },
+    {
+      "name": "ordered-map-wide-unsigned-uses-climits-maximum",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapWideUnsignedUsesClimitsMaximumRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7693ef2d7152c1d49834ca3477c5909e013a1a6a487c3daa7ec257f273deff71",
+      "original_case_source_sha256": "7693ef2d7152c1d49834ca3477c5909e013a1a6a487c3daa7ec257f273deff71",
+      "gtest_body_sha256": "df4c30a3db17fd88039566ab157be690536b4f440db1f8fe6fdebeeb0db3ea4c"
+    },
+    {
+      "name": "ordered-map-at-find-ternary-on-const-reference",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtFindTernaryOnConstReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a6d77802d029c6f250a0e19bda1a5a997cc2cadecdc00b87f81d49dea72d7f3",
+      "original_case_source_sha256": "6a6d77802d029c6f250a0e19bda1a5a997cc2cadecdc00b87f81d49dea72d7f3",
+      "gtest_body_sha256": "5d3917e3f871404263bc3e4a7f475e4226649585df52af8990f70ddb8a5cd420"
+    },
+    {
+      "name": "ordered-map-at-if-returns-mutable-reference",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtIfReturnsMutableReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2ad9d9606c0dca29f2fc24103b5c9c3deb3e5c4cec6f68cbc1f844c07687d5e1",
+      "original_case_source_sha256": "2ad9d9606c0dca29f2fc24103b5c9c3deb3e5c4cec6f68cbc1f844c07687d5e1",
+      "gtest_body_sha256": "c65a92edcb56e8d28bed9f1bf67ab102a52329c0996b642feb407f9b1909049a"
+    },
+    {
+      "name": "ordered-map-at-if-preserves-wide-mapped-value",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtIfPreservesWideMappedValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4b28f0172221ba343ec655e146d0f1f01e9676fa0e4966faa3c7107568d08f24",
+      "original_case_source_sha256": "4b28f0172221ba343ec655e146d0f1f01e9676fa0e4966faa3c7107568d08f24",
+      "gtest_body_sha256": "9679c112ccd6f9e898f44d1cd062bb9d619806e00c1c8f85a54e9dcef62c5318"
+    },
+    {
+      "name": "ordered-map-at-mutable-ternary-does-not-insert",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtMutableTernaryDoesNotInsertRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ffcf1955c0d465b6f824d413cc376b24aec245e9038196389dda9765e4fe061a",
+      "original_case_source_sha256": "ffcf1955c0d465b6f824d413cc376b24aec245e9038196389dda9765e4fe061a",
+      "gtest_body_sha256": "2b2ca4363828692ad2bf6dee7f7f4134435e1c5cfb1dd604f0fec692f7a9b40b"
+    },
+    {
+      "name": "ordered-map-float-subscript-copy-and-node",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapFloatSubscriptCopyAndNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2c123f6c05e8b362d84bd5aad5844b529c9962b8ae8b327c0d7f907b7d7b235c",
+      "original_case_source_sha256": "2c123f6c05e8b362d84bd5aad5844b529c9962b8ae8b327c0d7f907b7d7b235c",
+      "gtest_body_sha256": "7c6bb269bb6ada8dfb4fe415f739f18dd82213e0d45ac603b46d772d10f36d3e"
+    },
+    {
+      "name": "ordered-multimap-double-piecewise-and-equal-keys",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapDoublePiecewiseAndEqualKeysRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "09671fd47cb91fb4f143020b34bb7cd93cdb8d284f2c94be27f4e834443f99bc",
+      "original_case_source_sha256": "09671fd47cb91fb4f143020b34bb7cd93cdb8d284f2c94be27f4e834443f99bc",
+      "gtest_body_sha256": "a5d545e1ea16f85c1138c80508143a7080de91b326f9b800f63362469b331fce"
+    },
+    {
+      "name": "ordered-map-double-comparison-advances-past-unordered-pair-typed-input",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairTypedInputRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d030808fb2df2fae6419e66583861dd9dfa72d225f4b3b180c58325111e1a250",
+      "original_case_source_sha256": "d030808fb2df2fae6419e66583861dd9dfa72d225f4b3b180c58325111e1a250",
+      "gtest_body_sha256": "8f56c8f2234ba1aedef9f4b271ddfecab5114fa069c238c9d8ff59bb32ddbc99"
+    },
+    {
+      "name": "ordered-map-double-comparison-advances-past-unordered-pair",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab",
+      "original_case_source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab",
+      "gtest_body_sha256": "31525b3467177c9acb0e2b36bffdd7e1f4786f34f2cfcf77df23edd65e8a71c0"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-map-const-long-mapped-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapConstLongMappedStorageGuardRejected",
+      "expected": "reject",
+      "source_sha256": "16072906859259a92a66a23318152ddd28cc36d1c950f98d1568452206519b15",
+      "original_case_source_sha256": "16072906859259a92a66a23318152ddd28cc36d1c950f98d1568452206519b15",
+      "gtest_body_sha256": "6b8506e3d1f4cf01ead5617f219f8c70c5e96765b77772326795a09c01505c2c"
+    },
+    {
+      "name": "ordered-map-unsigned-long-long-different-pair-leaf-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapUnsignedLongLongDifferentPairLeafGuardRejected",
+      "expected": "reject",
+      "source_sha256": "b0a5b363088e6fe61494fba041eed9b27683f376f0283f462e5b534a8bffd1a0",
+      "original_case_source_sha256": "b0a5b363088e6fe61494fba041eed9b27683f376f0283f462e5b534a8bffd1a0",
+      "gtest_body_sha256": "2c047c0fb62c06f53dd259f84022724c710c028a384b160b089e59619920b1ac"
+    },
+    {
+      "name": "ordered-map-qualified-uint-value-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapQualifiedUintValueGuardRejected",
+      "expected": "reject",
+      "source_sha256": "0178697cf90f7e7f5b931bb3de77a2c5e18fb44013e2475e9e8124bfae02a079",
+      "original_case_source_sha256": "0178697cf90f7e7f5b931bb3de77a2c5e18fb44013e2475e9e8124bfae02a079",
+      "gtest_body_sha256": "4112bbbce0a8c32b115fb0075f765252e2459871de5039025037eb87d04198a4"
+    },
+    {
+      "name": "ordered-map-enum-mapped-value-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapEnumMappedValueGuardRejected",
+      "expected": "reject",
+      "source_sha256": "e4909773673dc9f29734f935c460b9135f8bc1013f5ee221540de69c74b62767",
+      "original_case_source_sha256": "e4909773673dc9f29734f935c460b9135f8bc1013f5ee221540de69c74b62767",
+      "gtest_body_sha256": "781b78da94f1704e71510ae2f104f0f1e770d03c521bce7ec2c8d7270a77cfaa"
+    },
+    {
+      "name": "climits-quoted-source-include-is-rejected",
+      "formal_test_name": "TranslateTest.CoreV2ClimitsQuotedSourceIncludeIsRejectedRejected",
+      "expected": "reject",
+      "source_sha256": "47e5b16a54e4b16030245b83d806ae0f152cb2161576201b8e116b474988fb84",
+      "original_case_source_sha256": "47e5b16a54e4b16030245b83d806ae0f152cb2161576201b8e116b474988fb84",
+      "gtest_body_sha256": "a2546e8f08ed1eeb4c82634d46f6fa8c67b08ccae4bb456190f16540f0411596"
+    },
+    {
+      "name": "limits-resource-header-direct-source-include-is-rejected",
+      "formal_test_name": "TranslateTest.CoreV2LimitsResourceHeaderDirectSourceIncludeIsRejectedRejected",
+      "expected": "reject",
+      "source_sha256": "873e94c2f4d128ac79733d9a39919df5e0bd7cc0636c313eca3e965a7544d688",
+      "original_case_source_sha256": "873e94c2f4d128ac79733d9a39919df5e0bd7cc0636c313eca3e965a7544d688",
+      "gtest_body_sha256": "61d99bbd65093fb56d9377a1c96aef21208b43337551bfee5ec2725bc59fd403"
+    },
+    {
+      "name": "ordered-map-at-guard-different-key",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtGuardDifferentKeyRejected",
+      "expected": "reject",
+      "source_sha256": "c0fd2bd8db8a1ff962ed3de497fc49b59fb0cbc8177f6e250aa65507f0754a8d",
+      "original_case_source_sha256": "c0fd2bd8db8a1ff962ed3de497fc49b59fb0cbc8177f6e250aa65507f0754a8d",
+      "gtest_body_sha256": "162185d3ffcdeaaf3bc62b896b250e49aeacc4f45d668527e611a5f8dbe9b398"
+    },
+    {
+      "name": "ordered-map-at-guard-different-owner",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtGuardDifferentOwnerRejected",
+      "expected": "reject",
+      "source_sha256": "6b891c6eb6e89bd934599692eefa08681b5585a8e7abedc924d31a3c80bf83e5",
+      "original_case_source_sha256": "6b891c6eb6e89bd934599692eefa08681b5585a8e7abedc924d31a3c80bf83e5",
+      "gtest_body_sha256": "407ea7ae1d395bb62efbd6264e89c18453d6417d883be1514836e301c9a6071d"
+    },
+    {
+      "name": "ordered-map-long-double-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapLongDoubleStorageGuardRejected",
+      "expected": "reject",
+      "source_sha256": "d7dafba83b43827b020c69bc07c41cbf399245ec610432259a96735197ea7576",
+      "original_case_source_sha256": "d7dafba83b43827b020c69bc07c41cbf399245ec610432259a96735197ea7576",
+      "gtest_body_sha256": "abf9b70ac433114f0cf7cc558bb0c4cc348bbd4194dc3ad2702f22a8f06bb107"
+    },
+    {
+      "name": "ordered-map-const-double-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapConstDoubleStorageGuardRejected",
+      "expected": "reject",
+      "source_sha256": "ca5a34f8199caf701fe2135e426e8318983b517262f0c8b52d21a501ca6e8558",
+      "original_case_source_sha256": "ca5a34f8199caf701fe2135e426e8318983b517262f0c8b52d21a501ca6e8558",
+      "gtest_body_sha256": "0e09d1b3500447ab9929321faf90d670854d8a1ad9c9d0db851e8610aa580717"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-map-long-layout-follows-target-width",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <limits>\n#include <map>\nint main() {\n  constexpr long maximum = std::numeric_limits<long>::max();\n  constexpr long minimum = std::numeric_limits<long>::min();\n  std::map<int, long> values;\n  values.try_emplace(4, maximum);\n  values.try_emplace(5, minimum);\n  auto other = values;\n  if (other[4] != maximum || other[5] != minimum || other[6] != 0L)\n    return 1;\n  auto node = other.extract(5);\n  node.mapped() = maximum;\n  if (!other.insert(std::move(node)).inserted)\n    return 2;\n  const auto copied = other.find(5);\n  const auto original = values.find(5);\n  return copied != other.end() && original != values.end() &&\n         copied->second == maximum && original->second == minimum ? 0 : 3;\n}\n",
+      "source_sha256": "56cda1adc587dc9192226bd64c59627c01bf9cc0a87a8a5cc23d1cfb814d7e7d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-unsigned-long-long-compares-above-signed-maximum",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  constexpr unsigned long long high = 18446744073709551615ULL;\n  std::map<int, unsigned long long> left;\n  left.emplace(3, high);\n  auto right = left;\n  right.insert_or_assign(3, 0ULL);\n  if (!(right < left) || left < right || right == left)\n    return 1;\n  auto node = left.extract(3);\n  right.erase(3);\n  auto placed = right.insert(std::move(node));\n  return placed.inserted && placed.position->second == high && right.size() == 1 ? 0 : 2;\n}\n",
+      "source_sha256": "eca6b394b85a8fc0bc5ff1332abf3a8fe818d1f464f4df1093048abd53f0a6e2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-uint-node-and-comparison",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::map<int, unsigned> left;\n  left.try_emplace(4, 0xffffffffU);\n  auto right = left;\n  right.insert_or_assign(4, 0U);\n  if (!(right < left) || right == left)\n    return 1;\n  auto node = left.extract(4);\n  auto inserted = left.insert(std::move(node));\n  return inserted.inserted && inserted.position->second == 0xffffffffU ? 0 : 2;\n}\n",
+      "source_sha256": "4edf3102b02621e7cd10e4050e5a9f79d8f2d9dc07f6e89ab86d98f4bbb9863d",
+      "public_header": "map"
+    },
+    {
+      "name": "ordered-map-ulong-and-size-t",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <cstddef>\n#include <limits>\n#include <map>\nint main() {\n  constexpr auto limit = std::numeric_limits<unsigned long>::max();\n  std::map<int, unsigned long> values;\n  values.try_emplace(1, limit);\n  auto copy = values;\n  if (copy[2] != 0UL || copy.find(1)->second != limit)\n    return 1;\n  std::map<int, std::size_t> sizes;\n  auto item = sizes.try_emplace(1, sizeof(unsigned long));\n  return item.second && item.first->second == sizeof(unsigned long) ? 0 : 2;\n}\n",
+      "source_sha256": "f08e13a0e8c5b6817a5d7d294822e84a4aa59ec0311eb5172d17442887a2cd92",
+      "public_header": "map"
+    },
+    {
+      "name": "ordered-multimap-ushort-and-map-short",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  const auto high = static_cast<unsigned short>(65535);\n  std::multimap<int, unsigned short> values;\n  values.emplace(4, high);\n  values.emplace(4, static_cast<unsigned short>(23));\n  auto copy = values;\n  if (copy.count(4) != 2 || copy.begin()->second != high)\n    return 1;\n  copy.erase(copy.begin());\n  if (copy.begin()->second != 23)\n    return 2;\n  std::map<int, short> negative;\n  negative.try_emplace(1, static_cast<short>(-32768));\n  return negative.find(1)->second < static_cast<short>(-1) ? 0 : 3;\n}\n",
+      "source_sha256": "3481a36d6b25cfc242098c89c9ba1f85bf2ae9ec2d4bae0e639ed6a25fcad61e",
+      "public_header": "map"
+    },
+    {
+      "name": "ordered-map-bool-and-character-values",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::map<int, bool> flags;\n  flags.try_emplace(2, true);\n  if (flags[1] || !flags[2])\n    return 1;\n  std::map<int, char> letters;\n  letters.try_emplace(1, 'x');\n  std::map<int, signed char> signed_bytes;\n  signed_bytes.try_emplace(1, static_cast<signed char>(-7));\n  std::map<int, unsigned char> bytes;\n  bytes.try_emplace(1, static_cast<unsigned char>(241));\n  return letters[1] == 'x' && signed_bytes[1] == -7 && bytes[1] == 241 ? 0 : 2;\n}\n",
+      "source_sha256": "768af3674ae62871aa19d28bc9c34fe073db21dee496e7a2c12936a521c8f146",
+      "public_header": "map"
+    },
+    {
+      "name": "climits-matches-cxx-integer-limits",
+      "public_header": "climits",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <climits>\n#include <limits>\nstatic_assert(CHAR_BIT == std::numeric_limits<unsigned char>::digits);\nstatic_assert(CHAR_MIN == std::numeric_limits<char>::min());\nstatic_assert(CHAR_MAX == std::numeric_limits<char>::max());\nstatic_assert(SCHAR_MIN == std::numeric_limits<signed char>::min());\nstatic_assert(SCHAR_MAX == std::numeric_limits<signed char>::max());\nstatic_assert(UCHAR_MAX == std::numeric_limits<unsigned char>::max());\nstatic_assert(SHRT_MIN == std::numeric_limits<short>::min());\nstatic_assert(SHRT_MAX == std::numeric_limits<short>::max());\nstatic_assert(USHRT_MAX == std::numeric_limits<unsigned short>::max());\nstatic_assert(INT_MIN == std::numeric_limits<int>::min());\nstatic_assert(INT_MAX == std::numeric_limits<int>::max());\nstatic_assert(UINT_MAX == std::numeric_limits<unsigned>::max());\nint main() { return MB_LEN_MAX >= 1 ? 0 : 1; }\n",
+      "source_sha256": "68c711d3a65b16d570c9971c86ed5b7d2e1d4b5a6bbad2c14267f77dfa0cc678"
+    },
+    {
+      "name": "climits-long-width-follows-target",
+      "public_header": "climits",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <climits>\nstatic_assert(LONG_MIN + LONG_MAX == -1L);\nstatic_assert(ULONG_MAX == 2UL * LONG_MAX + 1UL);\nstatic_assert(LLONG_MIN + LLONG_MAX == -1LL);\nstatic_assert(ULLONG_MAX == 18446744073709551615ULL);\nint main() {\n  return (sizeof(long) == 4 ? LONG_MAX == 2147483647LL\n                            : LONG_MAX == 9223372036854775807LL) ? 0 : 1;\n}\n",
+      "source_sha256": "c46d3906dcb1c572d5a4d2443590642d8bfb709215a71539fe1a72d0bec05651"
+    },
+    {
+      "name": "ordered-map-long-stores-climits-extremes",
+      "public_header": "climits",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <climits>\n#include <map>\nint main() {\n  std::map<int, long> values;\n  values.try_emplace(4, LONG_MAX);\n  values.try_emplace(5, LONG_MIN);\n  auto copy = values;\n  auto node = copy.extract(5);\n  node.mapped() = LONG_MAX;\n  auto place = copy.insert(std::move(node));\n  return place.inserted && place.position->second == LONG_MAX &&\n    values.find(5)->second == LONG_MIN ? 0 : 1;\n}\n",
+      "source_sha256": "493e170d93de95732b5eb0265881d919e28b5f4946c09ccfb5b275522dfd5276"
+    },
+    {
+      "name": "ordered-map-wide-unsigned-uses-climits-maximum",
+      "public_header": "climits",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <climits>\n#include <map>\nint main() {\n  std::map<int, unsigned long long> values;\n  values.emplace(1, ULLONG_MAX);\n  auto other = values;\n  other.insert_or_assign(1, 0ULL);\n  return other < values && values.find(1)->second == ULLONG_MAX ? 0 : 1;\n}\n",
+      "source_sha256": "7693ef2d7152c1d49834ca3477c5909e013a1a6a487c3daa7ec257f273deff71"
+    },
+    {
+      "name": "ordered-map-at-find-ternary-on-const-reference",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, int key) {\n  return values.find(key) != values.end() ? values.at(key) : -1;\n}\nint main() {\n  const std::map<int, int> values{{2, 20}, {3, 31}};\n  return lookup(values, 3) == 31 && lookup(values, 4) == -1 ? 0 : 1;\n}\n",
+      "source_sha256": "6a6d77802d029c6f250a0e19bda1a5a997cc2cadecdc00b87f81d49dea72d7f3"
+    },
+    {
+      "name": "ordered-map-at-if-returns-mutable-reference",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint& lookup(std::map<int, int>& values, int key, int& fallback) {\n  if (values.find(key) != values.end())\n    return values.at(key);\n  return fallback;\n}\nint main() {\n  std::map<int, int> values{{2, 20}};\n  int fallback = -1;\n  lookup(values, 2, fallback) = 91;\n  lookup(values, 3, fallback) = 14;\n  return values.size() == 1 && values.find(2)->second == 91 && fallback == 14 ? 0 : 1;\n}\n",
+      "source_sha256": "2ad9d9606c0dca29f2fc24103b5c9c3deb3e5c4cec6f68cbc1f844c07687d5e1"
+    },
+    {
+      "name": "ordered-map-at-if-preserves-wide-mapped-value",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nlong long lookup(int key) {\n  const std::map<int, long long> values{{3, -4398046511105LL}};\n  if (values.find(key) != values.end()) {\n    return values.at(key);\n  }\n  return 0LL;\n}\nint main() { return lookup(3) == -4398046511105LL && lookup(4) == 0LL ? 0 : 1; }\n",
+      "source_sha256": "4b28f0172221ba343ec655e146d0f1f01e9676fa0e4966faa3c7107568d08f24"
+    },
+    {
+      "name": "ordered-map-at-mutable-ternary-does-not-insert",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint lookup(int key) {\n  std::map<int, int> values{{2, 20}};\n  int result = values.find(key) != values.end() ? values.at(key) : -1;\n  return values.size() == 1 ? result : -2;\n}\nint main() { return lookup(2) == 20 && lookup(5) == -1 ? 0 : 1; }\n",
+      "source_sha256": "ffcf1955c0d465b6f824d413cc376b24aec245e9038196389dda9765e4fe061a"
+    },
+    {
+      "name": "ordered-map-float-subscript-copy-and-node",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::map<int, float> values;\n  values.try_emplace(1, 2.75f);\n  auto copy = values;\n  if (copy[2] != 0.0f || copy[1] != 2.75f)\n    return 1;\n  auto node = copy.extract(1);\n  node.mapped() = -3.5f;\n  auto placed = copy.insert(std::move(node));\n  return placed.inserted && placed.position->second == -3.5f && values[1] == 2.75f ? 0 : 2;\n}\n",
+      "source_sha256": "2c123f6c05e8b362d84bd5aad5844b529c9962b8ae8b327c0d7f907b7d7b235c"
+    },
+    {
+      "name": "ordered-multimap-double-piecewise-and-equal-keys",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\n#include <tuple>\nint main() {\n  std::multimap<int, double> values;\n  values.emplace(std::piecewise_construct, std::forward_as_tuple(1), std::forward_as_tuple(-2.5));\n  values.emplace(1, 1.25);\n  auto copy = values;\n  auto first = copy.begin();\n  if (copy.count(1) != 2 || first->second != -2.5)\n    return 1;\n  ++first;\n  return first->second == 1.25 ? 0 : 2;\n}\n",
+      "source_sha256": "09671fd47cb91fb4f143020b34bb7cd93cdb8d284f2c94be27f4e834443f99bc"
+    },
+    {
+      "name": "ordered-map-double-comparison-advances-past-unordered-pair-typed-input",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <limits>\n#include <map>\nint main() {\n  const double quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n",
+      "source_sha256": "d030808fb2df2fae6419e66583861dd9dfa72d225f4b3b180c58325111e1a250"
+    },
+    {
+      "name": "ordered-map-double-comparison-advances-past-unordered-pair",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <limits>\n#include <map>\nint main() {\n  const auto quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n",
+      "source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab"
+    },
+    {
+      "name": "ordered-map-const-long-mapped-storage-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, const long> values;\n  return values.try_emplace(1, 2L).second ? 0 : 1;\n}\n",
+      "source_sha256": "16072906859259a92a66a23318152ddd28cc36d1c950f98d1568452206519b15",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-unsigned-long-long-different-pair-leaf-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, unsigned long long> values;\n  return values.emplace(std::make_pair(1, 2.0)).second ? 0 : 1;\n}\n",
+      "source_sha256": "b0a5b363088e6fe61494fba041eed9b27683f376f0283f462e5b534a8bffd1a0",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-qualified-uint-value-guard",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint main() {\n  std::map<int, const unsigned> values;\n  return values.try_emplace(1, 5U).second ? 0 : 1;\n}\n",
+      "source_sha256": "0178697cf90f7e7f5b931bb3de77a2c5e18fb44013e2475e9e8124bfae02a079",
+      "public_header": "map"
+    },
+    {
+      "name": "ordered-map-enum-mapped-value-guard",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nenum class Flag : unsigned { ready = 1 };\nint main() {\n  std::map<int, Flag> values;\n  return values.try_emplace(1, Flag::ready).second ? 0 : 1;\n}\n",
+      "source_sha256": "e4909773673dc9f29734f935c460b9135f8bc1013f5ee221540de69c74b62767",
+      "public_header": "map"
+    },
+    {
+      "name": "climits-quoted-source-include-is-rejected",
+      "public_header": "climits",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include \"climits\"\nint main() { return INT_MAX < 0; }\n",
+      "source_sha256": "47e5b16a54e4b16030245b83d806ae0f152cb2161576201b8e116b474988fb84"
+    },
+    {
+      "name": "limits-resource-header-direct-source-include-is-rejected",
+      "public_header": "climits",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <limits.h>\nint main() { return INT_MAX < 0; }\n",
+      "source_sha256": "873e94c2f4d128ac79733d9a39919df5e0bd7cc0636c313eca3e965a7544d688"
+    },
+    {
+      "name": "ordered-map-at-guard-different-key",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, int key, int other) {\n  return values.find(key) != values.end() ? values.at(other) : -1;\n}\n",
+      "source_sha256": "c0fd2bd8db8a1ff962ed3de497fc49b59fb0cbc8177f6e250aa65507f0754a8d"
+    },
+    {
+      "name": "ordered-map-at-guard-different-owner",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, const std::map<int, int>& other, int key) {\n  return values.find(key) != values.end() ? other.at(key) : -1;\n}\n",
+      "source_sha256": "6b891c6eb6e89bd934599692eefa08681b5585a8e7abedc924d31a3c80bf83e5"
+    },
+    {
+      "name": "ordered-map-long-double-storage-guard",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint main() {\n  std::map<int, long double> values;\n  return values.try_emplace(1, 1.5L).second ? 0 : 1;\n}\n",
+      "source_sha256": "d7dafba83b43827b020c69bc07c41cbf399245ec610432259a96735197ea7576"
+    },
+    {
+      "name": "ordered-map-const-double-storage-guard",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint main() {\n  std::map<int, const double> values;\n  return values.try_emplace(1, 2.0).second ? 0 : 1;\n}\n",
+      "source_sha256": "ca5a34f8199caf701fe2135e426e8318983b517262f0c8b52d21a501ca6e8558"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedMapLongLayoutFollowsTargetWidthRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapUnsignedLongLongComparesAboveSignedMaximumRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapUintNodeAndComparisonRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapUlongAndSizeTRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapUshortAndMapShortRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapBoolAndCharacterValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ClimitsMatchesCxxIntegerLimitsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ClimitsLongWidthFollowsTargetRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapLongStoresClimitsExtremesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapWideUnsignedUsesClimitsMaximumRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapAtFindTernaryOnConstReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapAtIfReturnsMutableReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapAtIfPreservesWideMappedValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapAtMutableTernaryDoesNotInsertRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapFloatSubscriptCopyAndNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapDoublePiecewiseAndEqualKeysRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairTypedInputRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapConstLongMappedStorageGuardRejected",
+    "TranslateTest.CoreV2OrderedMapUnsignedLongLongDifferentPairLeafGuardRejected",
+    "TranslateTest.CoreV2OrderedMapQualifiedUintValueGuardRejected",
+    "TranslateTest.CoreV2OrderedMapEnumMappedValueGuardRejected",
+    "TranslateTest.CoreV2ClimitsQuotedSourceIncludeIsRejectedRejected",
+    "TranslateTest.CoreV2LimitsResourceHeaderDirectSourceIncludeIsRejectedRejected",
+    "TranslateTest.CoreV2OrderedMapAtGuardDifferentKeyRejected",
+    "TranslateTest.CoreV2OrderedMapAtGuardDifferentOwnerRejected",
+    "TranslateTest.CoreV2OrderedMapLongDoubleStorageGuardRejected",
+    "TranslateTest.CoreV2OrderedMapConstDoubleStorageGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "dda90aa52bb9d02f2257863826aa5451ceab4a59fb15d0ba585d94651a2c1bf3",
+  "maintained_original_sha256": "9a95c101b8902270e68741a842e565bf4bab4f74737a45b32a5f13d16859812b",
+  "previous_registered_source_sha256": "c56b904bdc2f1b794604a1ef4e32ab755dae67fffd60dabc2c5e581a559ea4e4",
+  "previous_maintained_original_sha256": "139a357bf63dab6ffce3c8565795ace71921a79fb4d0acafe8fad37cd3765127",
+  "restorer_sha256": "4830daa3189f91df9af4d1b52fc39a1df5cfb6d28d2715d8dcb7f059796a16ef",
+  "extractor_sha256": "2c725c79f5a8eb7c5339ba77b8cc782a1fc3ed3495f9a856700ded4857858abe",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8921,
+  "current_python_registry_tests": 272,
+  "native_reference_selected_executions": 36,
+  "planned_generated_c23_executions": 36,
+  "native_reference_proofs": {
+    "climits": "33bdf57d36833668e608066eb1065e3bf3c607601573ee36af6ef998fbe6f41f",
+    "ordered-long-navigation": "0ffa21135bf2e19ca5b7b800c3c832ce9d45f2e3930e133e5c7b0bcf18159d0b",
+    "ordered-map-float": "760559df7326c21d012df460fd5a7035266ce4597af9925657d2619e8c9467b6",
+    "ordered-map-guarded-at": "90048dc90094c0eae7fb2d568395c00cd5e39d5b68721b030abd83e5763a8fd5",
+    "ordered-map-integral-values": "28d73f3b71d64cad03ecee6dbc6a1c4d66028c63a06539a38de5ed16642d1f54",
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
+    "pair-numeric-limits": "07cca5d914b063de0f0895f43402fd453476c92c6deacc4caf1db89e33cb7153"
+  },
+  "native_reference_authentication_sha256": "d149db0d9fd5e1472e31004c1c772cd924584593d271eea0e4eefc3bd4f07551",
+  "source_proof_sha256": "88ce911bdc45758f452228996e296e587fb083592380488a1e14db1b1a74d87e"
+}

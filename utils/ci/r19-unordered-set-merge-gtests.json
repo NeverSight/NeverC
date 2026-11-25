@@ -1,0 +1,164 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-merge-unique-merge-preserves-node-and-rejected-duplicate-addresses",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMergeUniqueMergePreservesNodeAndRejectedDuplicateAddressesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a0b4b69e0f1dabbda58a70c63686671233d770b7730947d83a8500f02296ff6e",
+      "original_case_source_sha256": "a0b4b69e0f1dabbda58a70c63686671233d770b7730947d83a8500f02296ff6e",
+      "gtest_body_sha256": "3eefffe65f42dee67f640b8eb5891958187e163988d4758da77d81ee70833b72"
+    },
+    {
+      "name": "unordered-set-merge-unique-merges-one-copy-from-each-new-multiset-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMergeUniqueMergesOneCopyFromEachNewMultisetKeyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b09867324796144b3bbb9bdb2c06325b3bebffe269b41b5ce1f5a6204935897c",
+      "original_case_source_sha256": "b09867324796144b3bbb9bdb2c06325b3bebffe269b41b5ce1f5a6204935897c",
+      "gtest_body_sha256": "3b191811bda428abebe21522a75504d246cc43a2323f32c1f5177b40c68d6462"
+    },
+    {
+      "name": "unordered-set-merge-multi-merges-rvalue-unique-owner-without-reallocating-nodes",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMergeMultiMergesRvalueUniqueOwnerWithoutReallocatingNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b1cda2b87c7d42c9e80cb1d61f5f5763068af94271cedb1ba3db4f014d5d152f",
+      "original_case_source_sha256": "b1cda2b87c7d42c9e80cb1d61f5f5763068af94271cedb1ba3db4f014d5d152f",
+      "gtest_body_sha256": "cf39ba8e143575bd0cbfceff392f7b5f7c01eca98ef1e493beb4b313ee64150f"
+    },
+    {
+      "name": "unordered-set-merge-multi-merge-groups-equivalent-keys-in-colliding-bucket",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMergeMultiMergeGroupsEquivalentKeysInCollidingBucketRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9bcdaa72b78494ad60b6a8fc117ad5be8f39f8dcbfe78d4ff4c36903aeec3889",
+      "original_case_source_sha256": "9bcdaa72b78494ad60b6a8fc117ad5be8f39f8dcbfe78d4ff4c36903aeec3889",
+      "gtest_body_sha256": "7cc6b501118ceb6e2fe109243d0ce3ae085fce397d7d4fab9ccc3489c00b359b"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-merge-custom-hash-merge-source",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMergeCustomHashMergeSourceRejected",
+      "expected": "reject",
+      "source_sha256": "4a287ccde843a252720ce594e60b9324d18b62199fe02824b358dd491c032d14",
+      "original_case_source_sha256": "4a287ccde843a252720ce594e60b9324d18b62199fe02824b358dd491c032d14",
+      "gtest_body_sha256": "4a7a900720c740ba1b71cf275a1370caef564415aafcf9fcd90a0254701a3584"
+    },
+    {
+      "name": "unordered-set-merge-custom-hash-merge-destination",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMergeCustomHashMergeDestinationRejected",
+      "expected": "reject",
+      "source_sha256": "7093f86e9775766794a0edaa3d24c9e7d737f1398d2e63af54ff0971462c7114",
+      "original_case_source_sha256": "7093f86e9775766794a0edaa3d24c9e7d737f1398d2e63af54ff0971462c7114",
+      "gtest_body_sha256": "89009d2171d09bd9c2e4d03b5666bb2f0fde6e2cb116202824a2590441f6e198"
+    },
+    {
+      "name": "unordered-set-merge-custom-equality-merge-destination",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMergeCustomEqualityMergeDestinationRejected",
+      "expected": "reject",
+      "source_sha256": "b0ef25d2f8852d8c49e3787e5ab3df0b4b72b299fe370199b7024ca7a7e43803",
+      "original_case_source_sha256": "b0ef25d2f8852d8c49e3787e5ab3df0b4b72b299fe370199b7024ca7a7e43803",
+      "gtest_body_sha256": "dc9cdc81bc04988069822f603c89e121905535b5a9e1c88cd49d5c68bb58982e"
+    },
+    {
+      "name": "unordered-set-merge-long-key-merge",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMergeLongKeyMergeRejected",
+      "expected": "reject",
+      "source_sha256": "2815f37c47835cc58d8af4b19abe6841e83ec3ff99fe2dd045c8411b8ef40e5d",
+      "original_case_source_sha256": "2815f37c47835cc58d8af4b19abe6841e83ec3ff99fe2dd045c8411b8ef40e5d",
+      "gtest_body_sha256": "37aafaabb7a1c8b49dbe001d2842c22c472444b54eb8c4b0e14175c3f97cda76"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-merge-unique-merge-preserves-node-and-rejected-duplicate-addresses",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> target{5, 7};\n  std::unordered_set<int> source{5, 13, 19};\n  const int* moved = &*source.find(13);\n  const int* duplicate = &*source.find(5);\n  target.merge(source);\n  return target.size() != 4 || source.size() != 1 || &*target.find(13) != moved ||\n         &*source.find(5) != duplicate || target.count(19) != 1 || source.count(19) != 0;\n}\n",
+      "source_sha256": "a0b4b69e0f1dabbda58a70c63686671233d770b7730947d83a8500f02296ff6e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-merge-unique-merges-one-copy-from-each-new-multiset-key",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> target{3};\n  std::unordered_multiset<int> source{3, 5, 3, 5, 7, 7, 7};\n  target.merge(source);\n  return target.size() != 3 || target.count(5) != 1 || target.count(7) != 1 ||\n         source.count(3) != 2 || source.count(5) != 1 || source.count(7) != 2 || source.size() != 5;\n}\n",
+      "source_sha256": "b09867324796144b3bbb9bdb2c06325b3bebffe269b41b5ce1f5a6204935897c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-merge-multi-merges-rvalue-unique-owner-without-reallocating-nodes",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<int> target{9, 9};\n  std::unordered_set<int> source{9, 23, -1};\n  const int* moved = &*source.find(23);\n  auto* receiver = &target;\n  receiver->merge(std::move(source));\n  return !source.empty() || target.size() != 5 || target.count(9) != 3 ||\n         target.count(-1) != 1 || &*target.find(23) != moved;\n}\n",
+      "source_sha256": "b1cda2b87c7d42c9e80cb1d61f5f5763068af94271cedb1ba3db4f014d5d152f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-merge-multi-merge-groups-equivalent-keys-in-colliding-bucket",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> target;\n  target.rehash(2);\n  target.max_load_factor(4.0f);\n  target.insert({3, 7, 7});\n  std::unordered_multiset<int> source{3, 5, 3, 7};\n  target.merge(source);\n  auto group = target.equal_range(3);\n  int matches = 0;\n  for (auto it = group.first; it != group.second; ++it) {\n    if (*it != 3) return 1;\n    ++matches;\n  }\n  return !source.empty() || target.size() != 7 || matches != 3 ||\n         target.count(5) != 1 || target.count(7) != 3 || target.bucket_count() != 2;\n}\n",
+      "source_sha256": "9bcdaa72b78494ad60b6a8fc117ad5be8f39f8dcbfe78d4ff4c36903aeec3889",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-merge-custom-hash-merge-source",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_set<int, Hash> source;\n  std::unordered_set<int> target;\n  target.merge(source);\n  return target.empty();\n}\n",
+      "source_sha256": "4a287ccde843a252720ce594e60b9324d18b62199fe02824b358dd491c032d14",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-merge-custom-hash-merge-destination",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_set<int> source;\n  std::unordered_multiset<int, Hash> target;\n  target.merge(source);\n  return target.empty();\n}\n",
+      "source_sha256": "7093f86e9775766794a0edaa3d24c9e7d737f1398d2e63af54ff0971462c7114",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-merge-custom-equality-merge-destination",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  std::unordered_multiset<int> source;\n  std::unordered_set<int, std::hash<int>, Equal> target;\n  target.merge(source);\n  return target.empty();\n}\n",
+      "source_sha256": "b0ef25d2f8852d8c49e3787e5ab3df0b4b72b299fe370199b7024ca7a7e43803",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-merge-long-key-merge",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<long> source;\n  std::unordered_multiset<long> target;\n  target.merge(source);\n  return target.empty();\n}\n",
+      "source_sha256": "2815f37c47835cc58d8af4b19abe6841e83ec3ff99fe2dd045c8411b8ef40e5d",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetMergeUniqueMergePreservesNodeAndRejectedDuplicateAddressesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMergeUniqueMergesOneCopyFromEachNewMultisetKeyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMergeMultiMergesRvalueUniqueOwnerWithoutReallocatingNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMergeMultiMergeGroupsEquivalentKeysInCollidingBucketRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMergeCustomHashMergeSourceRejected",
+    "TranslateTest.CoreV2UnorderedSetMergeCustomHashMergeDestinationRejected",
+    "TranslateTest.CoreV2UnorderedSetMergeCustomEqualityMergeDestinationRejected",
+    "TranslateTest.CoreV2UnorderedSetMergeLongKeyMergeRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "0dcef4d73fc664809450ee55b14a93869663ba24d56f9c87350e5353882e736c",
+  "maintained_original_sha256": "856be15f1897ef27455fdd7d98857ddb130215430a02e637bc383507a3f1e382",
+  "previous_registered_source_sha256": "9b7d4cac8fbb215fad4d796e7e7cfd7cfcecc7d84384cff249ccbb08f68d9621",
+  "previous_maintained_original_sha256": "128ff7799af546d360def0abcb3e0ba34a382cd3629da0794750c8e444e5434c",
+  "restorer_sha256": "10dd08e424386aaaca06aa8091983c016e99bdf4e1978c084e41e7cbae501035",
+  "extractor_sha256": "70da09ea1914f28c74e25cdf921849305a97b1fe2d0fe9b7e951cbc7b5c3d5e3",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8570,
+  "current_python_registry_tests": 228,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-merge": "1e9ed7aa6101d1644ec3511f1c6a259c3e20de82d36245a8efa488a8451dd9bf"
+  },
+  "native_reference_authentication_sha256": "62ce71c3df8c9392f9bcd8cf08bc3eff30c06d42d4f60839e0e1df66193f44f3",
+  "source_proof_sha256": "88ce911bdc45758f452228996e296e587fb083592380488a1e14db1b1a74d87e"
+}

@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-multiset-modifiers-insert-list-retains-each-duplicate",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetModifiersInsertListRetainsEachDuplicateRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ba8585444c754a3a7fbb8d65ee248525bf49cba77e9af88cfe900b24f5bdf79e",
+      "original_case_source_sha256": "ba8585444c754a3a7fbb8d65ee248525bf49cba77e9af88cfe900b24f5bdf79e",
+      "gtest_body_sha256": "d2f2d78f5d4958b61187e817624114fef20222a25c1217746b7863ea637d910f"
+    },
+    {
+      "name": "unordered-multiset-modifiers-erase-repairs-colliding-bucket-predecessors",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetModifiersEraseRepairsCollidingBucketPredecessorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "906d765dfd7a1cbedc4294a291ca2eb31524904d41383955a537ce93f4cb5b7e",
+      "original_case_source_sha256": "906d765dfd7a1cbedc4294a291ca2eb31524904d41383955a537ce93f4cb5b7e",
+      "gtest_body_sha256": "c195804f0df1d28c9ec676102e6b634a3dd322cbe5970fa0eee5e00d0ca0bbc4"
+    },
+    {
+      "name": "unordered-multiset-modifiers-rehash-after-erasing-groups",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetModifiersRehashAfterErasingGroupsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0f007014c0ae0d25e73684a751ef3048b7d2a65d92386ba648d5824d779fbf59",
+      "original_case_source_sha256": "0f007014c0ae0d25e73684a751ef3048b7d2a65d92386ba648d5824d779fbf59",
+      "gtest_body_sha256": "3223b571aae1b20850cd0fb2995aab3735d055ce45c4740f0bd5b845b32a15ac"
+    },
+    {
+      "name": "unordered-multiset-modifiers-receiver-and-list-sequenced-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetModifiersReceiverAndListSequencedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f81c2822589bec3a56d9aab0b7ddad9dfb625db25a305019cd5a91cc4c772947",
+      "original_case_source_sha256": "f81c2822589bec3a56d9aab0b7ddad9dfb625db25a305019cd5a91cc4c772947",
+      "gtest_body_sha256": "b91d5c595f85c56953ac3a612ac527e2460c670304cf1742e26adc108695ee0f"
+    },
+    {
+      "name": "unordered-multiset-modifiers-erase-one-free-per-duplicate",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetModifiersEraseOneFreePerDuplicateRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a64b2c4fe8d3bd8e167d639ab900daf511bb25a5d8227e085b310c16be2f6763",
+      "original_case_source_sha256": "a64b2c4fe8d3bd8e167d639ab900daf511bb25a5d8227e085b310c16be2f6763",
+      "gtest_body_sha256": "fbddeed2a59f7b0e4e84a5737f03bc05416ef274efbbea7ad9f69005f4756aa0"
+    },
+    {
+      "name": "unordered-multiset-modifiers-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerMultisetListInsertAndEraseRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "77d203192676e332f9e6ea65660bf269ec9cfeb2993a377bbb477c0cbfcfed42",
+      "original_case_source_sha256": "77d203192676e332f9e6ea65660bf269ec9cfeb2993a377bbb477c0cbfcfed42",
+      "gtest_body_sha256": "91b2a91af2707c3061cdb6b2b1c9c38c5a923deb258fbf2af48ed981c4906851"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-multiset-modifiers-different-key-list",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetModifiersDifferentKeyListRejected",
+      "expected": "reject",
+      "source_sha256": "4224431579d3e360034bda346c54342860455e03de01173843702ec232a01821",
+      "original_case_source_sha256": "4224431579d3e360034bda346c54342860455e03de01173843702ec232a01821",
+      "gtest_body_sha256": "51865ac3558b41790813643e94170361b91f21f4354f1f9b893ac0cc72dd4ed7"
+    },
+    {
+      "name": "unordered-multiset-modifiers-custom-allows-different-key-equality",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetModifiersCustomAllowsDifferentKeyEqualityRejected",
+      "expected": "reject",
+      "source_sha256": "78be7db1bba800b25a022444b8d6a8cd49b6d98b03134f7fa96c214e8f955726",
+      "original_case_source_sha256": "78be7db1bba800b25a022444b8d6a8cd49b6d98b03134f7fa96c214e8f955726",
+      "gtest_body_sha256": "7e2a62b85c4dc157f9c7703fd4a16cc06871e6f69173c817969e973a9292c930"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-multiset-modifiers-insert-list-retains-each-duplicate",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 7, 3};\n  values.insert({3, 7, 7, -4});\n  values.insert({});\n  return values.size() != 7 || values.count(3) != 3 || values.count(7) != 3 || values.count(-4) != 1;\n}\n",
+      "source_sha256": "ba8585444c754a3a7fbb8d65ee248525bf49cba77e9af88cfe900b24f5bdf79e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multiset-modifiers-erase-repairs-colliding-bucket-predecessors",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values;\n  values.rehash(8);\n  values.insert({0, 8, 0, 1, 8, 16, 24, 8});\n  const int key = 8;\n  if (values.erase(key) != 3 || values.erase(key) != 0 || values.count(0) != 2 ||\n      values.count(16) != 1 || values.count(24) != 1 || values.count(1) != 1 ||\n      values.bucket_size(values.bucket(0)) != 4) return 1;\n  if (values.erase(0) != 2 || values.erase(16) != 1 || values.erase(24) != 1 ||\n      values.bucket_size(values.bucket(0)) != 0 || values.count(1) != 1) return 2;\n  values.insert({24, 24});\n  return values.size() != 3 || values.count(24) != 2 || values.count(1) != 1;\n}\n",
+      "source_sha256": "906d765dfd7a1cbedc4294a291ca2eb31524904d41383955a537ce93f4cb5b7e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multiset-modifiers-rehash-after-erasing-groups",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{-1, 2, -1, 3, -1, 2};\n  values.rehash(64);\n  if (values.erase(-1) != 3 || values.count(-1) || values.size() != 3) return 1;\n  values.reserve(257);\n  values.insert({2, -1, 3, 2});\n  if (values.count(2) != 4 || values.count(3) != 2 || values.count(-1) != 1) return 2;\n  if (values.erase(2) != 4 || values.erase(3) != 2 || values.erase(-1) != 1 || !values.empty()) return 3;\n  values.insert({-2, -2});\n  values.clear();\n  return !values.empty() || values.erase(-2) != 0;\n}\n",
+      "source_sha256": "0f007014c0ae0d25e73684a751ef3048b7d2a65d92386ba648d5824d779fbf59",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multiset-modifiers-receiver-and-list-sequenced-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint trace = 0;\nstd::unordered_multiset<int>& receiver(std::unordered_multiset<int>& values) {\n  trace = trace * 10 + 1;\n  return values;\n}\nint argument(int event) { trace = trace * 10 + event; return 9; }\nint main() {\n  std::unordered_multiset<int> values;\n  receiver(values).insert({argument(2), argument(3), argument(4)});\n  if (trace != 1234 || values.count(9) != 3) return 1;\n  trace = 0;\n  const auto erased = receiver(values).erase(argument(5));\n  return trace != 15 || erased != 3 || !values.empty();\n}\n",
+      "source_sha256": "f81c2822589bec3a56d9aab0b7ddad9dfb625db25a305019cd5a91cc4c772947",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multiset-modifiers-erase-one-free-per-duplicate",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <unordered_set>\nint armed, frees;\nvoid* operator new(Size n) { return malloc(n); }\nvoid operator delete(void* p) noexcept { if (armed && p) ++frees; free(p); }\nvoid operator delete(void* p, Size) noexcept { if (armed && p) ++frees; free(p); }\nint main() {\n  std::unordered_multiset<int> values;\n  values.rehash(16);\n  values.insert({2, 2, 3, 2});\n  armed = 1;\n  if (values.erase(2) != 3 || frees != 3 || values.erase(2) != 0 || frees != 3) return 1;\n  values.clear();\n  armed = 0;\n  return frees != 4 || !values.empty();\n}\n",
+      "source_sha256": "a64b2c4fe8d3bd8e167d639ab900daf511bb25a5d8227e085b310c16be2f6763",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multiset-modifiers-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values; auto* p = &values; p->insert({1, 1}); return p->erase(1) != 2; }\n",
+      "source_sha256": "77d203192676e332f9e6ea65660bf269ec9cfeb2993a377bbb477c0cbfcfed42",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multiset-modifiers-different-key-list",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<long> values; values.insert({1L, 1L}); return values.erase(1L); }\n",
+      "source_sha256": "4224431579d3e360034bda346c54342860455e03de01173843702ec232a01821",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-multiset-modifiers-custom-allows-different-key-equality",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int) const { return 0; } };\nstruct Equal { bool operator()(int a, int b) const { return (a % 2) == (b % 2); } };\nint main() { std::unordered_multiset<int, Hash, Equal> values; values.insert({1, 3}); return values.erase(1) != 2; }\n",
+      "source_sha256": "78be7db1bba800b25a022444b8d6a8cd49b6d98b03134f7fa96c214e8f955726",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedMultisetModifiersInsertListRetainsEachDuplicateRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetModifiersEraseRepairsCollidingBucketPredecessorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetModifiersRehashAfterErasingGroupsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetModifiersReceiverAndListSequencedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetModifiersEraseOneFreePerDuplicateRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerMultisetListInsertAndEraseRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetModifiersDifferentKeyListRejected",
+    "TranslateTest.CoreV2UnorderedMultisetModifiersCustomAllowsDifferentKeyEqualityRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "c13d9870eab687c556a18fcda21b3a45f9d89f3b23965ef64e714acc0b549c44",
+  "maintained_original_sha256": "f891e8b10a7cd8b1272be7479bd65840ddbc3b601441bb84318e260497b7cdad",
+  "previous_registered_source_sha256": "5ba3080e5918927829a030a7f3cb2dd589f335815d504ac9fec0e7a0f41b0163",
+  "previous_maintained_original_sha256": "77b784892333c39f8a9d1f795615d22e645480038b1ffaefc9e900856402aad2",
+  "restorer_sha256": "97f22ab2621e15b38c94cf4af0a305f98315905845f7cdeeededdec5cc3b002b",
+  "extractor_sha256": "a479e0f2ff5981d361acba562bf01cf52714af167936e73c201074ab0e7391ce",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8448,
+  "current_python_registry_tests": 198,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-multiset-modifiers": "87f5a2245acb0d951864f9f620aff7b28a13afd5df682e759791b30e75b19fc5",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "6c021c690e2e6111cccaba39231fe7326a30ac9927f61a158d77915730cdf7b9",
+  "source_proof_sha256": "88ce911bdc45758f452228996e296e587fb083592380488a1e14db1b1a74d87e"
+}

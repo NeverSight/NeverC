@@ -1,0 +1,148 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-multimap-owners-default-construction-and-capacity",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersDefaultConstructionAndCapacityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dbdd3408fe5e416f748260a050814991de138be38aa2d1af4f4c5879570b8320",
+      "original_case_source_sha256": "dbdd3408fe5e416f748260a050814991de138be38aa2d1af4f4c5879570b8320",
+      "gtest_body_sha256": "aabf2947128b23e89b8c7c5f10c42d2353acd83a57c7cf3e8ff297c47593511d"
+    },
+    {
+      "name": "unordered-multimap-owners-list-keeps-all-equivalent-keys-and-removes-the-group",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersListKeepsAllEquivalentKeysAndRemovesTheGroupRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "176cdca0abd8490812d3095de49a4379293f67564b62ce33a6e2963f605e3ae2",
+      "original_case_source_sha256": "176cdca0abd8490812d3095de49a4379293f67564b62ce33a6e2963f605e3ae2",
+      "gtest_body_sha256": "0e32e9ce0fa596ce165ce5d89a195aa9f6a61b2227f255f1c107c469d231edca"
+    },
+    {
+      "name": "unordered-multimap-owners-copy-owns-distinct-nodes-after-source-clear",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersCopyOwnsDistinctNodesAfterSourceClearRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c0558423a8d35032127417d2039f84c0a0349c2270af9bad6d5e951d87440084",
+      "original_case_source_sha256": "c0558423a8d35032127417d2039f84c0a0349c2270af9bad6d5e951d87440084",
+      "gtest_body_sha256": "885a00183e5325b4e2309a8ff0822f282ee5185566b31344e4427a7be3270317"
+    },
+    {
+      "name": "unordered-multimap-owners-bucket-size-preserves-duplicate-multiplicity-after-rehash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersBucketSizePreservesDuplicateMultiplicityAfterRehashRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "574113026df782948ba463dbd92435224fbe9d014c07917edead61457fd9ee5d",
+      "original_case_source_sha256": "574113026df782948ba463dbd92435224fbe9d014c07917edead61457fd9ee5d",
+      "gtest_body_sha256": "91849cadefb3d3d24a93e96d5ca9f33b27fa4a92f5da2225a7cbbf5cc57aa888"
+    },
+    {
+      "name": "unordered-multimap-owners-comparison-requires-mapped-value-multiplicities",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersComparisonRequiresMappedValueMultiplicitiesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8783158f896e45d79f58472fa5c53c88dd3d857fe07e66200ced5200dd2aee24",
+      "original_case_source_sha256": "8783158f896e45d79f58472fa5c53c88dd3d857fe07e66200ced5200dd2aee24",
+      "gtest_body_sha256": "f4b137354567d36c7e73a7757ef3aa85eea7276e7bdfdf71c98bdfe22fccaa69"
+    },
+    {
+      "name": "unordered-multimap-owners-unapproved-mapped-type",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
+      "original_case_source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
+      "gtest_body_sha256": "caf4eaf1cb523dd36a429c1a5356c59aab8b08cecea3c8e9be6d1fe6be5fc1fd"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-multimap-owners-custom-hash-owner",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapOwnersCustomHashOwnerRejected",
+      "expected": "reject",
+      "source_sha256": "3585d2a653e13519ea38b505eb1cc0c737284157c95fa660b7aae5fe17fdcaa3",
+      "original_case_source_sha256": "3585d2a653e13519ea38b505eb1cc0c737284157c95fa660b7aae5fe17fdcaa3",
+      "gtest_body_sha256": "064f9a5a10f154df7d4cde726c8e99a398765b5f5f9dbfde5eff2d68c8417dd2"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-multimap-owners-default-construction-and-capacity",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, int> values;\n  auto* receiver = &values;\n  receiver->reserve(11);\n  return !receiver->empty() || values.size() != 0 || values.bucket_count() < 11 || values.count(-1) != 0;\n}\n",
+      "source_sha256": "dbdd3408fe5e416f748260a050814991de138be38aa2d1af4f4c5879570b8320",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-owners-list-keeps-all-equivalent-keys-and-removes-the-group",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, int> values{{1, 8}, {1, 13}, {3, 3}, {1, 21}};\n  if (values.size() != 4 || values.count(1) != 3 || values.count(3) != 1) return 1;\n  return values.erase(1) != 3 || values.size() != 1 || values.count(1) != 0 || values.count(3) != 1;\n}\n",
+      "source_sha256": "176cdca0abd8490812d3095de49a4379293f67564b62ce33a6e2963f605e3ae2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-owners-copy-owns-distinct-nodes-after-source-clear",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  using Map = std::unordered_multimap<int, int>;\n  Map source{{-4, 13}, {-4, 14}, {6, 7}};\n  source.max_load_factor(2.0f);\n  source.rehash(17);\n  Map copy(source);\n  source.clear();\n  return !source.empty() || copy.count(-4) != 2 || copy.count(6) != 1 ||\n         copy.bucket_count() < 17 || copy.max_load_factor() != 2.0f;\n}\n",
+      "source_sha256": "c0558423a8d35032127417d2039f84c0a0349c2270af9bad6d5e951d87440084",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-owners-bucket-size-preserves-duplicate-multiplicity-after-rehash",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, int> pairs{{3, 13}, {3, 5}, {7, 8}};\n  pairs.rehash(16);\n  const auto bucket = pairs.bucket(3);\n  return bucket >= pairs.bucket_count() || pairs.bucket_size(bucket) != 2 || pairs.count(7) != 1;\n}\n",
+      "source_sha256": "574113026df782948ba463dbd92435224fbe9d014c07917edead61457fd9ee5d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-owners-comparison-requires-mapped-value-multiplicities",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, int> left{{1, 3}, {1, 5}, {1, 5}, {7, 9}};\n  const std::unordered_multimap<int, int> permuted{{7, 9}, {1, 5}, {1, 3}, {1, 5}};\n  const std::unordered_multimap<int, int> different{{1, 3}, {1, 3}, {1, 5}, {7, 9}};\n  return left != permuted || left == different;\n}\n",
+      "source_sha256": "8783158f896e45d79f58472fa5c53c88dd3d857fe07e66200ced5200dd2aee24",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-owners-unapproved-mapped-type",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> pairs;\n  return pairs.count(1);\n}\n",
+      "source_sha256": "0755b1f0d3fd0c81d25cfbbc7f39f807a2c3cab79b22e2df5074013bd72d4ef7",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-owners-custom-hash-owner",
+      "expected": "reject",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_multimap<int, int, Hash> pairs;\n  return pairs.empty();\n}\n",
+      "source_sha256": "3585d2a653e13519ea38b505eb1cc0c737284157c95fa660b7aae5fe17fdcaa3",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedMultimapOwnersDefaultConstructionAndCapacityRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapOwnersListKeepsAllEquivalentKeysAndRemovesTheGroupRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapOwnersCopyOwnsDistinctNodesAfterSourceClearRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapOwnersBucketSizePreservesDuplicateMultiplicityAfterRehashRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapOwnersComparisonRequiresMappedValueMultiplicitiesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapOwnersCustomHashOwnerRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "1e0bbf4c8f5a577626fcbd4167012527fe20826396391e8d4a58c24c8f278168",
+  "maintained_original_sha256": "a302000f528d3c79c9d2169d56f19ecc664d4c5245e897a333bb2f561a1c0f64",
+  "previous_registered_source_sha256": "af259a5994e7dedc5dedb4eef6e5ebc2abbe2266e62574ce2498fc3edc51ae8e",
+  "previous_maintained_original_sha256": "518897789c68d3c75c2040ed9f914fde53c7dee14830d0891ba1f5c465b1ac89",
+  "restorer_sha256": "5f763a69a5e90567a0d8a003fccc00679c945eff84b8b1cadac539b69c2ca59f",
+  "extractor_sha256": "6a9d1bdcd76b9959734fa407d84b5fac80b337fcd7e074469a4fa34f2d217f9b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8631,
+  "current_python_registry_tests": 240,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-map-wide-mapped": "a277fa7cd60cbb7628d63cec83f9dfbada19f9b3987d1d367d42072a0704e5af",
+    "unordered-multimap-owners": "c6f13b6b610a6a4b442984f031eedb8e15c1ded9891605a4d23c33cf502bd365"
+  },
+  "native_reference_authentication_sha256": "b6847c6f61742ca03f46e7531d2b69841c47c25e6da3148191ce58136713edd4",
+  "source_proof_sha256": "88ce911bdc45758f452228996e296e587fb083592380488a1e14db1b1a74d87e"
+}

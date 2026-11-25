@@ -1,0 +1,166 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-global-iterators-forward-walk",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetGlobalIteratorsForwardWalkRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ee9eefdc3d93e16f6de4bf9a4a43dc2deb98f89b93f25c08646fa25a7c9e756e",
+      "original_case_source_sha256": "ee9eefdc3d93e16f6de4bf9a4a43dc2deb98f89b93f25c08646fa25a7c9e756e",
+      "gtest_body_sha256": "14082361f2167c253a4143face6794291a9b3740588f9b1ec4de68acdf253966"
+    },
+    {
+      "name": "unordered-set-global-iterators-const-find-and-missing",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetGlobalIteratorsConstFindAndMissingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "df5a51eed4bcc868ce4e09f05742c35202ebdd1687d49bf29e4fc72f1597220d",
+      "original_case_source_sha256": "df5a51eed4bcc868ce4e09f05742c35202ebdd1687d49bf29e4fc72f1597220d",
+      "gtest_body_sha256": "920334065b692bec74592c196ab94e8feb21d3f6ac2e37c7f1f5e2b4f0effe96"
+    },
+    {
+      "name": "unordered-set-global-iterators-duplicate-traversal",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetGlobalIteratorsDuplicateTraversalRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3272e4b3c481e90f4e41f75693a3cc23e3e2adaace57a68b9fe5a17ffc67c4b9",
+      "original_case_source_sha256": "3272e4b3c481e90f4e41f75693a3cc23e3e2adaace57a68b9fe5a17ffc67c4b9",
+      "gtest_body_sha256": "67986edbaf03231cb9c23528e7f35720e5c81d829bced4cbd9afd5bb321d72e3"
+    },
+    {
+      "name": "unordered-set-global-iterators-endpoints-evaluate-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetGlobalIteratorsEndpointsEvaluateReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7642ceef9a81872d03d7f5eb808a30110ffd116be6960e71f0bca25dad5cd0f5",
+      "original_case_source_sha256": "7642ceef9a81872d03d7f5eb808a30110ffd116be6960e71f0bca25dad5cd0f5",
+      "gtest_body_sha256": "f820a2321e7cb75cc9289d8a65f4192c0b808cb0a9bf632e28acabcd12de82be"
+    },
+    {
+      "name": "unordered-set-global-iterators-local-bucket-iterator",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "96f268c4b57416dc1acff5ff7962dddac94c7c5c9c1d46a94d46a4d3b52b371b",
+      "original_case_source_sha256": "96f268c4b57416dc1acff5ff7962dddac94c7c5c9c1d46a94d46a4d3b52b371b",
+      "gtest_body_sha256": "1145465d419a91b63a66d7c5b4570943b8e2fb12227c2fe814bfa5db33a03b95",
+      "expected_exit_code": 1
+    },
+    {
+      "name": "unordered-set-global-iterators-find-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerFindRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2b830a69437e8855b6ee1d04637e2d8572eda29915c93e46c498baa12a82004c",
+      "original_case_source_sha256": "2b830a69437e8855b6ee1d04637e2d8572eda29915c93e46c498baa12a82004c",
+      "gtest_body_sha256": "565b1371ad4887e815acc4ce1ecb2d1be1e466d1d1b0db770005a18241ee80bb"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-global-iterators-different-key-iterator",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetGlobalIteratorsDifferentKeyIteratorRejected",
+      "expected": "reject",
+      "source_sha256": "aac72f5793d32ec9a053c9b6bdd3425ed23fc7b31a9019107770f881011b8b15",
+      "original_case_source_sha256": "aac72f5793d32ec9a053c9b6bdd3425ed23fc7b31a9019107770f881011b8b15",
+      "gtest_body_sha256": "b3090b3935e709b7ad40c4e9506c7044d0695386db808ba8ea502e698e7f54b9"
+    },
+    {
+      "name": "unordered-set-global-iterators-custom-hash-find",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetGlobalIteratorsCustomHashFindRejected",
+      "expected": "reject",
+      "source_sha256": "8e6f5b76ebadff78259b5c2294bf064308671eea30cab9a1c8b619ec1fe84a75",
+      "original_case_source_sha256": "8e6f5b76ebadff78259b5c2294bf064308671eea30cab9a1c8b619ec1fe84a75",
+      "gtest_body_sha256": "14356ed7d440bceb4ec024e90a9d8430f7d3c0c6f700041d6847cbd5a3fef877"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-global-iterators-forward-walk",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{-3, 2, 9, -3};\n  auto it = values.begin();\n  const auto end = values.end();\n  int sum = 0, visited = 0;\n  while (it != end) { sum += *it++; ++visited; }\n  return sum != 8 || visited != 3;\n}\n",
+      "source_sha256": "ee9eefdc3d93e16f6de4bf9a4a43dc2deb98f89b93f25c08646fa25a7c9e756e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-global-iterators-const-find-and-missing",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values{7, -5, 19};\n  if (values.find(3) != values.cend()) return 1;\n  auto it = values.find(-5);\n  return it == values.end() || *it != -5;\n}\n",
+      "source_sha256": "df5a51eed4bcc868ce4e09f05742c35202ebdd1687d49bf29e4fc72f1597220d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-global-iterators-duplicate-traversal",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 5, 3, 7, 5};\n  const auto& read = values;\n  unsigned seen = 0;\n  for (auto it = read.cbegin(); it != read.cend(); ++it) if (*it == 5) ++seen;\n  return seen != 2;\n}\n",
+      "source_sha256": "3272e4b3c481e90f4e41f75693a3cc23e3e2adaace57a68b9fe5a17ffc67c4b9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-global-iterators-endpoints-evaluate-receiver-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nint trace;\nconst Set& receiver(const Set& values) { trace = trace * 10 + 1; return values; }\nint key() { trace = trace * 10 + 2; return 6; }\nint main() {\n  const Set values{6};\n  auto it = receiver(values).find(key());\n  if (trace != 12 || it == values.cend() || *it != 6) return 1;\n  trace = 0;\n  return receiver(values).begin() == values.end() || trace != 1;\n}\n",
+      "source_sha256": "7642ceef9a81872d03d7f5eb808a30110ffd116be6960e71f0bca25dad5cd0f5",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-global-iterators-local-bucket-iterator",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }\n",
+      "source_sha256": "96f268c4b57416dc1acff5ff7962dddac94c7c5c9c1d46a94d46a4d3b52b371b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-global-iterators-find-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p = &values; return *p->find(5) != 5; }\n",
+      "source_sha256": "2b830a69437e8855b6ee1d04637e2d8572eda29915c93e46c498baa12a82004c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-global-iterators-different-key-iterator",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<long> values{2L}; return *values.begin() != 2; }\n",
+      "source_sha256": "aac72f5793d32ec9a053c9b6bdd3425ed23fc7b31a9019107770f881011b8b15",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-global-iterators-custom-hash-find",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int value) const { return static_cast<unsigned long>(value); } };\nint main() { std::unordered_set<int, Hash> values{2}; return *values.find(2) != 2; }\n",
+      "source_sha256": "8e6f5b76ebadff78259b5c2294bf064308671eea30cab9a1c8b619ec1fe84a75",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetGlobalIteratorsForwardWalkRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetGlobalIteratorsConstFindAndMissingRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetGlobalIteratorsDuplicateTraversalRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetGlobalIteratorsEndpointsEvaluateReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerFindRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetGlobalIteratorsDifferentKeyIteratorRejected",
+    "TranslateTest.CoreV2UnorderedSetGlobalIteratorsCustomHashFindRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "2e9d95851ee84e83c378685f8e976bd2b1e10f762966d0ab2ef61c0ebf78d182",
+  "maintained_original_sha256": "ba8bed2d85cd298d5366b5b93516e4f955509abde146b71335c934aa9c50bc87",
+  "previous_registered_source_sha256": "c13d9870eab687c556a18fcda21b3a45f9d89f3b23965ef64e714acc0b549c44",
+  "previous_maintained_original_sha256": "f891e8b10a7cd8b1272be7479bd65840ddbc3b601441bb84318e260497b7cdad",
+  "restorer_sha256": "c3cdef588ce4317e34958ff57ceed2b8ea44bd0ddb08ba991e44ce45cb2b0373",
+  "extractor_sha256": "d4da8e0d115e3faa6d64e5dc187c4a15145e96755a8aee6843aa318c584b87b5",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8456,
+  "current_python_registry_tests": 200,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-global-iterators": "afcbdc3a7849047999c80e5b066ec1ef15d1bb5064d73de25a8fd9f8f07b967d",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "45054d8212fbcdb22c87325e8a269b587ed6aa3768e2965b7b83af7345a40227",
+  "source_proof_sha256": "88ce911bdc45758f452228996e296e587fb083592380488a1e14db1b1a74d87e"
+}

@@ -1,0 +1,164 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-map-constructs-from-mutable-pair-pointers",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapConstructsFromMutablePairPointersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4d374ea7f7772815ebaa4e960923049f4c20e5db971ed622fb12b03b0210350b",
+      "original_case_source_sha256": "4d374ea7f7772815ebaa4e960923049f4c20e5db971ed622fb12b03b0210350b",
+      "gtest_body_sha256": "4933ba2ef2a9060eebc0b5b715abaa19c453ebeecfbbcfcb4cfb2ac4dc0dfe93"
+    },
+    {
+      "name": "ordered-map-inserts-const-pair-pointer-subrange",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapInsertsConstPairPointerSubrangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b49d75aaf10ad0e6c51c9f95c087634a6f88eb341efa2bb0773a4ea8679ad2f3",
+      "original_case_source_sha256": "b49d75aaf10ad0e6c51c9f95c087634a6f88eb341efa2bb0773a4ea8679ad2f3",
+      "gtest_body_sha256": "ca71bc460f36e2b4134e90d3a1dcc755abfd34f9621d141ff3603d9c0dd5baa7"
+    },
+    {
+      "name": "ordered-multimap-constructs-from-const-pair-pointers",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapConstructsFromConstPairPointersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9c048d01eb70c9add4f7ef203fc3b2899e4c8af8bad630c91673dcbcf574bea7",
+      "original_case_source_sha256": "9c048d01eb70c9add4f7ef203fc3b2899e4c8af8bad630c91673dcbcf574bea7",
+      "gtest_body_sha256": "c42d979dbfd06f5e573345a9a8bb71cb8465516067d1d58189df931be46285b7"
+    },
+    {
+      "name": "ordered-multimap-inserts-mutable-pair-pointers",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapInsertsMutablePairPointersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1190fad41593441b424aae6569eb3b0ac9c12fe35a040a697d95003cf3e07e4b",
+      "original_case_source_sha256": "1190fad41593441b424aae6569eb3b0ac9c12fe35a040a697d95003cf3e07e4b",
+      "gtest_body_sha256": "b155485ad0b066aed7fe35fca1a38a24c733f480a4c6a7d595e6a665a0d1f35e"
+    },
+    {
+      "name": "ordered-set-emplacement-converts-integer-key-before-lookup",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetEmplacementConvertsIntegerKeyBeforeLookupRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5f6d46901bf2288066703324cefb7092e1ed6f4324a07b133d28b71595c4f327",
+      "original_case_source_sha256": "5f6d46901bf2288066703324cefb7092e1ed6f4324a07b133d28b71595c4f327",
+      "gtest_body_sha256": "3efc63bd2fbc8ed77f8bd7544f7277c714455996ba1601429ab3bd1834c90e67"
+    },
+    {
+      "name": "ordered-map-emplacement-converts-keys-and-mapped-integers",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapEmplacementConvertsKeysAndMappedIntegersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9ea9e587f478ed4f49058871da4292a57cfa5ac2ca1c78875084da008c90db98",
+      "original_case_source_sha256": "9ea9e587f478ed4f49058871da4292a57cfa5ac2ca1c78875084da008c90db98",
+      "gtest_body_sha256": "59038260ff873bc96cc6bae4a6932840cf700bf24f75601854081703497c853c"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-map-pointer-range-different-mapped-leaf-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapPointerRangeDifferentMappedLeafGuardRejected",
+      "expected": "reject",
+      "source_sha256": "1f6f3f97a73bab8a711099e8d0d24fed984c5337de0b354ebdadc977c74d6140",
+      "original_case_source_sha256": "1f6f3f97a73bab8a711099e8d0d24fed984c5337de0b354ebdadc977c74d6140",
+      "gtest_body_sha256": "1ef9f6861ddf3d49be81ef7eff41ced4fd2769971271f01a92fd2ebe8d35ae48"
+    },
+    {
+      "name": "ordered-emplacement-user-defined-key-conversion-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmplacementUserDefinedKeyConversionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "c57c82a260585b792df26d193be934812a2a8ce5732e1842ae28ba637064e747",
+      "original_case_source_sha256": "c57c82a260585b792df26d193be934812a2a8ce5732e1842ae28ba637064e747",
+      "gtest_body_sha256": "e315b0cc0941b04a0ff48d7bf891d042d6ab124d44312e3e031edef2e91d0b6d"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-map-constructs-from-mutable-pair-pointers",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::pair<int, int> input[]{{3, 30}, {1, 10}, {3, 31}};\n  std::map<int, int> values(input, input + 3);\n  input[0].second = 99;\n  return values.size() == 2 && values.begin()->first == 1 &&\n         values.find(3)->second == 30 ? 0 : 1;\n}\n",
+      "source_sha256": "4d374ea7f7772815ebaa4e960923049f4c20e5db971ed622fb12b03b0210350b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-inserts-const-pair-pointer-subrange",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::pair<int, int> input[]{{1, 10}, {2, 20}, {3, 30}, {4, 40}};\n  std::map<int, int> values{{2, 99}};\n  values.insert(input + 1, input + 3);\n  return values.size() == 2 && values.find(2)->second == 99 &&\n         values.find(3)->second == 30 ? 0 : 1;\n}\n",
+      "source_sha256": "b49d75aaf10ad0e6c51c9f95c087634a6f88eb341efa2bb0773a4ea8679ad2f3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-constructs-from-const-pair-pointers",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::pair<int, int> input[]{{4, 40}, {2, 20}, {2, 21}};\n  std::multimap<int, int> values(input, input + 3);\n  auto cursor = values.begin();\n  if (cursor->first != 2 || cursor->second != 20 || (++cursor)->second != 21)\n    return 1;\n  return (++cursor)->first == 4 && values.size() == 3 ? 0 : 2;\n}\n",
+      "source_sha256": "9c048d01eb70c9add4f7ef203fc3b2899e4c8af8bad630c91673dcbcf574bea7",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-inserts-mutable-pair-pointers",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::pair<int, int> input[]{{2, 20}, {2, 21}};\n  std::multimap<int, int> values{{2, 19}};\n  values.insert(input, input);\n  values.insert(input, input + 2);\n  auto cursor = values.lower_bound(2);\n  return values.size() == 3 && cursor->second == 19 &&\n         (++cursor)->second == 20 && (++cursor)->second == 21 ? 0 : 1;\n}\n",
+      "source_sha256": "1190fad41593441b424aae6569eb3b0ac9c12fe35a040a697d95003cf3e07e4b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-emplacement-converts-integer-key-before-lookup",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  short signed_key = -3;\n  unsigned char small_key = 9;\n  std::set<int> values;\n  auto left = values.emplace(signed_key);\n  auto right = values.emplace(small_key);\n  auto duplicate = values.emplace(static_cast<short>(small_key));\n  return left.second && right.second && !duplicate.second &&\n         duplicate.first == right.first && *left.first == -3 &&\n         *right.first == 9 && values.size() == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "5f6d46901bf2288066703324cefb7092e1ed6f4324a07b133d28b71595c4f327",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-emplacement-converts-keys-and-mapped-integers",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  signed char key = 3;\n  short mapped = -7;\n  auto inserted = values.emplace(key, mapped);\n  if (!inserted.second || inserted.first->second != -7)\n    return 1;\n  auto duplicate = values.try_emplace(3, static_cast<unsigned char>(10));\n  if (duplicate.second || duplicate.first->second != -7)\n    return 2;\n  auto assigned = values.insert_or_assign(3, static_cast<unsigned short>(11));\n  std::multimap<int, int> duplicates;\n  auto first = duplicates.emplace(key, mapped);\n  auto second = duplicates.emplace(key, static_cast<unsigned char>(8));\n  return !assigned.second && assigned.first->second == 11 && values.size() == 1 &&\n         first->second == -7 && second->second == 8 &&\n         duplicates.count(3) == 2 ? 0 : 3;\n}\n",
+      "source_sha256": "9ea9e587f478ed4f49058871da4292a57cfa5ac2ca1c78875084da008c90db98",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-pointer-range-different-mapped-leaf-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::pair<int, long> values[]{{1, 7}};\n  std::map<int, int> result(values, values + 1);\n  return result.begin()->second == 7 ? 0 : 1;\n}\n",
+      "source_sha256": "1f6f3f97a73bab8a711099e8d0d24fed984c5337de0b354ebdadc977c74d6140",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-emplacement-user-defined-key-conversion-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Key {\n  operator int() const { return 3; }\n};\nint main() {\n  std::set<int> values;\n  return values.emplace(Key{}).second ? 0 : 1;\n}\n",
+      "source_sha256": "c57c82a260585b792df26d193be934812a2a8ce5732e1842ae28ba637064e747",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedMapConstructsFromMutablePairPointersRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapInsertsConstPairPointerSubrangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapConstructsFromConstPairPointersRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapInsertsMutablePairPointersRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetEmplacementConvertsIntegerKeyBeforeLookupRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapEmplacementConvertsKeysAndMappedIntegersRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapPointerRangeDifferentMappedLeafGuardRejected",
+    "TranslateTest.CoreV2OrderedEmplacementUserDefinedKeyConversionGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "c5db0e72676a6713cfc15e29904c4e2efba396e97047ac2e1f82de58f009e30f",
+  "maintained_original_sha256": "095817b19e138f070eeba1f668ef2853c45e25ae7a2936c0216a4710c6f7a0ee",
+  "previous_registered_source_sha256": "88d1667c3c35a1a79ea0af997d34035ba7434b3f6fc53fd0b36ab02cd847edd1",
+  "previous_maintained_original_sha256": "71f05eab5c997e801174b09b261db0752041dcd4a7a19e10b805af00a9568b0f",
+  "restorer_sha256": "0d5b1a9981ee4ef4dfc037a00c17b582a816fa473058f8f4cf8eb06b386bafc2",
+  "extractor_sha256": "823be703ef37c4a481f39b90b7487ff9bec8e97f7fce3e1a7b6a84f290831cd7",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8845,
+  "current_python_registry_tests": 268,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "ordered-value-input": "b9b293f9b1ce126fa9c711ec5be48f05d87960878036f2b61436023a654b4e4c"
+  },
+  "native_reference_authentication_sha256": "dbef923ce4ca848ce1a01cd13e8f140ed3bce534072caabdf604ad7d800d4a5b",
+  "source_proof_sha256": "88ce911bdc45758f452228996e296e587fb083592380488a1e14db1b1a74d87e"
+}
