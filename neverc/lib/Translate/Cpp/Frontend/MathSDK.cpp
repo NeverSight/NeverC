@@ -54385,12 +54385,34 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
   return std::nullopt;
 }
 
+bool forwardListPointerAssignmentSignature(const CXXMethodDecl *M, const ASTContext &Context) {
+  if (!M->getIdentifier() || M->getName() != "assign" || M->isConst() ||
+      M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      M->getNumParams() != 2 || !M->getReturnType()->isVoidType())
+    return false;
+  const auto Type = M->getParamDecl(0)->getType();
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  return Arguments && Arguments->size() == 2 && Arguments->get(0).getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
+         Context.hasSameType(M->getParamDecl(1)->getType(), Type) &&
+         (Context.hasSameType(Type, Context.getPointerType(Context.IntTy)) ||
+          Context.hasSameType(Type, Context.getPointerType(Context.IntTy.withConst())));
+}
+
 std::optional<UtilityForwardListOperation> forwardListMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
-  if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
+  if (!M || M->isStatic() || M->isVolatile() ||
       !forwardListFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, M->getParent(), Context)) {
+    if (M->getPrimaryTemplate() && forwardListPointerAssignmentSignature(M, Context))
+      return UtilityForwardListOperation::AssignPointerRange;
+    if (!M->isConst() && M->getIdentifier() && M->getName() == "assign" &&
+        !M->getPrimaryTemplate() && M->getReturnType()->isVoidType() && M->getNumParams() == 2 &&
+        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) &&
+        Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())))
+      return UtilityForwardListOperation::AssignCount;
+    if (M->getPrimaryTemplate()) return std::nullopt;
     const auto OwnerType = Context.getRecordType(Owner->Record);
     if (!M->isConst() && M->isMoveAssignmentOperator() && M->getNumParams() == 1 &&
         Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(OwnerType)) &&
@@ -54446,6 +54468,7 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       return UtilityForwardListOperation::InsertAfter;
     return std::nullopt;
   }
+  if (M->getPrimaryTemplate()) return std::nullopt;
   const auto I = approvedUtilityForwardListIteratorRecord(S, SM, M->getParent(), Context);
   if (!I || !M->isOverloadedOperator()) return std::nullopt;
   const auto IteratorType = Context.getRecordType(I->Record);
@@ -54864,6 +54887,36 @@ bool forwardListInitializerAssignmentBody(const State &S, const SourceManager &S
          isa<CXXThisExpr>(Dereference->getSubExpr()->IgnoreParenImpCasts());
 }
 
+bool forwardListInputAssignmentBody(const CXXMethodDecl *Method, UtilityForwardListOperation Operation) {
+  const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  if (!Body) return false;
+  const auto CheckedCall = [&](const Stmt *Statement, llvm::StringRef Name, unsigned Arity) {
+    const auto *Expression = dyn_cast_or_null<Expr>(Statement);
+    const auto *Call = Expression
+        ? dyn_cast<CXXMemberCallExpr>(Expression->IgnoreUnlessSpelledInSource()) : nullptr;
+    const auto *Selected = Call ? Call->getMethodDecl() : nullptr;
+    const auto *Receiver = Call ? Call->getImplicitObjectArgument() : nullptr;
+    return Selected && Selected->getIdentifier() && Selected->getName() == Name &&
+           Call->getNumArgs() == Arity && Receiver &&
+           isa<CXXThisExpr>(Receiver->IgnoreParenImpCasts()) &&
+           Selected->getParent()->getCanonicalDecl() == Definition->getParent()->getCanonicalDecl()
+        ? Call : nullptr;
+  };
+  if (Operation == UtilityForwardListOperation::AssignPointerRange) {
+    const auto *Range = Body->size() == 1
+        ? CheckedCall(Body->body_front(), "__assign_with_sentinel", 2) : nullptr;
+    return Range && variantParameter(Range->getArg(0), Definition->getParamDecl(0)) &&
+           variantParameter(Range->getArg(1), Definition->getParamDecl(1));
+  }
+  const auto *Resize = Body->size() == 5 ? dyn_cast<IfStmt>(Body->body_back()) : nullptr;
+  const auto *Insert = Resize ? CheckedCall(Resize->getThen(), "insert_after", 3) : nullptr;
+  const auto *Erase = Resize ? CheckedCall(Resize->getElse(), "erase_after", 2) : nullptr;
+  return Insert && Erase && !Insert->getMethodDecl()->getPrimaryTemplate() &&
+         variantParameter(Insert->getArg(1), Definition->getParamDecl(0)) &&
+         variantParameter(Insert->getArg(2), Definition->getParamDecl(1));
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -55051,6 +55104,10 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   if ((*Operation == UtilityForwardListOperation::AssignInitializerList ||
        *Operation == UtilityForwardListOperation::AssignInitializerListOperator) &&
       !forwardListInitializerAssignmentBody(S, SM, Method, Context))
+    return std::nullopt;
+  if ((*Operation == UtilityForwardListOperation::AssignCount ||
+       *Operation == UtilityForwardListOperation::AssignPointerRange) &&
+      !forwardListInputAssignmentBody(Method, *Operation))
     return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;

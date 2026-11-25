@@ -27102,8 +27102,10 @@ class FunctionLowering {
     return Node;
   }
   struct ForwardListInput {
+    enum Kind { Nodes, CountedArray, RepeatedValue, PointerRange };
     Expression Current;
-    std::optional<Expression> Remaining;
+    std::optional<Expression> Limit;
+    Kind Mode = Nodes;
   };
 
   ForwardListInput forwardListInitializerInput(Expression Carrier, const CXXRecordDecl *Record,
@@ -27113,24 +27115,30 @@ class FunctionLowering {
       reject(L, "forward-list initializer", "The pinned integer initializer-list carrier is required.");
     auto Current = snapshot(fieldStorage(Carrier, List->Begin, L), L);
     auto Remaining = snapshot(cast(fieldStorage(std::move(Carrier), List->Size, L), "u64", L), L);
-    return {std::move(Current), std::move(Remaining)};
+    return {std::move(Current), std::move(Remaining), ForwardListInput::CountedArray};
   }
   Expression forwardListHasInput(const ForwardListInput &Input, SourceLocation L) {
-    return cast(Input.Remaining ? *Input.Remaining : Input.Current, "bool", L);
+    if (Input.Mode == ForwardListInput::Nodes) return cast(Input.Current, "bool", L);
+    if (Input.Mode == ForwardListInput::PointerRange)
+      return binary("!=", Input.Current, *Input.Limit, "bool", L);
+    return cast(*Input.Limit, "bool", L);
   }
   Expression forwardListInputReference(const ForwardListInput &Input, SourceLocation L) {
-    if (Input.Remaining) return Input.Current;
+    if (Input.Mode != ForwardListInput::Nodes) return Input.Current;
     return address(forwardListValue(Input.Current, true, L), A.Context.IntTy.withConst(), L);
   }
   void advanceForwardListInput(const ForwardListInput &Input, SourceLocation L) {
-    if (!Input.Remaining) {
+    if (Input.Mode == ForwardListInput::Nodes) {
       assign(Input.Current, forwardListNext(Input.Current, L), L);
       return;
     }
-    auto One = quantity(1, type(A.Context.getPointerDiffType(), L), L);
-    auto Next = index(Input.Current, std::move(One), "int", L);
-    assign(Input.Current, address(std::move(Next), A.Context.IntTy.withConst(), L), L);
-    assign(*Input.Remaining, binary("-", *Input.Remaining, quantity(1, "u64", L), "u64", L), L);
+    if (Input.Mode != ForwardListInput::RepeatedValue) {
+      auto One = quantity(1, type(A.Context.getPointerDiffType(), L), L);
+      auto Next = index(Input.Current, std::move(One), "int", L);
+      assign(Input.Current, address(std::move(Next), A.Context.IntTy.withConst(), L), L);
+    }
+    if (Input.Mode != ForwardListInput::PointerRange)
+      assign(*Input.Limit, binary("-", *Input.Limit, quantity(1, "u64", L), "u64", L), L);
   }
   void insertForwardListChain(Expression Link, const ForwardListInput &Input,
                               const UtilityForwardListNodeRecord &Info, SourceLocation L) {
@@ -27286,6 +27294,18 @@ class FunctionLowering {
       auto Input = forwardListInitializerInput(dereference(Operands.front(), L), Record, L);
       assignForwardListStorage(Place, Input, Owner->Node, L);
       if (Operation == UtilityForwardListOperation::AssignInitializerListOperator) return Place;
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::AssignCount) {
+      auto Count = snapshot(cast(Operands[0], "u64", L), L);
+      assignForwardListStorage(Place, {Operands[1], std::move(Count), ForwardListInput::RepeatedValue}, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::AssignPointerRange) {
+      const auto Pointer = type(A.Context.getPointerType(A.Context.IntTy.withConst()), L);
+      auto Current = snapshot(cast(Operands[0], Pointer, L), L);
+      auto End = snapshot(cast(Operands[1], Pointer, L), L);
+      assignForwardListStorage(Place, {std::move(Current), std::move(End), ForwardListInput::PointerRange}, Owner->Node, L);
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::MoveAssign) {
