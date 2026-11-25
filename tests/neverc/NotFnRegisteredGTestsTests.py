@@ -43,6 +43,520 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.forward_list_long_element_operations_registered = cls.registered
+        cls.forward_list_long_element_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_long_element_operations_original = cls.adapter.restore_original_gtests(cls.forward_list_long_element_operations_registered,
+                                                                        cls.forward_list_long_element_operations_suffix)
+        cls.registered = cls.adapter.restore_forward_list_long_element_operations_history(cls.forward_list_long_element_operations_registered)
+        cls.forward_list_function_comparisons_and_predicates_registered = cls.registered
+        cls.forward_list_function_comparisons_and_predicates_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_function_comparisons_and_predicates_original = cls.adapter.restore_original_gtests(cls.forward_list_function_comparisons_and_predicates_registered,
+                                                                        cls.forward_list_function_comparisons_and_predicates_suffix)
+        cls.registered = cls.adapter.restore_forward_list_function_comparisons_and_predicates_history(cls.forward_list_function_comparisons_and_predicates_registered)
+        cls.forward_list_comparisons_observers_and_iterators_registered = cls.registered
+        cls.forward_list_comparisons_observers_and_iterators_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_comparisons_observers_and_iterators_original = cls.adapter.restore_original_gtests(cls.forward_list_comparisons_observers_and_iterators_registered,
+                                                                        cls.forward_list_comparisons_observers_and_iterators_suffix)
+        cls.registered = cls.adapter.restore_forward_list_comparisons_observers_and_iterators_history(cls.forward_list_comparisons_observers_and_iterators_registered)
+        cls.forward_list_count_and_pointer_construction_registered = cls.registered
+        cls.forward_list_count_and_pointer_construction_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_count_and_pointer_construction_original = cls.adapter.restore_original_gtests(cls.forward_list_count_and_pointer_construction_registered,
+                                                                        cls.forward_list_count_and_pointer_construction_suffix)
+        cls.registered = cls.adapter.restore_forward_list_count_and_pointer_construction_history(cls.forward_list_count_and_pointer_construction_registered)
+        cls.forward_list_merge_and_sort_registered = cls.registered
+        cls.forward_list_merge_and_sort_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_merge_and_sort_original = cls.adapter.restore_original_gtests(cls.forward_list_merge_and_sort_registered,
+                                                                        cls.forward_list_merge_and_sort_suffix)
+        cls.registered = cls.adapter.restore_forward_list_merge_and_sort_history(cls.forward_list_merge_and_sort_registered)
+        cls.forward_list_assignment_insert_resize_remove_registered = cls.registered
+        cls.forward_list_assignment_insert_resize_remove_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_assignment_insert_resize_remove_original = cls.adapter.restore_original_gtests(cls.forward_list_assignment_insert_resize_remove_registered,
+                                                                        cls.forward_list_assignment_insert_resize_remove_suffix)
+        cls.registered = cls.adapter.restore_forward_list_assignment_insert_resize_remove_history(cls.forward_list_assignment_insert_resize_remove_registered)
+        cls.forward_list_splice_erase_and_emplace_registered = cls.registered
+        cls.forward_list_splice_erase_and_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_splice_erase_and_emplace_original = cls.adapter.restore_original_gtests(cls.forward_list_splice_erase_and_emplace_registered,
+                                                                        cls.forward_list_splice_erase_and_emplace_suffix)
+        cls.registered = cls.adapter.restore_forward_list_splice_erase_and_emplace_history(cls.forward_list_splice_erase_and_emplace_registered)
+        cls.forward_list_copy_assignment_reverse_and_swap_registered = cls.registered
+        cls.forward_list_copy_assignment_reverse_and_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_copy_assignment_reverse_and_swap_original = cls.adapter.restore_original_gtests(cls.forward_list_copy_assignment_reverse_and_swap_registered,
+                                                                        cls.forward_list_copy_assignment_reverse_and_swap_suffix)
+        cls.registered = cls.adapter.restore_forward_list_copy_assignment_reverse_and_swap_history(cls.forward_list_copy_assignment_reverse_and_swap_registered)
+        cls.forward_list_owner_assignment_and_copy_registered = cls.registered
+        cls.forward_list_owner_assignment_and_copy_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_owner_assignment_and_copy_original = cls.adapter.restore_original_gtests(cls.forward_list_owner_assignment_and_copy_registered,
+                                                                        cls.forward_list_owner_assignment_and_copy_suffix)
+        cls.registered = cls.adapter.restore_forward_list_owner_assignment_and_copy_history(cls.forward_list_owner_assignment_and_copy_registered)
+        cls.variant_forwarding_and_forward_list_registered = cls.registered
+        cls.variant_forwarding_and_forward_list_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_forwarding_and_forward_list_original = cls.adapter.restore_original_gtests(cls.variant_forwarding_and_forward_list_registered,
+                                                                        cls.variant_forwarding_and_forward_list_suffix)
+        cls.registered = cls.adapter.restore_variant_forwarding_and_forward_list_history(cls.variant_forwarding_and_forward_list_registered)
+        cls.variant_captureless_visit_registered = cls.registered
+        cls.variant_captureless_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_captureless_visit_original = cls.adapter.restore_original_gtests(cls.variant_captureless_visit_registered,
+                                                                        cls.variant_captureless_visit_suffix)
+        cls.registered = cls.adapter.restore_variant_captureless_visit_history(cls.variant_captureless_visit_registered)
+        cls.variant_templated_visitor_registered = cls.registered
+        cls.variant_templated_visitor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_templated_visitor_original = cls.adapter.restore_original_gtests(cls.variant_templated_visitor_registered,
+                                                                        cls.variant_templated_visitor_suffix)
+        cls.registered = cls.adapter.restore_variant_templated_visitor_history(cls.variant_templated_visitor_registered)
+        cls.variant_temporary_visitor_binding_registered = cls.registered
+        cls.variant_temporary_visitor_binding_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_temporary_visitor_binding_original = cls.adapter.restore_original_gtests(cls.variant_temporary_visitor_binding_registered,
+                                                                        cls.variant_temporary_visitor_binding_suffix)
+        cls.registered = cls.adapter.restore_variant_temporary_visitor_binding_history(cls.variant_temporary_visitor_binding_registered)
+        cls.bitset_const_member_registered = cls.registered
+        cls.bitset_const_member_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_const_member_original = cls.adapter.restore_original_gtests(cls.bitset_const_member_registered,
+                                                                        cls.bitset_const_member_suffix)
+        cls.registered = cls.adapter.restore_bitset_const_member_history(cls.bitset_const_member_registered)
+        cls.bitset_local_owners_registered = cls.registered
+        cls.bitset_local_owners_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_local_owners_original = cls.adapter.restore_original_gtests(cls.bitset_local_owners_registered,
+                                                                        cls.bitset_local_owners_suffix)
+        cls.registered = cls.adapter.restore_bitset_local_owners_history(cls.bitset_local_owners_registered)
+        cls.variant_and_bitset_receivers_registered = cls.registered
+        cls.variant_and_bitset_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_and_bitset_receivers_original = cls.adapter.restore_original_gtests(cls.variant_and_bitset_receivers_registered,
+                                                                        cls.variant_and_bitset_receivers_suffix)
+        cls.registered = cls.adapter.restore_variant_and_bitset_receivers_history(cls.variant_and_bitset_receivers_registered)
+        cls.variant_and_any_value_categories_registered = cls.registered
+        cls.variant_and_any_value_categories_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_and_any_value_categories_original = cls.adapter.restore_original_gtests(cls.variant_and_any_value_categories_registered,
+                                                                        cls.variant_and_any_value_categories_suffix)
+        cls.registered = cls.adapter.restore_variant_and_any_value_categories_history(cls.variant_and_any_value_categories_registered)
+        cls.variant_and_any_objects_registered = cls.registered
+        cls.variant_and_any_objects_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_and_any_objects_original = cls.adapter.restore_original_gtests(cls.variant_and_any_objects_registered,
+                                                                        cls.variant_and_any_objects_suffix)
+        cls.registered = cls.adapter.restore_variant_and_any_objects_history(cls.variant_and_any_objects_registered)
+        cls.variant_temporaries_and_any_references_registered = cls.registered
+        cls.variant_temporaries_and_any_references_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_temporaries_and_any_references_original = cls.adapter.restore_original_gtests(cls.variant_temporaries_and_any_references_registered,
+                                                                        cls.variant_temporaries_and_any_references_suffix)
+        cls.registered = cls.adapter.restore_variant_temporaries_and_any_references_history(cls.variant_temporaries_and_any_references_registered)
+        cls.variant_swap_and_any_typed_pointers_registered = cls.registered
+        cls.variant_swap_and_any_typed_pointers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_swap_and_any_typed_pointers_original = cls.adapter.restore_original_gtests(cls.variant_swap_and_any_typed_pointers_registered,
+                                                                        cls.variant_swap_and_any_typed_pointers_suffix)
+        cls.registered = cls.adapter.restore_variant_swap_and_any_typed_pointers_history(cls.variant_swap_and_any_typed_pointers_registered)
+        cls.variant_swap_visit_and_any_registered = cls.registered
+        cls.variant_swap_visit_and_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_swap_visit_and_any_original = cls.adapter.restore_original_gtests(cls.variant_swap_visit_and_any_registered,
+                                                                        cls.variant_swap_visit_and_any_suffix)
+        cls.registered = cls.adapter.restore_variant_swap_visit_and_any_history(cls.variant_swap_visit_and_any_registered)
+        cls.variant_assignment_and_pointer_registered = cls.registered
+        cls.variant_assignment_and_pointer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_assignment_and_pointer_original = cls.adapter.restore_original_gtests(cls.variant_assignment_and_pointer_registered,
+                                                                        cls.variant_assignment_and_pointer_suffix)
+        cls.registered = cls.adapter.restore_variant_assignment_and_pointer_history(cls.variant_assignment_and_pointer_registered)
+        cls.variant_comparisons_registered = cls.registered
+        cls.variant_comparisons_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_comparisons_original = cls.adapter.restore_original_gtests(cls.variant_comparisons_registered,
+                                                                        cls.variant_comparisons_suffix)
+        cls.registered = cls.adapter.restore_variant_comparisons_history(cls.variant_comparisons_registered)
+        cls.associative_cursor_and_value_registered = cls.registered
+        cls.associative_cursor_and_value_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.associative_cursor_and_value_original = cls.adapter.restore_original_gtests(cls.associative_cursor_and_value_registered,
+                                                                        cls.associative_cursor_and_value_suffix)
+        cls.registered = cls.adapter.restore_associative_cursor_and_value_history(cls.associative_cursor_and_value_registered)
+        cls.associative_signed_wide_registered = cls.registered
+        cls.associative_signed_wide_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.associative_signed_wide_original = cls.adapter.restore_original_gtests(cls.associative_signed_wide_registered,
+                                                                        cls.associative_signed_wide_suffix)
+        cls.registered = cls.adapter.restore_associative_signed_wide_history(cls.associative_signed_wide_registered)
+        cls.ordered_map_scalar_and_checked_at_registered = cls.registered
+        cls.ordered_map_scalar_and_checked_at_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_map_scalar_and_checked_at_original = cls.adapter.restore_original_gtests(cls.ordered_map_scalar_and_checked_at_registered,
+                                                                        cls.ordered_map_scalar_and_checked_at_suffix)
+        cls.registered = cls.adapter.restore_ordered_map_scalar_and_checked_at_history(cls.ordered_map_scalar_and_checked_at_registered)
+        cls.ordered_map_and_iteration_registered = cls.registered
+        cls.ordered_map_and_iteration_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_map_and_iteration_original = cls.adapter.restore_original_gtests(cls.ordered_map_and_iteration_registered,
+                                                                        cls.ordered_map_and_iteration_suffix)
+        cls.registered = cls.adapter.restore_ordered_map_and_iteration_history(cls.ordered_map_and_iteration_registered)
+        cls.ordered_value_input_registered = cls.registered
+        cls.ordered_value_input_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_value_input_original = cls.adapter.restore_original_gtests(cls.ordered_value_input_registered,
+                                                                        cls.ordered_value_input_suffix)
+        cls.registered = cls.adapter.restore_ordered_value_input_history(cls.ordered_value_input_registered)
+        cls.ordered_reverse_registered = cls.registered
+        cls.ordered_reverse_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_reverse_original = cls.adapter.restore_original_gtests(cls.ordered_reverse_registered,
+                                                                        cls.ordered_reverse_suffix)
+        cls.registered = cls.adapter.restore_ordered_reverse_history(cls.ordered_reverse_registered)
+        cls.ordered_hints_allocator_ownership_registered = cls.registered
+        cls.ordered_hints_allocator_ownership_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_hints_allocator_ownership_original = cls.adapter.restore_original_gtests(cls.ordered_hints_allocator_ownership_registered,
+                                                                        cls.ordered_hints_allocator_ownership_suffix)
+        cls.registered = cls.adapter.restore_ordered_hints_allocator_ownership_history(cls.ordered_hints_allocator_ownership_registered)
+        cls.ordered_node_and_value_compare_registered = cls.registered
+        cls.ordered_node_and_value_compare_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_node_and_value_compare_original = cls.adapter.restore_original_gtests(cls.ordered_node_and_value_compare_registered,
+                                                                        cls.ordered_node_and_value_compare_suffix)
+        cls.registered = cls.adapter.restore_ordered_node_and_value_compare_history(cls.ordered_node_and_value_compare_registered)
+        cls.ordered_policies_and_iterator_ranges_registered = cls.registered
+        cls.ordered_policies_and_iterator_ranges_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_policies_and_iterator_ranges_original = cls.adapter.restore_original_gtests(cls.ordered_policies_and_iterator_ranges_registered,
+                                                                        cls.ordered_policies_and_iterator_ranges_suffix)
+        cls.registered = cls.adapter.restore_ordered_policies_and_iterator_ranges_history(cls.ordered_policies_and_iterator_ranges_registered)
+        cls.ordered_merge_comparison_and_map_emplace_registered = cls.registered
+        cls.ordered_merge_comparison_and_map_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_merge_comparison_and_map_emplace_original = cls.adapter.restore_original_gtests(cls.ordered_merge_comparison_and_map_emplace_registered,
+                                                                        cls.ordered_merge_comparison_and_map_emplace_suffix)
+        cls.registered = cls.adapter.restore_ordered_merge_comparison_and_map_emplace_history(cls.ordered_merge_comparison_and_map_emplace_registered)
+        cls.ordered_list_assignment_and_emplace_registered = cls.registered
+        cls.ordered_list_assignment_and_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_list_assignment_and_emplace_original = cls.adapter.restore_original_gtests(cls.ordered_list_assignment_and_emplace_registered,
+                                                                        cls.ordered_list_assignment_and_emplace_suffix)
+        cls.registered = cls.adapter.restore_ordered_list_assignment_and_emplace_history(cls.ordered_list_assignment_and_emplace_registered)
+        cls.ordered_move_list_range_registered = cls.registered
+        cls.ordered_move_list_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_move_list_range_original = cls.adapter.restore_original_gtests(cls.ordered_move_list_range_registered,
+                                                                        cls.ordered_move_list_range_suffix)
+        cls.registered = cls.adapter.restore_ordered_move_list_range_history(cls.ordered_move_list_range_registered)
+        cls.ordered_maps_with_mixed_cursors_registered = cls.registered
+        cls.ordered_maps_with_mixed_cursors_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_maps_with_mixed_cursors_original = cls.adapter.restore_original_gtests(cls.ordered_maps_with_mixed_cursors_registered,
+                                                                        cls.ordered_maps_with_mixed_cursors_suffix)
+        cls.registered = cls.adapter.restore_ordered_maps_with_mixed_cursors_history(cls.ordered_maps_with_mixed_cursors_registered)
+        cls.ordered_owner_operations_registered = cls.registered
+        cls.ordered_owner_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_owner_operations_original = cls.adapter.restore_original_gtests(cls.ordered_owner_operations_registered,
+                                                                        cls.ordered_owner_operations_suffix)
+        cls.registered = cls.adapter.restore_ordered_owner_operations_history(cls.ordered_owner_operations_registered)
+        cls.ordered_set_core_registered = cls.registered
+        cls.ordered_set_core_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_set_core_original = cls.adapter.restore_original_gtests(cls.ordered_set_core_registered,
+                                                                        cls.ordered_set_core_suffix)
+        cls.registered = cls.adapter.restore_ordered_set_core_history(cls.ordered_set_core_registered)
+        cls.unordered_set_unsigned_key_registered = cls.registered
+        cls.unordered_set_unsigned_key_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_unsigned_key_original = cls.adapter.restore_original_gtests(cls.unordered_set_unsigned_key_registered,
+                                                                        cls.unordered_set_unsigned_key_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_unsigned_key_history(cls.unordered_set_unsigned_key_registered)
+        cls.associative_node_and_observer_registered = cls.registered
+        cls.associative_node_and_observer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.associative_node_and_observer_original = cls.adapter.restore_original_gtests(cls.associative_node_and_observer_registered,
+                                                                        cls.associative_node_and_observer_suffix)
+        cls.registered = cls.adapter.restore_associative_node_and_observer_history(cls.associative_node_and_observer_registered)
+        cls.unordered_multimap_iteration_and_transfer_registered = cls.registered
+        cls.unordered_multimap_iteration_and_transfer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_multimap_iteration_and_transfer_original = cls.adapter.restore_original_gtests(cls.unordered_multimap_iteration_and_transfer_registered,
+                                                                        cls.unordered_multimap_iteration_and_transfer_suffix)
+        cls.registered = cls.adapter.restore_unordered_multimap_iteration_and_transfer_history(cls.unordered_multimap_iteration_and_transfer_registered)
+        cls.unordered_multimap_owners_registered = cls.registered
+        cls.unordered_multimap_owners_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_multimap_owners_original = cls.adapter.restore_original_gtests(cls.unordered_multimap_owners_registered,
+                                                                        cls.unordered_multimap_owners_suffix)
+        cls.registered = cls.adapter.restore_unordered_multimap_owners_history(cls.unordered_multimap_owners_registered)
+        cls.unordered_set_member_receivers_registered = cls.registered
+        cls.unordered_set_member_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_member_receivers_original = cls.adapter.restore_original_gtests(cls.unordered_set_member_receivers_registered,
+                                                                        cls.unordered_set_member_receivers_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_member_receivers_history(cls.unordered_set_member_receivers_registered)
+        cls.unordered_set_bucket_receivers_registered = cls.registered
+        cls.unordered_set_bucket_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_bucket_receivers_original = cls.adapter.restore_original_gtests(cls.unordered_set_bucket_receivers_registered,
+                                                                        cls.unordered_set_bucket_receivers_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_bucket_receivers_history(cls.unordered_set_bucket_receivers_registered)
+        cls.unordered_set_node_handles_registered = cls.registered
+        cls.unordered_set_node_handles_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_node_handles_original = cls.adapter.restore_original_gtests(cls.unordered_set_node_handles_registered,
+                                                                        cls.unordered_set_node_handles_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_node_handles_history(cls.unordered_set_node_handles_registered)
+        cls.unordered_set_storage_construction_registered = cls.registered
+        cls.unordered_set_storage_construction_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_storage_construction_original = cls.adapter.restore_original_gtests(cls.unordered_set_storage_construction_registered,
+                                                                        cls.unordered_set_storage_construction_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_storage_construction_history(cls.unordered_set_storage_construction_registered)
+        cls.unordered_set_observers_registered = cls.registered
+        cls.unordered_set_observers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_observers_original = cls.adapter.restore_original_gtests(cls.unordered_set_observers_registered,
+                                                                        cls.unordered_set_observers_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_observers_history(cls.unordered_set_observers_registered)
+        cls.unordered_set_merge_registered = cls.registered
+        cls.unordered_set_merge_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_merge_original = cls.adapter.restore_original_gtests(cls.unordered_set_merge_registered,
+                                                                        cls.unordered_set_merge_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_merge_history(cls.unordered_set_merge_registered)
+        cls.unordered_set_iterator_range_registered = cls.registered
+        cls.unordered_set_iterator_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_iterator_range_original = cls.adapter.restore_original_gtests(cls.unordered_set_iterator_range_registered,
+                                                                        cls.unordered_set_iterator_range_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_iterator_range_history(cls.unordered_set_iterator_range_registered)
+        cls.unordered_set_list_assignment_registered = cls.registered
+        cls.unordered_set_list_assignment_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_list_assignment_original = cls.adapter.restore_original_gtests(cls.unordered_set_list_assignment_registered,
+                                                                        cls.unordered_set_list_assignment_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_list_assignment_history(cls.unordered_set_list_assignment_registered)
+        cls.unordered_set_copy_assignment_registered = cls.registered
+        cls.unordered_set_copy_assignment_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_copy_assignment_original = cls.adapter.restore_original_gtests(cls.unordered_set_copy_assignment_registered,
+                                                                        cls.unordered_set_copy_assignment_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_copy_assignment_history(cls.unordered_set_copy_assignment_registered)
+        cls.unordered_set_owner_copy_registered = cls.registered
+        cls.unordered_set_owner_copy_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_owner_copy_original = cls.adapter.restore_original_gtests(cls.unordered_set_owner_copy_registered,
+                                                                        cls.unordered_set_owner_copy_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_owner_copy_history(cls.unordered_set_owner_copy_registered)
+        cls.unordered_set_owner_move_registered = cls.registered
+        cls.unordered_set_owner_move_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_owner_move_original = cls.adapter.restore_original_gtests(cls.unordered_set_owner_move_registered,
+                                                                        cls.unordered_set_owner_move_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_owner_move_history(cls.unordered_set_owner_move_registered)
+        cls.unordered_set_pointer_construction_registered = cls.registered
+        cls.unordered_set_pointer_construction_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_pointer_construction_original = cls.adapter.restore_original_gtests(cls.unordered_set_pointer_construction_registered,
+                                                                        cls.unordered_set_pointer_construction_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_pointer_construction_history(cls.unordered_set_pointer_construction_registered)
+        cls.unordered_set_pointer_range_registered = cls.registered
+        cls.unordered_set_pointer_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_pointer_range_original = cls.adapter.restore_original_gtests(cls.unordered_set_pointer_range_registered,
+                                                                        cls.unordered_set_pointer_range_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_pointer_range_history(cls.unordered_set_pointer_range_registered)
+        cls.unordered_set_equality_swap_registered = cls.registered
+        cls.unordered_set_equality_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_equality_swap_original = cls.adapter.restore_original_gtests(cls.unordered_set_equality_swap_registered,
+                                                                        cls.unordered_set_equality_swap_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_equality_swap_history(cls.unordered_set_equality_swap_registered)
+        cls.unordered_set_emplacement_registered = cls.registered
+        cls.unordered_set_emplacement_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_emplacement_original = cls.adapter.restore_original_gtests(cls.unordered_set_emplacement_registered,
+                                                                        cls.unordered_set_emplacement_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_emplacement_history(cls.unordered_set_emplacement_registered)
+        cls.unordered_set_local_iterators_registered = cls.registered
+        cls.unordered_set_local_iterators_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_local_iterators_original = cls.adapter.restore_original_gtests(cls.unordered_set_local_iterators_registered,
+                                                                        cls.unordered_set_local_iterators_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_local_iterators_history(cls.unordered_set_local_iterators_registered)
+        cls.unordered_set_equal_range_registered = cls.registered
+        cls.unordered_set_equal_range_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_equal_range_original = cls.adapter.restore_original_gtests(cls.unordered_set_equal_range_registered,
+                                                                        cls.unordered_set_equal_range_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_equal_range_history(cls.unordered_set_equal_range_registered)
+        cls.unordered_set_iterator_erase_registered = cls.registered
+        cls.unordered_set_iterator_erase_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_iterator_erase_original = cls.adapter.restore_original_gtests(cls.unordered_set_iterator_erase_registered,
+                                                                        cls.unordered_set_iterator_erase_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_iterator_erase_history(cls.unordered_set_iterator_erase_registered)
+        cls.unordered_set_scalar_insertion_registered = cls.registered
+        cls.unordered_set_scalar_insertion_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_scalar_insertion_original = cls.adapter.restore_original_gtests(cls.unordered_set_scalar_insertion_registered,
+                                                                        cls.unordered_set_scalar_insertion_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_scalar_insertion_history(cls.unordered_set_scalar_insertion_registered)
+        cls.unordered_set_global_iterators_registered = cls.registered
+        cls.unordered_set_global_iterators_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_global_iterators_original = cls.adapter.restore_original_gtests(cls.unordered_set_global_iterators_registered,
+                                                                        cls.unordered_set_global_iterators_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_global_iterators_history(cls.unordered_set_global_iterators_registered)
+        cls.unordered_multiset_modifiers_registered = cls.registered
+        cls.unordered_multiset_modifiers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_multiset_modifiers_original = cls.adapter.restore_original_gtests(cls.unordered_multiset_modifiers_registered,
+                                                                        cls.unordered_multiset_modifiers_suffix)
+        cls.registered = cls.adapter.restore_unordered_multiset_modifiers_history(cls.unordered_multiset_modifiers_registered)
+        cls.any_character_inline_registered = cls.registered
+        cls.any_character_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_character_inline_original = cls.adapter.restore_original_gtests(cls.any_character_inline_registered,
+                                                                        cls.any_character_inline_suffix)
+        cls.registered = cls.adapter.restore_any_character_inline_history(cls.any_character_inline_registered)
+        cls.unordered_multiset_values_registered = cls.registered
+        cls.unordered_multiset_values_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_multiset_values_original = cls.adapter.restore_original_gtests(cls.unordered_multiset_values_registered,
+                                                                        cls.unordered_multiset_values_suffix)
+        cls.registered = cls.adapter.restore_unordered_multiset_values_history(cls.unordered_multiset_values_registered)
+        cls.any_long_inline_registered = cls.registered
+        cls.any_long_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_long_inline_original = cls.adapter.restore_original_gtests(cls.any_long_inline_registered,
+                                                                        cls.any_long_inline_suffix)
+        cls.registered = cls.adapter.restore_any_long_inline_history(cls.any_long_inline_registered)
+        cls.any_narrow_inline_registered = cls.registered
+        cls.any_narrow_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_narrow_inline_original = cls.adapter.restore_original_gtests(cls.any_narrow_inline_registered,
+                                                                        cls.any_narrow_inline_suffix)
+        cls.registered = cls.adapter.restore_any_narrow_inline_history(cls.any_narrow_inline_registered)
+        cls.unordered_set_modifiers_registered = cls.registered
+        cls.unordered_set_modifiers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_modifiers_original = cls.adapter.restore_original_gtests(cls.unordered_set_modifiers_registered,
+                                                                        cls.unordered_set_modifiers_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_modifiers_history(cls.unordered_set_modifiers_registered)
+        cls.unordered_set_values_registered = cls.registered
+        cls.unordered_set_values_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_set_values_original = cls.adapter.restore_original_gtests(cls.unordered_set_values_registered,
+                                                                        cls.unordered_set_values_suffix)
+        cls.registered = cls.adapter.restore_unordered_set_values_history(cls.unordered_set_values_registered)
+        cls.unordered_bucket_storage_registered = cls.registered
+        cls.unordered_bucket_storage_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_bucket_storage_original = cls.adapter.restore_original_gtests(cls.unordered_bucket_storage_registered,
+                                                                        cls.unordered_bucket_storage_suffix)
+        cls.registered = cls.adapter.restore_unordered_bucket_storage_history(cls.unordered_bucket_storage_registered)
+        cls.ordered_comparator_registered = cls.registered
+        cls.ordered_comparator_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_comparator_original = cls.adapter.restore_original_gtests(cls.ordered_comparator_registered,
+                                                                        cls.ordered_comparator_suffix)
+        cls.registered = cls.adapter.restore_ordered_comparator_history(cls.ordered_comparator_registered)
+        cls.any_wide_inline_registered = cls.registered
+        cls.any_wide_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_wide_inline_original = cls.adapter.restore_original_gtests(cls.any_wide_inline_registered,
+                                                                        cls.any_wide_inline_suffix)
+        cls.registered = cls.adapter.restore_any_wide_inline_history(cls.any_wide_inline_registered)
+        cls.unordered_load_limit_registered = cls.registered
+        cls.unordered_load_limit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_load_limit_original = cls.adapter.restore_original_gtests(cls.unordered_load_limit_registered,
+                                                                        cls.unordered_load_limit_suffix)
+        cls.registered = cls.adapter.restore_unordered_load_limit_history(cls.unordered_load_limit_registered)
+        cls.unordered_lookup_policies_registered = cls.registered
+        cls.unordered_lookup_policies_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_lookup_policies_original = cls.adapter.restore_original_gtests(cls.unordered_lookup_policies_registered,
+                                                                        cls.unordered_lookup_policies_suffix)
+        cls.registered = cls.adapter.restore_unordered_lookup_policies_history(cls.unordered_lookup_policies_registered)
+        cls.unordered_empty_capacity_registered = cls.registered
+        cls.unordered_empty_capacity_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_empty_capacity_original = cls.adapter.restore_original_gtests(cls.unordered_empty_capacity_registered,
+                                                                        cls.unordered_empty_capacity_suffix)
+        cls.registered = cls.adapter.restore_unordered_empty_capacity_history(cls.unordered_empty_capacity_registered)
+        cls.unordered_empty_load_factor_registered = cls.registered
+        cls.unordered_empty_load_factor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.unordered_empty_load_factor_original = cls.adapter.restore_original_gtests(cls.unordered_empty_load_factor_registered,
+                                                                        cls.unordered_empty_load_factor_suffix)
+        cls.registered = cls.adapter.restore_unordered_empty_load_factor_history(cls.unordered_empty_load_factor_registered)
+        cls.any_float_inline_registered = cls.registered
+        cls.any_float_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_float_inline_original = cls.adapter.restore_original_gtests(cls.any_float_inline_registered,
+                                                                        cls.any_float_inline_suffix)
+        cls.registered = cls.adapter.restore_any_float_inline_history(cls.any_float_inline_registered)
+        cls.empty_hash_set_registered = cls.registered
+        cls.empty_hash_set_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.empty_hash_set_original = cls.adapter.restore_original_gtests(cls.empty_hash_set_registered,
+                                                                        cls.empty_hash_set_suffix)
+        cls.registered = cls.adapter.restore_empty_hash_set_history(cls.empty_hash_set_registered)
+        cls.any_bool_inline_registered = cls.registered
+        cls.any_bool_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_bool_inline_original = cls.adapter.restore_original_gtests(cls.any_bool_inline_registered,
+                                                                        cls.any_bool_inline_suffix)
+        cls.registered = cls.adapter.restore_any_bool_inline_history(cls.any_bool_inline_registered)
+        cls.ordered_max_size_registered = cls.registered
+        cls.ordered_max_size_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_max_size_original = cls.adapter.restore_original_gtests(cls.ordered_max_size_registered,
+                                                                        cls.ordered_max_size_suffix)
+        cls.registered = cls.adapter.restore_ordered_max_size_history(cls.ordered_max_size_registered)
+        cls.ordered_empty_owner_registered = cls.registered
+        cls.ordered_empty_owner_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_empty_owner_original = cls.adapter.restore_original_gtests(cls.ordered_empty_owner_registered,
+                                                                        cls.ordered_empty_owner_suffix)
+        cls.registered = cls.adapter.restore_ordered_empty_owner_history(cls.ordered_empty_owner_registered)
+        cls.variant_get_early_return_registered = cls.registered
+        cls.variant_get_early_return_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_get_early_return_original = cls.adapter.restore_original_gtests(cls.variant_get_early_return_registered,
+                                                                        cls.variant_get_early_return_suffix)
+        cls.registered = cls.adapter.restore_variant_get_early_return_history(cls.variant_get_early_return_registered)
+        cls.any_unsigned_inline_registered = cls.registered
+        cls.any_unsigned_inline_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.any_unsigned_inline_original = cls.adapter.restore_original_gtests(cls.any_unsigned_inline_registered,
+                                                                        cls.any_unsigned_inline_suffix)
+        cls.registered = cls.adapter.restore_any_unsigned_inline_history(cls.any_unsigned_inline_registered)
+        cls.variant_guarded_get_registered = cls.registered
+        cls.variant_guarded_get_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_guarded_get_original = cls.adapter.restore_original_gtests(cls.variant_guarded_get_registered,
+                                                                        cls.variant_guarded_get_suffix)
+        cls.registered = cls.adapter.restore_variant_guarded_get_history(cls.variant_guarded_get_registered)
+        cls.monostate_adapter_hash_registered = cls.registered
+        cls.monostate_adapter_hash_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.monostate_adapter_hash_original = cls.adapter.restore_original_gtests(cls.monostate_adapter_hash_registered,
+                                                                        cls.monostate_adapter_hash_suffix)
+        cls.registered = cls.adapter.restore_monostate_adapter_hash_history(cls.monostate_adapter_hash_registered)
+        cls.ordered_observer_query_registered = cls.registered
+        cls.ordered_observer_query_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.ordered_observer_query_original = cls.adapter.restore_original_gtests(cls.ordered_observer_query_registered,
+                                                                        cls.ordered_observer_query_suffix)
+        cls.registered = cls.adapter.restore_ordered_observer_query_history(cls.ordered_observer_query_registered)
+        cls.layout_variant_visit_alternatives_registered = cls.registered
+        cls.layout_variant_visit_alternatives_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_visit_alternatives_original = cls.adapter.restore_original_gtests(cls.layout_variant_visit_alternatives_registered,
+                                                                        cls.layout_variant_visit_alternatives_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_visit_alternatives_history(cls.layout_variant_visit_alternatives_registered)
+        cls.layout_variant_monostate_hash_registered = cls.registered
+        cls.layout_variant_monostate_hash_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_monostate_hash_original = cls.adapter.restore_original_gtests(cls.layout_variant_monostate_hash_registered,
+                                                                        cls.layout_variant_monostate_hash_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_monostate_hash_history(cls.layout_variant_monostate_hash_registered)
+        cls.layout_variant_monostate_registered = cls.registered
+        cls.layout_variant_monostate_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_monostate_original = cls.adapter.restore_original_gtests(cls.layout_variant_monostate_registered,
+                                                                        cls.layout_variant_monostate_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_monostate_history(cls.layout_variant_monostate_registered)
+        cls.layout_variant_ordering_registered = cls.registered
+        cls.layout_variant_ordering_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_ordering_original = cls.adapter.restore_original_gtests(cls.layout_variant_ordering_registered,
+                                                                        cls.layout_variant_ordering_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_ordering_history(cls.layout_variant_ordering_registered)
+        cls.layout_variant_any_allocator_equality_registered = cls.registered
+        cls.layout_variant_any_allocator_equality_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_any_allocator_equality_original = cls.adapter.restore_original_gtests(cls.layout_variant_any_allocator_equality_registered,
+                                                                        cls.layout_variant_any_allocator_equality_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_any_allocator_equality_history(cls.layout_variant_any_allocator_equality_registered)
+        cls.layout_variant_any_allocator_registered = cls.registered
+        cls.layout_variant_any_allocator_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_any_allocator_original = cls.adapter.restore_original_gtests(cls.layout_variant_any_allocator_registered,
+                                                                        cls.layout_variant_any_allocator_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_any_allocator_history(cls.layout_variant_any_allocator_registered)
+        cls.layout_variant_any_tuple_visitor_registered = cls.registered
+        cls.layout_variant_any_tuple_visitor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_any_tuple_visitor_original = cls.adapter.restore_original_gtests(cls.layout_variant_any_tuple_visitor_registered,
+                                                                        cls.layout_variant_any_tuple_visitor_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_any_tuple_visitor_history(cls.layout_variant_any_tuple_visitor_registered)
+        cls.layout_two_variant_any_tuple_registered = cls.registered
+        cls.layout_two_variant_any_tuple_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_two_variant_any_tuple_original = cls.adapter.restore_original_gtests(cls.layout_two_variant_any_tuple_registered,
+                                                                        cls.layout_two_variant_any_tuple_suffix)
+        cls.registered = cls.adapter.restore_layout_two_variant_any_tuple_history(cls.layout_two_variant_any_tuple_registered)
+        cls.layout_two_variant_any_registered = cls.registered
+        cls.layout_two_variant_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_two_variant_any_original = cls.adapter.restore_original_gtests(cls.layout_two_variant_any_registered,
+                                                                        cls.layout_two_variant_any_suffix)
+        cls.registered = cls.adapter.restore_layout_two_variant_any_history(cls.layout_two_variant_any_registered)
+        cls.layout_any_integer_registered = cls.registered
+        cls.layout_any_integer_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_any_integer_original = cls.adapter.restore_original_gtests(cls.layout_any_integer_registered,
+                                                                        cls.layout_any_integer_suffix)
+        cls.registered = cls.adapter.restore_layout_any_integer_history(cls.layout_any_integer_registered)
+        cls.layout_integral_visit_registered = cls.registered
+        cls.layout_integral_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_integral_visit_original = cls.adapter.restore_original_gtests(cls.layout_integral_visit_registered,
+                                                                        cls.layout_integral_visit_suffix)
+        cls.registered = cls.adapter.restore_layout_integral_visit_history(cls.layout_integral_visit_registered)
+        cls.layout_assignment_visit_registered = cls.registered
+        cls.layout_assignment_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_assignment_visit_original = cls.adapter.restore_original_gtests(cls.layout_assignment_visit_registered,
+                                                                        cls.layout_assignment_visit_suffix)
+        cls.registered = cls.adapter.restore_layout_assignment_visit_history(cls.layout_assignment_visit_registered)
+        cls.layout_adapter_registered = cls.registered
+        cls.layout_adapter_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_adapter_original = cls.adapter.restore_original_gtests(cls.layout_adapter_registered,
+                                                                        cls.layout_adapter_suffix)
+        cls.registered = cls.adapter.restore_layout_adapter_history(cls.layout_adapter_registered)
+        cls.layout_variant_operations_registered = cls.registered
+        cls.layout_variant_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_variant_operations_original = cls.adapter.restore_original_gtests(
+            cls.layout_variant_operations_registered, cls.layout_variant_operations_suffix)
+        cls.registered = cls.adapter.restore_layout_variant_operations_history(cls.layout_variant_operations_registered)
+        cls.layout_in_place_any_registered = cls.registered
+        cls.layout_in_place_any_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_in_place_any_original = cls.adapter.restore_original_gtests(
+            cls.layout_in_place_any_registered, cls.layout_in_place_any_suffix)
+        cls.registered = cls.adapter.restore_layout_in_place_any_history(cls.layout_in_place_any_registered)
+        cls.layout_in_place_registered = cls.registered
+        cls.layout_in_place_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.layout_in_place_original = cls.adapter.restore_original_gtests(
+            cls.layout_in_place_registered, cls.layout_in_place_suffix)
+        cls.registered = cls.adapter.restore_layout_in_place_history(cls.layout_in_place_registered)
+        cls.variant_scalar_registered = cls.registered
+        cls.variant_scalar_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_scalar_original = cls.adapter.restore_original_gtests(cls.variant_scalar_registered,cls.variant_scalar_suffix)
+        cls.registered = cls.adapter.restore_variant_scalar_history(cls.variant_scalar_registered)
         cls.variant_metadata_layout_registered = cls.registered
         cls.variant_metadata_layout_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_metadata_layout_original = cls.adapter.restore_original_gtests(cls.variant_metadata_layout_registered,cls.variant_metadata_layout_suffix)
@@ -1737,6 +2251,1897 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_original_gtests(self.variant_metadata_layout_registered,self.variant_metadata_layout_suffix+b' ')
         with self.assertRaises(AssertionError):
             self.extractor.extract(self.variant_metadata_layout_original+b' ',['TranslateTest.CoreV2VariantMetadataSizeAndSentinelRunAtBothOptimizations'])
+
+    def test_variant_scalar_preserves_all_previous_registry_bytes_and_extracts_twenty_five_tests(self):
+        self.assertEqual(self.variant_scalar_original+self.variant_scalar_suffix,self.variant_scalar_registered)
+        self.assertEqual(self.adapter.restore_original_gtests(self.variant_scalar_original,self.variant_scalar_suffix),self.variant_scalar_original)
+        self.assertEqual(self.adapter.restore_variant_scalar_history(self.variant_scalar_registered),self.variant_metadata_layout_registered)
+        self.assertEqual(self.adapter.restore_variant_scalar_history(self.variant_scalar_original),self.variant_metadata_layout_original)
+        selected = ['TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsSecondRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsThirdLvalueRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsCopyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsDefaultPointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsRefAndSideEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfAliasRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfConstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfDuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsGetIfCopyAndEvaluateOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsHoldsConstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsCopyChangingAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsMoveAndSelfAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsConstGetByIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsConstGetByTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantObjectsClassAlternativeRejected', 'TranslateTest.CoreV2VariantObjectsConstAlternativeRejected', 'TranslateTest.CoreV2VariantObjectsAlteredDiscriminantRejected', 'TranslateTest.CoreV2VariantObjectsUnprovedConversionRejected', 'TranslateTest.CoreV2VariantObjectsUncheckedGetRejected', 'TranslateTest.CoreV2VariantObjectsConstGetInactiveRejected', 'TranslateTest.CoreV2VariantObjectsConstGetMutableAliasRejected', 'TranslateTest.CoreV2VariantObjectsConstGetAlteredHelperRejected', 'TranslateTest.CoreV2VariantObjectsGetIfReplacedAddressBodyRejected']
+        generated,proof = self.extractor.extract(self.variant_scalar_original,selected)
+        self.assertEqual(proof['original_test_names'],8043)
+        self.assertEqual(proof['selected_count'],25)
+        self.assertEqual(len(proof['nonselected_original_test_bodies']),8018)
+        self.assertFalse(proof['selected_bodies_modified'])
+        self.assertIn(b'r19variantsclr',generated)
+        self.assertIn(b'variant-objects-',generated)
+        self.assertIn(b'std::variant<',generated)
+
+    def test_variant_scalar_rejects_modified_current_source_and_suffix(self):
+        for altered in [self.variant_scalar_registered+b' ',
+                        self.variant_scalar_registered.replace(b'r19variantsclr',b'q.push(11)',1),
+                        self.variant_scalar_registered+self.variant_scalar_suffix]:
+            with self.subTest(source=hashlib.sha256(altered).hexdigest()):
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_original_gtests(altered,self.variant_scalar_suffix)
+                with self.assertRaises(AssertionError):
+                    self.adapter.restore_variant_scalar_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_scalar_registered,self.variant_scalar_suffix+b' ')
+        with self.assertRaises(AssertionError):
+            self.extractor.extract(self.variant_scalar_original+b' ',['TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations'])
+
+
+    def test_layout_in_place_preserves_earlier_fixtures_and_extracts_added_cases(self):
+        self.assertEqual(self.layout_in_place_original + self.layout_in_place_suffix,
+                         self.layout_in_place_registered)
+        self.assertEqual(self.adapter.restore_layout_in_place_history(self.layout_in_place_original),
+                         self.variant_scalar_original)
+        generated, proof = self.extractor.extract(self.layout_in_place_original, ['TranslateTest.CoreV2VariantMonostateIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateStandaloneLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateVariantLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateMonostateOnlyVariantRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMapAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeSetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedSetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueActiveEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueConstAddressRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueCopyAndAssignRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateValueDuplicateEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionRepeatedTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionZeroInitializedRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionArgumentEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIndexConstructionEmptyNonfirstRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionValueAndEffectRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionValueInitializePointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionEmptyAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTypeConstructionZeroIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected', 'TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected', 'TranslateTest.CoreV2AnyLayoutVolatileTypeRejected', 'TranslateTest.CoreV2AnyLayoutRuntimeConstructionRejected', 'TranslateTest.CoreV2AnyLayoutUnevaluatedObjectRejected', 'TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected', 'TranslateTest.CoreV2AssociativeMapCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMapRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMapRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeSetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeSetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeUnorderedSetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedMapNonDefaultKeyRejected', 'TranslateTest.CoreV2VariantMonostateValueForeignEmptyRejected', 'TranslateTest.CoreV2VariantMonostateValueRuntimeRedeclarationRejected', 'TranslateTest.CoreV2VariantIndexConstructionWrittenTagObjectRejected', 'TranslateTest.CoreV2VariantIndexConstructionEscapingTagRejected', 'TranslateTest.CoreV2VariantTypeConstructionWrittenTagObjectRejected', 'TranslateTest.CoreV2VariantTypeConstructionEffectfulTagRejected'])
+        self.assertEqual(proof['original_test_names'], 8097)
+        self.assertEqual(proof['selected_count'], 54)
+        self.assertTrue(proof['all_non_test_source_retained'])
+        for name in (b'variant-monostate-', b'variant-index-construction-', b'any-layout-', b'associative-'):
+            self.assertIn(name, generated)
+
+    def test_layout_in_place_rejects_altered_fixture_source_and_suffix(self):
+        for altered in (self.layout_in_place_registered + b' ', self.layout_in_place_registered[:-1]):
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_original_gtests(altered, self.layout_in_place_suffix)
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_layout_in_place_history(altered)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_in_place_registered,
+                                                 self.layout_in_place_suffix + b' ')
+
+
+    def test_layout_in_place_any_retains_previous_case_bodies(self):
+        self.assertEqual(self.layout_in_place_any_original + self.layout_in_place_any_suffix,
+                         self.layout_in_place_any_registered)
+        self.assertEqual(self.adapter.restore_layout_in_place_any_history(self.layout_in_place_any_original),
+                         self.layout_in_place_original)
+        generated, proof = self.extractor.extract(self.layout_in_place_any_original, ['TranslateTest.CoreV2AnyEmptyDefaultLocalRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyMemberLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyArrayLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyUnprovedCopyRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastMutableRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastConstRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastNullAndEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyPointerCastPointerTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyCopyMoveRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyCopyCopyEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentCopyIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentOperatorNotationOrderRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentExplicitAssignmentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentMoveAndSelfRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAssignmentSwapSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmptyAlteredObserverRejected', 'TranslateTest.CoreV2AnyEmptyAlteredResetRejected', 'TranslateTest.CoreV2AnyEmptyPointerCastValueFormRejected', 'TranslateTest.CoreV2AnyEmptyPointerCastUserRedeclarationRejected', 'TranslateTest.CoreV2AnyEmptyAssignmentRenamedSwapRejected'])
+        self.assertEqual(proof['original_test_names'], 8119)
+        self.assertEqual(proof['selected_count'], 22)
+        self.assertTrue(proof['all_non_test_source_retained'])
+        for name in (b'any-empty-assignment-', b'any-empty-array-', b'any-empty-pointer-cast-'):
+            self.assertIn(name, generated)
+
+    def test_layout_in_place_any_rejects_edited_source_and_suffix(self):
+        for changed in (self.layout_in_place_any_registered + b' ', self.layout_in_place_any_registered[:-1]):
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_original_gtests(changed, self.layout_in_place_any_suffix)
+            with self.assertRaises(AssertionError):
+                self.adapter.restore_layout_in_place_any_history(changed)
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_in_place_any_registered,
+                                                 self.layout_in_place_any_suffix + b' ')
+
+
+    def test_layout_variant_operations_retains_prior_source(self):
+        self.assertEqual(self.layout_variant_operations_original + self.layout_variant_operations_suffix,
+                         self.layout_variant_operations_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_operations_history(self.layout_variant_operations_original),
+                         self.layout_in_place_any_original)
+        generated, proof = self.extractor.extract(self.layout_variant_operations_original, ['TranslateTest.CoreV2MonostateComparisonAllSixRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateComparisonOperandEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateComparisonExplicitFunctionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceIndexAndReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceTypeAndRepeatedValueRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplacePointerZeroRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceEmptyAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceReceiverBeforeInputRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateComparisonSdkAddressRejected', 'TranslateTest.CoreV2VariantEmplaceWideningOperandRejected', 'TranslateTest.CoreV2VariantEmplaceVolatileOperandRejected', 'TranslateTest.CoreV2VariantEmplaceSourceOwnedRecordRejected'])
+        self.assertEqual(proof['original_test_names'], 8131)
+        self.assertEqual(proof['selected_count'], 12)
+        self.assertTrue(proof['all_non_test_source_retained'])
+        self.assertIn(b'monostate', generated)
+        self.assertIn(b'.emplace<', generated)
+
+    def test_layout_variant_operations_rejects_edited_source_and_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_operations_history(self.layout_variant_operations_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_operations_registered,
+                                                 self.layout_variant_operations_suffix + b' ')
+
+
+    def test_layout_adapter_retains_published_bodies(self):
+        self.assertEqual(self.layout_adapter_original + self.layout_adapter_suffix, self.layout_adapter_registered)
+        self.assertEqual(self.adapter.restore_layout_adapter_history(self.layout_adapter_original),
+                         self.layout_variant_operations_original)
+        output, evidence = self.extractor.extract(self.layout_adapter_original, ['TranslateTest.CoreV2AssociativeMultimapIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultisetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetAliasesRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetSizeofRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeUnorderedMultisetAlignofRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionStackCopyDequeRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionQueueCopyConstDequeRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionQueueMoveDequeReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2DequeAdapterConstructionStackMoveDequeOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AssociativeMultimapCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMultimapRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMultimapRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeMultisetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeMultisetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeMultisetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetCustomTypeOrPolicyRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetRenamedContainerStorageRejected', 'TranslateTest.CoreV2AssociativeUnorderedMultisetRuntimeStorageGuardRejected', 'TranslateTest.CoreV2DequeAdapterConstructionVectorBackedStackRejected', 'TranslateTest.CoreV2DequeAdapterConstructionNonIntDequeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8158)
+        self.assertEqual(evidence['selected_count'], 27)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'associative-unordered_multiset-', output)
+        self.assertIn(b'deque-adapter-construction-stack-copy-deque', output)
+
+    def test_layout_adapter_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_adapter_history(self.layout_adapter_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_adapter_registered, self.layout_adapter_suffix + b' ')
+
+
+    def test_layout_assignment_visit_retains_published_bodies(self):
+        self.assertEqual(self.layout_assignment_visit_original + self.layout_assignment_visit_suffix, self.layout_assignment_visit_registered)
+        self.assertEqual(self.adapter.restore_layout_assignment_visit_history(self.layout_assignment_visit_original),
+                         self.layout_adapter_original)
+        output, evidence = self.extractor.extract(self.layout_assignment_visit_original, ['TranslateTest.CoreV2VariantValueAssignmentSwitchAndChainedResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentSameAlternativeReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentAssignmentSyntaxBindingOrderRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentExplicitMemberBindingOrderRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentPointerAndResetSelectionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitFunctionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitPointerReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitFactoryEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantZeroVisitVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantValueAssignmentVolatileOperandRejected', 'TranslateTest.CoreV2VariantValueAssignmentUserDefinedConversionRejected', 'TranslateTest.CoreV2VariantValueAssignmentNontrivialAlternativeRejected', 'TranslateTest.CoreV2VariantZeroVisitRenamedValueWrapperRejected', 'TranslateTest.CoreV2VariantZeroVisitRenamedTableProjectionRejected'])
+        self.assertEqual(evidence['original_test_names'], 8172)
+        self.assertEqual(evidence['selected_count'], 14)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-value-assignment-assignment-syntax-binding-order', output)
+        self.assertIn(b'variant-zero-visit-void-result', output)
+
+    def test_layout_assignment_visit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_assignment_visit_history(self.layout_assignment_visit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_assignment_visit_registered, self.layout_assignment_visit_suffix + b' ')
+
+
+    def test_layout_integral_visit_retains_published_bodies(self):
+        self.assertEqual(self.layout_integral_visit_original + self.layout_integral_visit_suffix, self.layout_integral_visit_registered)
+        self.assertEqual(self.adapter.restore_layout_integral_visit_history(self.layout_integral_visit_original),
+                         self.layout_assignment_visit_original)
+        output, evidence = self.extractor.extract(self.layout_integral_visit_original, ['TranslateTest.CoreV2VariantIntegralVisitActiveIndexChangesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitConstAndIntegralConversionRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitCallbackAndReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantIntegralVisitRenamedGuardRejected', 'TranslateTest.CoreV2VariantIntegralVisitRenamedBaseSelectionRejected', 'TranslateTest.CoreV2VariantIntegralVisitGenericVisitorRejected'])
+        self.assertEqual(evidence['original_test_names'], 8179)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-integral-visit-active-index-changes', output)
+        self.assertIn(b'variant-integral-visit-void-result', output)
+
+    def test_layout_integral_visit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_integral_visit_history(self.layout_integral_visit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_integral_visit_registered, self.layout_integral_visit_suffix + b' ')
+
+
+    def test_layout_any_integer_retains_published_bodies(self):
+        self.assertEqual(self.layout_any_integer_original + self.layout_any_integer_suffix, self.layout_any_integer_registered)
+        self.assertEqual(self.adapter.restore_layout_any_integer_history(self.layout_any_integer_original),
+                         self.layout_integral_visit_original)
+        output, evidence = self.extractor.extract(self.layout_any_integer_original, ['TranslateTest.CoreV2AnyIntRuntimeReferenceAndMismatchRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntCopyValueFromLvalueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntCopyAndMoveConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntTransferSwapAndResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntUnsupportedFloatingValueRejected', 'TranslateTest.CoreV2AnyIntRenamedPinnedStorageHandlerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8185)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-int-runtime-reference-and-mismatch', output)
+        self.assertIn(b'any-int-transfer-swap-and-reset', output)
+
+        promoted, _ = self.extractor.extract(self.layout_any_integer_original,
+            ['TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations'])
+        self.assertIn(b'std::any value{7};', promoted)
+        self.assertIn(b'"-O0", "-O2"', promoted)
+        self.assertNotIn(b'CoreV2AnyLayoutRuntimeConstructionRejected',
+                         self.layout_any_integer_original)
+
+    def test_layout_any_integer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_any_integer_history(self.layout_any_integer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_any_integer_registered, self.layout_any_integer_suffix + b' ')
+
+
+    def test_layout_two_variant_any_retains_published_bodies(self):
+        self.assertEqual(self.layout_two_variant_any_original + self.layout_two_variant_any_suffix, self.layout_two_variant_any_registered)
+        self.assertEqual(self.adapter.restore_layout_two_variant_any_history(self.layout_two_variant_any_original),
+                         self.layout_any_integer_original)
+        output, evidence = self.extractor.extract(self.layout_two_variant_any_original, ['TranslateTest.CoreV2VariantTwoVisitMixedActiveIndicesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitConstOperandAndMutationRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitAliasAndEffectsWithVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTwoVisitRenamedMatrixIndexRejected', 'TranslateTest.CoreV2VariantTwoVisitRenamedMatrixDispatchRejected', 'TranslateTest.CoreV2VariantTwoVisitGenericVisitorRejected'])
+        self.assertEqual(evidence['original_test_names'], 8191)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-two-visit-mixed-active-indices', output)
+        self.assertIn(b'variant-two-visit-const-operand-and-mutation', output)
+
+    def test_layout_two_variant_any_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_two_variant_any_history(self.layout_two_variant_any_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_two_variant_any_registered, self.layout_two_variant_any_suffix + b' ')
+
+
+    def test_layout_two_variant_any_tuple_retains_published_bodies(self):
+        self.assertEqual(self.layout_two_variant_any_tuple_original + self.layout_two_variant_any_tuple_suffix, self.layout_two_variant_any_tuple_registered)
+        self.assertEqual(self.adapter.restore_layout_two_variant_any_tuple_history(self.layout_two_variant_any_tuple_original),
+                         self.layout_two_variant_any_original)
+        output, evidence = self.extractor.extract(self.layout_two_variant_any_tuple_original, ['TranslateTest.CoreV2TupleBudgetDeep15ExecutionRunAtBothOptimizations', 'TranslateTest.CoreV2TupleBudgetDeep16ExecutionRunAtBothOptimizations'])
+        self.assertEqual(evidence['original_test_names'], 8193)
+        self.assertEqual(evidence['selected_count'], 2)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'tuple-budget-deep-15-execution', output)
+        self.assertIn(b'tuple-budget-deep-16-execution', output)
+
+    def test_layout_two_variant_any_tuple_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_two_variant_any_tuple_history(self.layout_two_variant_any_tuple_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_two_variant_any_tuple_registered, self.layout_two_variant_any_tuple_suffix + b' ')
+
+
+    def test_layout_variant_any_tuple_visitor_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_any_tuple_visitor_original + self.layout_variant_any_tuple_visitor_suffix, self.layout_variant_any_tuple_visitor_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_any_tuple_visitor_history(self.layout_variant_any_tuple_visitor_original),
+                         self.layout_two_variant_any_tuple_original)
+        output, evidence = self.extractor.extract(self.layout_variant_any_tuple_visitor_original, ['TranslateTest.CoreV2AnyInPlaceValueInitRunAtBothOptimizations', 'TranslateTest.CoreV2AnyInPlaceEvaluatesArgumentOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmplaceIntegerReplacesAndReturnsReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyEmplaceIntegerEvaluatesArrowBeforeArgumentRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOwnedVisitConstBorrowRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOwnedVisitOverloadByActiveAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOwnedVisitVoidBorrowEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyInPlaceOtherPayloadGuardRejected', 'TranslateTest.CoreV2AnyEmplaceOtherPayloadGuardRejected', 'TranslateTest.CoreV2AnyInPlaceRenamedHandlerInstallationGuardRejected', 'TranslateTest.CoreV2VariantOwnedVisitRenamedInvokeRejected', 'TranslateTest.CoreV2VariantOwnedVisitRenamedDispatchRejected', 'TranslateTest.CoreV2VariantOwnedVisitRenamedIndexRejected'])
+        self.assertEqual(evidence['original_test_names'], 8206)
+        self.assertEqual(evidence['selected_count'], 13)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-in-place-value-init', output)
+        self.assertIn(b'variant-owned-visit-void-borrow-evaluated-once', output)
+
+    def test_layout_variant_any_tuple_visitor_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_any_tuple_visitor_history(self.layout_variant_any_tuple_visitor_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_any_tuple_visitor_registered, self.layout_variant_any_tuple_visitor_suffix + b' ')
+
+
+    def test_layout_variant_any_allocator_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_any_allocator_original + self.layout_variant_any_allocator_suffix, self.layout_variant_any_allocator_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_any_allocator_history(self.layout_variant_any_allocator_original),
+                         self.layout_variant_any_tuple_visitor_original)
+        output, evidence = self.extractor.extract(self.layout_variant_any_allocator_original, ['TranslateTest.CoreV2AnyIntAssignAndReturnReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntAssignReadsReferenceAfterReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntMakeZeroInDestinationRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntMakeAtReturnBoundaryRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntConstValueAndBorrowedReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntConstValueFromInPlaceConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntMakeAndAssignWithCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ScopedAllocatorSameTypeCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ScopedAllocatorSameTypeMoveRunAtBothOptimizations', 'TranslateTest.CoreV2ScopedAllocatorCopyAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2VariantThreeVisitFunctionAndPointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantThreeVisitConstOverloadedVisitorRunAtBothOptimizations', 'TranslateTest.CoreV2VariantThreeVisitAliasedOperandsAndVoidRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntAssignOtherPayloadGuardRejected', 'TranslateTest.CoreV2AnyIntMakeRenamedInstallationGuardRejected', 'TranslateTest.CoreV2AnyIntCastWithoutActiveStateEvidenceRejected', 'TranslateTest.CoreV2ScopedAllocatorRenamedStorageCopyGuardRejected', 'TranslateTest.CoreV2ScopedAllocatorInnerPackCopyGuardRejected', 'TranslateTest.CoreV2VariantThreeVisitRenamedValuelessGuardRejected', 'TranslateTest.CoreV2VariantThreeVisitTemporaryOperandRejected', 'TranslateTest.CoreV2VariantThreeVisitMatrixCapacityRejected', 'TranslateTest.CoreV2VariantThreeVisitFourOperandsRejected'])
+        self.assertEqual(evidence['original_test_names'], 8228)
+        self.assertEqual(evidence['selected_count'], 22)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-int-make-and-assign-with-copy', output)
+        self.assertIn(b'variant-three-visit-aliased-operands-and-void', output)
+
+    def test_layout_variant_any_allocator_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_any_allocator_history(self.layout_variant_any_allocator_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_any_allocator_registered, self.layout_variant_any_allocator_suffix + b' ')
+
+
+    def test_layout_variant_any_allocator_equality_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_any_allocator_equality_original + self.layout_variant_any_allocator_equality_suffix, self.layout_variant_any_allocator_equality_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_any_allocator_equality_history(self.layout_variant_any_allocator_equality_original),
+                         self.layout_variant_any_allocator_original)
+        output, evidence = self.extractor.extract(self.layout_variant_any_allocator_equality_original, ['TranslateTest.CoreV2VariantEqualityMatchingAndDifferentLiveAlternativesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEqualityDuplicateTypesRetainIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEqualityAliasedOperandsEvaluateOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEqualityRenamedDiagonalVisitorRejected', 'TranslateTest.CoreV2VariantEqualityRenamedConversionPolicyRejected', 'TranslateTest.CoreV2VariantEqualityFloatingAlternativeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8234)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-equality-matching-and-different-live-alternatives', output)
+        self.assertIn(b'variant-equality-aliased-operands-evaluate-once', output)
+
+    def test_layout_variant_any_allocator_equality_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_any_allocator_equality_history(self.layout_variant_any_allocator_equality_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_any_allocator_equality_registered, self.layout_variant_any_allocator_equality_suffix + b' ')
+
+
+    def test_layout_variant_ordering_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_ordering_original + self.layout_variant_ordering_suffix, self.layout_variant_ordering_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_ordering_history(self.layout_variant_ordering_original),
+                         self.layout_variant_any_allocator_equality_original)
+        output, evidence = self.extractor.extract(self.layout_variant_ordering_original, ['TranslateTest.CoreV2VariantOrderingIndexBeforeValueRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOrderingSignedValuesAndDuplicateTypesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOrderingOnceOnlyConstOperandsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantOrderingRenamedPolicyRejected', 'TranslateTest.CoreV2VariantOrderingTemporaryOperandRejected', 'TranslateTest.CoreV2VariantOrderingFloatingAlternativeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8240)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-ordering-index-before-value', output)
+        self.assertIn(b'variant-ordering-once-only-const-operands', output)
+
+    def test_layout_variant_ordering_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_ordering_history(self.layout_variant_ordering_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_ordering_registered, self.layout_variant_ordering_suffix + b' ')
+
+
+    def test_layout_variant_monostate_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_monostate_original + self.layout_variant_monostate_suffix, self.layout_variant_monostate_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_monostate_history(self.layout_variant_monostate_original),
+                         self.layout_variant_ordering_original)
+        output, evidence = self.extractor.extract(self.layout_variant_monostate_original, ['TranslateTest.CoreV2VariantMonostateComparisonSameIndexHasNoPayloadOrderRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateComparisonDistinctEmptyAlternativeIndexesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateComparisonReplacementEmptyClassRejected', 'TranslateTest.CoreV2VariantMonostateComparisonRenamedSdkMonostateRejected'])
+        self.assertEqual(evidence['original_test_names'], 8244)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-monostate-comparison-same-index-has-no-payload-order', output)
+        self.assertIn(b'variant-monostate-comparison-distinct-empty-alternative-indexes', output)
+
+    def test_layout_variant_monostate_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_monostate_history(self.layout_variant_monostate_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_monostate_registered, self.layout_variant_monostate_suffix + b' ')
+
+
+    def test_layout_variant_monostate_hash_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_monostate_hash_original + self.layout_variant_monostate_hash_suffix, self.layout_variant_monostate_hash_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_monostate_hash_history(self.layout_variant_monostate_hash_original),
+                         self.layout_variant_monostate_original)
+        output, evidence = self.extractor.extract(self.layout_variant_monostate_hash_original, ['TranslateTest.CoreV2VariantMonostateHashTemporaryRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateHashReceiverAndOperandOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateHashAlternateSdkSpellingRejected', 'TranslateTest.CoreV2VariantMonostateHashStandaloneMemberPointerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8248)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-monostate-hash-temporary', output)
+        self.assertIn(b'variant-monostate-hash-receiver-and-operand-once', output)
+
+    def test_layout_variant_monostate_hash_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_monostate_hash_history(self.layout_variant_monostate_hash_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_monostate_hash_registered, self.layout_variant_monostate_hash_suffix + b' ')
+
+
+    def test_layout_variant_visit_alternatives_retains_published_bodies(self):
+        self.assertEqual(self.layout_variant_visit_alternatives_original + self.layout_variant_visit_alternatives_suffix, self.layout_variant_visit_alternatives_registered)
+        self.assertEqual(self.adapter.restore_layout_variant_visit_alternatives_history(self.layout_variant_visit_alternatives_original),
+                         self.layout_variant_monostate_hash_original)
+        output, evidence = self.extractor.extract(self.layout_variant_visit_alternatives_original, ['TranslateTest.CoreV2VariantVisitAlternativesFunctionReferenceAliasRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAlternativesMixedConstAndMutableBindingsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAlternativesMonostateValueCopyRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAlternativesExactPointerAndFloatingAlternativesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAlternativesRenamedExhaustiveCheckRejected', 'TranslateTest.CoreV2VariantVisitAlternativesReferenceToConvertedTemporaryRejected', 'TranslateTest.CoreV2VariantVisitAlternativesVolatileReferenceRejected', 'TranslateTest.CoreV2VariantVisitAlternativesReferenceResultRejected'])
+        self.assertEqual(evidence['original_test_names'], 8256)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-alternatives-function-reference-alias', output)
+        self.assertIn(b'variant-visit-alternatives-mixed-const-and-mutable-bindings', output)
+
+    def test_layout_variant_visit_alternatives_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_layout_variant_visit_alternatives_history(self.layout_variant_visit_alternatives_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.layout_variant_visit_alternatives_registered, self.layout_variant_visit_alternatives_suffix + b' ')
+
+
+    def test_ordered_observer_query_retains_published_bodies(self):
+        self.assertEqual(self.ordered_observer_query_original + self.ordered_observer_query_suffix, self.ordered_observer_query_registered)
+        self.assertEqual(self.adapter.restore_ordered_observer_query_history(self.ordered_observer_query_original),
+                         self.layout_variant_visit_alternatives_original)
+        output, evidence = self.extractor.extract(self.ordered_observer_query_original, ['TranslateTest.CoreV2OrderedObserverQueryMapObserverSignaturesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedObserverQuerySetObserverSignaturesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedObserverQueryMultimapObserverSignaturesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedObserverQueryMultisetObserverSignaturesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedObserverQueryOverriddenKeyTypeRejected', 'TranslateTest.CoreV2OrderedObserverQueryRenamedSdkMemberRejected', 'TranslateTest.CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected'])
+        self.assertEqual(evidence['original_test_names'], 8263)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-observer-query-map-observer-signatures', output)
+        self.assertIn(b'ordered-observer-query-multiset-observer-signatures', output)
+
+    def test_ordered_observer_query_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_observer_query_history(self.ordered_observer_query_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_observer_query_registered, self.ordered_observer_query_suffix + b' ')
+
+
+    def test_monostate_adapter_hash_retains_published_bodies(self):
+        self.assertEqual(self.monostate_adapter_hash_original + self.monostate_adapter_hash_suffix, self.monostate_adapter_hash_registered)
+        self.assertEqual(self.adapter.restore_monostate_adapter_hash_history(self.monostate_adapter_hash_original),
+                         self.ordered_observer_query_original)
+        output, evidence = self.extractor.extract(self.monostate_adapter_hash_original, ['TranslateTest.CoreV2MonostateAdapterHashDirectInvokeRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateAdapterHashTupleOfReferencesRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateAdapterHashReferenceWrapperCallRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateAdapterHashWrappedHasherThroughInvokeRunAtBothOptimizations', 'TranslateTest.CoreV2MonostateAdapterHashSourceConversionRejected', 'TranslateTest.CoreV2MonostateAdapterHashRenamedSdkMonostateRejected', 'TranslateTest.CoreV2MonostateAdapterHashMemberAddressThroughInvokeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8270)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'monostate-adapter-hash-direct-invoke', output)
+        self.assertIn(b'monostate-adapter-hash-tuple-of-references', output)
+
+    def test_monostate_adapter_hash_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_monostate_adapter_hash_history(self.monostate_adapter_hash_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.monostate_adapter_hash_registered, self.monostate_adapter_hash_suffix + b' ')
+
+
+    def test_variant_guarded_get_retains_published_bodies(self):
+        self.assertEqual(self.variant_guarded_get_original + self.variant_guarded_get_suffix, self.variant_guarded_get_registered)
+        self.assertEqual(self.adapter.restore_variant_guarded_get_history(self.variant_guarded_get_original),
+                         self.monostate_adapter_hash_original)
+        output, evidence = self.extractor.extract(self.variant_guarded_get_original, ['TranslateTest.CoreV2VariantGuardedGetMutableReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGuardedGetConstReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGuardedGetShortCircuitRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGuardedGetRecheckAfterEmplaceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGuardedGetGuardForOtherObjectRejected', 'TranslateTest.CoreV2VariantGuardedGetGuardForOtherAlternativeRejected', 'TranslateTest.CoreV2VariantGuardedGetChangedAfterGuardRejected', 'TranslateTest.CoreV2VariantGuardedGetFalsePathRejected'])
+        self.assertEqual(evidence['original_test_names'], 8278)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-guarded-get-mutable-reference', output)
+        self.assertIn(b'variant-guarded-get-const-reference', output)
+
+    def test_variant_guarded_get_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_guarded_get_history(self.variant_guarded_get_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_guarded_get_registered, self.variant_guarded_get_suffix + b' ')
+
+
+    def test_any_unsigned_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_unsigned_inline_original + self.any_unsigned_inline_suffix, self.any_unsigned_inline_registered)
+        self.assertEqual(self.adapter.restore_any_unsigned_inline_history(self.any_unsigned_inline_original),
+                         self.variant_guarded_get_original)
+        output, evidence = self.extractor.extract(self.any_unsigned_inline_original, ['TranslateTest.CoreV2AnyUnsignedInlineConstructorAndTypedPointerRunAtBothOptimizations', 'TranslateTest.CoreV2AnyUnsignedInlineInPlaceAndConstValueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyUnsignedInlineFactoryCopyMoveAndResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyUnsignedInlineChangeIntegerKindRunAtBothOptimizations', 'TranslateTest.CoreV2AnyUnsignedInlineUnprovedSignedValueCastRejected', 'TranslateTest.CoreV2AnyUnsignedInlineUnprovedUnsignedValueCastRejected', 'TranslateTest.CoreV2AnyUnsignedInlineRenamedUnsignedHandlerRejected', 'TranslateTest.CoreV2AnyUnsignedInlineUnsignedLongIsNotUnsignedIntRejected'])
+        self.assertEqual(evidence['original_test_names'], 8286)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-unsigned-inline-constructor-and-typed-pointer', output)
+        self.assertIn(b'any-unsigned-inline-change-integer-kind', output)
+
+    def test_any_unsigned_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_unsigned_inline_history(self.any_unsigned_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_unsigned_inline_registered, self.any_unsigned_inline_suffix + b' ')
+
+
+    def test_variant_get_early_return_retains_published_bodies(self):
+        self.assertEqual(self.variant_get_early_return_original + self.variant_get_early_return_suffix, self.variant_get_early_return_registered)
+        self.assertEqual(self.adapter.restore_variant_get_early_return_history(self.variant_get_early_return_original),
+                         self.any_unsigned_inline_original)
+        output, evidence = self.extractor.extract(self.variant_get_early_return_original, ['TranslateTest.CoreV2VariantGetEarlyReturnReturnsOnDifferentTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGetEarlyReturnReturnsOnDifferentIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGetEarlyReturnCheckedElseBranchRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGetEarlyReturnScopeLocalAfterReturnRunAtBothOptimizations', 'TranslateTest.CoreV2VariantGetEarlyReturnFailingBranchFallsThroughRejected', 'TranslateTest.CoreV2VariantGetEarlyReturnDestroyedIfInitializerRejected', 'TranslateTest.CoreV2VariantGetEarlyReturnInterveningMutationRejected', 'TranslateTest.CoreV2VariantGetEarlyReturnReturnGuardOnOtherObjectRejected'])
+        self.assertEqual(evidence['original_test_names'], 8294)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-get-early-return-returns-on-different-type', output)
+        self.assertIn(b'variant-get-early-return-checked-else-branch', output)
+
+    def test_variant_get_early_return_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_get_early_return_history(self.variant_get_early_return_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_get_early_return_registered, self.variant_get_early_return_suffix + b' ')
+
+
+    def test_ordered_empty_owner_retains_published_bodies(self):
+        self.assertEqual(self.ordered_empty_owner_original + self.ordered_empty_owner_suffix, self.ordered_empty_owner_registered)
+        self.assertEqual(self.adapter.restore_ordered_empty_owner_history(self.ordered_empty_owner_original),
+                         self.variant_get_early_return_original)
+        output, evidence = self.extractor.extract(self.ordered_empty_owner_original, ['TranslateTest.CoreV2OrderedEmptyOwnerMapObserversRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedEmptyOwnerConstMultimapRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedEmptyOwnerSetReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedEmptyOwnerMultisetScopedOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedEmptyOwnerCustomComparatorRejected', 'TranslateTest.CoreV2OrderedEmptyOwnerDifferentKeyRejected', 'TranslateTest.CoreV2OrderedEmptyOwnerSetInsertRejected', 'TranslateTest.CoreV2OrderedEmptyOwnerMapCopyRejected'])
+        self.assertEqual(evidence['original_test_names'], 8302)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-empty-owner-map-observers', output)
+        self.assertIn(b'ordered-empty-owner-multiset-scoped-owners', output)
+
+        promoted, _ = self.extractor.extract(self.ordered_empty_owner_original,
+            ['TranslateTest.CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations'])
+        self.assertIn(b'return values.empty() ? 0 : 1;', promoted)
+        self.assertIn(b'"-O0", "-O2"', promoted)
+        self.assertNotIn(b'CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected',
+                         self.ordered_empty_owner_original)
+
+    def test_ordered_empty_owner_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_empty_owner_history(self.ordered_empty_owner_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_empty_owner_registered, self.ordered_empty_owner_suffix + b' ')
+
+
+    def test_ordered_max_size_retains_published_bodies(self):
+        self.assertEqual(self.ordered_max_size_original + self.ordered_max_size_suffix, self.ordered_max_size_registered)
+        self.assertEqual(self.adapter.restore_ordered_max_size_history(self.ordered_max_size_original),
+                         self.ordered_empty_owner_original)
+        output, evidence = self.extractor.extract(self.ordered_max_size_original, ['TranslateTest.CoreV2OrderedMaxSizeMapRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMaxSizeConstMultimapRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMaxSizeSetReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMaxSizeMultisetRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMaxSizeDifferentElementRejected', 'TranslateTest.CoreV2OrderedMaxSizeMutableTreesRejected', 'TranslateTest.CoreV2OrderedMaxSizeCustomComparatorRejected', 'TranslateTest.CoreV2OrderedMaxSizeTemporaryRejected'])
+        self.assertEqual(evidence['original_test_names'], 8310)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-max-size-const-multimap', output)
+        self.assertIn(b'ordered-max-size-set-receiver-once', output)
+
+    def test_ordered_max_size_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_max_size_history(self.ordered_max_size_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_max_size_registered, self.ordered_max_size_suffix + b' ')
+
+
+    def test_any_bool_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_bool_inline_original + self.any_bool_inline_suffix, self.any_bool_inline_registered)
+        self.assertEqual(self.adapter.restore_any_bool_inline_history(self.any_bool_inline_original),
+                         self.ordered_max_size_original)
+        output, evidence = self.extractor.extract(self.any_bool_inline_original, ['TranslateTest.CoreV2AnyBoolInlineTypedMutablePointerRunAtBothOptimizations', 'TranslateTest.CoreV2AnyBoolInlineFactoryEmplaceResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyBoolInlineCopyMoveAndAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2AnyBoolInlineConstantActiveValueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyBoolInlineValueMismatchRejected', 'TranslateTest.CoreV2AnyBoolInlineDynamicValueTagRejected', 'TranslateTest.CoreV2AnyBoolInlinePointerPayloadRejected', 'TranslateTest.CoreV2AnyBoolInlineMutableReferenceCastRejected'])
+        self.assertEqual(evidence['original_test_names'], 8318)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-bool-inline-constant-active-value', output)
+        self.assertIn(b'any-bool-inline-typed-mutable-pointer', output)
+
+    def test_any_bool_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_bool_inline_history(self.any_bool_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_bool_inline_registered, self.any_bool_inline_suffix + b' ')
+
+
+    def test_empty_hash_set_retains_published_bodies(self):
+        self.assertEqual(self.empty_hash_set_original + self.empty_hash_set_suffix, self.empty_hash_set_registered)
+        self.assertEqual(self.adapter.restore_empty_hash_set_history(self.empty_hash_set_original),
+                         self.any_bool_inline_original)
+        output, evidence = self.extractor.extract(self.empty_hash_set_original, ['TranslateTest.CoreV2EmptyHashSetSetSizeRunAtBothOptimizations', 'TranslateTest.CoreV2EmptyHashSetConstMultisetRunAtBothOptimizations', 'TranslateTest.CoreV2EmptyHashSetReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2EmptyHashSetScopedMultisetRunAtBothOptimizations', 'TranslateTest.CoreV2EmptyHashSetCustomHashRejected', 'TranslateTest.CoreV2EmptyHashSetInsertRejected', 'TranslateTest.CoreV2EmptyHashSetCopyRejected', 'TranslateTest.CoreV2EmptyHashSetLoadFactorSetterRejected'])
+        self.assertEqual(evidence['original_test_names'], 8326)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'empty-hash-set-set-size', output)
+        self.assertIn(b'empty-hash-set-receiver-once', output)
+
+    def test_empty_hash_set_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_empty_hash_set_history(self.empty_hash_set_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.empty_hash_set_registered, self.empty_hash_set_suffix + b' ')
+
+
+    def test_any_float_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_float_inline_original + self.any_float_inline_suffix, self.any_float_inline_registered)
+        self.assertEqual(self.adapter.restore_any_float_inline_history(self.any_float_inline_original),
+                         self.empty_hash_set_original)
+        output, evidence = self.extractor.extract(self.any_float_inline_original, ['TranslateTest.CoreV2AnyFloatInlinePointerWriteRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFloatInlineImmutableValueRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFloatInlineFactoryEmplaceResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFloatInlineCopyMoveAndAssignRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFloatInlineLongDoubleOwnerRejected', 'TranslateTest.CoreV2AnyFloatInlineMutableReferenceRejected', 'TranslateTest.CoreV2AnyFloatInlineUnknownActiveValueRejected', 'TranslateTest.CoreV2AnyFloatInlineMismatchedImmutableValueRejected'])
+        self.assertEqual(evidence['original_test_names'], 8334)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-float-inline-immutable-value', output)
+        self.assertIn(b'any-float-inline-pointer-write', output)
+
+    def test_any_float_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_float_inline_history(self.any_float_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_float_inline_registered, self.any_float_inline_suffix + b' ')
+
+
+    def test_unordered_empty_load_factor_retains_published_bodies(self):
+        self.assertEqual(self.unordered_empty_load_factor_original + self.unordered_empty_load_factor_suffix, self.unordered_empty_load_factor_registered)
+        self.assertEqual(self.adapter.restore_unordered_empty_load_factor_history(self.unordered_empty_load_factor_original),
+                         self.any_float_inline_original)
+        output, evidence = self.extractor.extract(self.unordered_empty_load_factor_original, ['TranslateTest.CoreV2UnorderedEmptyLoadFactorEmptySetRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyLoadFactorEmptyMultisetRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyLoadFactorSingleReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyLoadFactorNestedScopeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyLoadFactorCustomHashRejected', 'TranslateTest.CoreV2UnorderedEmptyLoadFactorDifferentKeyRejected', 'TranslateTest.CoreV2UnorderedEmptyLoadFactorRehashRejected', 'TranslateTest.CoreV2UnorderedEmptyLoadFactorPointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8342)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-empty-load-factor-empty-set', output)
+        self.assertIn(b'unordered-empty-load-factor-single-receiver-evaluation', output)
+
+    def test_unordered_empty_load_factor_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_empty_load_factor_history(self.unordered_empty_load_factor_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_empty_load_factor_registered, self.unordered_empty_load_factor_suffix + b' ')
+
+
+    def test_unordered_empty_capacity_retains_published_bodies(self):
+        self.assertEqual(self.unordered_empty_capacity_original + self.unordered_empty_capacity_suffix, self.unordered_empty_capacity_registered)
+        self.assertEqual(self.adapter.restore_unordered_empty_capacity_history(self.unordered_empty_capacity_original),
+                         self.unordered_empty_load_factor_original)
+        output, evidence = self.extractor.extract(self.unordered_empty_capacity_original, ['TranslateTest.CoreV2UnorderedEmptyCapacitySetMaxSizeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyCapacityMultisetMaxBucketsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyCapacitySingleReceiverEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyCapacityNestedMultisetRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedEmptyCapacityCustomHashRejected', 'TranslateTest.CoreV2UnorderedEmptyCapacityNonIntKeyRejected', 'TranslateTest.CoreV2UnorderedEmptyCapacityArrowReceiverRejected', 'TranslateTest.CoreV2UnorderedEmptyCapacityNonemptyOwnerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8350)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-empty-capacity-set-max-size', output)
+        self.assertIn(b'unordered-empty-capacity-single-receiver-evaluation', output)
+
+    def test_unordered_empty_capacity_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_empty_capacity_history(self.unordered_empty_capacity_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_empty_capacity_registered, self.unordered_empty_capacity_suffix + b' ')
+
+
+    def test_unordered_lookup_policies_retains_published_bodies(self):
+        self.assertEqual(self.unordered_lookup_policies_original + self.unordered_lookup_policies_suffix, self.unordered_lookup_policies_registered)
+        self.assertEqual(self.adapter.restore_unordered_lookup_policies_history(self.unordered_lookup_policies_original),
+                         self.unordered_empty_capacity_original)
+        output, evidence = self.extractor.extract(self.unordered_lookup_policies_original, ['TranslateTest.CoreV2UnorderedLookupPoliciesSetHashValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLookupPoliciesMultisetEqualityValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLookupPoliciesHashReceiverEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLookupPoliciesEquivalentCopiesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLookupPoliciesCustomHashRejected', 'TranslateTest.CoreV2UnorderedLookupPoliciesCustomEqualityRejected', 'TranslateTest.CoreV2UnorderedLookupPoliciesArrowReceiverRejected', 'TranslateTest.CoreV2UnorderedLookupPoliciesNonemptyOwnerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8358)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-lookup-policies-set-hash-value', output)
+        self.assertIn(b'unordered-lookup-policies-hash-receiver-evaluated-once', output)
+
+    def test_unordered_lookup_policies_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_lookup_policies_history(self.unordered_lookup_policies_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_lookup_policies_registered, self.unordered_lookup_policies_suffix + b' ')
+
+
+    def test_unordered_load_limit_retains_published_bodies(self):
+        self.assertEqual(self.unordered_load_limit_original + self.unordered_load_limit_suffix, self.unordered_load_limit_registered)
+        self.assertEqual(self.adapter.restore_unordered_load_limit_history(self.unordered_load_limit_original),
+                         self.unordered_lookup_policies_original)
+        output, evidence = self.extractor.extract(self.unordered_load_limit_original, ['TranslateTest.CoreV2UnorderedLoadLimitSetUpdateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLoadLimitMultisetUpdateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLoadLimitReceiverBeforeArgumentRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLoadLimitIndependentEmptyOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedLoadLimitCustomHashRejected', 'TranslateTest.CoreV2UnorderedLoadLimitNonIntKeyRejected', 'TranslateTest.CoreV2UnorderedLoadLimitArrowReceiverRejected', 'TranslateTest.CoreV2UnorderedLoadLimitNonemptyOwnerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8366)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-load-limit-set-update', output)
+        self.assertIn(b'unordered-load-limit-receiver-before-argument', output)
+
+    def test_unordered_load_limit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_load_limit_history(self.unordered_load_limit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_load_limit_registered, self.unordered_load_limit_suffix + b' ')
+
+
+    def test_any_wide_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_wide_inline_original + self.any_wide_inline_suffix, self.any_wide_inline_registered)
+        self.assertEqual(self.adapter.restore_any_wide_inline_history(self.any_wide_inline_original),
+                         self.unordered_load_limit_original)
+        output, evidence = self.extractor.extract(self.any_wide_inline_original, ['TranslateTest.CoreV2AnyWideInlineDoublePointerPrecisionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineDoubleInPlaceDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineWideSignedValueMoveRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineWideUnsignedEmplaceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineWideTagsAndSwapRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineWideInputOnceRunAtBothOptimizations', 'TranslateTest.CoreV2AnyWideInlineMutableWideReferenceRejected', 'TranslateTest.CoreV2AnyWideInlineUnknownWideValueRejected', 'TranslateTest.CoreV2AnyWideInlineMismatchedWideValueRejected', 'TranslateTest.CoreV2AnyWideInlineRecordConversionRejected'])
+        self.assertEqual(evidence['original_test_names'], 8376)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-wide-inline-double-pointer-precision', output)
+        self.assertIn(b'any-wide-inline-wide-input-once', output)
+
+    def test_any_wide_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_wide_inline_history(self.any_wide_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_wide_inline_registered, self.any_wide_inline_suffix + b' ')
+
+
+    def test_ordered_comparator_retains_published_bodies(self):
+        self.assertEqual(self.ordered_comparator_original + self.ordered_comparator_suffix, self.ordered_comparator_registered)
+        self.assertEqual(self.adapter.restore_ordered_comparator_history(self.ordered_comparator_original),
+                         self.any_wide_inline_original)
+        output, evidence = self.extractor.extract(self.ordered_comparator_original, ['TranslateTest.CoreV2OrderedComparatorSetKeyAndValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedComparatorMultisetConstValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedComparatorMapKeyWrapperRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedComparatorMultimapKeyWrapperRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedComparatorCustomComparatorRejected', 'TranslateTest.CoreV2OrderedComparatorMapValueComparatorRejected', 'TranslateTest.CoreV2OrderedComparatorNonDefaultKeyRejected', 'TranslateTest.CoreV2OrderedComparatorArrowReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8384)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-comparator-set-key-and-value', output)
+        self.assertIn(b'ordered-comparator-map-key-wrapper', output)
+
+    def test_ordered_comparator_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_comparator_history(self.ordered_comparator_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_comparator_registered, self.ordered_comparator_suffix + b' ')
+
+
+    def test_unordered_bucket_storage_retains_published_bodies(self):
+        self.assertEqual(self.unordered_bucket_storage_original + self.unordered_bucket_storage_suffix, self.unordered_bucket_storage_registered)
+        self.assertEqual(self.adapter.restore_unordered_bucket_storage_history(self.unordered_bucket_storage_original),
+                         self.ordered_comparator_original)
+        output, evidence = self.extractor.extract(self.unordered_bucket_storage_original, ['TranslateTest.CoreV2UnorderedBucketStorageUniqueRehashRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedBucketStorageMultiReserveLimitRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedBucketStorageResizeArgumentsOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedBucketStorageBucketAllocationAndReleaseRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedBucketStorageCustomHasherRejected', 'TranslateTest.CoreV2UnorderedBucketStorageDifferentKeyRejected', 'TranslateTest.CoreV2UnorderedBucketStoragePointerReceiverRejected', 'TranslateTest.CoreV2UnorderedBucketStorageNonemptyOwnerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8392)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-bucket-storage-unique-rehash', output)
+        self.assertIn(b'unordered-bucket-storage-bucket-allocation-and-release', output)
+
+    def test_unordered_bucket_storage_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_bucket_storage_history(self.unordered_bucket_storage_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_bucket_storage_registered, self.unordered_bucket_storage_suffix + b' ')
+
+
+    def test_unordered_set_values_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_values_original + self.unordered_set_values_suffix, self.unordered_set_values_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_values_history(self.unordered_set_values_original),
+                         self.unordered_bucket_storage_original)
+        output, evidence = self.extractor.extract(self.unordered_set_values_original, ['TranslateTest.CoreV2UnorderedSetValuesBracesDuplicatesAndCountRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetValuesListInputOrderRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetValuesNonemptyRehashAndBucketsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetValuesClearRetainsBucketCapacityRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetValuesDifferentKeyListRejected', 'TranslateTest.CoreV2UnorderedSetValuesCustomKeyEqualityRejected', 'TranslateTest.CoreV2UnorderedSetValuesMultipleKeyOwnerRejected', 'TranslateTest.CoreV2UnorderedSetValuesArrowCountRejected'])
+        self.assertEqual(evidence['original_test_names'], 8400)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-values-braces-duplicates-and-count', output)
+        self.assertIn(b'unordered-set-values-clear-retains-bucket-capacity', output)
+
+    def test_unordered_set_values_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_values_history(self.unordered_set_values_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_values_registered, self.unordered_set_values_suffix + b' ')
+
+
+    def test_unordered_set_modifiers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_modifiers_original + self.unordered_set_modifiers_suffix, self.unordered_set_modifiers_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_modifiers_history(self.unordered_set_modifiers_original),
+                         self.unordered_set_values_original)
+        output, evidence = self.extractor.extract(self.unordered_set_modifiers_original, ['TranslateTest.CoreV2UnorderedSetModifiersEraseCollisionsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetModifiersReceiverBeforeModifierArgumentsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetModifiersInsertAfterClearRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetModifiersEraseReleasesOneNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetModifiersDifferentKeyRejected', 'TranslateTest.CoreV2UnorderedSetModifiersAlternateHashRejected', 'TranslateTest.CoreV2UnorderedSetModifiersMultiKeyEraseRejected', 'TranslateTest.CoreV2UnorderedSetModifiersPointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8408)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-modifiers-erase-collisions', output)
+        self.assertIn(b'unordered-set-modifiers-erase-releases-one-node', output)
+
+    def test_unordered_set_modifiers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_modifiers_history(self.unordered_set_modifiers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_modifiers_registered, self.unordered_set_modifiers_suffix + b' ')
+
+
+    def test_any_narrow_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_narrow_inline_original + self.any_narrow_inline_suffix, self.any_narrow_inline_registered)
+        self.assertEqual(self.adapter.restore_any_narrow_inline_history(self.any_narrow_inline_original),
+                         self.unordered_set_modifiers_original)
+        output, evidence = self.extractor.extract(self.any_narrow_inline_original, ['TranslateTest.CoreV2AnyNarrowInlineDistinctCharTagsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyNarrowInlineShortLifecycleRunAtBothOptimizations', 'TranslateTest.CoreV2AnyNarrowInlineSignedNarrowValueCastsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyNarrowInlineUnsignedNarrowReferenceAndResetRunAtBothOptimizations', 'TranslateTest.CoreV2AnyNarrowInlineUnicodePayloadRejected', 'TranslateTest.CoreV2AnyNarrowInlineDifferentSmallRecordRejected', 'TranslateTest.CoreV2AnyNarrowInlineMutableNarrowValueCastRejected', 'TranslateTest.CoreV2AnyNarrowInlineNarrowTagMismatchValueCastRejected'])
+        self.assertEqual(evidence['original_test_names'], 8416)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-narrow-inline-distinct-char-tags', output)
+        self.assertIn(b'any-narrow-inline-short-lifecycle', output)
+
+    def test_any_narrow_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_narrow_inline_history(self.any_narrow_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_narrow_inline_registered, self.any_narrow_inline_suffix + b' ')
+
+
+    def test_any_long_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_long_inline_original + self.any_long_inline_suffix, self.any_long_inline_registered)
+        self.assertEqual(self.adapter.restore_any_long_inline_history(self.any_long_inline_original),
+                         self.any_narrow_inline_original)
+        output, evidence = self.extractor.extract(self.any_long_inline_original, ['TranslateTest.CoreV2AnyLongInlineDistinctNativeLongTagsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLongInlineMakeAndCopyNativeLongRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLongInlineLongEmplaceAndMoveRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLongInlineSwapNativeLongAndSignedWideRunAtBothOptimizations', 'TranslateTest.CoreV2AnyLongInlineSignedLongTagMismatchRejected', 'TranslateTest.CoreV2AnyLongInlineUnsignedLongTagMismatchRejected', 'TranslateTest.CoreV2AnyLongInlineMutableLongReferenceCastRejected', 'TranslateTest.CoreV2AnyLongInlineVolatileNativeLongAccessRejected'])
+        self.assertEqual(evidence['original_test_names'], 8424)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-long-inline-distinct-native-long-tags', output)
+        self.assertIn(b'any-long-inline-long-emplace-and-move', output)
+
+    def test_any_long_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_long_inline_history(self.any_long_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_long_inline_registered, self.any_long_inline_suffix + b' ')
+
+
+    def test_unordered_multiset_values_retains_published_bodies(self):
+        self.assertEqual(self.unordered_multiset_values_original + self.unordered_multiset_values_suffix, self.unordered_multiset_values_registered)
+        self.assertEqual(self.adapter.restore_unordered_multiset_values_history(self.unordered_multiset_values_original),
+                         self.any_long_inline_original)
+        output, evidence = self.extractor.extract(self.unordered_multiset_values_original, ['TranslateTest.CoreV2UnorderedMultisetValuesCollisionBucketsPreserveMultiplicityRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetValuesReservePreservesDuplicateKeysRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetValuesReleaseEachDuplicateNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetValuesConstCountEvaluatesReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetValuesDifferentKeyRejected', 'TranslateTest.CoreV2UnorderedMultisetValuesAlternateHashRejected', 'TranslateTest.CoreV2UnorderedMultisetValuesScalarInsertRejected', 'TranslateTest.CoreV2UnorderedMultisetValuesArrowCountRejected'])
+        self.assertEqual(evidence['original_test_names'], 8432)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multiset-values-collision-buckets-preserve-multiplicity', output)
+        self.assertIn(b'unordered-multiset-values-release-each-duplicate-node', output)
+
+    def test_unordered_multiset_values_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_multiset_values_history(self.unordered_multiset_values_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_multiset_values_registered, self.unordered_multiset_values_suffix + b' ')
+
+
+    def test_any_character_inline_retains_published_bodies(self):
+        self.assertEqual(self.any_character_inline_original + self.any_character_inline_suffix, self.any_character_inline_registered)
+        self.assertEqual(self.adapter.restore_any_character_inline_history(self.any_character_inline_original),
+                         self.unordered_multiset_values_original)
+        output, evidence = self.extractor.extract(self.any_character_inline_original, ['TranslateTest.CoreV2AnyCharacterInlineWideTagDistinctFromIntegersRunAtBothOptimizations', 'TranslateTest.CoreV2AnyCharacterInlineUtfTagTransitionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyCharacterInlineUtfPayloadCopyAndSwapRunAtBothOptimizations', 'TranslateTest.CoreV2AnyCharacterInlineClosedWideAndUtfValueCastsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyCharacterInlineMutableUtfReferenceRejected', 'TranslateTest.CoreV2AnyCharacterInlineWrongUtfValueKindRejected', 'TranslateTest.CoreV2AnyCharacterInlineAggregateWithUtfMemberRejected', 'TranslateTest.CoreV2AnyCharacterInlineVolatileUtfPointerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8440)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'any-character-inline-utf-tag-transition', output)
+        self.assertIn(b'any-character-inline-wide-tag-distinct-from-integers', output)
+
+    def test_any_character_inline_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_any_character_inline_history(self.any_character_inline_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.any_character_inline_registered, self.any_character_inline_suffix + b' ')
+
+
+    def test_unordered_multiset_modifiers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_multiset_modifiers_original + self.unordered_multiset_modifiers_suffix, self.unordered_multiset_modifiers_registered)
+        self.assertEqual(self.adapter.restore_unordered_multiset_modifiers_history(self.unordered_multiset_modifiers_original),
+                         self.any_character_inline_original)
+        output, evidence = self.extractor.extract(self.unordered_multiset_modifiers_original, ['TranslateTest.CoreV2UnorderedMultisetModifiersInsertListRetainsEachDuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersEraseRepairsCollidingBucketPredecessorsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersRehashAfterErasingGroupsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersReceiverAndListSequencedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersEraseOneFreePerDuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetModifiersDifferentKeyListRejected', 'TranslateTest.CoreV2UnorderedMultisetModifiersCustomAllowsDifferentKeyEqualityRejected', 'TranslateTest.CoreV2UnorderedMultisetModifiersPointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8448)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multiset-modifiers-insert-list-retains-each-duplicate', output)
+        self.assertIn(b'unordered-multiset-modifiers-erase-one-free-per-duplicate', output)
+
+    def test_unordered_multiset_modifiers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_multiset_modifiers_history(self.unordered_multiset_modifiers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_multiset_modifiers_registered, self.unordered_multiset_modifiers_suffix + b' ')
+
+
+    def test_unordered_set_global_iterators_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_global_iterators_original + self.unordered_set_global_iterators_suffix, self.unordered_set_global_iterators_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_global_iterators_history(self.unordered_set_global_iterators_original),
+                         self.unordered_multiset_modifiers_original)
+        output, evidence = self.extractor.extract(self.unordered_set_global_iterators_original, ['TranslateTest.CoreV2UnorderedSetGlobalIteratorsForwardWalkRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetGlobalIteratorsConstFindAndMissingRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetGlobalIteratorsDuplicateTraversalRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetGlobalIteratorsEndpointsEvaluateReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetGlobalIteratorsLocalBucketIteratorRejected', 'TranslateTest.CoreV2UnorderedSetGlobalIteratorsDifferentKeyIteratorRejected', 'TranslateTest.CoreV2UnorderedSetGlobalIteratorsCustomHashFindRejected', 'TranslateTest.CoreV2UnorderedSetGlobalIteratorsFindPointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8456)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-global-iterators-forward-walk', output)
+        self.assertIn(b'unordered-set-global-iterators-duplicate-traversal', output)
+
+    def test_unordered_set_global_iterators_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_global_iterators_history(self.unordered_set_global_iterators_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_global_iterators_registered, self.unordered_set_global_iterators_suffix + b' ')
+
+
+    def test_unordered_set_scalar_insertion_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_scalar_insertion_original + self.unordered_set_scalar_insertion_suffix, self.unordered_set_scalar_insertion_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_scalar_insertion_history(self.unordered_set_scalar_insertion_original),
+                         self.unordered_set_global_iterators_original)
+        output, evidence = self.extractor.extract(self.unordered_set_scalar_insertion_original, ['TranslateTest.CoreV2UnorderedSetScalarInsertionSetReturnsPositionAndInsertionFlagRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetScalarInsertionSetInsertionEvaluatesReceiverAndArgumentOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetScalarInsertionMultisetReturnsTheNewNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetScalarInsertionMixedScalarAndListInsertRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetScalarInsertionInsertWithHintRejected', 'TranslateTest.CoreV2UnorderedSetScalarInsertionCustomHashRejected', 'TranslateTest.CoreV2UnorderedSetScalarInsertionDifferentKeyTypeRejected', 'TranslateTest.CoreV2UnorderedSetScalarInsertionPointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8464)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-scalar-insertion-set-returns-position-and-insertion-flag', output)
+        self.assertIn(b'unordered-set-scalar-insertion-multiset-returns-the-new-node', output)
+
+    def test_unordered_set_scalar_insertion_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_scalar_insertion_history(self.unordered_set_scalar_insertion_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_scalar_insertion_registered, self.unordered_set_scalar_insertion_suffix + b' ')
+
+
+    def test_unordered_set_iterator_erase_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_iterator_erase_original + self.unordered_set_iterator_erase_suffix, self.unordered_set_iterator_erase_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_iterator_erase_history(self.unordered_set_iterator_erase_original),
+                         self.unordered_set_scalar_insertion_original)
+        output, evidence = self.extractor.extract(self.unordered_set_iterator_erase_original, ['TranslateTest.CoreV2UnorderedSetIteratorErasePositionReturnsSuccessorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorEraseMultisetErasesOnlyTheSelectedDuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorEraseHalfOpenRangeReturnsLastRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorEraseEmptyAndEntireMultisetRangesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorErasePointerReceiverRejected', 'TranslateTest.CoreV2UnorderedSetIteratorEraseDifferentKeyIteratorRejected', 'TranslateTest.CoreV2UnorderedSetIteratorEraseCustomHashRangeRejected', 'TranslateTest.CoreV2UnorderedSetIteratorEraseCustomEqualityPositionRejected'])
+        self.assertEqual(evidence['original_test_names'], 8472)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-iterator-erase-position-returns-successor', output)
+        self.assertIn(b'unordered-set-iterator-erase-multiset-erases-only-the-selected-duplicate', output)
+
+    def test_unordered_set_iterator_erase_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_iterator_erase_history(self.unordered_set_iterator_erase_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_iterator_erase_registered, self.unordered_set_iterator_erase_suffix + b' ')
+
+
+    def test_unordered_set_equal_range_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_equal_range_original + self.unordered_set_equal_range_suffix, self.unordered_set_equal_range_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_equal_range_history(self.unordered_set_equal_range_original),
+                         self.unordered_set_iterator_erase_original)
+        output, evidence = self.extractor.extract(self.unordered_set_equal_range_original, ['TranslateTest.CoreV2UnorderedSetEqualRangeUniqueRangeHasOneElementRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualRangeAbsentKeyHasTwoEndpointsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualRangeDuplicateRangePreservesCollidingGroupsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualRangeReceiverAndKeyEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualRangeDifferentKeyRejected', 'TranslateTest.CoreV2UnorderedSetEqualRangeCustomHashRejected', 'TranslateTest.CoreV2UnorderedSetEqualRangeCustomEqualityRejected', 'TranslateTest.CoreV2UnorderedSetEqualRangePointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8480)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-equal-range-unique-range-has-one-element', output)
+        self.assertIn(b'unordered-set-equal-range-duplicate-range-preserves-colliding-groups', output)
+
+    def test_unordered_set_equal_range_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_equal_range_history(self.unordered_set_equal_range_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_equal_range_registered, self.unordered_set_equal_range_suffix + b' ')
+
+
+    def test_unordered_set_local_iterators_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_local_iterators_original + self.unordered_set_local_iterators_suffix, self.unordered_set_local_iterators_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_local_iterators_history(self.unordered_set_local_iterators_original),
+                         self.unordered_set_equal_range_original)
+        output, evidence = self.extractor.extract(self.unordered_set_local_iterators_original, ['TranslateTest.CoreV2UnorderedSetLocalIteratorsBucketBoundaryKeepsCollisionsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsConstBucketIterationSeesDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsEmptyBucketAndCopiedLocalEndRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsReceiverAndBucketEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsPointerReceiverRejected', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsDifferentKeyRejected', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomHashRejected', 'TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomEqualityRejected'])
+        self.assertEqual(evidence['original_test_names'], 8488)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-local-iterators-bucket-boundary-keeps-collisions', output)
+        self.assertIn(b'unordered-set-local-iterators-const-bucket-iteration-sees-duplicates', output)
+
+    def test_unordered_set_local_iterators_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_local_iterators_history(self.unordered_set_local_iterators_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_local_iterators_registered, self.unordered_set_local_iterators_suffix + b' ')
+
+
+    def test_unordered_set_emplacement_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_emplacement_original + self.unordered_set_emplacement_suffix, self.unordered_set_emplacement_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_emplacement_history(self.unordered_set_emplacement_original),
+                         self.unordered_set_local_iterators_original)
+        output, evidence = self.extractor.extract(self.unordered_set_emplacement_original, ['TranslateTest.CoreV2UnorderedSetEmplacementUniqueEmplacementReturnsResultRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEmplacementEquivalentHintBeforeExistingAfterGrowthRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEmplacementHintedValueInitializationAndUnrelatedHintRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEmplacementReceiverHintAndArgumentEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEmplacementDifferentConstructorTypeRejected', 'TranslateTest.CoreV2UnorderedSetEmplacementDifferentKeyTypeRejected', 'TranslateTest.CoreV2UnorderedSetEmplacementCustomHashRejected', 'TranslateTest.CoreV2UnorderedSetEmplacementPointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8496)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-emplacement-unique-emplacement-returns-result', output)
+        self.assertIn(b'unordered-set-emplacement-equivalent-hint-before-existing-after-growth', output)
+
+    def test_unordered_set_emplacement_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_emplacement_history(self.unordered_set_emplacement_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_emplacement_registered, self.unordered_set_emplacement_suffix + b' ')
+
+
+    def test_unordered_set_equality_swap_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_equality_swap_original + self.unordered_set_equality_swap_suffix, self.unordered_set_equality_swap_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_equality_swap_history(self.unordered_set_equality_swap_original),
+                         self.unordered_set_emplacement_original)
+        output, evidence = self.extractor.extract(self.unordered_set_equality_swap_original, ['TranslateTest.CoreV2UnorderedSetEqualitySwapUniqueEqualityIgnoresBucketsAndOrderRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualitySwapMultisetEqualityChecksEachMultiplicityRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualitySwapMemberSwapPreservesStorageAndElementAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualitySwapQualifiedAndAdlMultisetSwapRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetEqualitySwapOtherKeyEqualityRejected', 'TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyEqualityRejected', 'TranslateTest.CoreV2UnorderedSetEqualitySwapPointerMemberSwapRejected', 'TranslateTest.CoreV2UnorderedSetEqualitySwapCustomPolicyFreeSwapRejected'])
+        self.assertEqual(evidence['original_test_names'], 8504)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-equality-swap-unique-equality-ignores-buckets-and-order', output)
+        self.assertIn(b'unordered-set-equality-swap-multiset-equality-checks-each-multiplicity', output)
+
+    def test_unordered_set_equality_swap_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_equality_swap_history(self.unordered_set_equality_swap_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_equality_swap_registered, self.unordered_set_equality_swap_suffix + b' ')
+
+
+    def test_unordered_set_pointer_range_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_pointer_range_original + self.unordered_set_pointer_range_suffix, self.unordered_set_pointer_range_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_pointer_range_history(self.unordered_set_pointer_range_original),
+                         self.unordered_set_equality_swap_original)
+        output, evidence = self.extractor.extract(self.unordered_set_pointer_range_original, ['TranslateTest.CoreV2UnorderedSetPointerRangeUniqueRangeInsertsDistinctKeysRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerRangeMultisetConstRangeRetainsCountsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerRangeEmptyRangeKeepsBucketsAndValuesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerRangeReceiverAndBothEndpointsEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerRangeConvertedLongRangeRejected', 'TranslateTest.CoreV2UnorderedSetPointerRangeClassIteratorRangeRejected', 'TranslateTest.CoreV2UnorderedSetPointerRangeCustomPolicyRangeRejected', 'TranslateTest.CoreV2UnorderedSetPointerRangePointerReceiverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8512)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-pointer-range-unique-range-inserts-distinct-keys', output)
+        self.assertIn(b'unordered-set-pointer-range-multiset-const-range-retains-counts', output)
+
+    def test_unordered_set_pointer_range_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_pointer_range_history(self.unordered_set_pointer_range_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_pointer_range_registered, self.unordered_set_pointer_range_suffix + b' ')
+
+
+    def test_unordered_set_pointer_construction_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_pointer_construction_original + self.unordered_set_pointer_construction_suffix, self.unordered_set_pointer_construction_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_pointer_construction_history(self.unordered_set_pointer_construction_original),
+                         self.unordered_set_pointer_range_original)
+        output, evidence = self.extractor.extract(self.unordered_set_pointer_construction_original, ['TranslateTest.CoreV2UnorderedSetPointerConstructionUniqueRangeConstructionDeduplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerConstructionMultisetConstructionRetainsDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerConstructionEmptyRangeUsesEmptyDefaultStateRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerConstructionRangeArgumentsAreEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetPointerConstructionExplicitBucketCountAndPoliciesRejected', 'TranslateTest.CoreV2UnorderedSetPointerConstructionConvertedShortRangeRejected', 'TranslateTest.CoreV2UnorderedSetPointerConstructionCustomHashRangeRejected', 'TranslateTest.CoreV2UnorderedSetPointerConstructionClassIteratorRangeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8520)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-pointer-construction-unique-range-construction-deduplicates', output)
+        self.assertIn(b'unordered-set-pointer-construction-multiset-construction-retains-duplicates', output)
+
+    def test_unordered_set_pointer_construction_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_pointer_construction_history(self.unordered_set_pointer_construction_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_pointer_construction_registered, self.unordered_set_pointer_construction_suffix + b' ')
+
+
+    def test_unordered_set_owner_move_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_owner_move_original + self.unordered_set_owner_move_suffix, self.unordered_set_owner_move_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_owner_move_history(self.unordered_set_owner_move_original),
+                         self.unordered_set_pointer_construction_original)
+        output, evidence = self.extractor.extract(self.unordered_set_owner_move_original, ['TranslateTest.CoreV2UnorderedSetOwnerMoveUniqueConstructionTransfersNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerMoveEmptyMultisetConstructionKeepsReservationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerMoveMultisetAssignmentTransfersDuplicatesAndReturnsReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerMoveQualifiedAssignmentKeepsEmptySourceBucketsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerMoveExplicitAllocatorConstructionRejected', 'TranslateTest.CoreV2UnorderedSetOwnerMoveOtherKeyConstructionRejected', 'TranslateTest.CoreV2UnorderedSetOwnerMoveCustomPolicyAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetOwnerMoveMultisetMoveWithExplicitAllocatorRejected'])
+        self.assertEqual(evidence['original_test_names'], 8528)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-owner-move-unique-construction-transfers-nodes', output)
+        self.assertIn(b'unordered-set-owner-move-empty-multiset-construction-keeps-reservation', output)
+
+    def test_unordered_set_owner_move_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_owner_move_history(self.unordered_set_owner_move_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_owner_move_registered, self.unordered_set_owner_move_suffix + b' ')
+
+
+    def test_unordered_set_owner_copy_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_owner_copy_original + self.unordered_set_owner_copy_suffix, self.unordered_set_owner_copy_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_owner_copy_history(self.unordered_set_owner_copy_original),
+                         self.unordered_set_owner_move_original)
+        output, evidence = self.extractor.extract(self.unordered_set_owner_copy_original, ['TranslateTest.CoreV2UnorderedSetOwnerCopyUniqueConstSourceOwnsDistinctNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerCopyMultisetCopyPreservesCountsAndIndependentEraseRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerCopyReservedEmptyCopyKeepsBucketPolicyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerCopyReferenceProducingSourceEvaluatedOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetOwnerCopyExplicitAllocatorCopyRejected', 'TranslateTest.CoreV2UnorderedSetOwnerCopyOtherKeyCopyRejected', 'TranslateTest.CoreV2UnorderedSetOwnerCopyCustomEqualityCopyRejected', 'TranslateTest.CoreV2UnorderedSetOwnerCopyExplicitAllocatorMultisetCopyRejected'])
+        self.assertEqual(evidence['original_test_names'], 8536)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-owner-copy-unique-const-source-owns-distinct-nodes', output)
+        self.assertIn(b'unordered-set-owner-copy-multiset-copy-preserves-counts-and-independent-erase', output)
+
+    def test_unordered_set_owner_copy_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_owner_copy_history(self.unordered_set_owner_copy_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_owner_copy_registered, self.unordered_set_owner_copy_suffix + b' ')
+
+
+    def test_unordered_set_copy_assignment_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_copy_assignment_original + self.unordered_set_copy_assignment_suffix, self.unordered_set_copy_assignment_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_copy_assignment_history(self.unordered_set_copy_assignment_original),
+                         self.unordered_set_owner_copy_original)
+        output, evidence = self.extractor.extract(self.unordered_set_copy_assignment_original, ['TranslateTest.CoreV2UnorderedSetCopyAssignmentUniqueCopyAssignmentReusesDestinationBucketsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetCopyAssignmentMultisetCopyAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetCopyAssignmentExplicitCopyAssignmentEvaluatesReceiverBeforeSourceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetCopyAssignmentSelfCopyPreservesAddressesAndEquivalentRangesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetCopyAssignmentCustomHashCopyAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetCopyAssignmentCustomEqualityMultisetCopyAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetCopyAssignmentUnsignedKeyCopyAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetCopyAssignmentLongKeyMultisetCopyAssignmentRejected'])
+        self.assertEqual(evidence['original_test_names'], 8544)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-copy-assignment-unique-copy-assignment-reuses-destination-buckets', output)
+        self.assertIn(b'unordered-set-copy-assignment-multiset-copy-assignment-groups-colliding-duplicates', output)
+
+    def test_unordered_set_copy_assignment_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_copy_assignment_history(self.unordered_set_copy_assignment_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_copy_assignment_registered, self.unordered_set_copy_assignment_suffix + b' ')
+
+
+    def test_unordered_set_list_assignment_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_list_assignment_original + self.unordered_set_list_assignment_suffix, self.unordered_set_list_assignment_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_list_assignment_history(self.unordered_set_list_assignment_original),
+                         self.unordered_set_copy_assignment_original)
+        output, evidence = self.extractor.extract(self.unordered_set_list_assignment_original, ['TranslateTest.CoreV2UnorderedSetListAssignmentUniqueListAssignmentKeepsBucketsAndLoadFactorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetListAssignmentMultiListAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetListAssignmentExplicitEmptyListAssignmentClearsReservedStorageRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetListAssignmentListAssignmentEvaluatesBracedInputBeforeReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetListAssignmentCustomHashListAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetListAssignmentCustomEqualityMultiListAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetListAssignmentLongKeyListAssignmentRejected', 'TranslateTest.CoreV2UnorderedSetListAssignmentShortKeyMultiListAssignmentRejected'])
+        self.assertEqual(evidence['original_test_names'], 8552)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-list-assignment-unique-list-assignment-keeps-buckets-and-load-factor', output)
+        self.assertIn(b'unordered-set-list-assignment-multi-list-assignment-groups-colliding-duplicates', output)
+
+    def test_unordered_set_list_assignment_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_list_assignment_history(self.unordered_set_list_assignment_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_list_assignment_registered, self.unordered_set_list_assignment_suffix + b' ')
+
+
+    def test_unordered_set_iterator_range_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_iterator_range_original + self.unordered_set_iterator_range_suffix, self.unordered_set_iterator_range_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_iterator_range_history(self.unordered_set_iterator_range_original),
+                         self.unordered_set_list_assignment_original)
+        output, evidence = self.extractor.extract(self.unordered_set_iterator_range_original, ['TranslateTest.CoreV2UnorderedSetIteratorRangeUniqueInsertsConstMultisetIteratorRangeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorRangeMultiInsertsOneElementFromAGlobalIteratorRangeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorRangeMultiInsertsOneLocalBucketWithDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorRangeUniqueConstructsFromMultisetGlobalIteratorsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorRangeMultiConstructsFromLocalIteratorsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorRangeEqualNonnullEndpointsFormAnEmptyIteratorRangeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetIteratorRangeUnrelatedVectorIteratorInsertionRejected', 'TranslateTest.CoreV2UnorderedSetIteratorRangeUnrelatedListIteratorConstructionRejected', 'TranslateTest.CoreV2UnorderedSetIteratorRangeUnsignedKeyIteratorInsertionRejected', 'TranslateTest.CoreV2UnorderedSetIteratorRangeCustomHashIteratorConstructionRejected'])
+        self.assertEqual(evidence['original_test_names'], 8562)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-iterator-range-unique-inserts-const-multiset-iterator-range', output)
+        self.assertIn(b'unordered-set-iterator-range-multi-constructs-from-local-iterators', output)
+
+    def test_unordered_set_iterator_range_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_iterator_range_history(self.unordered_set_iterator_range_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_iterator_range_registered, self.unordered_set_iterator_range_suffix + b' ')
+
+
+    def test_unordered_set_merge_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_merge_original + self.unordered_set_merge_suffix, self.unordered_set_merge_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_merge_history(self.unordered_set_merge_original),
+                         self.unordered_set_iterator_range_original)
+        output, evidence = self.extractor.extract(self.unordered_set_merge_original, ['TranslateTest.CoreV2UnorderedSetMergeUniqueMergePreservesNodeAndRejectedDuplicateAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMergeUniqueMergesOneCopyFromEachNewMultisetKeyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMergeMultiMergesRvalueUniqueOwnerWithoutReallocatingNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMergeMultiMergeGroupsEquivalentKeysInCollidingBucketRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMergeCustomHashMergeSourceRejected', 'TranslateTest.CoreV2UnorderedSetMergeCustomHashMergeDestinationRejected', 'TranslateTest.CoreV2UnorderedSetMergeCustomEqualityMergeDestinationRejected', 'TranslateTest.CoreV2UnorderedSetMergeLongKeyMergeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8570)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-merge-unique-merge-preserves-node-and-rejected-duplicate-addresses', output)
+        self.assertIn(b'unordered-set-merge-multi-merge-groups-equivalent-keys-in-colliding-bucket', output)
+
+    def test_unordered_set_merge_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_merge_history(self.unordered_set_merge_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_merge_registered, self.unordered_set_merge_suffix + b' ')
+
+
+    def test_unordered_set_observers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_observers_original + self.unordered_set_observers_suffix, self.unordered_set_observers_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_observers_history(self.unordered_set_observers_original),
+                         self.unordered_set_merge_original)
+        output, evidence = self.extractor.extract(self.unordered_set_observers_original, ['TranslateTest.CoreV2UnorderedSetObserversSetAllocatorAllocatesAndReleasesIntegerStorageRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetObserversMultisetAllocatorEvaluatesArrowReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetObserversHashFunctionOnArrowReceiverUsesPinnedSignedHashRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetObserversKeyEqualityOnArrowReceiverComparesDefaultIntegerKeysRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetObserversCustomHashArrowObserverRejected', 'TranslateTest.CoreV2UnorderedSetObserversCustomEqualityArrowObserverRejected', 'TranslateTest.CoreV2UnorderedSetObserversDifferentKeyAllocatorObserverRejected', 'TranslateTest.CoreV2UnorderedSetObserversCustomHashAllocatorObserverRejected'])
+        self.assertEqual(evidence['original_test_names'], 8578)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-observers-set-allocator-allocates-and-releases-integer-storage', output)
+        self.assertIn(b'unordered-set-observers-key-equality-on-arrow-receiver-compares-default-integer-keys', output)
+
+    def test_unordered_set_observers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_observers_history(self.unordered_set_observers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_observers_registered, self.unordered_set_observers_suffix + b' ')
+
+
+    def test_unordered_set_storage_construction_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_storage_construction_original + self.unordered_set_storage_construction_suffix, self.unordered_set_storage_construction_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_storage_construction_history(self.unordered_set_storage_construction_original),
+                         self.unordered_set_observers_original)
+        output, evidence = self.extractor.extract(self.unordered_set_storage_construction_original, ['TranslateTest.CoreV2UnorderedSetStorageConstructionSetBucketCountDefaultPoliciesEvaluateCountOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetExplicitHashEqualAndAllocatorBucketConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetStorageConstructionSetBucketDelegationWithDefaultAllocatorEvaluatesArgumentOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetAllocatorOnlyStartsEmptyAndOwnsInsertedKeysRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetStorageConstructionSetCopyWithDefaultAllocatorOwnsADistinctNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetMoveWithEqualDefaultAllocatorRetainsNodeAddressRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetStorageConstructionSetCustomHashBucketConstructionRejected', 'TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetCustomEqualityBucketConstructionRejected', 'TranslateTest.CoreV2UnorderedSetStorageConstructionUnapprovedKeyAllocatorConstructionRejected', 'TranslateTest.CoreV2UnorderedSetStorageConstructionUnapprovedKeyBucketConstructionRejected'])
+        self.assertEqual(evidence['original_test_names'], 8588)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-storage-construction-set-bucket-count-default-policies-evaluate-count-once', output)
+        self.assertIn(b'unordered-set-storage-construction-multiset-move-with-equal-default-allocator-retains-node-address', output)
+
+    def test_unordered_set_storage_construction_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_storage_construction_history(self.unordered_set_storage_construction_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_storage_construction_registered, self.unordered_set_storage_construction_suffix + b' ')
+
+
+    def test_unordered_set_node_handles_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_node_handles_original + self.unordered_set_node_handles_suffix, self.unordered_set_node_handles_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_node_handles_history(self.unordered_set_node_handles_original),
+                         self.unordered_set_storage_construction_original)
+        output, evidence = self.extractor.extract(self.unordered_set_node_handles_original, ['TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueExtractsKeyAndMutatesDetachedValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetExtractsOneNodeFromConstIteratorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesDefaultAndMissingKeyHandlesStayEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesSetAndMultisetHandleMovesReleaseThePreviousNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesSwappedNodeRetainsAllocatorAndValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueDuplicateReturnsOwningNodeForRetryRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueHintedDuplicateRetainsTheSuppliedHandleRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetInsertNodePreservesStorageAndRehashesMutatedKeyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetHintInsertsTheTransferredNodeWithItsEquivalentsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesInsertingEmptyHandleReturnsEndInBothContainersRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetNodeHandlesOtherKeySetNodeExtractionRejected', 'TranslateTest.CoreV2UnorderedSetNodeHandlesCustomPolicyMultisetNodeExtractionRejected', 'TranslateTest.CoreV2UnorderedSetNodeHandlesOtherKeyDefaultNodeHandleRejected', 'TranslateTest.CoreV2UnorderedSetNodeHandlesCustomHashUniqueHandleInsertRejected', 'TranslateTest.CoreV2UnorderedSetNodeHandlesCustomEqualityMultisetHandleInsertRejected'])
+        self.assertEqual(evidence['original_test_names'], 8603)
+        self.assertEqual(evidence['selected_count'], 15)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-node-handles-unique-extracts-key-and-mutates-detached-value', output)
+        self.assertIn(b'unordered-set-node-handles-multiset-insert-node-preserves-storage-and-rehashes-mutated-key', output)
+
+    def test_unordered_set_node_handles_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_node_handles_history(self.unordered_set_node_handles_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_node_handles_registered, self.unordered_set_node_handles_suffix + b' ')
+
+
+    def test_unordered_set_bucket_receivers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_bucket_receivers_original + self.unordered_set_bucket_receivers_suffix, self.unordered_set_bucket_receivers_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_bucket_receivers_history(self.unordered_set_bucket_receivers_original),
+                         self.unordered_set_node_handles_original)
+        output, evidence = self.extractor.extract(self.unordered_set_bucket_receivers_original, ['TranslateTest.CoreV2UnorderedSetBucketReceiversCapacityConstantsEvaluateTheConstPointerReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversPointerCapacityAndLoadObserversUseTheLiveTableRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversPointerReserveAndRehashEvaluateTheReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversPointerBucketAndSizeFindAnEquivalentKeyGroupRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversPointerSetterPreservesTheLiveLoadLimitRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetBucketReceiversOtherKeyPointerCapacityObserverRejected', 'TranslateTest.CoreV2UnorderedSetBucketReceiversCustomHashPointerRehashRejected', 'TranslateTest.CoreV2UnorderedSetBucketReceiversCustomEqualityPointerLoadLimitRejected'])
+        self.assertEqual(evidence['original_test_names'], 8611)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-bucket-receivers-capacity-constants-evaluate-the-const-pointer-receiver', output)
+        self.assertIn(b'unordered-set-bucket-receivers-pointer-setter-preserves-the-live-load-limit', output)
+
+    def test_unordered_set_bucket_receivers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_bucket_receivers_history(self.unordered_set_bucket_receivers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_bucket_receivers_registered, self.unordered_set_bucket_receivers_suffix + b' ')
+
+
+    def test_unordered_set_member_receivers_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_member_receivers_original + self.unordered_set_member_receivers_suffix, self.unordered_set_member_receivers_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_member_receivers_history(self.unordered_set_member_receivers_original),
+                         self.unordered_set_bucket_receivers_original)
+        output, evidence = self.extractor.extract(self.unordered_set_member_receivers_original, ['TranslateTest.CoreV2UnorderedSetMemberReceiversPointerRangeEvaluatesBucketCountOnceBeforeInsertingRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversIteratorRangeWithPinnedPoliciesRetainsEquivalentKeysRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversListWithBucketCountAndAllocatorCoalescesDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversListWithAllPoliciesPreservesDuplicateKeyGroupRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversEmptyRangeKeepsExplicitBucketStorageRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversMemberPointerExpressionsEvaluateOnceRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversConstPointerGlobalAndLocalIterationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversPointerRangeInsertionAndClearPreserveKeyMultiplicityRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversPointerSwapRetainsElementAddressAndLiveBucketsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetMemberReceiversRangeWithUserHashRejected', 'TranslateTest.CoreV2UnorderedSetMemberReceiversBucketedListWithUnapprovedKeyTypeRejected', 'TranslateTest.CoreV2UnorderedSetMemberReceiversUserHashPointerMemberRejected', 'TranslateTest.CoreV2UnorderedSetMemberReceiversUnapprovedKeyPointerMemberRejected'])
+        self.assertEqual(evidence['original_test_names'], 8624)
+        self.assertEqual(evidence['selected_count'], 13)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-member-receivers-pointer-range-evaluates-bucket-count-once-before-inserting', output)
+        self.assertIn(b'unordered-set-member-receivers-member-pointer-expressions-evaluate-once', output)
+
+    def test_unordered_set_member_receivers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_member_receivers_history(self.unordered_set_member_receivers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_member_receivers_registered, self.unordered_set_member_receivers_suffix + b' ')
+
+
+    def test_unordered_multimap_owners_retains_published_bodies(self):
+        self.assertEqual(self.unordered_multimap_owners_original + self.unordered_multimap_owners_suffix, self.unordered_multimap_owners_registered)
+        self.assertEqual(self.adapter.restore_unordered_multimap_owners_history(self.unordered_multimap_owners_original),
+                         self.unordered_set_member_receivers_original)
+        output, evidence = self.extractor.extract(self.unordered_multimap_owners_original, ['TranslateTest.CoreV2UnorderedMultimapOwnersDefaultConstructionAndCapacityRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersListKeepsAllEquivalentKeysAndRemovesTheGroupRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersCopyOwnsDistinctNodesAfterSourceClearRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersBucketSizePreservesDuplicateMultiplicityAfterRehashRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersComparisonRequiresMappedValueMultiplicitiesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapOwnersCustomHashOwnerRejected', 'TranslateTest.CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRejected'])
+        self.assertEqual(evidence['original_test_names'], 8631)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multimap-owners-default-construction-and-capacity', output)
+        self.assertIn(b'unordered-multimap-owners-comparison-requires-mapped-value-multiplicities', output)
+
+    def test_unordered_multimap_owners_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_multimap_owners_history(self.unordered_multimap_owners_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_multimap_owners_registered, self.unordered_multimap_owners_suffix + b' ')
+
+
+    def test_unordered_multimap_iteration_and_transfer_retains_published_bodies(self):
+        self.assertEqual(self.unordered_multimap_iteration_and_transfer_original + self.unordered_multimap_iteration_and_transfer_suffix, self.unordered_multimap_iteration_and_transfer_registered)
+        self.assertEqual(self.adapter.restore_unordered_multimap_iteration_and_transfer_history(self.unordered_multimap_iteration_and_transfer_original),
+                         self.unordered_multimap_owners_original)
+        output, evidence = self.extractor.extract(self.unordered_multimap_iteration_and_transfer_original, ['TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorFindAndTraverseWithUniqueOwnerInSameTranslationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorConstEqualRangeReachesTheEndOfTheGroupRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorErasePositionAndRangeUnlinkOnlySelectedNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorLocalConstIterationSeesTheMatchingBucketRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierEmplaceAndInsertReturnTheNewEquivalentNodeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierHintedInsertionKeepsEquivalentKeysContiguousRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierIteratorInputConvertsBetweenCompatibleMappedOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoMultiPreservesPayloadAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoUniqueLeavesEquivalentUntransferredNodesRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorCustomPolicyIteratorRejected', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorOtherMappedTypeIteratorRejected', 'TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeFromUserHashPolicyRejected'])
+        self.assertEqual(evidence['original_test_names'], 8643)
+        self.assertEqual(evidence['selected_count'], 12)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multimap-iteration-and-transfer-iterator-find-and-traverse-with-unique-owner-in-same-translation', output)
+        self.assertIn(b'unordered-multimap-iteration-and-transfer-modifier-merge-into-unique-leaves-equivalent-untransferred-nodes', output)
+
+    def test_unordered_multimap_iteration_and_transfer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_multimap_iteration_and_transfer_history(self.unordered_multimap_iteration_and_transfer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_multimap_iteration_and_transfer_registered, self.unordered_multimap_iteration_and_transfer_suffix + b' ')
+
+
+    def test_associative_node_and_observer_retains_published_bodies(self):
+        self.assertEqual(self.associative_node_and_observer_original + self.associative_node_and_observer_suffix, self.associative_node_and_observer_registered)
+        self.assertEqual(self.adapter.restore_associative_node_and_observer_history(self.associative_node_and_observer_original),
+                         self.unordered_multimap_iteration_and_transfer_original)
+        output, evidence = self.extractor.extract(self.associative_node_and_observer_original, ['TranslateTest.CoreV2UnorderedMultimapNodeHandlesExtractIteratorAndReinsertMutatedMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapNodeHandlesRejectedUniqueInsertionReturnsHandleForMultimapRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapNodeHandlesEmptyExtractionAndInsertionReturnEndRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedPointerObserversMapSizeEmptyAndMaximumRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedPointerObserversMultimapPointerKeyComparatorEvaluatesReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedPointerObserversMultisetPointerValueComparatorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRejected', 'TranslateTest.CoreV2OrderedPointerObserversCustomOrderedComparePointerRejected'])
+        self.assertEqual(evidence['original_test_names'], 8651)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-multimap-node-handles-extract-iterator-and-reinsert-mutated-mapped-value', output)
+        self.assertIn(b'ordered-pointer-observers-multiset-pointer-value-comparator', output)
+
+    def test_associative_node_and_observer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_associative_node_and_observer_history(self.associative_node_and_observer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.associative_node_and_observer_registered, self.associative_node_and_observer_suffix + b' ')
+
+
+    def test_unordered_set_unsigned_key_retains_published_bodies(self):
+        self.assertEqual(self.unordered_set_unsigned_key_original + self.unordered_set_unsigned_key_suffix, self.unordered_set_unsigned_key_registered)
+        self.assertEqual(self.adapter.restore_unordered_set_unsigned_key_history(self.unordered_set_unsigned_key_original),
+                         self.associative_node_and_observer_original)
+        output, evidence = self.extractor.extract(self.unordered_set_unsigned_key_original, ['TranslateTest.CoreV2UnorderedSetUnsignedKeyLargeKeyBucketAndLocalIteratorRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetUnsignedKeyBucketedRangesAndCopyUseUnsignedKeyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetUnsignedKeyNodeTransferRetainsUnsignedPayloadAndAddressRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetUnsignedKeyAlternateUnsignedHashRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8655)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-set-unsigned-key-large-key-bucket-and-local-iterator', output)
+        self.assertIn(b'unordered-set-unsigned-key-node-transfer-retains-unsigned-payload-and-address', output)
+
+    def test_unordered_set_unsigned_key_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_unordered_set_unsigned_key_history(self.unordered_set_unsigned_key_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.unordered_set_unsigned_key_registered, self.unordered_set_unsigned_key_suffix + b' ')
+
+
+    def test_ordered_set_core_retains_published_bodies(self):
+        self.assertEqual(self.ordered_set_core_original + self.ordered_set_core_suffix, self.ordered_set_core_registered)
+        self.assertEqual(self.adapter.restore_ordered_set_core_history(self.ordered_set_core_original),
+                         self.unordered_set_unsigned_key_original)
+        output, evidence = self.extractor.extract(self.ordered_set_core_original, ['TranslateTest.CoreV2OrderedSetListAndLookupListBalancesSortedKeysAndDeduplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetListAndLookupPointerCountAfterLeftAndRightRotationsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetListAndLookupListDuplicatesReleaseEachOwnedNodeOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetInsertResultInsertionResultDistinguishesADuplicateKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetInsertResultPointerInsertionUsesTheCheckedReceiverOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetIteratorOrderedRangeAndInsertionPreserveExistingPositionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetIteratorPointerEndpointsAndPostfixTraversalRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetIteratorEmptyIteratorsUseTheSameOwnerSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetBoundsBoundsOnKeysAndGapsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetBoundsConstPointerLookupMatchesExtremeKeysRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetBoundsEmptyLookupEvaluatesReceiverAndKeyOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetListAndLookupCustomOrderKeepsExistingSourceGuardRejected', 'TranslateTest.CoreV2OrderedSetInsertResultUnapprovedCustomComparatorForScalarInsertionRejected', 'TranslateTest.CoreV2OrderedSetIteratorStatefulOrderingRemainsOutsideTheCheckedIteratorTypeRejected', 'TranslateTest.CoreV2OrderedSetBoundsCustomOrderingDoesNotUseIntegerBoundsRejected'])
+        self.assertEqual(evidence['original_test_names'], 8670)
+        self.assertEqual(evidence['selected_count'], 15)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-list-and-lookup-list-balances-sorted-keys-and-deduplicates', output)
+        self.assertIn(b'ordered-set-bounds-bounds-on-keys-and-gaps', output)
+
+    def test_ordered_set_core_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_set_core_history(self.ordered_set_core_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_set_core_registered, self.ordered_set_core_suffix + b' ')
+
+
+    def test_ordered_owner_operations_retains_published_bodies(self):
+        self.assertEqual(self.ordered_owner_operations_original + self.ordered_owner_operations_suffix, self.ordered_owner_operations_registered)
+        self.assertEqual(self.adapter.restore_ordered_owner_operations_history(self.ordered_owner_operations_original),
+                         self.ordered_set_core_original)
+        output, evidence = self.extractor.extract(self.ordered_owner_operations_original, ['TranslateTest.CoreV2OrderedSetErasureKeyEraseKeepsOtherNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetErasurePointerPositionAndRangeReturnTheRetainedSuccessorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetErasureClearResetsOwnershipForReinsertionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransferMoveConstructionReparentsTheRootAndKeepsNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransferSwapThroughPointerRebindsEmptyAndNonemptySentinelsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransferSwapTwoLiveTreesPreservesTheirNodeOrderAndIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEqualRangeFoundAndAbsentKeysUseTheSameTreeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEqualRangeConstPointerEqualRangeEvaluatesTheKeyOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEqualRangeEmptyEqualRangeUsesBothOwnerSentinelsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetEquivalentInsertionFollowsExistingNodesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetKeyErasureRemovesAllMatchesAndPreservesOtherNodesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetSwapWithASetIteratorInTheSameTranslationRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyConstructionSetIndependentNodesAndSortedCopyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyConstructionMultisetDuplicatesAndIndependentLifetimeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyConstructionEmptyOwnersGetDistinctSentinelsAndNoAllocationsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyAssignmentSetReusesOldNodeAllocationsAndReleasesOnlySurplusRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyAssignmentMultisetReplacesEmptyAndShorterInputsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetCopyAssignmentAssignmentNotationAndExplicitMemberSequenceBothSidesOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetErasureCustomOrderingDoesNotUseIntegerErasureRejected', 'TranslateTest.CoreV2OrderedSetTransferTransparentComparatorDoesNotUseTheDefaultTransferRejected', 'TranslateTest.CoreV2OrderedSetEqualRangeTransparentComparatorOverloadRemainsGuardedRejected', 'TranslateTest.CoreV2OrderedMultisetCustomOrderingRemainsGuardedRejected', 'TranslateTest.CoreV2OrderedSetCopyConstructionCustomComparatorRemainsOutsideCheckedCopyRejected', 'TranslateTest.CoreV2OrderedSetCopyAssignmentCustomComparatorRemainsOutsideCheckedAssignmentRejected'])
+        self.assertEqual(evidence['original_test_names'], 8694)
+        self.assertEqual(evidence['selected_count'], 24)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-erasure-key-erase-keeps-other-node-addresses', output)
+        self.assertIn(b'ordered-set-copy-assignment-multiset-replaces-empty-and-shorter-inputs', output)
+
+    def test_ordered_owner_operations_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_owner_operations_history(self.ordered_owner_operations_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_owner_operations_registered, self.ordered_owner_operations_suffix + b' ')
+
+
+    def test_ordered_maps_with_mixed_cursors_retains_published_bodies(self):
+        self.assertEqual(self.ordered_maps_with_mixed_cursors_original + self.ordered_maps_with_mixed_cursors_suffix, self.ordered_maps_with_mixed_cursors_registered)
+        self.assertEqual(self.adapter.restore_ordered_maps_with_mixed_cursors_history(self.ordered_maps_with_mixed_cursors_original),
+                         self.ordered_owner_operations_original)
+        output, evidence = self.extractor.extract(self.ordered_maps_with_mixed_cursors_original, ['TranslateTest.CoreV2OrderedMapDefaultMappedValueAndStableReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPointerReceiverAndKeyEvaluatedOnceInOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapRepeatedSubscriptAllocatesAndDestroysOneNodePerKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapContainsIntegerKeysAfterInsertionAndPreservesSizeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapConstPointerCountEvaluatesReceiverAndKeyOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInitializerListConstructsOrderedMapWithFirstMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMultimapInitializerListKeepsDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInitializerListDestroysEachMappedNodeOnlyOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorFindReturnsAMutableMappedLvalueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorConstIteratorTraversesBoundsAndDecrementsEndRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorMultimapEqualRangePreservesMappedDuplicateOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapErasureKeyEraseKeepsTheMappedAddressOfAnotherNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapErasureEraseConstIteratorSpanReturnsMutableSuccessorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapErasureMultimapErasesEveryDuplicateAndClearReseatsSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertionMapInsertResultKeepsFirstValueOnADuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertionMultimapInsertReturnsMappedNodeInDuplicateOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertionMapPointerCallEvaluatesOwnerAndInputOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapScalarEmplacementTryEmplaceKeepsExistingValueAndDefaultsANewNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapScalarEmplacementInsertOrAssignReusesNodeAndReportsInsertionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapScalarEmplacementTryEmplaceEvaluatesArgumentsOnADuplicateRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransferMapCopyCreatesIndependentMappedObjectsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransferMapMoveKeepsReferencesAndTraversesNewSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransferMultimapSwapPreservesEquivalentNodeOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapCopyAssignmentReplacesAndOwnsMappedValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapCopyAssignmentMultimapRetainsDuplicatesAndClearsOldNodesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapCopyAssignmentPreservesOperandEvaluationOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAndSetCursorsKeepIndependentSentinelsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorConversionKeepsNodeAndConstViewRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorConversionMultimapMatchesDuplicatePositionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapIteratorConversionMixedEqualitySeesOwnerEndRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapNonDefaultKeyOrderRemainsOutsideCheckedSubscriptRejected', 'TranslateTest.CoreV2OrderedMapUnsupportedMappedTypeDoesNotAdmitCountRejected', 'TranslateTest.CoreV2OrderedMapStatefulPolicyRemainsOutsideCheckedMappedOwnerRejected', 'TranslateTest.CoreV2OrderedMapIteratorCustomMapIteratorReceiverKeepsSourceGuardRejected', 'TranslateTest.CoreV2OrderedMapErasureUnsupportedMappedStorageKeepsMutationGuardRejected', 'TranslateTest.CoreV2OrderedMapInsertionStatefulComparatorInsertionRemainsOutsideCheckedLayoutRejected', 'TranslateTest.CoreV2OrderedMapScalarEmplacementMappedForwardingConversionsRequireTheirOwnProofRejected', 'TranslateTest.CoreV2OrderedMapTransferStatefulOrderedMapComparatorHasSeparateTransferSemanticsRejected', 'TranslateTest.CoreV2OrderedMapCopyAssignmentCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedMapIteratorConversionCustomComparatorRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8734)
+        self.assertEqual(evidence['selected_count'], 40)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-default-mapped-value-and-stable-reference', output)
+        self.assertIn(b'ordered-map-iterator-conversion-mixed-equality-sees-owner-end', output)
+
+    def test_ordered_maps_with_mixed_cursors_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_maps_with_mixed_cursors_history(self.ordered_maps_with_mixed_cursors_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_maps_with_mixed_cursors_registered, self.ordered_maps_with_mixed_cursors_suffix + b' ')
+
+
+    def test_ordered_move_list_range_retains_published_bodies(self):
+        self.assertEqual(self.ordered_move_list_range_original + self.ordered_move_list_range_suffix, self.ordered_move_list_range_registered)
+        self.assertEqual(self.adapter.restore_ordered_move_list_range_history(self.ordered_move_list_range_original),
+                         self.ordered_maps_with_mixed_cursors_original)
+        output, evidence = self.extractor.extract(self.ordered_move_list_range_original, ['TranslateTest.CoreV2OrderedMapMoveAssignmentReleasesOldStorageAndKeepsIncomingNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMoveAssignmentEmptyMultimapRebindsSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetMoveAssignmentKeepsIncomingKeyAddressRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertListPreservesOldAndFirstNewMappedValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertListMultimapKeepsDuplicateInsertionOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetInsertListEvaluatesReceiverAndListOnceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetPointerRangeConstructionAndEmptyInsertRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetPointerRangeConstInputRetainsDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPointerRangeUsesFirstValueAndCopiesStorageRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapPointerRangeEvaluatesEndpointsOnceAndKeepsOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMoveAssignmentCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedMapInsertListCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedMapPointerRangeConvertingPairRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedSetPointerRangeCustomComparatorRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8748)
+        self.assertEqual(evidence['selected_count'], 14)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-move-assignment-releases-old-storage-and-keeps-incoming-node', output)
+        self.assertIn(b'ordered-set-pointer-range-custom-comparator-remains-unsupported', output)
+
+    def test_ordered_move_list_range_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_move_list_range_history(self.ordered_move_list_range_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_move_list_range_registered, self.ordered_move_list_range_suffix + b' ')
+
+
+    def test_ordered_list_assignment_and_emplace_retains_published_bodies(self):
+        self.assertEqual(self.ordered_list_assignment_and_emplace_original + self.ordered_list_assignment_and_emplace_suffix, self.ordered_list_assignment_and_emplace_registered)
+        self.assertEqual(self.adapter.restore_ordered_list_assignment_and_emplace_history(self.ordered_list_assignment_and_emplace_original),
+                         self.ordered_move_list_range_original)
+        output, evidence = self.extractor.extract(self.ordered_list_assignment_and_emplace_original, ['TranslateTest.CoreV2OrderedMapListAssignmentReusesOnlySuccessfulUniqueInsertionsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapListAssignmentKeepsTheNewEquivalentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetListAssignmentPreservesOperatorAndMemberEvaluationOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetEmptyListAssignmentReusesAnEmptyOwnerAfterClearRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEmplaceExactIntReusesTheExistingKeyWithoutAllocatingRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEmplaceDefaultDestroysARejectedZeroNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetEmplaceDefaultAndRvaluePreserveEquivalentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapListAssignmentCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8757)
+        self.assertEqual(evidence['selected_count'], 9)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-list-assignment-reuses-only-successful-unique-insertions', output)
+        self.assertIn(b'ordered-set-emplace-converting-key-remains-unsupported', output)
+
+    def test_ordered_list_assignment_and_emplace_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_list_assignment_and_emplace_history(self.ordered_list_assignment_and_emplace_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_list_assignment_and_emplace_registered, self.ordered_list_assignment_and_emplace_suffix + b' ')
+
+
+    def test_ordered_merge_comparison_and_map_emplace_retains_published_bodies(self):
+        self.assertEqual(self.ordered_merge_comparison_and_map_emplace_original + self.ordered_merge_comparison_and_map_emplace_suffix, self.ordered_merge_comparison_and_map_emplace_registered)
+        self.assertEqual(self.adapter.restore_ordered_merge_comparison_and_map_emplace_history(self.ordered_merge_comparison_and_map_emplace_original),
+                         self.ordered_list_assignment_and_emplace_original)
+        output, evidence = self.extractor.extract(self.ordered_merge_comparison_and_map_emplace_original, ['TranslateTest.CoreV2OrderedSetMergeTransfersOriginalAddressesWithoutAllocatingRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMergeMultimapKeepsConflictsInTheSourceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapMergeRvalueMapAppendsEquivalentNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetSelfMergePreservesItsNodesAndSizeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetComparisonConstPrefixAndAllRelationsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapComparisonUsesMappedValuesAfterEqualKeysRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapComparisonRetainsEquivalentNodeOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetComparisonDistinguishesDuplicateCountsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapEmplaceIntDoesNotReplaceAnExistingValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapEmplaceIntKeepsEquivalentInsertionOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMergeCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedComparisonCustomComparatorRemainsUnsupportedRejected', 'TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentRemainsUnsupportedRejected'])
+        self.assertEqual(evidence['original_test_names'], 8770)
+        self.assertEqual(evidence['selected_count'], 13)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-merge-transfers-original-addresses-without-allocating', output)
+        self.assertIn(b'ordered-map-emplace-converting-mapped-argument-remains-unsupported', output)
+
+    def test_ordered_merge_comparison_and_map_emplace_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_merge_comparison_and_map_emplace_history(self.ordered_merge_comparison_and_map_emplace_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_merge_comparison_and_map_emplace_registered, self.ordered_merge_comparison_and_map_emplace_suffix + b' ')
+
+
+    def test_ordered_policies_and_iterator_ranges_retains_published_bodies(self):
+        self.assertEqual(self.ordered_policies_and_iterator_ranges_original + self.ordered_policies_and_iterator_ranges_suffix, self.ordered_policies_and_iterator_ranges_registered)
+        self.assertEqual(self.adapter.restore_ordered_policies_and_iterator_ranges_history(self.ordered_policies_and_iterator_ranges_original),
+                         self.ordered_merge_comparison_and_map_emplace_original)
+        output, evidence = self.extractor.extract(self.ordered_policies_and_iterator_ranges_original, ['TranslateTest.CoreV2OrderedSetIteratorRangeCopiesASubrangeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetRangeFromSetAndDuplicateIteratorsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMutableAndConstIteratorRangesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapIteratorRangeKeepsEquivalentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetExplicitDefaultPoliciesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetExplicitDefaultPoliciesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapExplicitDefaultPoliciesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapExplicitDefaultPoliciesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetAllocatorObserverEvaluatesReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetAllocatorObserverOnEmptyOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAllocatorObserverRebindsToPublicValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapAllocatorObserverOnConstOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedRangeReverseIteratorGuardRejected', 'TranslateTest.CoreV2OrderedRangeForeignCursorGuardRejected', 'TranslateTest.CoreV2OrderedExplicitStatefulPolicyGuardRejected', 'TranslateTest.CoreV2OrderedAllocatorCopyConstructionGuardRejected', 'TranslateTest.CoreV2OrderedAllocatorObserverCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedAllocatorObserverOtherMappedTypeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8788)
+        self.assertEqual(evidence['selected_count'], 18)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-iterator-range-copies-a-subrange', output)
+        self.assertIn(b'ordered-allocator-observer-custom-policy-guard', output)
+
+    def test_ordered_policies_and_iterator_ranges_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_policies_and_iterator_ranges_history(self.ordered_policies_and_iterator_ranges_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_policies_and_iterator_ranges_registered, self.ordered_policies_and_iterator_ranges_suffix + b' ')
+
+
+    def test_ordered_node_and_value_compare_retains_published_bodies(self):
+        self.assertEqual(self.ordered_node_and_value_compare_original + self.ordered_node_and_value_compare_suffix, self.ordered_node_and_value_compare_registered)
+        self.assertEqual(self.adapter.restore_ordered_node_and_value_compare_history(self.ordered_node_and_value_compare_original),
+                         self.ordered_policies_and_iterator_ranges_original)
+        output, evidence = self.extractor.extract(self.ordered_node_and_value_compare_original, ['TranslateTest.CoreV2OrderedSetExtractKeepsDetachedNodeUntilHandleDestructionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetExtractPositionAndMissingKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapExtractAllowsDetachedKeyAndValueChangesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapExtractKeepsEquivalentNodeOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetNodeInsertionKeepsAddressAndReturnsEndForEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapNodeConflictReturnsOwnerWithMutableKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetNodeInsertionTransfersBetweenOwnerKindsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapNodeInsertAppendsAnEquivalentNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedNodeCaseRetainsReinsertionGuardRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedValueCompareIgnoresTheMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapValueCompareCanBeCalledDirectlyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedValueCompareConstObjectUsesLiveInputsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedExtractionCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedNodeHintedInsertionGuardRejected', 'TranslateTest.CoreV2OrderedMapValueCompareCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedMapValueCompareOtherMappedTypeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8804)
+        self.assertEqual(evidence['selected_count'], 16)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-extract-keeps-detached-node-until-handle-destruction', output)
+        self.assertIn(b'ordered-node-hinted-insertion-guard', output)
+
+    def test_ordered_node_and_value_compare_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_node_and_value_compare_history(self.ordered_node_and_value_compare_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_node_and_value_compare_registered, self.ordered_node_and_value_compare_suffix + b' ')
+
+
+    def test_ordered_hints_allocator_ownership_retains_published_bodies(self):
+        self.assertEqual(self.ordered_hints_allocator_ownership_original + self.ordered_hints_allocator_ownership_suffix, self.ordered_hints_allocator_ownership_registered)
+        self.assertEqual(self.adapter.restore_ordered_hints_allocator_ownership_history(self.ordered_hints_allocator_ownership_original),
+                         self.ordered_node_and_value_compare_original)
+        output, evidence = self.extractor.extract(self.ordered_hints_allocator_ownership_original, ['TranslateTest.CoreV2OrderedSetHintedNodeConflictLeavesTheHandleRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapHintedNodeUsesConstCursorConversionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetHintedNodePrecedesAnEquivalentCursorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapHintedFallbackPreservesEquivalentOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetHintedValueInsertionAndEmplacementRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetHintedValueInsertsBeforeEquivalentCursorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapHintedTryEmplaceAndInsertOrAssignRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapHintedPairAndValuePreserveOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetAllocatorCopyEvaluatesAllocatorAndOwnsNewNodesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetAllocatorMoveTransfersExistingAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAllocatorMoveKeepsPayloadAndNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapAllocatorCopyAndMoveRetainEquivalentSequenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedHintedNodeCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedMapHintedEmplaceConvertingValueGuardRejected', 'TranslateTest.CoreV2OrderedSetHintedInsertCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8820)
+        self.assertEqual(evidence['selected_count'], 16)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-multimap-hinted-fallback-preserves-equivalent-order', output)
+        self.assertIn(b'ordered-hinted-node-custom-policy-guard', output)
+
+    def test_ordered_hints_allocator_ownership_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_hints_allocator_ownership_history(self.ordered_hints_allocator_ownership_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_hints_allocator_ownership_registered, self.ordered_hints_allocator_ownership_suffix + b' ')
+
+
+    def test_ordered_reverse_retains_published_bodies(self):
+        self.assertEqual(self.ordered_reverse_original + self.ordered_reverse_suffix, self.ordered_reverse_registered)
+        self.assertEqual(self.adapter.restore_ordered_reverse_history(self.ordered_reverse_original),
+                         self.ordered_hints_allocator_ownership_original)
+        output, evidence = self.extractor.extract(self.ordered_reverse_original, ['TranslateTest.CoreV2OrderedSetReverseEndpointsAndPostfixStepRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetConstReverseTraversalCountsEquivalentsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseArrowMutatesSelectedNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapReverseFactoryAndConstEndpointRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetReverseRangeUsesHalfOpenEndpointsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetReverseRangeInsertionKeepsEquivalentEntriesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseRangeRetainsExistingMappedValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapReverseRangePresentsEquivalentsInReverseOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseCursorConvertsToConstRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapMixedReverseCursorsComparePositionsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapAssignsMutableReversePositionToConstRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapCopiesConstReverseEndFromMutableRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedReverseCursorCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedMapReverseCursorDifferentMappedStorageGuardRejected', 'TranslateTest.CoreV2OrderedReverseRangeCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRejected', 'TranslateTest.CoreV2OrderedMappedReverseConversionOtherMappedStorageGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8837)
+        self.assertEqual(evidence['selected_count'], 17)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-set-reverse-range-uses-half-open-endpoints', output)
+        self.assertIn(b'ordered-reverse-range-custom-policy-guard', output)
+
+    def test_ordered_reverse_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_reverse_history(self.ordered_reverse_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_reverse_registered, self.ordered_reverse_suffix + b' ')
+
+
+    def test_ordered_value_input_retains_published_bodies(self):
+        self.assertEqual(self.ordered_value_input_original + self.ordered_value_input_suffix, self.ordered_value_input_registered)
+        self.assertEqual(self.adapter.restore_ordered_value_input_history(self.ordered_value_input_original),
+                         self.ordered_reverse_original)
+        output, evidence = self.extractor.extract(self.ordered_value_input_original, ['TranslateTest.CoreV2OrderedMapConstructsFromMutablePairPointersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapInsertsConstPairPointerSubrangeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapConstructsFromConstPairPointersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapInsertsMutablePairPointersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetEmplacementConvertsIntegerKeyBeforeLookupRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapEmplacementConvertsKeysAndMappedIntegersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPointerRangeDifferentMappedLeafGuardRejected', 'TranslateTest.CoreV2OrderedEmplacementUserDefinedKeyConversionGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8845)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-constructs-from-mutable-pair-pointers', output)
+        self.assertIn(b'ordered-map-pointer-range-different-mapped-leaf-guard', output)
+
+    def test_ordered_value_input_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_value_input_history(self.ordered_value_input_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_value_input_registered, self.ordered_value_input_suffix + b' ')
+
+
+    def test_ordered_map_and_iteration_retains_published_bodies(self):
+        self.assertEqual(self.ordered_map_and_iteration_original + self.ordered_map_and_iteration_suffix, self.ordered_map_and_iteration_registered)
+        self.assertEqual(self.adapter.restore_ordered_map_and_iteration_history(self.ordered_map_and_iteration_original),
+                         self.ordered_value_input_original)
+        output, evidence = self.extractor.extract(self.ordered_map_and_iteration_original, ['TranslateTest.CoreV2OrderedMapDefaultEmplacementInitializesBothFieldsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapEmplacementCopiesExactIntegerPairRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapEmplacementOfExactPairsKeepsOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapDefaultEmplacementPreservesExistingZeroKeyRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPiecewiseEmplacementReadsLiveReferenceElementsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPiecewiseEmptyKeyAndValueTuplesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapPiecewiseInsertsEquivalentValuesInOrderRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapPiecewiseConstructsBeforeUniqueConflictRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedIteratorAdvanceWalksInBothDirectionsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapDistanceCountsConstIteratorsAndEmptyRangesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedIteratorNextAndPrevCopyTheirInputRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapNextRetainsEquivalentPositionRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetFreeBeginEndAndEmptyFollowOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapFreeBeginKeepsMappedMutabilityRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetFreeReverseAccessRetainsEquivalentValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapFreeConstReverseAccessUsesOwnerEndpointsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedReverseAdvanceMutatesOnlyTheSelectedCursorRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapReverseDistanceKeepsEquivalentPositionsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseNextPrevPreserveSourceAndMappedReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetReverseAdvanceCanReachAndLeaveEndRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapHintedDefaultEmplacementPreservesDuplicateValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapHintedExactPairPreservesExistingMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapHintedExactPairInsertsBeforeEquivalentHintRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapHintedPiecewisePositionsValueAndKeepsEquivalentsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedWideMapSubscriptKeepsExistingValueAndZeroInitializesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedWideMultimapPiecewiseAndHintedPairKeep64BitValuesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedWideMapPointerRangeCopyAndNodeHandlePreserveLayoutRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedWideMapComparisonAndAssignmentUseFullSignedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtReadsExistingConstMappedReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtProvesKeyInLaterInitializerEntryRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtMappedReferenceRetainsWideTypeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtDuplicateInitializerKeepsFirstValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapEmplacementPairWithDifferentMappedLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapPairEmplacementCustomOrderGuardRejected', 'TranslateTest.CoreV2OrderedMapPiecewiseNarrowTupleLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapPiecewiseCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedIteratorNavigationCustomComparatorGuardRejected', 'TranslateTest.CoreV2OrderedIteratorNavigationDifferentMappedLayoutGuardRejected', 'TranslateTest.CoreV2OrderedFreeAccessCustomComparatorGuardRejected', 'TranslateTest.CoreV2OrderedFreeAccessOtherMappedStorageGuardRejected', 'TranslateTest.CoreV2OrderedReverseNavigationCustomComparatorGuardRejected', 'TranslateTest.CoreV2OrderedReverseNavigationDifferentMappedLayoutGuardRejected', 'TranslateTest.CoreV2OrderedMapHintedPairDifferentMappedLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRejected', 'TranslateTest.CoreV2OrderedWideMappedFloatingStorageGuardRejected', 'TranslateTest.CoreV2OrderedWideMapOtherPairLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapAtMissingStaticKeyRemainsThrowingRejected', 'TranslateTest.CoreV2OrderedMapAtReferenceReceiverDoesNotProvePresenceRejected'])
+        self.assertEqual(evidence['original_test_names'], 8893)
+        self.assertEqual(evidence['selected_count'], 48)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-default-emplacement-initializes-both-fields', output)
+        self.assertIn(b'ordered-map-emplacement-pair-with-different-mapped-leaf-guard', output)
+
+    def test_ordered_map_and_iteration_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_map_and_iteration_history(self.ordered_map_and_iteration_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_map_and_iteration_registered, self.ordered_map_and_iteration_suffix + b' ')
+
+
+    def test_ordered_map_scalar_and_checked_at_retains_published_bodies(self):
+        self.assertEqual(self.ordered_map_scalar_and_checked_at_original + self.ordered_map_scalar_and_checked_at_suffix, self.ordered_map_scalar_and_checked_at_registered)
+        self.assertEqual(self.adapter.restore_ordered_map_scalar_and_checked_at_history(self.ordered_map_scalar_and_checked_at_original),
+                         self.ordered_map_and_iteration_original)
+        output, evidence = self.extractor.extract(self.ordered_map_scalar_and_checked_at_original, ['TranslateTest.CoreV2OrderedMapLongLayoutFollowsTargetWidthRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapUnsignedLongLongComparesAboveSignedMaximumRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapUintNodeAndComparisonRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapUlongAndSizeTRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapUshortAndMapShortRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapBoolAndCharacterValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ClimitsMatchesCxxIntegerLimitsRunAtBothOptimizations', 'TranslateTest.CoreV2ClimitsLongWidthFollowsTargetRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapLongStoresClimitsExtremesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapWideUnsignedUsesClimitsMaximumRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtFindTernaryOnConstReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtIfReturnsMutableReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtIfPreservesWideMappedValueRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtMutableTernaryDoesNotInsertRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapFloatSubscriptCopyAndNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapDoublePiecewiseAndEqualKeysRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairTypedInputRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapConstLongMappedStorageGuardRejected', 'TranslateTest.CoreV2OrderedMapUnsignedLongLongDifferentPairLeafGuardRejected', 'TranslateTest.CoreV2OrderedMapQualifiedUintValueGuardRejected', 'TranslateTest.CoreV2OrderedMapEnumMappedValueGuardRejected', 'TranslateTest.CoreV2ClimitsQuotedSourceIncludeIsRejectedRejected', 'TranslateTest.CoreV2LimitsResourceHeaderDirectSourceIncludeIsRejectedRejected', 'TranslateTest.CoreV2OrderedMapAtGuardDifferentKeyRejected', 'TranslateTest.CoreV2OrderedMapAtGuardDifferentOwnerRejected', 'TranslateTest.CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRejected', 'TranslateTest.CoreV2OrderedMapLongDoubleStorageGuardRejected', 'TranslateTest.CoreV2OrderedMapConstDoubleStorageGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8921)
+        self.assertEqual(evidence['selected_count'], 28)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'ordered-map-uint-node-and-comparison', output)
+        self.assertIn(b'ordered-map-qualified-uint-value-guard', output)
+
+    def test_ordered_map_scalar_and_checked_at_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_ordered_map_scalar_and_checked_at_history(self.ordered_map_scalar_and_checked_at_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.ordered_map_scalar_and_checked_at_registered, self.ordered_map_scalar_and_checked_at_suffix + b' ')
+
+
+    def test_associative_signed_wide_retains_published_bodies(self):
+        self.assertEqual(self.associative_signed_wide_original + self.associative_signed_wide_suffix, self.associative_signed_wide_registered)
+        self.assertEqual(self.adapter.restore_associative_signed_wide_history(self.associative_signed_wide_original),
+                         self.ordered_map_scalar_and_checked_at_original)
+        output, evidence = self.extractor.extract(self.associative_signed_wide_original, ['TranslateTest.CoreV2PairDeducedFromFloatingLiteralRunAtBothOptimizations', 'TranslateTest.CoreV2PairDeducedFromNumericLimitsResultRunAtBothOptimizations', 'TranslateTest.CoreV2PairExplicitTypeForNumericLimitsResultRunAtBothOptimizations', 'TranslateTest.CoreV2PairDeducedFromSourceFunctionResultRunAtBothOptimizations', 'TranslateTest.CoreV2PairDeducedFromFloatNumericLimitsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtAfterAbsentKeyReturnRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtAfterAbsentKeyReturnPreservesReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapAtPresentElseBranchRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetGreaterBoundariesAndIterationRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetGreaterHintsAndDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapGreaterCompareAndStorageRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapLongSubscriptAssignAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapLongLongPairRangeAndNodeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransparentLessExactSearchRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransparentGreaterExactSearchRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultisetTransparentGreaterEqualRangeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetTransparentWideFindAndBoundsRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapTransparentWideDescendingRangeRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMultimapTransparentSignedProbeCountRunAtBothOptimizations', 'TranslateTest.CoreV2PairDeducedVolatileNumericLimitsGuardRejected', 'TranslateTest.CoreV2OrderedMapAtKeyChangesAfterGuardRejected', 'TranslateTest.CoreV2OrderedMapAtFallthroughIsAbsentRejected', 'TranslateTest.CoreV2OrderedMapAtAfterGuardOfOtherContainerRejected', 'TranslateTest.CoreV2OrderedMapGreaterOnDifferentKeyTypeGuardRejected', 'TranslateTest.CoreV2OrderedSetCallerComparatorGuardRejected', 'TranslateTest.CoreV2UnorderedMapQualifiedLongStorageGuardRejected', 'TranslateTest.CoreV2OrderedSetMismatchedLessSpecializationGuardRejected', 'TranslateTest.CoreV2OrderedSetTransparentUnsignedProbeGuardRejected', 'TranslateTest.CoreV2OrderedMapTransparentVolatileProbeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8950)
+        self.assertEqual(evidence['selected_count'], 29)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-map-long-subscript-assign-and-copy', output)
+        self.assertIn(b'unordered-map-qualified-long-storage-guard', output)
+
+    def test_associative_signed_wide_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_associative_signed_wide_history(self.associative_signed_wide_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.associative_signed_wide_registered, self.associative_signed_wide_suffix + b' ')
+
+
+    def test_associative_cursor_and_value_retains_published_bodies(self):
+        self.assertEqual(self.associative_cursor_and_value_original + self.associative_cursor_and_value_suffix, self.associative_cursor_and_value_registered)
+        self.assertEqual(self.adapter.restore_associative_cursor_and_value_history(self.associative_cursor_and_value_original),
+                         self.associative_signed_wide_original)
+        output, evidence = self.extractor.extract(self.associative_cursor_and_value_original, ['TranslateTest.CoreV2UnorderedMapFloatInsertionZeroAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultimapDoubleMappedPermutationRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapUnsignedLongLongNodeRoundTripRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapShortAndBoolMappedStorageRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedSetForwardRangeBetweenStandardOrdersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapReverseRangeBetweenStandardOrdersRunAtBothOptimizations', 'TranslateTest.CoreV2OrderedMapSharedCursorAcrossComparatorSpecializationsRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMultisetUnsignedFromSignedShortRangeRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedSetLongRangeInsertionWithDuplicateNegativeKeyRunAtBothOptimizations', 'TranslateTest.CoreV2UnorderedMapConstDoubleMappedPayloadGuardRejected', 'TranslateTest.CoreV2UnorderedMapLongDoubleMappedPayloadGuardRejected', 'TranslateTest.CoreV2UnorderedSetUncheckedFloatPointerRangeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8962)
+        self.assertEqual(evidence['selected_count'], 12)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'unordered-map-float-insertion-zero-and-copy', output)
+        self.assertIn(b'unordered-set-unchecked-float-pointer-range-guard', output)
+
+    def test_associative_cursor_and_value_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_associative_cursor_and_value_history(self.associative_cursor_and_value_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.associative_cursor_and_value_registered, self.associative_cursor_and_value_suffix + b' ')
+
+
+    def test_variant_comparisons_retains_published_bodies(self):
+        self.assertEqual(self.variant_comparisons_original + self.variant_comparisons_suffix, self.variant_comparisons_registered)
+        self.assertEqual(self.adapter.restore_variant_comparisons_history(self.variant_comparisons_original),
+                         self.associative_cursor_and_value_original)
+        output, evidence = self.extractor.extract(self.variant_comparisons_original, ['TranslateTest.CoreV2VariantFloatRelationsAndSignedZeroRunAtBothOptimizations', 'TranslateTest.CoreV2VariantDoubleRelationsQuietNanAndWidthRunAtBothOptimizations', 'TranslateTest.CoreV2VariantComparisonLiveAndTemporaryOperandsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantComparisonTemporaryOperandsEvaluateOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantComparisonTemporaryMonostateAndWidthRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateConvertingRvalueRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateCopyEvaluatesInputOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateInPlaceCopyByIndexAndTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateEmplaceReturnsActiveAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantComparisonLongDoubleRemainsUnsupportedRejected', 'TranslateTest.CoreV2VariantComparisonEscapingReferenceGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8973)
+        self.assertEqual(evidence['selected_count'], 11)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-double-relations-quiet-nan-and-width', output)
+        self.assertIn(b'variant-comparison-escaping-reference-guard', output)
+
+    def test_variant_comparisons_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_comparisons_history(self.variant_comparisons_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_comparisons_registered, self.variant_comparisons_suffix + b' ')
+
+
+    def test_variant_assignment_and_pointer_retains_published_bodies(self):
+        self.assertEqual(self.variant_assignment_and_pointer_original + self.variant_assignment_and_pointer_suffix, self.variant_assignment_and_pointer_registered)
+        self.assertEqual(self.adapter.restore_variant_assignment_and_pointer_history(self.variant_assignment_and_pointer_original),
+                         self.variant_comparisons_original)
+        output, evidence = self.extractor.extract(self.variant_assignment_and_pointer_original, ['TranslateTest.CoreV2VariantMonostateAssignmentSelectsAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateAssignmentFromActiveAlternativeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateAssignmentObeysOperandSequencingRunAtBothOptimizations', 'TranslateTest.CoreV2VariantMonostateAssignmentPointerReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2VariantPointerEqualityDistinctObjectsAndNullRunAtBothOptimizations', 'TranslateTest.CoreV2VariantPointerEqualityComparesTheActiveIndexRunAtBothOptimizations', 'TranslateTest.CoreV2VariantPointerAndFloatEqualityPreservesPayloadTypesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVoidPointerEqualityRunAtBothOptimizations', 'TranslateTest.CoreV2VariantUncheckedPointerOrderingGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8982)
+        self.assertEqual(evidence['selected_count'], 9)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-pointer-equality-distinct-objects-and-null', output)
+        self.assertIn(b'variant-unchecked-pointer-ordering-guard', output)
+
+    def test_variant_assignment_and_pointer_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_assignment_and_pointer_history(self.variant_assignment_and_pointer_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_assignment_and_pointer_registered, self.variant_assignment_and_pointer_suffix + b' ')
+
+
+    def test_variant_swap_visit_and_any_retains_published_bodies(self):
+        self.assertEqual(self.variant_swap_visit_and_any_original + self.variant_swap_visit_and_any_suffix, self.variant_swap_visit_and_any_registered)
+        self.assertEqual(self.adapter.restore_variant_swap_visit_and_any_history(self.variant_swap_visit_and_any_original),
+                         self.variant_assignment_and_pointer_original)
+        output, evidence = self.extractor.extract(self.variant_swap_visit_and_any_original, ['TranslateTest.CoreV2VariantSwapSameAlternativeKeepsObjectAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapDifferentTagsAndWidthsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapSelfWithDuplicateAlternativesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapPointerReceiverEvaluatesOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitFourNonuniformAlternativesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitFourReferenceArgumentsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitSixAtMatrixEntryLimitRunAtBothOptimizations', 'TranslateTest.CoreV2AnyVoidPointerConstructionAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2AnyConstVoidPointerMutableSlotRunAtBothOptimizations', 'TranslateTest.CoreV2AnyNullptrPayloadAndNullVoidPointerRunAtBothOptimizations', 'TranslateTest.CoreV2AnyVoidPointerAssignmentAndSwapTypeRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapUnsupportedCustomAlternativeGuardRejected', 'TranslateTest.CoreV2VariantSwapStandaloneSdkAddressGuardRejected', 'TranslateTest.CoreV2VariantVisitFourAboveMatrixEntryLimitRejected', 'TranslateTest.CoreV2AnyUncheckedObjectPointerPayloadGuardRejected', 'TranslateTest.CoreV2AnyUncheckedFunctionPointerPayloadGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 8998)
+        self.assertEqual(evidence['selected_count'], 16)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-swap-different-tags-and-widths', output)
+        self.assertIn(b'any-unchecked-function-pointer-payload-guard', output)
+
+    def test_variant_swap_visit_and_any_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_swap_visit_and_any_history(self.variant_swap_visit_and_any_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_swap_visit_and_any_registered, self.variant_swap_visit_and_any_suffix + b' ')
+
+
+    def test_variant_swap_and_any_typed_pointers_retains_published_bodies(self):
+        self.assertEqual(self.variant_swap_and_any_typed_pointers_original + self.variant_swap_and_any_typed_pointers_suffix, self.variant_swap_and_any_typed_pointers_registered)
+        self.assertEqual(self.adapter.restore_variant_swap_and_any_typed_pointers_history(self.variant_swap_and_any_typed_pointers_original),
+                         self.variant_swap_visit_and_any_original)
+        output, evidence = self.extractor.extract(self.variant_swap_and_any_typed_pointers_original, ['TranslateTest.CoreV2VariantSwapMonostateAndIntegerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapBuiltInPointerWithNullRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapNullptrAndVoidPointerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapSelfWithDuplicateMonostateRunAtBothOptimizations', 'TranslateTest.CoreV2AnyIntPointerMutableSlotAndCvIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AnyConstIntAndBoolPointersSwapRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSwapUncheckedAssociatedPointerGuardRejected', 'TranslateTest.CoreV2VariantSwapUncheckedAssociatedEnumGuardRejected', 'TranslateTest.CoreV2AnyUncheckedRecordPointerPayloadGuardRejected', 'TranslateTest.CoreV2AnyUncheckedVolatileIntPointerPayloadGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9008)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-swap-monostate-and-integer', output)
+        self.assertIn(b'any-unchecked-volatile-int-pointer-payload-guard', output)
+
+    def test_variant_swap_and_any_typed_pointers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_swap_and_any_typed_pointers_history(self.variant_swap_and_any_typed_pointers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_swap_and_any_typed_pointers_registered, self.variant_swap_and_any_typed_pointers_suffix + b' ')
+
+
+    def test_variant_temporaries_and_any_references_retains_published_bodies(self):
+        self.assertEqual(self.variant_temporaries_and_any_references_original + self.variant_temporaries_and_any_references_suffix, self.variant_temporaries_and_any_references_registered)
+        self.assertEqual(self.adapter.restore_variant_temporaries_and_any_references_history(self.variant_temporaries_and_any_references_original),
+                         self.variant_swap_and_any_typed_pointers_original)
+        output, evidence = self.extractor.extract(self.variant_temporaries_and_any_references_original, ['TranslateTest.CoreV2VariantVisitTemporaryEvaluatesItsInitializerOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitTemporarySelectsOwnedVisitorCallRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitTemporaryWithMutableLiveOperandRunAtBothOptimizations', 'TranslateTest.CoreV2AnyActiveMutableReferenceWritesItsSlotRunAtBothOptimizations', 'TranslateTest.CoreV2AnyActiveFloatReferenceIncrementsPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2AnyActiveWideReferenceIncrementsPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2AnyActiveUtfReferenceWritesPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitTemporaryReferenceParameterGuardRejected', 'TranslateTest.CoreV2VariantVisitNonowningXvalueOperandGuardRejected', 'TranslateTest.CoreV2AnyActiveMutableReferenceWrongTypeGuardRejected', 'TranslateTest.CoreV2AnyActiveMutableReferenceAliasedResetGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9019)
+        self.assertEqual(evidence['selected_count'], 11)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-temporary-evaluates-its-initializer-once', output)
+        self.assertIn(b'any-active-utf-reference-writes-payload', output)
+
+    def test_variant_temporaries_and_any_references_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_temporaries_and_any_references_history(self.variant_temporaries_and_any_references_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_temporaries_and_any_references_registered, self.variant_temporaries_and_any_references_suffix + b' ')
+
+
+    def test_variant_and_any_objects_retains_published_bodies(self):
+        self.assertEqual(self.variant_and_any_objects_original + self.variant_and_any_objects_suffix, self.variant_and_any_objects_registered)
+        self.assertEqual(self.adapter.restore_variant_and_any_objects_history(self.variant_and_any_objects_original),
+                         self.variant_temporaries_and_any_references_original)
+        output, evidence = self.extractor.extract(self.variant_and_any_objects_original, ['TranslateTest.CoreV2VariantVisitMutableReferenceResultAliasesPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitConstReferenceResultSelectsOverloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitRvalueReferenceResultPreservesIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2AnyRepeatedActiveValueAndReferenceCastsRunAtBothOptimizations', 'TranslateTest.CoreV2AnyRepeatedActiveCastsReferenceSameSlotRunAtBothOptimizations', 'TranslateTest.CoreV2AnyRepeatedActiveCastInLoopRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTrivialAggregateDefaultInitializesMembersRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTrivialAggregateInPlaceCopyPreservesMembersRunAtBothOptimizations', 'TranslateTest.CoreV2VariantTrivialAggregateCopyPreservesActivePayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitAggregateMutablePayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitConstAggregateSelectsOverloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitMultipleLiveAggregatePayloadsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantAggregateEmplaceDefaultPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantAggregateEmplaceCopiesPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitReferenceResultBorrowsTemporaryGuardRejected', 'TranslateTest.CoreV2VariantVisitVolatileReferenceResultGuardRejected', 'TranslateTest.CoreV2AnyRepeatedActiveCastsWithResetGuardRejected', 'TranslateTest.CoreV2AnyRepeatedActiveCastsWithRetaggingGuardRejected', 'TranslateTest.CoreV2AnyRepeatedActiveCastsWithWrongSiblingGuardRejected', 'TranslateTest.CoreV2VariantUncheckedBitFieldRecordAlternativeGuardRejected', 'TranslateTest.CoreV2VariantNontrivialRecordInitializationGuardRejected', 'TranslateTest.CoreV2VariantVisitAggregateTemporaryReferenceGuardRejected', 'TranslateTest.CoreV2VariantVisitAggregateImplicitCopyGuardRejected', 'TranslateTest.CoreV2VariantVisitVolatileAggregateReferenceGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9043)
+        self.assertEqual(evidence['selected_count'], 24)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-mutable-reference-result-aliases-payload', output)
+        self.assertIn(b'variant-aggregate-emplace-copies-payload', output)
+
+    def test_variant_and_any_objects_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_and_any_objects_history(self.variant_and_any_objects_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_and_any_objects_registered, self.variant_and_any_objects_suffix + b' ')
+
+
+    def test_variant_and_any_value_categories_retains_published_bodies(self):
+        self.assertEqual(self.variant_and_any_value_categories_original + self.variant_and_any_value_categories_suffix, self.variant_and_any_value_categories_registered)
+        self.assertEqual(self.adapter.restore_variant_and_any_value_categories_history(self.variant_and_any_value_categories_original),
+                         self.variant_and_any_objects_original)
+        output, evidence = self.extractor.extract(self.variant_and_any_value_categories_original, ['TranslateTest.CoreV2VariantEmplaceIntegerConversionReturnsSlotRunAtBothOptimizations', 'TranslateTest.CoreV2VariantInPlaceUnsignedToWiderSignedRunAtBothOptimizations', 'TranslateTest.CoreV2AnyMovedLocalCastPreservesScalarRunAtBothOptimizations', 'TranslateTest.CoreV2AnyRvalueReferenceCastAliasesPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2AnyExplicitRvalueCastAliasesPointerPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSizeofExpressionSkipsSideEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2AnySizeofExpressionSkipsPayloadConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFundamentalPointerCopyKeepsDoubleTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFundamentalPointerKeepsConstBoolRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFundamentalPointerDistinguishesUtfAndIntegersRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFundamentalPointerEmplaceDistinguishesLongRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceLossyIntegerConversionGuardRejected', 'TranslateTest.CoreV2AnyMovedLocalAfterResetGuardRejected', 'TranslateTest.CoreV2AnyRvalueCastUnprovedCallerOwnedTypeGuardRejected', 'TranslateTest.CoreV2AnyRvalueCastTemporaryReferenceGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9058)
+        self.assertEqual(evidence['selected_count'], 15)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-emplace-integer-conversion-returns-slot', output)
+        self.assertIn(b'any-rvalue-cast-temporary-reference-guard', output)
+
+    def test_variant_and_any_value_categories_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_and_any_value_categories_history(self.variant_and_any_value_categories_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_and_any_value_categories_registered, self.variant_and_any_value_categories_suffix + b' ')
+
+
+    def test_variant_and_bitset_receivers_retains_published_bodies(self):
+        self.assertEqual(self.variant_and_bitset_receivers_original + self.variant_and_bitset_receivers_suffix, self.variant_and_bitset_receivers_registered)
+        self.assertEqual(self.adapter.restore_variant_and_bitset_receivers_history(self.variant_and_bitset_receivers_original),
+                         self.variant_and_any_value_categories_original)
+        output, evidence = self.extractor.extract(self.variant_and_bitset_receivers_original, ['TranslateTest.CoreV2BitsetUnsignedConversionThroughConstCopyAndAliasRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionSelectsOneImmutableReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitNonowningStaticCastPreservesOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitNonowningMoveConstOperandRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitMixedBoundAndXvalueOperandsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitUnverifiedXvalueReturningCallRejected'])
+        self.assertEqual(evidence['original_test_names'], 9064)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'bitset-unsigned-conversion-through-const-copy-and-alias', output)
+        self.assertIn(b'variant-visit-unverified-xvalue-returning-call', output)
+
+    def test_variant_and_bitset_receivers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_and_bitset_receivers_history(self.variant_and_bitset_receivers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_and_bitset_receivers_registered, self.variant_and_bitset_receivers_suffix + b' ')
+
+
+    def test_bitset_local_owners_retains_published_bodies(self):
+        self.assertEqual(self.bitset_local_owners_original + self.bitset_local_owners_suffix, self.bitset_local_owners_registered)
+        self.assertEqual(self.adapter.restore_bitset_local_owners_history(self.bitset_local_owners_original),
+                         self.variant_and_bitset_receivers_original)
+        output, evidence = self.extractor.extract(self.bitset_local_owners_original, ['TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseLocalRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionStaticConstantFitsUnsignedLongRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionSelectsStaticConstantRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionCopyAfterMutationGuardRejected', 'TranslateTest.CoreV2BitsetUnsignedConversionCopyFromAliasedOwnerGuardRejected', 'TranslateTest.CoreV2BitsetUnsignedConversionDynamicStaticInitializationGuardRejected', 'TranslateTest.CoreV2BitsetUnsignedConversionMutableStaticBindingGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9072)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'bitset-unsigned-conversion-copies-single-use-local', output)
+        self.assertIn(b'bitset-unsigned-conversion-dynamic-static-initialization-guard', output)
+
+    def test_bitset_local_owners_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_bitset_local_owners_history(self.bitset_local_owners_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_local_owners_registered, self.bitset_local_owners_suffix + b' ')
+
+
+    def test_bitset_const_member_retains_published_bodies(self):
+        self.assertEqual(self.bitset_const_member_original + self.bitset_const_member_suffix, self.bitset_const_member_registered)
+        self.assertEqual(self.adapter.restore_bitset_const_member_history(self.bitset_const_member_original),
+                         self.bitset_local_owners_original)
+        output, evidence = self.extractor.extract(self.bitset_const_member_original, ['TranslateTest.CoreV2BitsetUnsignedConversionDefaultMemberInAggregateListRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionConditionalConstMembersRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionExplicitMemberInitializerGuardRejected', 'TranslateTest.CoreV2BitsetUnsignedConversionAliasedMemberOwnerGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9076)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'bitset-unsigned-conversion-default-member-in-aggregate-list', output)
+        self.assertIn(b'bitset-unsigned-conversion-aliased-member-owner-guard', output)
+
+    def test_bitset_const_member_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_bitset_const_member_history(self.bitset_const_member_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_const_member_registered, self.bitset_const_member_suffix + b' ')
+
+
+    def test_variant_temporary_visitor_binding_retains_published_bodies(self):
+        self.assertEqual(self.variant_temporary_visitor_binding_original + self.variant_temporary_visitor_binding_suffix, self.variant_temporary_visitor_binding_registered)
+        self.assertEqual(self.adapter.restore_variant_temporary_visitor_binding_history(self.variant_temporary_visitor_binding_original),
+                         self.bitset_const_member_original)
+        output, evidence = self.extractor.extract(self.variant_temporary_visitor_binding_original, ['TranslateTest.CoreV2VariantVisitConstructsTemporaryVisitorOnceRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitMatrixUsesTemporaryVisitorRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitTemporaryVisitorVoidResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitReferenceResultFromTemporaryVisitorGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9080)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-constructs-temporary-visitor-once', output)
+        self.assertIn(b'variant-visit-reference-result-from-temporary-visitor-guard', output)
+
+    def test_variant_temporary_visitor_binding_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_temporary_visitor_binding_history(self.variant_temporary_visitor_binding_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_temporary_visitor_binding_registered, self.variant_temporary_visitor_binding_suffix + b' ')
+
+
+    def test_variant_templated_visitor_retains_published_bodies(self):
+        self.assertEqual(self.variant_templated_visitor_original + self.variant_templated_visitor_suffix, self.variant_templated_visitor_registered)
+        self.assertEqual(self.adapter.restore_variant_templated_visitor_history(self.variant_templated_visitor_original),
+                         self.variant_temporary_visitor_binding_original)
+        output, evidence = self.extractor.extract(self.variant_templated_visitor_original, ['TranslateTest.CoreV2VariantVisitInstantiatesSelectedVisitorOperatorRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitInstantiatesTwoTemplateArgumentsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitInstantiatesVoidVisitorOperatorRunAtBothOptimizations'])
+        self.assertEqual(evidence['original_test_names'], 9083)
+        self.assertEqual(evidence['selected_count'], 3)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-instantiates-selected-visitor-operator', output)
+        self.assertIn(b'variant-visit-instantiates-void-visitor-operator', output)
+
+    def test_variant_templated_visitor_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_templated_visitor_history(self.variant_templated_visitor_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_templated_visitor_registered, self.variant_templated_visitor_suffix + b' ')
+
+
+    def test_variant_captureless_visit_retains_published_bodies(self):
+        self.assertEqual(self.variant_captureless_visit_original + self.variant_captureless_visit_suffix, self.variant_captureless_visit_registered)
+        self.assertEqual(self.adapter.restore_variant_captureless_visit_history(self.variant_captureless_visit_original),
+                         self.variant_templated_visitor_original)
+        output, evidence = self.extractor.extract(self.variant_captureless_visit_original, ['TranslateTest.CoreV2VariantVisitCapturelessSelectedIntegralResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitCapturelessDispatchesTwoSelectedIndicesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitCapturingLambdaGuardRejected', 'TranslateTest.CoreV2VariantVisitCapturelessNonparameterSourceGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9087)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-captureless-selected-integral-result', output)
+        self.assertIn(b'variant-visit-capturing-lambda-guard', output)
+
+    def test_variant_captureless_visit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_captureless_visit_history(self.variant_captureless_visit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_captureless_visit_registered, self.variant_captureless_visit_suffix + b' ')
+
+
+    def test_variant_forwarding_and_forward_list_retains_published_bodies(self):
+        self.assertEqual(self.variant_forwarding_and_forward_list_original + self.variant_forwarding_and_forward_list_suffix, self.variant_forwarding_and_forward_list_registered)
+        self.assertEqual(self.adapter.restore_variant_forwarding_and_forward_list_history(self.variant_forwarding_and_forward_list_original),
+                         self.variant_captureless_visit_original)
+        output, evidence = self.extractor.extract(self.variant_forwarding_and_forward_list_original, ['TranslateTest.CoreV2VariantVisitSourceCastPreservesLiveOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitSourceCastBorrowsConstOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitSourceCastAndPinnedMoveRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMovePreservesNodeReferencesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMovedFromOwnerCanBeReusedRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMoveEmptyOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitSourceCastEffectfulBodyGuardRejected', 'TranslateTest.CoreV2VariantVisitSourceCastOtherOwnerGuardRejected', 'TranslateTest.CoreV2ForwardListCopyKeepsIndependentOwnerGuardRejected', 'TranslateTest.CoreV2ForwardListMoveAllocatorOverloadGuardRejected', 'TranslateTest.CoreV2ForwardListMoveOtherElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9098)
+        self.assertEqual(evidence['selected_count'], 11)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-move-preserves-node-references', output)
+        self.assertIn(b'variant-visit-source-cast-other-owner-guard', output)
+
+    def test_variant_forwarding_and_forward_list_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_forwarding_and_forward_list_history(self.variant_forwarding_and_forward_list_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_forwarding_and_forward_list_registered, self.variant_forwarding_and_forward_list_suffix + b' ')
+
+
+    def test_forward_list_owner_assignment_and_copy_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_owner_assignment_and_copy_original + self.forward_list_owner_assignment_and_copy_suffix, self.forward_list_owner_assignment_and_copy_registered)
+        self.assertEqual(self.adapter.restore_forward_list_owner_assignment_and_copy_history(self.forward_list_owner_assignment_and_copy_original),
+                         self.variant_forwarding_and_forward_list_original)
+        output, evidence = self.extractor.extract(self.forward_list_owner_assignment_and_copy_original, ['TranslateTest.CoreV2ForwardListMoveAssignmentRetainsNodesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMoveAssignmentEvaluationOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMoveAssignmentEmptySourceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCopyReadsConstOwnerInOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCopyEmptyIndependentOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMoveAssignmentConstSourceGuardRejected', 'TranslateTest.CoreV2ForwardListCopyAssignmentGuardRejected', 'TranslateTest.CoreV2ForwardListMoveAssignmentNonIntGuardRejected', 'TranslateTest.CoreV2ForwardListCopyExplicitAllocatorGuardRejected', 'TranslateTest.CoreV2ForwardListCopyOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListCopySourceAllocatorGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9109)
+        self.assertEqual(evidence['selected_count'], 11)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-move-assignment-retains-nodes', output)
+        self.assertIn(b'forward-list-copy-source-allocator-guard', output)
+
+    def test_forward_list_owner_assignment_and_copy_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_owner_assignment_and_copy_history(self.forward_list_owner_assignment_and_copy_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_owner_assignment_and_copy_registered, self.forward_list_owner_assignment_and_copy_suffix + b' ')
+
+
+    def test_forward_list_copy_assignment_reverse_and_swap_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_copy_assignment_reverse_and_swap_original + self.forward_list_copy_assignment_reverse_and_swap_suffix, self.forward_list_copy_assignment_reverse_and_swap_registered)
+        self.assertEqual(self.adapter.restore_forward_list_copy_assignment_reverse_and_swap_history(self.forward_list_copy_assignment_reverse_and_swap_original),
+                         self.forward_list_owner_assignment_and_copy_original)
+        output, evidence = self.extractor.extract(self.forward_list_copy_assignment_reverse_and_swap_original, ['TranslateTest.CoreV2ForwardListCopyAssignmentReusesNodesAndAppendsRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCopyAssignmentTruncatesAndHandlesSelfRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCopyAssignmentObeysCallOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListReversePreservesNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListReverseEmptyAndSingletonRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMemberSwapKeepsIteratorsAndReceiverSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListFreeSwapEvaluatesTheSelectedOwnersOnceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCopyAssignmentUnapprovedElementGuardRejected', 'TranslateTest.CoreV2ForwardListReverseOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListFreeSwapSourceAllocatorGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9119)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-copy-assignment-reuses-nodes-and-appends', output)
+        self.assertIn(b'forward-list-free-swap-source-allocator-guard', output)
+
+    def test_forward_list_copy_assignment_reverse_and_swap_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_copy_assignment_reverse_and_swap_history(self.forward_list_copy_assignment_reverse_and_swap_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_copy_assignment_reverse_and_swap_registered, self.forward_list_copy_assignment_reverse_and_swap_suffix + b' ')
+
+
+    def test_forward_list_splice_erase_and_emplace_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_splice_erase_and_emplace_original + self.forward_list_splice_erase_and_emplace_suffix, self.forward_list_splice_erase_and_emplace_registered)
+        self.assertEqual(self.adapter.restore_forward_list_splice_erase_and_emplace_history(self.forward_list_splice_erase_and_emplace_original),
+                         self.forward_list_copy_assignment_reverse_and_swap_original)
+        output, evidence = self.extractor.extract(self.forward_list_splice_erase_and_emplace_original, ['TranslateTest.CoreV2ForwardListSpliceWholeInMiddleKeepsNodeIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceWholeRvalueAppendsWithoutDestroyingSourceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceWholeEmptyEdgesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceSingleNodeOverloadGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceRangeOverloadGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEraseRangePreservesPredecessorAndSuffixRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEraseRangeReleasesAllAndReusesOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEraseRangeWithAdjacentBoundsIsEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEraseRangeAtHeadRetainsTheLiveTailRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceSingleSameOwnerPreservesOverlapRulesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceRangeSameOwnerSuffixRetainsNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEmplaceFrontDefaultReturnsStoredIntRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEmplaceFrontKeepsAliasedAndConstValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEmplaceAfterZeroAndRvalueReturnExactCursorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceWholeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListEraseRangeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListEraseRangeSourceAllocatorGuardRejected', 'TranslateTest.CoreV2ForwardListSpliceRangeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListSpliceSingleSourceAllocatorGuardRejected', 'TranslateTest.CoreV2ForwardListEmplaceConvertedLongGuardRejected', 'TranslateTest.CoreV2ForwardListEmplaceUserConversionGuardRejected', 'TranslateTest.CoreV2ForwardListEmplaceOtherElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9141)
+        self.assertEqual(evidence['selected_count'], 22)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-splice-whole-in-middle-keeps-node-identity', output)
+        self.assertIn(b'forward-list-emplace-user-conversion-guard', output)
+
+    def test_forward_list_splice_erase_and_emplace_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_splice_erase_and_emplace_history(self.forward_list_splice_erase_and_emplace_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_splice_erase_and_emplace_registered, self.forward_list_splice_erase_and_emplace_suffix + b' ')
+
+
+    def test_forward_list_assignment_insert_resize_remove_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_assignment_insert_resize_remove_original + self.forward_list_assignment_insert_resize_remove_suffix, self.forward_list_assignment_insert_resize_remove_registered)
+        self.assertEqual(self.adapter.restore_forward_list_assignment_insert_resize_remove_history(self.forward_list_assignment_insert_resize_remove_original),
+                         self.forward_list_splice_erase_and_emplace_original)
+        output, evidence = self.extractor.extract(self.forward_list_assignment_insert_resize_remove_original, ['TranslateTest.CoreV2ForwardListInitializerAssignmentReusesPrefixRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInitializerAssignCopiesNamedCarrierRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInitializerAssignmentObeysCallOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListAssignCountGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListAssignPointerRangeGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCountAssignmentReadsAliasedValueBeforeErasureRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPointerAssignmentGrowsAndTruncatesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInsertCountReturnsLastOrPositionRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInsertInitializerRangePreservesOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInsertPointerRangeReturnsExactIteratorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListResizeValueInitializesAndKeepsPrefixRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListResizeFillPreservesExistingValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListResizeCapturesReceiverBeforeCountRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRemoveAcceptsAnAliasedValueRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUniqueKeepsFirstInEachRunRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListFilterAllNoneAndEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListInitializerAssignmentOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListAssignConvertedPointerElementsGuardRejected', 'TranslateTest.CoreV2ForwardListAssignOtherInputIteratorGuardRejected', 'TranslateTest.CoreV2ForwardListInsertRangeConvertedPointerGuardRejected', 'TranslateTest.CoreV2ForwardListInsertRangeOtherIteratorGuardRejected', 'TranslateTest.CoreV2ForwardListInsertCountOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListResizeDefaultOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListResizeFillOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListResizeIndirectMemberGuardRejected', 'TranslateTest.CoreV2ForwardListRemovePredicateGuardRejected', 'TranslateTest.CoreV2ForwardListUniqueCustomPredicateGuardRejected', 'TranslateTest.CoreV2ForwardListFilterOtherElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9169)
+        self.assertEqual(evidence['selected_count'], 28)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-initializer-assignment-reuses-prefix', output)
+        self.assertIn(b'forward-list-filter-other-element-guard', output)
+
+    def test_forward_list_assignment_insert_resize_remove_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_assignment_insert_resize_remove_history(self.forward_list_assignment_insert_resize_remove_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_assignment_insert_resize_remove_registered, self.forward_list_assignment_insert_resize_remove_suffix + b' ')
+
+
+    def test_forward_list_merge_and_sort_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_merge_and_sort_original + self.forward_list_merge_and_sort_suffix, self.forward_list_merge_and_sort_registered)
+        self.assertEqual(self.adapter.restore_forward_list_merge_and_sort_history(self.forward_list_merge_and_sort_original),
+                         self.forward_list_assignment_insert_resize_remove_original)
+        output, evidence = self.extractor.extract(self.forward_list_merge_and_sort_original, ['TranslateTest.CoreV2ForwardListDefaultMergeIsStableAcrossOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultMergeRvalueAndSelfRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultMergeEmptyAndTailEdgesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultSortPreservesDuplicateOrderAndAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultSortOrdersSignedValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultSortEmptySingletonAndSortedRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMergeCustomComparatorGuardRejected', 'TranslateTest.CoreV2ForwardListMergeRvalueCustomComparatorGuardRejected', 'TranslateTest.CoreV2ForwardListMergeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListSortCustomFunctionGuardRejected', 'TranslateTest.CoreV2ForwardListSortCustomObjectGuardRejected', 'TranslateTest.CoreV2ForwardListSortOtherElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9181)
+        self.assertEqual(evidence['selected_count'], 12)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-default-merge-is-stable-across-owners', output)
+        self.assertIn(b'forward-list-sort-other-element-guard', output)
+
+    def test_forward_list_merge_and_sort_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_merge_and_sort_history(self.forward_list_merge_and_sort_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_merge_and_sort_registered, self.forward_list_merge_and_sort_suffix + b' ')
+
+
+    def test_forward_list_count_and_pointer_construction_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_count_and_pointer_construction_original + self.forward_list_count_and_pointer_construction_suffix, self.forward_list_count_and_pointer_construction_registered)
+        self.assertEqual(self.adapter.restore_forward_list_count_and_pointer_construction_history(self.forward_list_count_and_pointer_construction_original),
+                         self.forward_list_merge_and_sort_original)
+        output, evidence = self.extractor.extract(self.forward_list_count_and_pointer_construction_original, ['TranslateTest.CoreV2ForwardListCountConstructionValueInitializesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListFillConstructionCopiesValueRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCountConstructionWithDefaultAllocatorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPointerConstructionGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPointerRangeConstructionOwnsCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPointerConstructionWithDefaultAllocatorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPointerConstructionAcceptsEmptyRangeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCountConstructionOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListFillConstructionOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListPointerConstructionConvertingElementsGuardRejected', 'TranslateTest.CoreV2ForwardListIteratorConstructionGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9192)
+        self.assertEqual(evidence['selected_count'], 11)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-count-construction-value-initializes', output)
+        self.assertIn(b'forward-list-pointer-construction-converting-elements-guard', output)
+
+    def test_forward_list_count_and_pointer_construction_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_count_and_pointer_construction_history(self.forward_list_count_and_pointer_construction_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_count_and_pointer_construction_registered, self.forward_list_count_and_pointer_construction_suffix + b' ')
+
+
+    def test_forward_list_comparisons_observers_and_iterators_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_comparisons_observers_and_iterators_original + self.forward_list_comparisons_observers_and_iterators_suffix, self.forward_list_comparisons_observers_and_iterators_registered)
+        self.assertEqual(self.adapter.restore_forward_list_comparisons_observers_and_iterators_history(self.forward_list_comparisons_observers_and_iterators_original),
+                         self.forward_list_count_and_pointer_construction_original)
+        output, evidence = self.extractor.extract(self.forward_list_comparisons_observers_and_iterators_original, ['TranslateTest.CoreV2ForwardListEqualityUsesValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEqualityDistinguishesPrefixAndEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEqualityEvaluatesBothOperandsOnceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListOrderedComparisonGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListOrderUsesTheFirstSignedDifferenceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListOrderRecognizesPrefixesAndEmptyOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListOrderAgreesForEqualIndependentOwnersRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListGetAllocatorReturnsDefaultAllocatorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMaxSizeMatchesPinnedNodeCapacityRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListObserversEvaluateReceiversOnceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListAllocatorMoveStealsTheOriginalChainRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListAllocatorCopyOwnsSeparateNodesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListIteratorConstructionStopsAtInteriorBoundRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListConstIteratorConstructionWithAllocatorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListIteratorConstructionAcceptsEmptyBoundsRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListIteratorAssignmentReusesNodesAndTruncatesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListIteratorInsertionReturnsFinalNodeAndPositionRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEqualityOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListIndirectOwnerComparisonGuardRejected', 'TranslateTest.CoreV2ForwardListOrderOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListIndirectOrderGuardRejected', 'TranslateTest.CoreV2ForwardListGetAllocatorOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListMaxSizeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListIndirectMaxSizeGuardRejected', 'TranslateTest.CoreV2ForwardListAllocatorCopyOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListAllocatorMoveOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListIteratorConstructionForeignIteratorGuardRejected', 'TranslateTest.CoreV2ForwardListIteratorConstructionMoveWrapperGuardRejected', 'TranslateTest.CoreV2ForwardListIteratorAssignmentForeignOwnerGuardRejected', 'TranslateTest.CoreV2ForwardListIteratorInsertionMoveCursorGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9222)
+        self.assertEqual(evidence['selected_count'], 30)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-equality-uses-values', output)
+        self.assertIn(b'forward-list-iterator-insertion-move-cursor-guard', output)
+
+    def test_forward_list_comparisons_observers_and_iterators_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_comparisons_observers_and_iterators_history(self.forward_list_comparisons_observers_and_iterators_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_comparisons_observers_and_iterators_registered, self.forward_list_comparisons_observers_and_iterators_suffix + b' ')
+
+
+    def test_forward_list_function_comparisons_and_predicates_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_function_comparisons_and_predicates_original + self.forward_list_function_comparisons_and_predicates_suffix, self.forward_list_function_comparisons_and_predicates_registered)
+        self.assertEqual(self.adapter.restore_forward_list_function_comparisons_and_predicates_history(self.forward_list_function_comparisons_and_predicates_original),
+                         self.forward_list_comparisons_observers_and_iterators_original)
+        output, evidence = self.extractor.extract(self.forward_list_function_comparisons_and_predicates_original, ['TranslateTest.CoreV2ForwardListOrderFunctionKeepsStabilityAndNodesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRemovePredicateEvaluatesOnceInOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUniquePredicateKeepsFirstAndComparesAdjacentRunsRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSortObservableFunctionGuardRejected', 'TranslateTest.CoreV2ForwardListMergeOtherFunctionSignatureGuardRejected', 'TranslateTest.CoreV2ForwardListUniquePredicateOtherFunctionSignatureGuardRejected', 'TranslateTest.CoreV2ForwardListRemovePredicateObjectGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9229)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-order-function-keeps-stability-and-nodes', output)
+        self.assertIn(b'forward-list-remove-predicate-object-guard', output)
+
+    def test_forward_list_function_comparisons_and_predicates_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_function_comparisons_and_predicates_history(self.forward_list_function_comparisons_and_predicates_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_function_comparisons_and_predicates_registered, self.forward_list_function_comparisons_and_predicates_suffix + b' ')
+
+
+    def test_forward_list_long_element_operations_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_long_element_operations_original + self.forward_list_long_element_operations_suffix, self.forward_list_long_element_operations_registered)
+        self.assertEqual(self.adapter.restore_forward_list_long_element_operations_history(self.forward_list_long_element_operations_original),
+                         self.forward_list_function_comparisons_and_predicates_original)
+        output, evidence = self.extractor.extract(self.forward_list_long_element_operations_original, ['TranslateTest.CoreV2ForwardListLongKeepsFullWidthThroughIteratorsAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListLongAssignAndInsertExactRangesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListLongSortMergeRemoveAndCompareRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUnsignedElementGuardRejected', 'TranslateTest.CoreV2ForwardListLongSourceAllocatorGuardRejected', 'TranslateTest.CoreV2ForwardListLongConvertingPointerRangeGuardRejected', 'TranslateTest.CoreV2ForwardListLongNarrowingOrderFunctionGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9236)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-long-assign-and-insert-exact-ranges', output)
+        self.assertIn(b'forward-list-long-narrowing-order-function-guard', output)
+
+    def test_forward_list_long_element_operations_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_long_element_operations_history(self.forward_list_long_element_operations_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_long_element_operations_registered, self.forward_list_long_element_operations_suffix + b' ')
 
 
 if __name__ == '__main__':

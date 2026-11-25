@@ -1,0 +1,148 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-integral-visit-active-index-changes",
+      "formal_test_name": "TranslateTest.CoreV2VariantIntegralVisitActiveIndexChangesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b6509811b3bafb1768dfe206170cf177ec7e61cc874d9f8aff40902284bb76c8",
+      "original_case_source_sha256": "b6509811b3bafb1768dfe206170cf177ec7e61cc874d9f8aff40902284bb76c8",
+      "gtest_body_sha256": "4e2e966b3196b962f3285988ff82ecabbdeaef6edd4f5a63a1a5f2704b9ecdd6"
+    },
+    {
+      "name": "variant-integral-visit-const-and-integral-conversion",
+      "formal_test_name": "TranslateTest.CoreV2VariantIntegralVisitConstAndIntegralConversionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7b7085418206a1f91ba22c612769987ad32a5fc78a18beedeb101f8347502764",
+      "original_case_source_sha256": "7b7085418206a1f91ba22c612769987ad32a5fc78a18beedeb101f8347502764",
+      "gtest_body_sha256": "9bc78ec5f1c0e7738b3678a677e794b679ca4408ad4fc347577695087819d8d4"
+    },
+    {
+      "name": "variant-integral-visit-callback-and-receiver-evaluation",
+      "formal_test_name": "TranslateTest.CoreV2VariantIntegralVisitCallbackAndReceiverEvaluationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cfc2e885f127c195472659af1739c83fc5c62534db9394c95da708084c5dd87d",
+      "original_case_source_sha256": "cfc2e885f127c195472659af1739c83fc5c62534db9394c95da708084c5dd87d",
+      "gtest_body_sha256": "dd099184bb7df211da13d4639d8677250eba7ec7ff234b8ad63fc711433b3ea5"
+    },
+    {
+      "name": "variant-integral-visit-void-result",
+      "formal_test_name": "TranslateTest.CoreV2VariantIntegralVisitVoidResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a989e6492cc9b1f8124c3cfe692e751fc813e4d21beafda565c007ef1bff540c",
+      "original_case_source_sha256": "a989e6492cc9b1f8124c3cfe692e751fc813e4d21beafda565c007ef1bff540c",
+      "gtest_body_sha256": "15e8e023cce04d8897314b15f9ebdd18cf89ee2431b74aeec1c7dab586d8b6b2"
+    },
+    {
+      "name": "variant-integral-visit-generic-visitor",
+      "formal_test_name": "TranslateTest.CoreV2VariantIntegralVisitUsesCapturelessGenericVisitor",
+      "expected": "accept",
+      "source_sha256": "69e8b969155aef03a9f8b79816fd2c23b37ebd381594e17b17d1ebc25cca6156",
+      "original_case_source_sha256": "69e8b969155aef03a9f8b79816fd2c23b37ebd381594e17b17d1ebc25cca6156",
+      "gtest_body_sha256": "8fe9b4d2b8db489063d6146ed2281e333bfbd5171353abc939c938ab47be7c42",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-integral-visit-renamed-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantIntegralVisitRenamedGuardRejected",
+      "expected": "reject",
+      "source_sha256": "192b179db2dd67f62298384c4f8b8b78227c52a24b15b5b42be1329b8f737bc2",
+      "original_case_source_sha256": "192b179db2dd67f62298384c4f8b8b78227c52a24b15b5b42be1329b8f737bc2",
+      "gtest_body_sha256": "de05aff50f64924c231aacbc5d55d88bf4afb6871877721d8d872b8a31a57853"
+    },
+    {
+      "name": "variant-integral-visit-renamed-base-selection",
+      "formal_test_name": "TranslateTest.CoreV2VariantIntegralVisitRenamedBaseSelectionRejected",
+      "expected": "reject",
+      "source_sha256": "49ad5b2a8d791408ec9d129b37c7d07b8917c577a331192c8107bbda2e8e932d",
+      "original_case_source_sha256": "49ad5b2a8d791408ec9d129b37c7d07b8917c577a331192c8107bbda2e8e932d",
+      "gtest_body_sha256": "46987a508d8166574995d0cc84240d27955d6daffa73d1f9e1f3eb4ba9c01e41"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-integral-visit-active-index-changes",
+      "source": "#include <variant>\nint add(int value) { return value + 3; }\nint main() {\n  std::variant<short, int> value(std::in_place_index<0>, short(7));\n  if (std::visit(add, value) != 10)\n    return 1;\n  value.emplace<1>(45);\n  return std::visit(add, value) != 48;\n}\n",
+      "expected": "accept",
+      "source_sha256": "b6509811b3bafb1768dfe206170cf177ec7e61cc874d9f8aff40902284bb76c8",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-integral-visit-const-and-integral-conversion",
+      "source": "#include <variant>\nlong widen(long value) { return value * 2L; }\nint main() {\n  const std::variant<int, short> first(std::in_place_index<0>, -19);\n  const std::variant<int, short> second(std::in_place_index<1>, short(23));\n  return std::visit(widen, first) != -38L || std::visit(&widen, second) != 46L;\n}\n",
+      "expected": "accept",
+      "source_sha256": "7b7085418206a1f91ba22c612769987ad32a5fc78a18beedeb101f8347502764",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-integral-visit-callback-and-receiver-evaluation",
+      "source": "#include <variant>\nusing Value = std::variant<int, short>;\nusing Callback = int (*)(int);\nint visits, receivers, selected;\nint body(int value) { ++visits; return value - 2; }\nCallback select() { ++selected; return body; }\nValue& receive(Value& value) { ++receivers; return value; }\nint main() {\n  Value value(std::in_place_index<1>, short(7));\n  const int result = std::visit(select(), receive(value));\n  return result != 5 || visits != 1 || receivers != 1 || selected != 1;\n}\n",
+      "expected": "accept",
+      "source_sha256": "cfc2e885f127c195472659af1739c83fc5c62534db9394c95da708084c5dd87d",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-integral-visit-void-result",
+      "source": "#include <variant>\nint total;\nvoid read(int value) { total += value; }\nint main() {\n  std::variant<short, long> value(std::in_place_index<0>, short(4));\n  std::visit(read, value);\n  value.emplace<1>(34L);\n  std::visit(&read, value);\n  return total != 38;\n}\n",
+      "expected": "accept",
+      "source_sha256": "a989e6492cc9b1f8124c3cfe692e751fc813e4d21beafda565c007ef1bff540c",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-integral-visit-generic-visitor",
+      "source": "#include <variant>\nint f(std::variant<int, short>& value) {\n  return std::visit([](auto v) -> int { return int(v); }, value);\n}\n",
+      "expected": "accept",
+      "source_sha256": "69e8b969155aef03a9f8b79816fd2c23b37ebd381594e17b17d1ebc25cca6156",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-integral-visit-renamed-guard",
+      "source": "#define __throw_if_valueless changed_guard\n#include <variant>\n#undef __throw_if_valueless\nint cb(int v) { return v; }\nint main() {\n  std::variant<short, int> value(std::in_place_index<1>, 27);\n  return std::visit(cb, value) != 27;\n}\n",
+      "expected": "reject",
+      "source_sha256": "192b179db2dd67f62298384c4f8b8b78227c52a24b15b5b42be1329b8f737bc2",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-integral-visit-renamed-base-selection",
+      "source": "#define __as_base changed_base_selection\n#include <variant>\n#undef __as_base\nint cb(int v) { return v; }\nint main() {\n  std::variant<short, int> value(std::in_place_index<1>, 28);\n  return std::visit(cb, value) != 28;\n}\n",
+      "expected": "reject",
+      "source_sha256": "49ad5b2a8d791408ec9d129b37c7d07b8917c577a331192c8107bbda2e8e932d",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantIntegralVisitActiveIndexChangesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantIntegralVisitConstAndIntegralConversionRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantIntegralVisitCallbackAndReceiverEvaluationRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantIntegralVisitVoidResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantIntegralVisitUsesCapturelessGenericVisitor",
+    "TranslateTest.CoreV2VariantIntegralVisitRenamedGuardRejected",
+    "TranslateTest.CoreV2VariantIntegralVisitRenamedBaseSelectionRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "fcbc81253fb41e0c9b020802fd03dc380d00ff8ea776fcfeb60ee4df2eb1e280",
+  "maintained_original_sha256": "76e71d65563703e0372a79fc12bfa65883aea738411972f16dc3d06ba863072f",
+  "previous_registered_source_sha256": "c0ece43741e31ff8cf62cfcd5e14dcc65196029af1ea9517cd73376f05be7d2a",
+  "previous_maintained_original_sha256": "cb1e66caf89902b5ff655e287f1bc206b3dfee1f5e39c0c2a62c306577373851",
+  "restorer_sha256": "bbefe39cba988a4e5ec5670017e9d26c7451ce90235d752d91b30d6b197316e4",
+  "extractor_sha256": "6843a20d84e8b05e7d5a2532438b39d7ee2e1b92c8f59c38f9170fffce02244b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8179,
+  "current_python_registry_tests": 130,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "variant-integral-visit": "bd45782085be7d08da7a309116b883a77206bb029dddc9d5dc88463aa4762f58"
+  },
+  "native_reference_authentication_sha256": "521b9380c0de1ff1c348aa06ba306dde764c1d5d49c6f9f0a8bf702f3ca99762",
+  "source_proof_sha256": "252c9f0793c0e0eb08d32e81522cc701f687507843d82547937f65d3d7ebd127"
+}

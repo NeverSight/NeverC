@@ -1,0 +1,148 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-order-function-keeps-stability-and-nodes",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListOrderFunctionKeepsStabilityAndNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6f01d508428a7f076682c0276d90d8e5732ad3d960f9cc9e572621d36d716d82",
+      "original_case_source_sha256": "6f01d508428a7f076682c0276d90d8e5732ad3d960f9cc9e572621d36d716d82",
+      "gtest_body_sha256": "458b6ed5bcdb8ca85c0fa207567bc10862cd648d43e43305d174b6487eb672d3"
+    },
+    {
+      "name": "forward-list-remove-predicate-evaluates-once-in-order",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRemovePredicateEvaluatesOnceInOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "af1ff5856db11518926be5e4b78a12208deffcac55c5976dadbc1030860f1af4",
+      "original_case_source_sha256": "af1ff5856db11518926be5e4b78a12208deffcac55c5976dadbc1030860f1af4",
+      "gtest_body_sha256": "6cfe66856a7adf4ded30e2fcb5006552fb45150e14c9af973b23227f05425cb1"
+    },
+    {
+      "name": "forward-list-unique-predicate-keeps-first-and-compares-adjacent-runs",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUniquePredicateKeepsFirstAndComparesAdjacentRunsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "457213f015e4cd8fda27d61323c5b7caa538c7be5954fff0d1b185e9fbfda7fe",
+      "original_case_source_sha256": "457213f015e4cd8fda27d61323c5b7caa538c7be5954fff0d1b185e9fbfda7fe",
+      "gtest_body_sha256": "e20ae7f3467d95c8cf3d4b40ab844f512d78d276c420308cb6b5517930218580"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "forward-list-sort-observable-function-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSortObservableFunctionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "f22d103790093bf2b7359152692ff04826d8a8c6d7bf53c76a20665cd0c0a894",
+      "original_case_source_sha256": "f22d103790093bf2b7359152692ff04826d8a8c6d7bf53c76a20665cd0c0a894",
+      "gtest_body_sha256": "80bcff21d7a7c5bb1ca05d04206756ea39e5127ccc5cb676f305162cc455f524"
+    },
+    {
+      "name": "forward-list-merge-other-function-signature-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListMergeOtherFunctionSignatureGuardRejected",
+      "expected": "reject",
+      "source_sha256": "5383f84c24bb2fa23b8224f85dd2128f4122d77209a2fb4c17d168689f563022",
+      "original_case_source_sha256": "5383f84c24bb2fa23b8224f85dd2128f4122d77209a2fb4c17d168689f563022",
+      "gtest_body_sha256": "a44b685e257edd743c635efd77ec8782baf8ce1e17c7fa50b7b7e462f692d1c1"
+    },
+    {
+      "name": "forward-list-unique-predicate-other-function-signature-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUniquePredicateOtherFunctionSignatureGuardRejected",
+      "expected": "reject",
+      "source_sha256": "0c5f5f92e7b53fcf16f98c16174105aa2459cf7560c83344d3bd0fb1351545a2",
+      "original_case_source_sha256": "0c5f5f92e7b53fcf16f98c16174105aa2459cf7560c83344d3bd0fb1351545a2",
+      "gtest_body_sha256": "c567ac22e29bc657142778654e1f1e893767a65a171506c4c1cb9b5f85c4a1b1"
+    },
+    {
+      "name": "forward-list-remove-predicate-object-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRemovePredicateObjectGuardRejected",
+      "expected": "reject",
+      "source_sha256": "de1ef3cc6256209efcd8ccb068e85cb058f3597054a06a4188d2e07cd9149fd2",
+      "original_case_source_sha256": "de1ef3cc6256209efcd8ccb068e85cb058f3597054a06a4188d2e07cd9149fd2",
+      "gtest_body_sha256": "16645b12025f1ff487c02325c999ca76106e2583fee3bf0de6512cf866e76c2c"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "forward-list-order-function-keeps-stability-and-nodes",
+      "expected": "accept",
+      "source": "#include <forward_list>\nbool descending(int a, int b) { return a > b; }\nint main() {\n  std::forward_list<int> left{1, 7, 3, 3}, right{5, 3};\n  auto first_three = left.begin();\n  ++first_three;\n  ++first_three;\n  auto next_three = first_three;\n  ++next_three;\n  auto other_three = right.begin();\n  ++other_three;\n  left.sort(&descending);\n  left.merge(right, descending);\n  auto it = left.begin();\n  if (!right.empty() || *it != 7 || *++it != 5 || ++it != first_three)\n    return 1;\n  if (++it != next_three || ++it != other_three || *++it != 1)\n    return 2;\n  return ++it != left.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "6f01d508428a7f076682c0276d90d8e5732ad3d960f9cc9e572621d36d716d82",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-remove-predicate-evaluates-once-in-order",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint trace;\nint calls;\nbool even(int value) {\n  trace = trace * 10 + value;\n  ++calls;\n  return value % 2 == 0;\n}\nusing Predicate = bool (*)(int);\nint selections;\nPredicate select() {\n  ++selections;\n  return even;\n}\nint main() {\n  std::forward_list<int> values{2, 4, 3, 6, 5};\n  auto it = values.begin();\n  ++it;\n  ++it;\n  auto last = it;\n  ++last;\n  ++last;\n  values.remove_if(select());\n  if (selections != 1 || calls != 5 || trace != 24365)\n    return 1;\n  auto cursor = values.begin();\n  return cursor != it || *cursor != 3 || ++cursor != last || *cursor != 5 || ++cursor != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "af1ff5856db11518926be5e4b78a12208deffcac55c5976dadbc1030860f1af4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-unique-predicate-keeps-first-and-compares-adjacent-runs",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint trace;\nint calls;\nbool same_parity(int first, int next) {\n  trace = 100 * trace + 10 * first + next;\n  ++calls;\n  return first % 2 == next % 2;\n}\nint main() {\n  std::forward_list<int> values{2, 4, 5, 7, 6};\n  auto first = values.begin();\n  auto second = first;\n  ++second;\n  ++second;\n  auto third = second;\n  ++third;\n  ++third;\n  values.unique(same_parity);\n  if (calls != 4 || trace != 24255756)\n    return 1;\n  auto it = values.begin();\n  return it != first || *it != 2 || ++it != second || *it != 5 ||\n         ++it != third || *it != 6 || ++it != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "457213f015e4cd8fda27d61323c5b7caa538c7be5954fff0d1b185e9fbfda7fe",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-sort-observable-function-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint count;\nbool compare(int a, int b) { ++count; return a < b; }\nint main() {\n  std::forward_list<int> owner{3, 1, 7};\n  owner.sort(compare);\n  return owner.front() != 1 || count == 0;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "f22d103790093bf2b7359152692ff04826d8a8c6d7bf53c76a20665cd0c0a894",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-merge-other-function-signature-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nbool compare(long a, long b) { return a < b; }\nint main() {\n  std::forward_list<int> left{1, 7}, right{3, 5};\n  left.merge(right, compare);\n  return !right.empty();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "5383f84c24bb2fa23b8224f85dd2128f4122d77209a2fb4c17d168689f563022",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-unique-predicate-other-function-signature-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nbool equal(long first, long next) { return first == next; }\nint main() {\n  std::forward_list<int> values{3, 3};\n  values.unique(equal);\n  return values.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "0c5f5f92e7b53fcf16f98c16174105aa2459cf7560c83344d3bd0fb1351545a2",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-remove-predicate-object-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nstruct Matches {\n  int value;\n  bool operator()(int input) const { return value == input; }\n};\nint main() {\n  std::forward_list<int> values{2, 3, 5};\n  values.remove_if(Matches{2});\n  return values.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "de1ef3cc6256209efcd8ccb068e85cb058f3597054a06a4188d2e07cd9149fd2",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListOrderFunctionKeepsStabilityAndNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRemovePredicateEvaluatesOnceInOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListUniquePredicateKeepsFirstAndComparesAdjacentRunsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSortObservableFunctionGuardRejected",
+    "TranslateTest.CoreV2ForwardListMergeOtherFunctionSignatureGuardRejected",
+    "TranslateTest.CoreV2ForwardListUniquePredicateOtherFunctionSignatureGuardRejected",
+    "TranslateTest.CoreV2ForwardListRemovePredicateObjectGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "aa9116746cf34adb3fe06c061eaf89c722936ed4302b3006d430a753f7bd720c",
+  "maintained_original_sha256": "be1c850c7a823b91dc195cbe324a4c1bdf9fd82e65790426b832977efc69b248",
+  "previous_registered_source_sha256": "e0dcec90c582ae22434386946180d2f685ab9811300fc3f3da5af3ecf989c805",
+  "previous_maintained_original_sha256": "2619dfbeef93d36d522998d177a00b9cf26094e5570fb7dde339faf6258bd972",
+  "restorer_sha256": "cb6355170628b18bc0ed0dee17a2f4ab25bef0c60357ae0f3eab6e9590a44728",
+  "extractor_sha256": "e7aa4f7ef78e2dd5df7ba56b19419702ae2a81ce18655fa3051f60e81f088819",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9229,
+  "current_python_registry_tests": 320,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "forward-list-filter-function": "cdaf87c834775b6a00adf8cebd928b7f46eec74a3ae2e981a490345da9bed1e6",
+    "forward-list-order-function": "110db9e05085ccab8d58ac4007605516614a6f70bec3665d380865bd08c04442"
+  },
+  "native_reference_authentication_sha256": "f20b0ec1a25efab9b77f41aef654381756dd88e8fca45f9653c59dbc2465f57c",
+  "source_proof_sha256": "252c9f0793c0e0eb08d32e81522cc701f687507843d82547937f65d3d7ebd127"
+}

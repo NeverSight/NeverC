@@ -1,0 +1,131 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-equality-matching-and-different-live-alternatives",
+      "formal_test_name": "TranslateTest.CoreV2VariantEqualityMatchingAndDifferentLiveAlternativesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "99851341a77e15279e94f6343a2c0ebbc92ff332d21be3b830e944d6f2d645d6",
+      "original_case_source_sha256": "99851341a77e15279e94f6343a2c0ebbc92ff332d21be3b830e944d6f2d645d6",
+      "gtest_body_sha256": "053ace59ebf98b7253e1a1b6b5cd47814fb3ed8afc0b3ae4148e744ec3b8f9cc"
+    },
+    {
+      "name": "variant-equality-duplicate-types-retain-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantEqualityDuplicateTypesRetainIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fa8d0a50443938931418be81035318b9307bcf7dea6012926ccd35f1c443694a",
+      "original_case_source_sha256": "fa8d0a50443938931418be81035318b9307bcf7dea6012926ccd35f1c443694a",
+      "gtest_body_sha256": "0cf8fe1d48cb0d7be8313c9081029b563cf4e6d3895df7a004b1e54a4224edee"
+    },
+    {
+      "name": "variant-equality-aliased-operands-evaluate-once",
+      "formal_test_name": "TranslateTest.CoreV2VariantEqualityAliasedOperandsEvaluateOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a7b9219c593a5a77cf13ebf7cf62c2a8a3396fa0c7580dda03bd9d44c8368c9",
+      "original_case_source_sha256": "6a7b9219c593a5a77cf13ebf7cf62c2a8a3396fa0c7580dda03bd9d44c8368c9",
+      "gtest_body_sha256": "e41dedb052fc4138e664e3160a38e6539bd2c78e245744771ea4144e2ca14be0"
+    },
+    {
+      "name": "variant-equality-floating-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantEqualityAcceptsFloatingAlternative",
+      "expected": "accept",
+      "source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
+      "original_case_source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
+      "gtest_body_sha256": "059042e958f5d6100380e890a48d32642c298255fa149145dc44e9ba2659b03f",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-equality-renamed-diagonal-visitor",
+      "formal_test_name": "TranslateTest.CoreV2VariantEqualityRenamedDiagonalVisitorRejected",
+      "expected": "reject",
+      "source_sha256": "fbb34cf92f3d19a69d1ae25139caafa75ff566c82a1fef97d9e7bff33458e797",
+      "original_case_source_sha256": "fbb34cf92f3d19a69d1ae25139caafa75ff566c82a1fef97d9e7bff33458e797",
+      "gtest_body_sha256": "79c1ad6e868f82c003e47b6cc2f44b1e30ca8de12d57ee535fa9a0b1fafd89c0"
+    },
+    {
+      "name": "variant-equality-renamed-conversion-policy",
+      "formal_test_name": "TranslateTest.CoreV2VariantEqualityRenamedConversionPolicyRejected",
+      "expected": "reject",
+      "source_sha256": "18e0e4256885ae3a97113d979cb22e9aca254af63169deca9aceafe5693bdecd",
+      "original_case_source_sha256": "18e0e4256885ae3a97113d979cb22e9aca254af63169deca9aceafe5693bdecd",
+      "gtest_body_sha256": "38ac5a5b866ce39bab4641b9512161940885dd34b12896e527fcc3b306d61d17"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-equality-matching-and-different-live-alternatives",
+      "source": "#include <variant>\nint main() {\n  std::variant<short, int> a(std::in_place_index<0>, short(-3));\n  std::variant<short, int> b(std::in_place_index<0>, short(-3));\n  if (!(a == b) || a != b) return 1;\n  b.emplace<0>(short(-4));\n  if (a == b || !(a != b)) return 2;\n  b.emplace<1>(-3);\n  if (a == b || !(a != b)) return 3;\n  a.emplace<1>(-3);\n  return !(a == b) || a != b;\n}\n",
+      "expected": "accept",
+      "source_sha256": "99851341a77e15279e94f6343a2c0ebbc92ff332d21be3b830e944d6f2d645d6",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-equality-duplicate-types-retain-index",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, int> a(std::in_place_index<0>, 42);\n  const std::variant<int, int> b(std::in_place_index<1>, 42);\n  if (std::operator==(a, b) || !std::operator!=(a, b)) return 1;\n  a.emplace<1>(42);\n  return !std::operator==(a, b) || std::operator!=(a, b);\n}\n",
+      "expected": "accept",
+      "source_sha256": "fa8d0a50443938931418be81035318b9307bcf7dea6012926ccd35f1c443694a",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-equality-aliased-operands-evaluate-once",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nint left_calls, right_calls;\nconst Value& left(const Value& v) { ++left_calls; return v; }\nconst Value& right(const Value& v) { ++right_calls; return v; }\nint main() {\n  const Value v(std::in_place_index<1>, 9);\n  const Value w(std::in_place_index<1>, 8);\n  if (!(left(v) == right(v))) return 1;\n  if (!(left(v) != right(w))) return 2;\n  return left_calls != 2 || right_calls != 2;\n}\n",
+      "expected": "accept",
+      "source_sha256": "6a7b9219c593a5a77cf13ebf7cf62c2a8a3396fa0c7580dda03bd9d44c8368c9",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-equality-floating-alternative",
+      "source": "#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
+      "expected": "accept",
+      "source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-equality-renamed-diagonal-visitor",
+      "source": "#define __visit_value_at changed_diagonal_visitor\n#include <variant>\n#undef __visit_value_at\nusing Value = std::variant<short, int>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
+      "expected": "reject",
+      "source_sha256": "fbb34cf92f3d19a69d1ae25139caafa75ff566c82a1fef97d9e7bff33458e797",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-equality-renamed-conversion-policy",
+      "source": "#define __convert_to_bool changed_comparison_policy\n#include <variant>\n#undef __convert_to_bool\nusing Value = std::variant<short, int>;\nbool different(const Value& a, const Value& b) { return a != b; }\n",
+      "expected": "reject",
+      "source_sha256": "18e0e4256885ae3a97113d979cb22e9aca254af63169deca9aceafe5693bdecd",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantEqualityMatchingAndDifferentLiveAlternativesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEqualityDuplicateTypesRetainIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEqualityAliasedOperandsEvaluateOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEqualityAcceptsFloatingAlternative",
+    "TranslateTest.CoreV2VariantEqualityRenamedDiagonalVisitorRejected",
+    "TranslateTest.CoreV2VariantEqualityRenamedConversionPolicyRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a",
+  "maintained_original_sha256": "bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e",
+  "previous_registered_source_sha256": "561406c89101beb582fd1d4cc65016e90c9ce40fa582d1ca2380e9ce49526a29",
+  "previous_maintained_original_sha256": "bb50602a198d000bfebf68c70354d6deac438fcee8db75a6e2c28e12703fc1d0",
+  "restorer_sha256": "6fcc928e125aaa34ddd66c5f29205e1d541f49584ed1921b9cb71441f9ef85ea",
+  "extractor_sha256": "d0269a3268b443b274c6e6ba3872026b966fe56dff044c886b45bf23584a8153",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8234,
+  "current_python_registry_tests": 142,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "variant-equality": "334ee7f0c947e95b85726f55ae47aeda3caa5c97e157eb1047582ea0aeb778a1"
+  },
+  "native_reference_authentication_sha256": "4fe35865b873b190fff942a84b0f18c284084a80b8a777c7b1fb2053a61db0d3",
+  "source_proof_sha256": "252c9f0793c0e0eb08d32e81522cc701f687507843d82547937f65d3d7ebd127"
+}

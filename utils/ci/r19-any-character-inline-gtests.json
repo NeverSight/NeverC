@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-character-inline-wide-tag-distinct-from-integers",
+      "formal_test_name": "TranslateTest.CoreV2AnyCharacterInlineWideTagDistinctFromIntegersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1da826675e0054656f8b20b46a938bc52c20857097a4d3f06647c934dc7cc87a",
+      "original_case_source_sha256": "1da826675e0054656f8b20b46a938bc52c20857097a4d3f06647c934dc7cc87a",
+      "gtest_body_sha256": "6684c52284f4f43f12589f22b02302c5cdfb89aebf34afb28b70e3811769b358"
+    },
+    {
+      "name": "any-character-inline-utf-tag-transition",
+      "formal_test_name": "TranslateTest.CoreV2AnyCharacterInlineUtfTagTransitionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ef6e7e39a0795ea5615b7b3043654ee79e2c29b56fdc990926deb727873cf12d",
+      "original_case_source_sha256": "ef6e7e39a0795ea5615b7b3043654ee79e2c29b56fdc990926deb727873cf12d",
+      "gtest_body_sha256": "bebf4696ed82c817742f2f9d401d6bbbcc7bc7a69e7ef5776d27e6726ef0b94e"
+    },
+    {
+      "name": "any-character-inline-utf-payload-copy-and-swap",
+      "formal_test_name": "TranslateTest.CoreV2AnyCharacterInlineUtfPayloadCopyAndSwapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "642fd78a2c90ce0c4a00325e7af22a909188c3c87024295577716821dde23719",
+      "original_case_source_sha256": "642fd78a2c90ce0c4a00325e7af22a909188c3c87024295577716821dde23719",
+      "gtest_body_sha256": "ee83cadf25768459716f4c550a713b472026332d044beb1dbde49bc7c2125ac7"
+    },
+    {
+      "name": "any-character-inline-closed-wide-and-utf-value-casts",
+      "formal_test_name": "TranslateTest.CoreV2AnyCharacterInlineClosedWideAndUtfValueCastsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "497e7f6cd7a9f5dbeb4c76e5cf96e84c74a77ac8f5c1c40f54eabe51f71fbf21",
+      "original_case_source_sha256": "497e7f6cd7a9f5dbeb4c76e5cf96e84c74a77ac8f5c1c40f54eabe51f71fbf21",
+      "gtest_body_sha256": "5aa21e3167449c1bc3e5444164e7bcb1c79ca373cd4920af3889e3036be8e8c9"
+    },
+    {
+      "name": "any-character-inline-mutable-utf-reference",
+      "formal_test_name": "TranslateTest.CoreV2AnyUtfMutableReferenceRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "21683284f8e3827dce650db4da4382f92f462ace7238fcbd2d98745942183a54",
+      "original_case_source_sha256": "21683284f8e3827dce650db4da4382f92f462ace7238fcbd2d98745942183a54",
+      "gtest_body_sha256": "00b35a42505c8325e0834c93874dbf0805e8999ac3c369d32a35f4e4faa37dd3"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-character-inline-wrong-utf-value-kind",
+      "formal_test_name": "TranslateTest.CoreV2AnyCharacterInlineWrongUtfValueKindRejected",
+      "expected": "reject",
+      "source_sha256": "711ed1692a763b6f01733304e2a35424716f7ae5898c37bbd8b56158eefab81e",
+      "original_case_source_sha256": "711ed1692a763b6f01733304e2a35424716f7ae5898c37bbd8b56158eefab81e",
+      "gtest_body_sha256": "79891d0e0d9a6a9d2e5eb9699c394437cb4421b5b0b16c7152e5da0458402af4"
+    },
+    {
+      "name": "any-character-inline-aggregate-with-utf-member",
+      "formal_test_name": "TranslateTest.CoreV2AnyCharacterInlineAggregateWithUtfMemberRejected",
+      "expected": "reject",
+      "source_sha256": "7af4b3f37d32a52f286901db7f6f1aef1ed459ea475566450ceaf7ff6c3a0964",
+      "original_case_source_sha256": "7af4b3f37d32a52f286901db7f6f1aef1ed459ea475566450ceaf7ff6c3a0964",
+      "gtest_body_sha256": "d2f9858da2e3518717f07d0b05a19251243b469c879b10ec4111d349022d97d1"
+    },
+    {
+      "name": "any-character-inline-volatile-utf-pointer",
+      "formal_test_name": "TranslateTest.CoreV2AnyCharacterInlineVolatileUtfPointerRejected",
+      "expected": "reject",
+      "source_sha256": "659ea74a05e6ee7a6ab2ea51a9c0ac6ec8e43768a13591dbe2ee7791f1ab7d7b",
+      "original_case_source_sha256": "659ea74a05e6ee7a6ab2ea51a9c0ac6ec8e43768a13591dbe2ee7791f1ab7d7b",
+      "gtest_body_sha256": "4b171936a9525b9b786f01253da6d894d6c1f12831e7467dc243f96f6dcf7ed5"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "any-character-inline-wide-tag-distinct-from-integers",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any value = L'G';\n  const auto* read = std::any_cast<wchar_t>(&value);\n  return !read || *read != L'G' || std::any_cast<int>(&value) ||\n      std::any_cast<unsigned short>(&value) || std::any_cast<char16_t>(&value);\n}\n",
+      "source_sha256": "1da826675e0054656f8b20b46a938bc52c20857097a4d3f06647c934dc7cc87a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-character-inline-utf-tag-transition",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any value = u'\\u03A9';\n  const auto* short_code = std::any_cast<char16_t>(&value);\n  if (!short_code || *short_code != u'\\u03A9' || std::any_cast<char32_t>(&value)) return 1;\n  value = U'\\U0001F30F';\n  const auto* wide_code = std::any_cast<char32_t>(&value);\n  return !wide_code || *wide_code != U'\\U0001F30F' || std::any_cast<char16_t>(&value) ||\n      std::any_cast<unsigned int>(&value);\n}\n",
+      "source_sha256": "ef6e7e39a0795ea5615b7b3043654ee79e2c29b56fdc990926deb727873cf12d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-character-inline-utf-payload-copy-and-swap",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  auto input = std::make_any<char16_t>(u'X');\n  std::any copy(input);\n  input.emplace<char32_t>(U'Y');\n  input.swap(copy);\n  const auto* short_code = std::any_cast<char16_t>(&input);\n  const auto* wide_code = std::any_cast<char32_t>(&copy);\n  return !short_code || *short_code != u'X' || !wide_code || *wide_code != U'Y';\n}\n",
+      "source_sha256": "642fd78a2c90ce0c4a00325e7af22a909188c3c87024295577716821dde23719",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-character-inline-closed-wide-and-utf-value-casts",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  const std::any a = L'A';\n  std::any b = U'B';\n  return std::any_cast<wchar_t>(a) != L'A' || std::any_cast<char32_t>(b) != U'B';\n}\n",
+      "source_sha256": "497e7f6cd7a9f5dbeb4c76e5cf96e84c74a77ac8f5c1c40f54eabe51f71fbf21",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-character-inline-mutable-utf-reference",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() { std::any value = u'A'; return std::any_cast<char16_t&>(value) != u'A'; }\n",
+      "source_sha256": "21683284f8e3827dce650db4da4382f92f462ace7238fcbd2d98745942183a54",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-character-inline-wrong-utf-value-kind",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nint main() { const std::any value = U'A'; return std::any_cast<char16_t>(value) != u'A'; }\n",
+      "source_sha256": "711ed1692a763b6f01733304e2a35424716f7ae5898c37bbd8b56158eefab81e",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-character-inline-aggregate-with-utf-member",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nstruct Code { char16_t value; };\nint main() { std::any value = Code{u'A'}; return !value.has_value(); }\n",
+      "source_sha256": "7af4b3f37d32a52f286901db7f6f1aef1ed459ea475566450ceaf7ff6c3a0964",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-character-inline-volatile-utf-pointer",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nint main() { std::any value = U'A'; return !std::any_cast<volatile char32_t>(&value); }\n",
+      "source_sha256": "659ea74a05e6ee7a6ab2ea51a9c0ac6ec8e43768a13591dbe2ee7791f1ab7d7b",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyCharacterInlineWideTagDistinctFromIntegersRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyCharacterInlineUtfTagTransitionRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyCharacterInlineUtfPayloadCopyAndSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyCharacterInlineClosedWideAndUtfValueCastsRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyUtfMutableReferenceRunsAtBothOptimizations",
+    "TranslateTest.CoreV2AnyCharacterInlineWrongUtfValueKindRejected",
+    "TranslateTest.CoreV2AnyCharacterInlineAggregateWithUtfMemberRejected",
+    "TranslateTest.CoreV2AnyCharacterInlineVolatileUtfPointerRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "5ba3080e5918927829a030a7f3cb2dd589f335815d504ac9fec0e7a0f41b0163",
+  "maintained_original_sha256": "77b784892333c39f8a9d1f795615d22e645480038b1ffaefc9e900856402aad2",
+  "previous_registered_source_sha256": "24bb1e294e6faaee5194ef7e04ca3ead5b385fc723756b36c9d6b1c7ca383c2d",
+  "previous_maintained_original_sha256": "f59b6b5c51fc70f851268ca84fd1accdf137b796b27c95213ac5e10418af5741",
+  "restorer_sha256": "b92f6835f16e2001337f8c7f4da07b79ee5825f929fde2285962ec7f94d3595a",
+  "extractor_sha256": "a9eacebd759fbe9517135f42df0dd68a3abc6622282e37d7dca34a0830bc8e3f",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8440,
+  "current_python_registry_tests": 196,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "any-character-inline": "1f4c35b6952538c886237a85a4416b7aa1bd6cbd838d1ff00d93b6bc6e5aa66b",
+    "any-mutable-reference-numeric": "f5af51d5c778c2e0e49b9d5a0efd34ab654fde1d7001773a3a4fbfe72f9eef0b"
+  },
+  "native_reference_authentication_sha256": "12370c92b69bd49dbc319577d416e62b88ff86fc23f5501774afe1b61c35342f",
+  "source_proof_sha256": "252c9f0793c0e0eb08d32e81522cc701f687507843d82547937f65d3d7ebd127"
+}
