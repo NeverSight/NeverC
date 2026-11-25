@@ -54418,6 +54418,11 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       }
     }
     if (M->isConst()) return std::nullopt;
+    if (Name == "splice_after" && M->getNumParams() == 2 && M->getReturnType()->isVoidType() &&
+        forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
+        (Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(OwnerType)) ||
+         Context.hasSameType(M->getParamDecl(1)->getType(), Context.getRValueReferenceType(OwnerType))))
+      return UtilityForwardListOperation::SpliceAll;
     if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
         forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return UtilityForwardListOperation::PushFront;

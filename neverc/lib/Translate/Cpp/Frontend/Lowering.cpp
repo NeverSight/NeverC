@@ -27149,6 +27149,30 @@ class FunctionLowering {
     assign(forwardListMember(Place, false, L), std::move(Head), L);
     assign(forwardListMember(Source, false, L), A.zero(A.Context.VoidPtrTy, L), L);
   }
+  void spliceForwardListChain(Expression Position, Expression Source, SourceLocation L) {
+    auto First = snapshot(forwardListMember(Source, false, L), L);
+    const auto Move = labelName(), Check = labelName(), Step = labelName();
+    const auto Join = labelName(), Transfer = labelName(), Done = labelName();
+    branch(cast(First, "bool", L), Move, Done, L);
+    label(Move, L);
+    auto Following = snapshot(forwardListNext(Position, L), L);
+    auto Tail = temporary("ptr:void", L);
+    assign(Tail, First, L);
+    // If the destination position is already last, the source tail is
+    // untouched and no traversal is needed.
+    branch(cast(Following, "bool", L), Check, Transfer, L);
+    label(Check, L);
+    auto Next = snapshot(forwardListNext(Tail, L), L);
+    branch(cast(Next, "bool", L), Step, Join, L);
+    label(Step, L);
+    assign(Tail, Next, L);
+    jump(Check, L); label(Join, L);
+    assign(forwardListNext(Tail, L), Following, L);
+    jump(Transfer, L); label(Transfer, L);
+    assign(forwardListNext(Position, L), First, L);
+    initializeZero(forwardListMember(Source, false, L), A.Context.VoidPtrTy, L);
+    jump(Done, L); label(Done, L);
+  }
   Expression utilityForwardListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityForwardListCall(A.S, A.Sources, Call, A.Context);
@@ -27226,6 +27250,11 @@ class FunctionLowering {
     }
     if (Operation == UtilityForwardListOperation::Front)
       return forwardListValue(snapshot(forwardListMember(Place, false, L), L), Method->isConst(), L);
+    if (Operation == UtilityForwardListOperation::SpliceAll) {
+      auto Position = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
+      spliceForwardListChain(std::move(Position), dereference(Operands[1], L), L);
+      return Expression{};
+    }
     if (Operation == UtilityForwardListOperation::Clear) {
       destroyForwardListStorage(Place, Owner->Node, L);
       return Expression{};
