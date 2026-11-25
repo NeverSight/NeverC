@@ -1,0 +1,303 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-swap-same-alternative-keeps-object-addresses",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapSameAlternativeKeepsObjectAddressesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e0bccf2ca26bf8e42e4caeeaac286640aa64f5db2c277bf5e5ad806090ed1772",
+      "original_case_source_sha256": "e0bccf2ca26bf8e42e4caeeaac286640aa64f5db2c277bf5e5ad806090ed1772",
+      "gtest_body_sha256": "7527ddd840bb4caa8c8c6eee17651d644881f59c75ed8fd25631343dc94330de"
+    },
+    {
+      "name": "variant-swap-different-tags-and-widths",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapDifferentTagsAndWidthsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "09c0cd22771d6c2ee32b94bae898c85bf04204b73d362c86c692a5546b7f39b0",
+      "original_case_source_sha256": "09c0cd22771d6c2ee32b94bae898c85bf04204b73d362c86c692a5546b7f39b0",
+      "gtest_body_sha256": "4fa6dac0da34a0dfb745bff2fae7e4c92f612374a5054cb25f5659f5b1dbf0de"
+    },
+    {
+      "name": "variant-swap-self-with-duplicate-alternatives",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapSelfWithDuplicateAlternativesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d16a2d29eb77a7e5da27fd0f492a85729667fc539812f7efaaa19663cb2bf232",
+      "original_case_source_sha256": "d16a2d29eb77a7e5da27fd0f492a85729667fc539812f7efaaa19663cb2bf232",
+      "gtest_body_sha256": "f8e86061d78ce5e6be115a22632e997f96b5fc859b4119e2538d63251c43d669"
+    },
+    {
+      "name": "variant-swap-pointer-receiver-evaluates-once",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapPointerReceiverEvaluatesOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b65f91d899cc72c583c3849a68af5401d26d4ca6b709e948a9c65b982dc56136",
+      "original_case_source_sha256": "b65f91d899cc72c583c3849a68af5401d26d4ca6b709e948a9c65b982dc56136",
+      "gtest_body_sha256": "eecfb954ca13320303c1238908abd9459ef2537d50369e2aea2b5422465c15d6"
+    },
+    {
+      "name": "variant-visit-four-nonuniform-alternatives",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitFourNonuniformAlternativesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ad4cf0ecb176448884d88e1c4b91a425ed42dd87a6bf131d3ffbe0e3bcc57359",
+      "original_case_source_sha256": "ad4cf0ecb176448884d88e1c4b91a425ed42dd87a6bf131d3ffbe0e3bcc57359",
+      "gtest_body_sha256": "708c6aa1d4edf740b580869652d645a384c57ed0b8bd3b334a779cc21a00274c"
+    },
+    {
+      "name": "variant-visit-four-reference-arguments",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitFourReferenceArgumentsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d75380cb682805e4c712eb304e06b1f99ccc5344487bbf04d4c7e06093e4a006",
+      "original_case_source_sha256": "d75380cb682805e4c712eb304e06b1f99ccc5344487bbf04d4c7e06093e4a006",
+      "gtest_body_sha256": "0a9dc554519399e78662f7f8c0347a7189aa80a8b7ea6793b41094ccf88d8084"
+    },
+    {
+      "name": "variant-visit-six-at-matrix-entry-limit",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitSixAtMatrixEntryLimitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "244925f4874ef6dfbae91d7cc5607085e5f0a23d6b76c6d26a5330f801d806ed",
+      "original_case_source_sha256": "244925f4874ef6dfbae91d7cc5607085e5f0a23d6b76c6d26a5330f801d806ed",
+      "gtest_body_sha256": "1565c8656fb79d12bb7ad5fb45b8d45d7fe1f095220dc5953d1a77796ff5f94f"
+    },
+    {
+      "name": "any-void-pointer-construction-and-copy",
+      "formal_test_name": "TranslateTest.CoreV2AnyVoidPointerConstructionAndCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "772dacd0fc0d66be8fc15c56914af7dddf4245292a9522ef639c41d5ccce5295",
+      "original_case_source_sha256": "772dacd0fc0d66be8fc15c56914af7dddf4245292a9522ef639c41d5ccce5295",
+      "gtest_body_sha256": "44e1e754bd5176ce25fb121a2e997ac2ad34c018c40b96befe0c7fd4f816b241"
+    },
+    {
+      "name": "any-const-void-pointer-mutable-slot",
+      "formal_test_name": "TranslateTest.CoreV2AnyConstVoidPointerMutableSlotRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f49509d751913a1193feeb8be10890e61d3db4d883b924a0cc1ff96c30731a35",
+      "original_case_source_sha256": "f49509d751913a1193feeb8be10890e61d3db4d883b924a0cc1ff96c30731a35",
+      "gtest_body_sha256": "c827fba6608ae652359d67dd7563fe7de577dbc6f29813b8f4d7cd3f0b02cd95"
+    },
+    {
+      "name": "any-nullptr-payload-and-null-void-pointer",
+      "formal_test_name": "TranslateTest.CoreV2AnyNullptrPayloadAndNullVoidPointerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6761305e4d243a1072e672fe09afc13cd5ff083c1a91c847b771577e66a9a056",
+      "original_case_source_sha256": "6761305e4d243a1072e672fe09afc13cd5ff083c1a91c847b771577e66a9a056",
+      "gtest_body_sha256": "122a787d0eab1b56c08dba822777d14fe074790ebbf4f18b10db000b5c1354aa"
+    },
+    {
+      "name": "any-void-pointer-assignment-and-swap-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyVoidPointerAssignmentAndSwapTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "27cbb86b7489738578004e3944897eef16a5c576f6584ac16b04af9067214418",
+      "original_case_source_sha256": "27cbb86b7489738578004e3944897eef16a5c576f6584ac16b04af9067214418",
+      "gtest_body_sha256": "c8f9813a43d226219b9d599f9b35d5e80718a4acee664f69993de3f4e2e281a6"
+    },
+    {
+      "name": "any-unchecked-object-pointer-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntPointerPayloadAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a",
+      "original_case_source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a",
+      "gtest_body_sha256": "ab26953f20b7b100b6fa5dee939ef3ee1834193f7e8e4cade77ca0eb82621bcd",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-swap-unsupported-custom-alternative-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapUnsupportedCustomAlternativeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "4e9725798b7df7903ddd187422de61b38e4a17002f32a5153c8b44620fc51fdc",
+      "original_case_source_sha256": "4e9725798b7df7903ddd187422de61b38e4a17002f32a5153c8b44620fc51fdc",
+      "gtest_body_sha256": "7d02f68544e9e3f58c72cafdecced3459bc87b7bf28fca1227a843530dca7fa2"
+    },
+    {
+      "name": "variant-swap-standalone-sdk-address-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantSwapStandaloneSdkAddressGuardRejected",
+      "expected": "reject",
+      "source_sha256": "a2679576b67d3da016a3d01be3b5c621d717bd409db2202a31d61c861c3ae155",
+      "original_case_source_sha256": "a2679576b67d3da016a3d01be3b5c621d717bd409db2202a31d61c861c3ae155",
+      "gtest_body_sha256": "dd9c4aec29de6f9478f97bc53bf4c2bbcf9e118c33f048adab4adf8010e14bae"
+    },
+    {
+      "name": "variant-visit-four-above-matrix-entry-limit",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitFourAboveMatrixEntryLimitRejected",
+      "expected": "reject",
+      "source_sha256": "bf445fcefbaec837d6bcb61d489d174e3c7c93c4a035320d4094c205e4dfeadc",
+      "original_case_source_sha256": "bf445fcefbaec837d6bcb61d489d174e3c7c93c4a035320d4094c205e4dfeadc",
+      "gtest_body_sha256": "634816c597479afd908cf2f43b45a43b6d7881bb5f81f2193c02f3703991ac88"
+    },
+    {
+      "name": "any-unchecked-function-pointer-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyUncheckedFunctionPointerPayloadGuardRejected",
+      "expected": "reject",
+      "source_sha256": "abfb5fb390904749cefd4b79420db2baae50ce4f13b06bc6918aaf273047664c",
+      "original_case_source_sha256": "abfb5fb390904749cefd4b79420db2baae50ce4f13b06bc6918aaf273047664c",
+      "gtest_body_sha256": "6965472d6f91bc9a71dd8524edf832101b428bb5f6d0f435c11f5968fcdfb03a"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-swap-same-alternative-keeps-object-addresses",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<int, unsigned>;\n  Value left{8}, right{14};\n  auto* first = std::get_if<0>(&left);\n  auto* second = std::get_if<0>(&right);\n  if (!first || !second) return 1;\n  left.swap(right);\n  return std::get_if<0>(&left) != first || std::get_if<0>(&right) != second ||\n         *first != 14 || *second != 8;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "e0bccf2ca26bf8e42e4caeeaac286640aa64f5db2c277bf5e5ad806090ed1772"
+    },
+    {
+      "name": "variant-swap-different-tags-and-widths",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<long long, double>;\n  Value left{std::in_place_index<0>, -4294967301LL};\n  Value right{std::in_place_index<1>, 4.25};\n  std::swap(left, right);\n  const auto* real = std::get_if<1>(&left);\n  const auto* integer = std::get_if<0>(&right);\n  return !real || !integer || *real != 4.25 || *integer != -4294967301LL;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "09c0cd22771d6c2ee32b94bae898c85bf04204b73d362c86c692a5546b7f39b0"
+    },
+    {
+      "name": "variant-swap-self-with-duplicate-alternatives",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<int, int>;\n  Value value{std::in_place_index<1>, -18};\n  auto* old = std::get_if<1>(&value);\n  if (!old) return 1;\n  value.swap(value);\n  return value.index() != 1 || std::get_if<1>(&value) != old || *old != -18;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "d16a2d29eb77a7e5da27fd0f492a85729667fc539812f7efaaa19663cb2bf232"
+    },
+    {
+      "name": "variant-swap-pointer-receiver-evaluates-once",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Value = std::variant<int, unsigned>;\nValue* receiver(Value* input, int& trace) {\n  trace = trace * 10 + 1;\n  return input;\n}\nValue& operand(Value& input, int& trace) {\n  trace = trace * 10 + 2;\n  return input;\n}\nint main() {\n  Value left{3}, right{9U};\n  int trace = 0;\n  receiver(&left, trace)->swap(operand(right, trace));\n  const auto* a = std::get_if<1>(&left);\n  const auto* b = std::get_if<0>(&right);\n  return trace != 12 || !a || !b || *a != 9U || *b != 3;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "b65f91d899cc72c583c3849a68af5401d26d4ca6b709e948a9c65b982dc56136"
+    },
+    {
+      "name": "variant-visit-four-nonuniform-alternatives",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nusing Wide = std::variant<int, long, long long>;\nlong long select_sum(long long a, long long b, long long c, long long d) {\n  return a - 2*b + 3*c - 4*d;\n}\nint main() {\n  Value a{static_cast<short>(9)}, b{-16}, c{static_cast<short>(5)};\n  Wide d{4294967299LL};\n  return std::visit(select_sum, a, b, c, d) != -17179869140LL;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "ad4cf0ecb176448884d88e1c4b91a425ed42dd87a6bf131d3ffbe0e3bcc57359"
+    },
+    {
+      "name": "variant-visit-four-reference-arguments",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Update {\n  int calls;\n  int operator()(int& a, int& b, int& c, int& d) {\n    ++calls;\n    d += a + b + c;\n    return d;\n  }\n};\nint main() {\n  using Value = std::variant<int>;\n  Value a{2}, b{3}, c{5}, d{7};\n  Update change{0};\n  int result = std::visit(change, a, b, c, d);\n  auto* last = std::get_if<0>(&d);\n  return change.calls != 1 || result != 17 || !last || *last != result;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "d75380cb682805e4c712eb304e06b1f99ccc5344487bbf04d4c7e06093e4a006"
+    },
+    {
+      "name": "variant-visit-six-at-matrix-entry-limit",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nint pack(int a, int b, int c, int d, int e, int f) {\n  return a*100000 + b*10000 + c*1000 + d*100 + e*10 + f;\n}\nint main() {\n  const Value a{static_cast<short>(9)}, b{2}, c{static_cast<short>(8)}, d{3},\n              e{static_cast<short>(7)}, f{4};\n  return std::visit(pack, a, b, c, d, e, f) != 928374;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "244925f4874ef6dfbae91d7cc5607085e5f0a23d6b76c6d26a5330f801d806ed"
+    },
+    {
+      "name": "any-void-pointer-construction-and-copy",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  int value = 31;\n  void* pointer = &value;\n  std::any original{pointer};\n  std::any copy{original};\n  auto* first = std::any_cast<void*>(&original);\n  auto* second = std::any_cast<void*>(&copy);\n  if (!first || !second || first == second || *first != pointer || *second != pointer)\n    return 1;\n  *second = nullptr;\n  return *first != pointer || std::any_cast<const void*>(&copy) != nullptr;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "772dacd0fc0d66be8fc15c56914af7dddf4245292a9522ef639c41d5ccce5295"
+    },
+    {
+      "name": "any-const-void-pointer-mutable-slot",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  const int first = 41;\n  const int second = 62;\n  const void* initial = &first;\n  std::any object{std::in_place_type<const void*>, initial};\n  auto* slot = std::any_cast<const void*>(&object);\n  if (!slot || *slot != initial || std::any_cast<void*>(&object)) return 1;\n  *slot = &second;\n  const std::any& view = object;\n  const auto* read = std::any_cast<const void*>(&view);\n  return read != slot || *read != &second;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "f49509d751913a1193feeb8be10890e61d3db4d883b924a0cc1ff96c30731a35"
+    },
+    {
+      "name": "any-nullptr-payload-and-null-void-pointer",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  std::any value{static_cast<void*>(nullptr)};\n  auto& item = value.emplace<decltype(nullptr)>();\n  auto* null_value = std::any_cast<decltype(nullptr)>(&value);\n  if (!value.has_value() || null_value != &item ||\n      std::any_cast<void*>(&value) != nullptr) return 1;\n  value.reset();\n  return value.has_value() || std::any_cast<decltype(nullptr)>(&value) != nullptr;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "6761305e4d243a1072e672fe09afc13cd5ff083c1a91c847b771577e66a9a056"
+    },
+    {
+      "name": "any-void-pointer-assignment-and-swap-type",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  int value = 7;\n  void* pointer = &value;\n  std::any left;\n  std::any right{nullptr};\n  std::any& assigned = (left = pointer);\n  if (&assigned != &left) return 1;\n  left.swap(right);\n  auto* got = std::any_cast<void*>(&right);\n  return !got || *got != pointer || !std::any_cast<decltype(nullptr)>(&left) ||\n         std::any_cast<void*>(&left) != nullptr;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "27cbb86b7489738578004e3944897eef16a5c576f6584ac16b04af9067214418"
+    },
+    {
+      "name": "any-unchecked-object-pointer-payload-guard",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nvoid hold(int* input) { std::any value{input}; }\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a"
+    },
+    {
+      "name": "variant-swap-unsupported-custom-alternative-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload { int n; };\nvoid swap(Payload& lhs, Payload& rhs) noexcept {\n  lhs.n += rhs.n;\n}\nvoid exchange(std::variant<int, Payload>& lhs, std::variant<int, Payload>& rhs) {\n  lhs.swap(rhs);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "4e9725798b7df7903ddd187422de61b38e4a17002f32a5153c8b44620fc51fdc"
+    },
+    {
+      "name": "variant-swap-standalone-sdk-address-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nusing Value = std::variant<int, unsigned>;\nusing Swap = void (*)(Value&, Value&) noexcept;\nSwap get_swap() { return static_cast<Swap>(&std::swap); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "a2679576b67d3da016a3d01be3b5c621d717bd409db2202a31d61c861c3ae155"
+    },
+    {
+      "name": "variant-visit-four-above-matrix-entry-limit",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nusing Value = std::variant<short, int, long>;\nlong add(long a, long b, long c, long d) { return a + b + c + d; }\nlong combined(const Value& a, const Value& b, const Value& c, const Value& d) {\n  return std::visit(add, a, b, c, d);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "bf445fcefbaec837d6bcb61d489d174e3c7c93c4a035320d4094c205e4dfeadc"
+    },
+    {
+      "name": "any-unchecked-function-pointer-payload-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nusing Callback = void (*)();\nvoid hold(Callback input) { std::any value{input}; }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "abfb5fb390904749cefd4b79420db2baae50ce4f13b06bc6918aaf273047664c"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantSwapSameAlternativeKeepsObjectAddressesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSwapDifferentTagsAndWidthsRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSwapSelfWithDuplicateAlternativesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSwapPointerReceiverEvaluatesOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitFourNonuniformAlternativesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitFourReferenceArgumentsRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitSixAtMatrixEntryLimitRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyVoidPointerConstructionAndCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyConstVoidPointerMutableSlotRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyNullptrPayloadAndNullVoidPointerRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyVoidPointerAssignmentAndSwapTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntPointerPayloadAcceptsFunctionBody",
+    "TranslateTest.CoreV2VariantSwapUnsupportedCustomAlternativeGuardRejected",
+    "TranslateTest.CoreV2VariantSwapStandaloneSdkAddressGuardRejected",
+    "TranslateTest.CoreV2VariantVisitFourAboveMatrixEntryLimitRejected",
+    "TranslateTest.CoreV2AnyUncheckedFunctionPointerPayloadGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "ab307d4382c7141bfefc6a90ff79c6b2262d0ee0c30bd8609c21853d384f9041",
+  "maintained_original_sha256": "e83883bf27998e02e5d2916ccf055f341aec21a540bfcb6f9296597fa9cad1b4",
+  "previous_registered_source_sha256": "5a2f3407ce162e8376d700ba842774a69134f621dea7e5182d44d82ef176a443",
+  "previous_maintained_original_sha256": "1d18ba863fcaff673fc35427a1d69732c4f6ec4c833bdb34774f2e70ce4a9414",
+  "restorer_sha256": "4c4a97322487d49230e69d1628327a994b70e364d3e3555ed6f10d47104af91f",
+  "extractor_sha256": "c2fe41b97f378834a5198b0d6c359135fb1b0e00a26160cc4838c3ddef0c5436",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8998,
+  "current_python_registry_tests": 282,
+  "native_reference_selected_executions": 22,
+  "planned_generated_c23_executions": 22,
+  "native_reference_proofs": {
+    "any-erased-pointer-values": "f6255bc498d6fadf7803afa70c76162d11d07cce0c3e126841c9635234d08dab",
+    "variant-extended-visitation": "d5e44953ad4ed82bb5f74c07a6ed1682ca679e58f1b059a476d9f7c1659ea203",
+    "variant-trivial-swap-replay": "05e9985fdbb71cd096abddf95179d114fe15ef71c369bdf4562fef402c6fcfbb"
+  },
+  "native_reference_authentication_sha256": "64c284ff75a3643e5301312476f11d77a7143576828d1802b2642b58e9ce415c",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
+}
