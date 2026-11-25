@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
     - name: Install Clang 20 development libraries for the diagnostic probe
       run: |
         curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
@@ -198,7 +198,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: '13.0'
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         path: neverc
     - name: Set up CPython 3.12.10 for official artifacts
@@ -207,7 +207,7 @@ jobs:
       with:
         python-version: 3.12.10
     - name: Select latest stable Xcode SDK
-      uses: maxim-lobanov/setup-xcode@v1
+      uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
       with:
         xcode-version: latest-stable
     - name: Show Apple SDK
@@ -255,14 +255,13 @@ jobs:
         \ --output \"$RUNNER_TEMP/cpp-ci-recovery\"\n"
     - name: Upload focused recovery evidence
       if: ${{ !cancelled() && steps.compiler_build.outcome == 'success' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-ci-recovery-macos-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-ci-recovery
         if-no-files-found: error
         retention-days: 14
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'ci-recovery'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'ci-recovery') }}"
   recovery-windows:
     runs-on: windows-2022
     env:
@@ -270,7 +269,7 @@ jobs:
       NEVERC_PCG_STRICT: '1'
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         path: neverc
     - name: Set up CPython 3.12.10 for official artifacts
@@ -304,7 +303,7 @@ jobs:
 
         '
     - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
     - name: Build neverc
       shell: bash
       run: 'cmake -GNinja -Bbuild \
@@ -345,7 +344,7 @@ jobs:
         \ --output \"$RUNNER_TEMP/cpp-ci-recovery\"\n"
     - name: Upload focused recovery evidence
       if: ${{ !cancelled() && steps.compiler_build.outcome == 'success' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-ci-recovery-windows-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-ci-recovery
@@ -362,7 +361,7 @@ jobs:
       NEVERC_PCG_STRICT: '1'
     steps:
     - name: Checkout Repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         path: neverc
     - name: Set up CPython 3.12.10 for official artifacts
@@ -397,7 +396,7 @@ jobs:
 
         '
     - name: Setup MSVC (native arm64)
-      uses: ilammy/msvc-dev-cmd@v1
+      uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       with:
         arch: arm64
     - name: Build neverc
@@ -441,7 +440,7 @@ jobs:
         '
     - name: Upload wide integer regression evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: arm-wide-integers-${{ github.sha }}
         path: ${{ runner.temp }}/arm-wide-integers
@@ -455,7 +454,7 @@ jobs:
         '
     - name: Upload exact frozen SDK recovery evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-ci-recovery-windows-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-ci-recovery
@@ -486,7 +485,7 @@ jobs:
           neverc/utils/release/test-python-plugin-package.py \
           --archive windows-arm64-neverc.zip
     - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-arm64-neverc
         path: windows-arm64-neverc.zip
@@ -506,14 +505,14 @@ jobs:
           neverc/utils/release/test-python-plugin-package.py \
           --archive windows-arm64-neverc-compiler.zip
     - name: Upload Compiler Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-arm64-neverc-compiler
         path: windows-arm64-neverc-compiler.zip
     - name: Package neverc runtime
       run: 7z a windows-arm64-neverc-runtime.zip install/runtime
     - name: Upload Runtime Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-arm64-neverc-runtime
         path: windows-arm64-neverc-runtime.zip
@@ -521,7 +520,7 @@ jobs:
       shell: bash
       run: 7z a windows-arm64-neverc-pdb.zip ./build/bin/*.pdb
     - name: Upload PDB Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: windows-arm64-neverc-pdb
         path: windows-arm64-neverc-pdb.zip
@@ -711,7 +710,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 8
     - name: Set up CPython 3.12.10
@@ -728,7 +727,7 @@ jobs:
         \n"
     - name: Upload actual FastLink request isolation evidence
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-fastlink-request-ownership-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-fastlink-request-ownership
@@ -740,7 +739,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 4
     - name: Prepare Session cache ownership bootstrap evidence
@@ -777,7 +776,7 @@ jobs:
         '
     - name: Upload actual Session programs XML source identities and raw logs
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-session-cache-ownership-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-session-cache-ownership
@@ -790,12 +789,11 @@ jobs:
         if-no-files-found: error
         retention-days: 14
   inspect-macho-data-const:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'macho-data-const'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'macho-data-const') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare Mach-O data-const bootstrap evidence
@@ -831,7 +829,7 @@ jobs:
         '
     - name: Upload real Mach-O production object programs XML and build logs
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-macho-data-const-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-macho-data-const
@@ -849,7 +847,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare Mach-O data-const bootstrap evidence
@@ -886,7 +884,7 @@ jobs:
         \n"
     - name: Upload actual backend image object command and source evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-macho-image-backend-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-macho-image-backend
@@ -898,7 +896,7 @@ jobs:
         retention-days: 14
     - name: Retain actual backend probe remotely
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-macho-image-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-macho-image-build/**/macho-image-backend
@@ -911,7 +909,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
     - name: Set up pinned diagnostic Python
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       with:
@@ -929,7 +927,7 @@ jobs:
         \ \"$RUNNER_TEMP/cpp-algorithm-sdk-programs\"\n"
     - name: Upload exact small manifest source command and execution evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-algorithm-sdk-manifest-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-algorithm-sdk-manifest
@@ -937,7 +935,7 @@ jobs:
         retention-days: 14
     - name: Preserve real generated programs remotely
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-algorithm-sdk-programs-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-algorithm-sdk-programs
@@ -949,7 +947,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
     - name: Set up pinned diagnostic Python
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       with:
@@ -964,7 +962,7 @@ jobs:
         \n"
     - name: Upload small eight-ABI source request response and exact manifest evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-algorithm-sdk-abi-manifest-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-algorithm-sdk-abi-manifest
@@ -976,7 +974,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
     - name: Prepare retained formal replay bootstrap evidence
       run: 'mkdir -p "$RUNNER_TEMP/cpp-algorithm-manifest-formal-bootstrap"
 
@@ -1017,7 +1015,7 @@ jobs:
         \ \"$RUNNER_TEMP/cpp-algorithm-manifest-formal-build\"\n"
     - name: Upload only actual XML source manifest and execution evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-algorithm-manifest-formal-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-algorithm-manifest-formal
@@ -1033,7 +1031,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
     - name: Verify every official and diagnostic compiler archive producer
       shell: bash
       run: 'set -o pipefail
@@ -1061,19 +1059,18 @@ jobs:
         '
     - name: Preserve actual policy evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: artifact-policy-${{ github.sha }}
         path: ${{ runner.temp }}/artifact-policy
         if-no-files-found: error
         retention-days: 14
   inspect-branch-test-header:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'branch-test-header'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'branch-test-header') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare Mach-O data-const bootstrap evidence
@@ -1109,7 +1106,7 @@ jobs:
         '
     - name: Upload small text evidence and real XML
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-branch-test-header-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-branch-test-header/results.json
@@ -1131,7 +1128,7 @@ jobs:
         retention-days: 14
     - name: Retain actual programs remotely
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-branch-test-header-programs-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-branch-test-header/macho-data-const-O0
@@ -1140,11 +1137,12 @@ jobs:
         if-no-files-found: error
         retention-days: 14
   inspect-private-runtime-formal:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'private-frontend-runtime' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'private-frontend-runtime'
+      }}
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare actual private runtime bootstrap evidence
@@ -1166,32 +1164,35 @@ jobs:
 
         sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-private-runtime-bootstrap/clang-install.log"
 
-        sudo apt-get install -y cmake ninja-build llvm-22 libgtest-dev binutils 2>&1 | tee "$RUNNER_TEMP/cpp-private-runtime-bootstrap/dependencies.log"
+        sudo apt-get install -y cmake ninja-build llvm-22 libgtest-dev binutils 2>&1
+        | tee "$RUNNER_TEMP/cpp-private-runtime-bootstrap/dependencies.log"
 
         '
     - name: Authenticate actual successful current private archive remotely
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: 'python3 utils/ci/download-private-runtime-component.py --repo "$GITHUB_WORKSPACE" --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-component" --evidence "$RUNNER_TEMP/cpp-private-runtime-bootstrap"
+      run: 'python3 utils/ci/download-private-runtime-component.py --repo "$GITHUB_WORKSPACE"
+        --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-component"
+        --evidence "$RUNNER_TEMP/cpp-private-runtime-bootstrap"
 
         '
     - name: Authenticate existing C23 backend remotely without rebuilding
       env:
         GITHUB_TOKEN: ${{ github.token }}
-      run: 'python3 utils/ci/download-cpp-linux-baseline.py --run-id 39244936536 --revision 1617f18ead74a8fa719e3d1bd02f9c84a10de551 --output "$RUNNER_TEMP/cpp-private-runtime-backend"
+      run: 'python3 utils/ci/download-cpp-linux-baseline.py --run-id 39244936536 --revision
+        1617f18ead74a8fa719e3d1bd02f9c84a10de551 --output "$RUNNER_TEMP/cpp-private-runtime-backend"
 
         '
-    - name: Build actual Translate owners and run221 GTests plus six64bit target IR
-      run: 'set -e
-
-        python3 utils/ci/run-private-runtime-ci.py --repo "$GITHUB_WORKSPACE" --component "$RUNNER_TEMP/cpp-private-runtime-component" --baseline "$RUNNER_TEMP/cpp-private-runtime-backend/provenance.json" --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-formal" --build "$RUNNER_TEMP/cpp-private-runtime-build"
-
-        python3 utils/ci/run-private-runtime-target-ir-ci.py --repo "$GITHUB_WORKSPACE" --component "$RUNNER_TEMP/cpp-private-runtime-component" --baseline "$RUNNER_TEMP/cpp-private-runtime-backend/provenance.json" --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-formal/target-ir" --build "$RUNNER_TEMP/cpp-private-member-target-ir-build" --ir-plan utils/ci/cpp-bind-member-target-ir-plan.json --runtime-report "$RUNNER_TEMP/cpp-private-runtime-formal/results.json"
+    - name: Build actual Translate owners and run all 124 original private GTests
+      run: 'python3 utils/ci/run-private-runtime-ci.py --repo "$GITHUB_WORKSPACE"
+        --component "$RUNNER_TEMP/cpp-private-runtime-component" --baseline "$RUNNER_TEMP/cpp-private-runtime-backend/provenance.json"
+        --plan utils/ci/cpp-private-runtime-plan.json --output "$RUNNER_TEMP/cpp-private-runtime-formal"
+        --build "$RUNNER_TEMP/cpp-private-runtime-build"
 
         '
     - name: Upload real original XML source and invocation evidence only
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-private-runtime-formal-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-private-runtime-formal
@@ -1201,7 +1202,7 @@ jobs:
         retention-days: 14
     - name: Retain actual driver GoogleTest and generated products remotely
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-private-runtime-binaries-remote-only-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-private-runtime-build/private-frontend-runtime-*
@@ -1231,7 +1232,7 @@ jobs:
           arch: arm64
     steps:
     - name: Checkout exact candidate
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
     - name: Set up original build-tool Python
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
       with:
@@ -1260,7 +1261,7 @@ jobs:
       run: python3 utils/ci/check-python-sdk-dependent-snapshots.py --out "$RUNNER_TEMP/python-sdk-dependent-snapshots"
     - name: Retain complete small snapshot evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: python-sdk-dependent-snapshots-${{ matrix.host }}-${{ github.sha }}
         path: ${{ runner.temp }}/python-sdk-dependent-snapshots
@@ -1271,7 +1272,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1297,7 +1298,7 @@ jobs:
           --build "$RUNNER_TEMP/cpp-private-frontend-build"
     - name: Upload actual protocol evidence without compiler binaries
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-private-frontend-protocol-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-evidence
@@ -1305,7 +1306,7 @@ jobs:
         retention-days: 14
     - name: Retain actual frontend binary remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-private-frontend-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-protocol
@@ -1314,7 +1315,7 @@ jobs:
         compression-level: 0
     - name: Retain actual isolated component archive headers and compile contract remotely
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-private-frontend-components-remote-only-${{ github.sha }}
         path: |
@@ -1335,7 +1336,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1361,7 +1362,7 @@ jobs:
           --build "$RUNNER_TEMP/cpp-private-frontend-build"
     - name: Upload actual protocol evidence without compiler binaries
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-ordinary-template-call-component-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-ordinary-template-call-evidence
@@ -1369,7 +1370,7 @@ jobs:
         retention-days: 14
     - name: Retain actual frontend binary remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-ordinary-template-call-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-protocol
@@ -1378,7 +1379,7 @@ jobs:
         compression-level: 0
     - name: Retain actual isolated component archive headers and compile contract remotely
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-ordinary-template-call-components-remote-only-${{ github.sha }}
         path: |
@@ -1399,7 +1400,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -1409,18 +1410,18 @@ jobs:
       run: python3 utils/ci/check-ordinary-call-isolation-audit.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-ordinary-call-isolation-audit"
     - name: Upload actual original audit output
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-ordinary-call-isolation-audit-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-ordinary-call-isolation-audit
         if-no-files-found: error
         retention-days: 14
   inspect-not-fn-operator-component:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-operator-component' }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-operator-component') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1453,7 +1454,7 @@ jobs:
       run: "python3 utils/ci/check-not-fn-operator-component.py --repo \"$GITHUB_WORKSPACE\" \\\n  --output \"$RUNNER_TEMP/cpp-not-fn-operator-evidence\" \\\n  --build \"$RUNNER_TEMP/cpp-private-frontend-build\"\n"
     - name: Upload actual protocol evidence without compiler binaries
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-operator-component-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-not-fn-operator-evidence
@@ -1461,7 +1462,7 @@ jobs:
         retention-days: 90
     - name: Retain actual frontend binary remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-operator-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-protocol
@@ -1470,7 +1471,7 @@ jobs:
         compression-level: 0
     - name: Retain actual isolated component archive headers and compile contract remotely
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-operator-components-remote-only-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend.a
@@ -1500,7 +1501,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1530,7 +1531,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-statement-depth-trace-${{ github.sha }}
         path: |
@@ -1540,7 +1541,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-statement-depth-trace-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -1549,7 +1550,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -1561,7 +1562,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1591,7 +1592,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-clean-200-${{ github.sha }}
         path: |
@@ -1601,7 +1602,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-clean-200-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -1610,7 +1611,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -1622,7 +1623,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Set up pinned source-check Python
@@ -1636,7 +1637,7 @@ jobs:
         python3 utils/ci/check-cpp-current-elf-combined-808.py --repo "$GITHUB_WORKSPACE" --plan utils/ci/cpp-current-elf-combined-808-plan.json --output "$RUNNER_TEMP/cpp-current-elf-combined-808" --build "$RUNNER_TEMP/cpp-current-elf-combined-808-build"
     - name: Upload actual text source-response and PID evidence only
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-elf-combined-808-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-current-elf-combined-808
@@ -1648,7 +1649,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1678,7 +1679,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-storage-layout-trace-${{ github.sha }}
         path: |
@@ -1688,7 +1689,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-storage-layout-trace-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -1697,7 +1698,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -1710,7 +1711,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1740,7 +1741,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-input-alias-forwarding-trace-${{ github.sha }}
         path: |
@@ -1750,7 +1751,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-input-alias-forwarding-trace-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -1759,7 +1760,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -1771,7 +1772,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1801,7 +1802,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-public-forwarding-trace-${{ github.sha }}
         path: |
@@ -1811,7 +1812,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-public-forwarding-trace-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -1820,7 +1821,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -1828,11 +1829,11 @@ jobs:
         compression-level: 0
         retention-days: 7
   inspect-not-fn-pointer-clean-216:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-clean-216' }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-clean-216') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1862,7 +1863,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-clean-216-${{ github.sha }}
         path: |
@@ -1872,7 +1873,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-clean-216-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -1881,7 +1882,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -1893,7 +1894,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1923,7 +1924,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-direct-invocation-trace-${{ github.sha }}
         path: |
@@ -1933,7 +1934,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-direct-invocation-trace-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -1942,7 +1943,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -1954,7 +1955,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -1984,7 +1985,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-pair-intrinsic-forward-${{ github.sha }}
         path: |
@@ -1994,7 +1995,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-pair-intrinsic-forward-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -2003,7 +2004,7 @@ jobs:
         retention-days: 7
     - name: Retain audited current private archive remotely for real runtime replay
       if: ${{ !cancelled() && steps.verify_pair_requests.outcome == 'success' }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2017,7 +2018,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 12
     - name: Fetch exact original six-check baseline
@@ -2093,7 +2094,7 @@ jobs:
           --headers "$RUNNER_TEMP/cpp-not-fn-headers"
     - name: Upload not_fn source syntax and preparation evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-source-syntax-${{ github.sha }}
         path: |-
@@ -2108,7 +2109,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Set up pinned source-check Python
@@ -2122,7 +2123,7 @@ jobs:
         python3 utils/ci/check-cpp-current216-elf-combined-808.py --repo "$GITHUB_WORKSPACE" --plan utils/ci/cpp-current216-elf-combined-808-plan.json --output "$RUNNER_TEMP/cpp-current216-elf-combined-808" --build "$RUNNER_TEMP/cpp-current216-elf-combined-808-build"
     - name: Upload actual text source-response and PID evidence only
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current216-elf-combined-808-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-current216-elf-combined-808
@@ -2130,12 +2131,11 @@ jobs:
         compression-level: 6
         retention-days: 14
   inspect-not-fn-pointer-owned-default-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-owned-default-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-pointer-owned-default-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2173,7 +2173,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-owned-default-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-pointer-owned-default-trace
@@ -2185,7 +2185,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-owned-default-trace-binary-remote-only-${{ github.sha
           }}
@@ -2195,7 +2195,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2209,7 +2209,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2247,7 +2247,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-default-clean216-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-pointer-default-clean216
@@ -2259,7 +2259,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-pointer-default-clean216-binary-remote-only-${{ github.sha
           }}
@@ -2269,7 +2269,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2278,12 +2278,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-signature-native:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.fixture_group == 'not-fn-signature-native' || inputs.fixture_group == 'bind-nested-native20')
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && (inputs.fixture_group == 'not-fn-signature-native' || inputs.fixture_group == 'bind-nested-native20')) }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -2310,7 +2309,7 @@ jobs:
         \ \"$GITHUB_WORKSPACE\" --output \"$RUNNER_TEMP/cpp-${{ inputs.fixture_group }}\"\nfi\n"
     - name: Upload only bounded native reference text evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-${{ inputs.fixture_group }}-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-${{ inputs.fixture_group }}
@@ -2320,7 +2319,7 @@ jobs:
         retention-days: 14
     - name: Retain real native programs remotely only
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-${{ inputs.fixture_group }}-binaries-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-${{ inputs.fixture_group }}/**/native-O*
@@ -2328,12 +2327,11 @@ jobs:
         retention-days: 7
         compression-level: 0
   inspect-not-fn-custom-negation-eight:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-eight'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-eight') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2371,7 +2369,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-custom-negation-eight-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-custom-negation-eight
@@ -2383,7 +2381,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-custom-negation-eight-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -2392,7 +2390,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2406,7 +2404,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2445,7 +2443,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-custom-negation-source-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-custom-negation-source-trace
@@ -2457,7 +2455,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-custom-negation-source-trace-binary-remote-only-${{ github.sha
           }}
@@ -2467,7 +2465,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2476,12 +2474,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-custom-negation-clean240:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-clean240'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-custom-negation-clean240') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2519,7 +2516,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-custom-negation-clean240-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-custom-negation-clean240
@@ -2531,7 +2528,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-custom-negation-clean240-binary-remote-only-${{ github.sha
           }}
@@ -2541,7 +2538,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2550,12 +2547,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-four32:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-four32'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-four32') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2593,7 +2589,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-four32-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-four32
@@ -2605,7 +2601,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-four32-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -2614,7 +2610,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2623,12 +2619,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-source-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-source-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-source-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2666,7 +2661,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-source-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-source-trace
@@ -2678,7 +2673,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-source-trace-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -2687,7 +2682,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2696,12 +2691,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-constructor-query-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-constructor-query-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-constructor-query-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2740,7 +2734,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-constructor-query-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-constructor-query-trace
@@ -2752,7 +2746,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-constructor-query-trace-binary-remote-only-${{ github.sha
           }}
@@ -2762,7 +2756,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2771,12 +2765,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-factory-graph-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-factory-graph-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-factory-graph-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2814,7 +2807,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-factory-graph-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-factory-graph-trace
@@ -2826,7 +2819,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-factory-graph-trace-binary-remote-only-${{ github.sha
           }}
@@ -2836,7 +2829,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2845,12 +2838,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-remaining-factory-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-remaining-factory-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-remaining-factory-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2889,7 +2881,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-remaining-factory-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-remaining-factory-trace
@@ -2901,7 +2893,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-remaining-factory-trace-binary-remote-only-${{ github.sha
           }}
@@ -2911,7 +2903,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2920,12 +2912,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-cvref-default-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-cvref-default-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-cvref-default-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -2963,7 +2954,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-cvref-default-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-cvref-default-trace
@@ -2975,7 +2966,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-cvref-default-trace-binary-remote-only-${{ github.sha
           }}
@@ -2985,7 +2976,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -2994,12 +2985,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-cvref-query-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-cvref-query-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-cvref-query-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3037,7 +3027,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-cvref-query-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-cvref-query-trace
@@ -3049,7 +3039,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-cvref-query-trace-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -3058,7 +3048,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3067,12 +3057,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-owned-default-role-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-default-role-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-owned-default-role-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3110,7 +3099,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-default-role-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-default-role-trace
@@ -3122,7 +3111,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-default-role-trace-binary-remote-only-${{ github.sha
           }}
@@ -3132,7 +3121,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3146,7 +3135,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3184,7 +3173,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-clean256-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-owned-clean256
@@ -3196,7 +3185,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-owned-clean256-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -3205,7 +3194,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3214,12 +3203,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-reference-five40:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-reference-five40'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-reference-five40') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3257,7 +3245,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-reference-five40-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-reference-five40
@@ -3269,7 +3257,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-reference-five40-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -3278,7 +3266,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3292,7 +3280,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3330,7 +3318,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-reference-clean272-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-reference-clean272
@@ -3342,7 +3330,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-reference-clean272-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -3351,7 +3339,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3360,12 +3348,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-nested-six48:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-six48'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-six48') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3403,7 +3390,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-six48-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-nested-six48
@@ -3415,7 +3402,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-six48-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -3424,7 +3411,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3438,7 +3425,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3476,7 +3463,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-call-source-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-nested-call-source-trace
@@ -3488,7 +3475,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-call-source-trace-binary-remote-only-${{ github.sha
           }}
@@ -3498,7 +3485,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3507,12 +3494,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-nested-default-source-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-default-source-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-default-source-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3550,7 +3536,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-default-source-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-nested-default-source-trace
@@ -3562,7 +3548,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-default-source-trace-binary-remote-only-${{ github.sha
           }}
@@ -3572,7 +3558,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3581,12 +3567,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-nested-result-type-trace:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-result-type-trace'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-result-type-trace') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3624,7 +3609,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-result-type-trace-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-nested-result-type-trace
@@ -3636,7 +3621,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-result-type-trace-binary-remote-only-${{ github.sha
           }}
@@ -3646,7 +3631,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3655,12 +3640,11 @@ jobs:
         retention-days: 7
 
   inspect-not-fn-nested-clean288:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-clean288'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'not-fn-nested-clean288') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3698,7 +3682,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-clean288-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-not-fn-nested-clean288
@@ -3710,7 +3694,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-not-fn-nested-clean288-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -3719,7 +3703,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3728,12 +3712,11 @@ jobs:
         retention-days: 7
 
   inspect-bind-fully-bound-baseline:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-fully-bound-baseline'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-fully-bound-baseline') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3788,7 +3771,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-fully-bound-baseline-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-bind-fully-bound-baseline
@@ -3800,7 +3783,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-fully-bound-baseline-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -3809,7 +3792,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3818,7 +3801,7 @@ jobs:
         retention-days: 7
     - name: Upload only bounded native reference text evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-fully-bound-native-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-bind-fully-bound-native
@@ -3828,7 +3811,7 @@ jobs:
         retention-days: 14
     - name: Retain fourteen real native programs remotely only
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-fully-bound-native-binaries-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-bind-fully-bound-native/**/native-O*
@@ -3837,12 +3820,11 @@ jobs:
         compression-level: 0
 
   inspect-bind-source-structure:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-source-structure'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-source-structure') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 35
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -3872,7 +3854,7 @@ jobs:
         --output "$RUNNER_TEMP/cpp-bind-source-structure"
     - name: Retain source metadata and native text evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-source-structure-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-bind-source-structure
@@ -3882,7 +3864,7 @@ jobs:
         retention-days: 14
     - name: Keep the four native programs remotely only
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-source-structure-binaries-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-bind-source-structure/**/native-O*
@@ -3891,12 +3873,11 @@ jobs:
         compression-level: 0
 
   inspect-bind-clean360:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-clean360'
-      }}
+    if: "${{ always() && success() && (github.event_name == 'workflow_dispatch' && inputs.fixture_group == 'bind-clean360') }}"
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
@@ -3951,7 +3932,7 @@ jobs:
       id: verify_pair_requests
     - name: Upload small actual source and request evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-clean360-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-bind-clean360
@@ -3963,7 +3944,7 @@ jobs:
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-clean360-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -3972,7 +3953,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -3981,7 +3962,7 @@ jobs:
         retention-days: 7
     - name: Upload only bounded native reference text evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-native18-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-bind-native18
@@ -3991,7 +3972,7 @@ jobs:
         retention-days: 14
     - name: Retain eighteen real native programs remotely only
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-native18-binaries-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-bind-native18/**/native-O*
@@ -4005,8 +3986,9 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
+        persist-credentials: false
         fetch-depth: 1
     - name: Prepare isolated frontend bootstrap evidence
       run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap"
@@ -4025,16 +4007,33 @@ jobs:
 
         python3 -c ''import hashlib,sys; assert sys.version_info[:3] == (3,12,10); assert callable(hashlib.file_digest); print(sys.version)'' | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/python.log"
 
-        python3 utils/ci/ensure-llvm-apt-host.py
+        set -euo pipefail
 
-        curl --retry 5 --retry-all-errors --retry-delay 2 --retry-max-time 120 --connect-timeout 10 --max-time 30 --proto "=https" --proto-redir "=https" -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+        . /etc/os-release
 
-        sudo bash "$RUNNER_TEMP/llvm.sh" 22 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/clang-install.log"
+        test "$ID" = ubuntu
 
-        sudo apt-get install -y cmake ninja-build llvm-22 binutils 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/dependencies.log"
+        test "$VERSION_ID" = 22.04
+
+        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key -o "$RUNNER_TEMP/stl-llvm22.asc"
+
+        sudo install -m 0644 "$RUNNER_TEMP/stl-llvm22.asc" /usr/share/keyrings/neverc-stl-llvm22.asc
+
+        printf ''%s\n'' ''deb [signed-by=/usr/share/keyrings/neverc-stl-llvm22.asc] https://apt.llvm.org/jammy/ llvm-toolchain-jammy-22 main'' | sudo tee /etc/apt/sources.list.d/neverc-stl-llvm22.list >/dev/null
+
+        sudo apt-get -o Dir::Etc::sourcelist=sources.list.d/neverc-stl-llvm22.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 update
+
+        sudo apt-get -o Dir::Etc::sourcelist=sources.list.d/neverc-stl-llvm22.list -o Dir::Etc::sourceparts=- install -y --no-install-recommends clang-22 lld-22 llvm-22 llvm-22-dev 2>&1 | tee "$RUNNER_TEMP/cpp-bind-call-arguments-clean456-bootstrap/clang-install.log"
+
+        clang++-22 --version
+
+        llvm-ar-22 --version
+
+        for tool in cmake ninja ar nm objcopy objdump readelf; do command -v "$tool"; done
 
         '
-    - name: Run 72 bind reference sources at O0 and O2
+      if: ${{ false }}
+    - name: Install the original native Clang20 and libc++20 reference toolchain
       run: 'mkdir -p "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap"
 
         set -o pipefail
@@ -4050,16 +4049,17 @@ jobs:
         dpkg-query -W clang-20 libc++1 libc++abi1 libunwind libunwind-20-dev libc++-20-dev libc++abi-20-dev | tee "$RUNNER_TEMP/cpp-bind-call-arguments-native40/bootstrap/toolchain-packages.log"
 
         '
-    - name: Run 72 bind reference sources at O0 and O2
+    - name: Run 4 exact forward-list-order-function programs with pinned Clang20 at O0 and O2
       run: python3 utils/ci/check-cpp-bind-call-arguments-native40.py --repo "$GITHUB_WORKSPACE" --output "$RUNNER_TEMP/cpp-bind-call-arguments-native40"
-    - name: Validate the original125 cases across six64bit targets
+    - name: Observe explicit-result bind sources across six exact 64-bit targets
       env:
         GITHUB_TOKEN: ${{ github.token }}
       run: "python3 utils/ci/check-cpp-bind-call-arguments-clean456.py --repo \"$GITHUB_WORKSPACE\" \\\n  --plan utils/ci/cpp-bind-call-arguments-clean456-plan.json \\\n  --output \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456\" \\\n  --build \"$RUNNER_TEMP/cpp-bind-call-arguments-clean456-rebuild\"\n"
       id: verify_pair_requests
+      if: ${{ false }}
     - name: Upload small actual source and request evidence
-      if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      if: ${{ false }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-call-arguments-clean456-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-bind-call-arguments-clean456
@@ -4070,8 +4070,8 @@ jobs:
         if-no-files-found: error
         retention-days: 14
     - name: Keep new actual source binary remotely for further diagnosis
-      if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      if: ${{ false }}
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-call-arguments-clean456-binary-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/private-frontend-source-replay
@@ -4080,7 +4080,7 @@ jobs:
         retention-days: 7
     - name: Retain actual current private archive remotely for source diagnosis
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-current-private-archive-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-private-frontend-build/_deps/neverc-cpp-build/lib/Release/libnevercCppFrontend-replay.a
@@ -4089,7 +4089,7 @@ jobs:
         retention-days: 7
     - name: Upload only bounded native reference text evidence
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-call-arguments-native40-${{ github.sha }}
         path: '${{ runner.temp }}/cpp-bind-call-arguments-native40
@@ -4099,7 +4099,7 @@ jobs:
         retention-days: 14
     - name: Retain 144 native reference programs remotely only
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: cpp-bind-call-arguments-native40-binaries-remote-only-${{ github.sha }}
         path: ${{ runner.temp }}/cpp-bind-call-arguments-native40/**/native-O*
