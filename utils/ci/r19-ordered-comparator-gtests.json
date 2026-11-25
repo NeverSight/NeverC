@@ -101,12 +101,12 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-comparator-custom-comparator",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Greater { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::set<int, Greater> values;\n  auto cmp = values.key_comp();\n  return !cmp(2, 1);\n}\n",
-      "source_sha256": "050934e6b0f1370aae8ff2d700b58c217736de3e35d99e6d387341506a439db7",
-      "kind": "source-body-guard"
+      "name": "ordered-comparator-arrow-receiver",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n",
+      "source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
+      "kind": "cpp17-operation"
     },
     {
       "name": "ordered-comparator-map-value-comparator",
@@ -117,20 +117,20 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-comparator-custom-comparator",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Greater { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::set<int, Greater> values;\n  auto cmp = values.key_comp();\n  return !cmp(2, 1);\n}\n",
+      "source_sha256": "050934e6b0f1370aae8ff2d700b58c217736de3e35d99e6d387341506a439db7",
+      "kind": "source-body-guard"
+    },
+    {
       "name": "ordered-comparator-non-default-key",
       "expected": "reject",
       "public_header": "set",
       "source": "#include <set>\nint main() {\n  std::multiset<long> values;\n  return !values.value_comp()(0L, 1L);\n}\n",
       "source_sha256": "a8d1e710d5f17789de27ee5b0e26d9453fa21c1f940388f9f59c6ad2d9e780b7",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-comparator-arrow-receiver",
-      "expected": "accept",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n",
-      "source_sha256": "e54473812950f71027daac881d5da623b870b83c525b7f9eaf072095e0ee69a5",
-      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2OrderedComparatorCustomComparatorRejected",
     "TranslateTest.CoreV2OrderedComparatorNonDefaultKeyRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6",
   "maintained_original_sha256": "e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9",
@@ -155,5 +155,12 @@
   "current_registry_count": 8384,
   "current_python_registry_tests": 182,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "associative-node-and-observer": "01a51550b23988021155c9e25097f908e2e9eaa0e96593d5ac4a97c116f7a759",
+    "ordered-comparator": "174ab453fc961891fb01128046244949bc0f3d22c70e90c197d16e9b65e98170",
+    "ordered-node-and-value-compare": "9f688edfd1ca4e2fceb07c51e787e299665a0488a58c4ecb6c377980d0cd41cc"
+  },
+  "native_reference_authentication_sha256": "2c5e73db970ef14a758ab771d8e1a3d69cbebf7dba8bcbf88124c3d86d8cf862",
+  "source_proof_sha256": "bca815bf4959fe5647f01dc8c5921381de591d1bcf4ee1c0c812e7a8be99bde2"
 }

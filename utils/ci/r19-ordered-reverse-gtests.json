@@ -172,22 +172,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-reverse-cursor-custom-policy-guard",
-      "expected": "accept",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
-      "expected": "accept",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n",
-      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
-      "kind": "cpp17-operation"
-    },
-    {
       "name": "ordered-set-reverse-range-uses-half-open-endpoints",
       "expected": "accept",
       "public_header": "set",
@@ -217,14 +201,6 @@
       "public_header": "map",
       "source": "#include <map>\nint main() {\n  const std::multimap<int, int> source{{2, 20}, {2, 21}, {4, 40}};\n  std::multimap<int, int> values{{2, 19}};\n  values.insert(source.crbegin(), source.crend());\n  auto cursor = values.lower_bound(2);\n  if (cursor->second != 19 || (++cursor)->second != 21 || (++cursor)->second != 20)\n    return 1;\n  return values.size() == 4 && values.count(2) == 3 && (++cursor)->second == 40 ? 0 : 2;\n}\n",
       "source_sha256": "c23ad0a353320a4272af4703f38329bda140ec32a6d75b841eb5e221fcd61c62",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-reverse-range-custom-policy-guard",
-      "expected": "accept",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
       "kind": "cpp17-operation"
     },
     {
@@ -260,11 +236,11 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-mapped-reverse-conversion-custom-order-guard",
+      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
       "expected": "accept",
       "public_header": "map",
-      "source": "#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map values{{1, 10}, {5, 50}};\n  Map::const_reverse_iterator it = values.rbegin();\n  return it->first == 1 ? 0 : 1;\n}\n",
-      "source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
+      "source": "#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n",
+      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
       "kind": "cpp17-operation"
     },
     {
@@ -273,6 +249,30 @@
       "public_header": "map",
       "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  Map values{{1, 10}, {5, 50}};\n  auto it = values.rbegin();\n  Map::const_reverse_iterator read = it;\n  return read == it && read->second == 50 ? 0 : 1;\n}\n",
       "source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-reverse-cursor-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-mapped-reverse-conversion-custom-order-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map values{{1, 10}, {5, 50}};\n  Map::const_reverse_iterator it = values.rbegin();\n  return it->first == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-reverse-range-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
       "kind": "cpp17-operation"
     }
   ],
@@ -295,7 +295,7 @@
     "TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedReverseRangeAcrossStandardComparators"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "88d1667c3c35a1a79ea0af997d34035ba7434b3f6fc53fd0b36ab02cd847edd1",
   "maintained_original_sha256": "71f05eab5c997e801174b09b261db0752041dcd4a7a19e10b805af00a9568b0f",
@@ -307,5 +307,13 @@
   "current_registry_count": 8837,
   "current_python_registry_tests": 266,
   "native_reference_selected_executions": 34,
-  "planned_generated_c23_executions": 34
+  "planned_generated_c23_executions": 34,
+  "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
+    "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd",
+    "ordered-shared-cursor": "109121d160959c31c4b776897084dbde4c3a7a2312db9721fbff0b2cbee95a36"
+  },
+  "native_reference_authentication_sha256": "d522ab2ad8c6c7cccd05d0c0c50302ec79096f22d2d0d9585be2f885dad076a3",
+  "source_proof_sha256": "bca815bf4959fe5647f01dc8c5921381de591d1bcf4ee1c0c812e7a8be99bde2"
 }

@@ -110,20 +110,20 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "any-narrow-inline-different-small-record",
-      "expected": "reject",
-      "public_header": "any",
-      "source": "#include <any>\nstruct Tiny { unsigned char value; };\nint main() { std::any value = Tiny{1}; return !value.has_value(); }\n",
-      "source_sha256": "6210a6a77dc56db2462e415f678081ee826bbf051174cbbfd0f6382f2b1b59a5",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "any-narrow-inline-mutable-narrow-value-cast",
       "expected": "accept",
       "public_header": "any",
       "source": "#include <any>\nint main() { std::any value = static_cast<short>(7); return std::any_cast<short&>(value); }\n",
       "source_sha256": "03634f8048807e163046bd5a65bfda70fc5d3dbf8d071a91f15681d2433ec68a",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-narrow-inline-different-small-record",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nstruct Tiny { unsigned char value; };\nint main() { std::any value = Tiny{1}; return !value.has_value(); }\n",
+      "source_sha256": "6210a6a77dc56db2462e415f678081ee826bbf051174cbbfd0f6382f2b1b59a5",
+      "kind": "source-body-guard"
     },
     {
       "name": "any-narrow-inline-narrow-tag-mismatch-value-cast",
@@ -144,7 +144,7 @@
     "TranslateTest.CoreV2AnyNarrowInlineDifferentSmallRecordRejected",
     "TranslateTest.CoreV2AnyNarrowInlineNarrowTagMismatchValueCastRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "ef55f1aa18a14070806d8cde459ca4e9427c524342219dba308bf6426224817d",
   "maintained_original_sha256": "d54d1ec315de5daf79db5c01d8e1dbd53a914fd11baf2c5b4388ee32201de29f",
@@ -156,5 +156,12 @@
   "current_registry_count": 8416,
   "current_python_registry_tests": 190,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "any-active-mutable-reference": "48c5bf01bc62c9cc06f7956355c46a38b033a773d095c14cffbf7ba449c26bc1",
+    "any-character-inline": "1f4c35b6952538c886237a85a4416b7aa1bd6cbd838d1ff00d93b6bc6e5aa66b",
+    "any-narrow-inline": "df17f805c449d1ac70296f02c861816b6a5e80e1f00ada8f49692432544e490d"
+  },
+  "native_reference_authentication_sha256": "62bc0bfd82ea946738d152b2fb6be674b55d613cb93e5bb70bc89728a41e594c",
+  "source_proof_sha256": "bca815bf4959fe5647f01dc8c5921381de591d1bcf4ee1c0c812e7a8be99bde2"
 }

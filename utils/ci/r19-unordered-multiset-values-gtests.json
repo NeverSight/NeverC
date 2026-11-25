@@ -101,22 +101,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "unordered-multiset-values-different-key",
-      "expected": "accept",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<unsigned> values{1u, 1u}; return values.count(1u) != 2; }\n",
-      "source_sha256": "a86421399157821e18623760b72eb326fd379ed7024128e3d765ae37ac7c41cc",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "unordered-multiset-values-alternate-hash",
-      "expected": "reject",
-      "public_header": "unordered_set",
-      "source": "#include <unordered_set>\nstruct Hash { using Size = decltype(sizeof(0)); Size operator()(int key) const { return Size(key); } };\nint main() { std::unordered_multiset<int, Hash> values{1, 1}; return values.count(1) != 2; }\n",
-      "source_sha256": "7e3b44c2fd79ff36a3c786e2f65659996504994bf1f2b181aa5f76d833620a68",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "unordered-multiset-values-scalar-insert",
       "expected": "accept",
       "public_header": "unordered_set",
@@ -131,6 +115,22 @@
       "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; auto* p = &values; return p->count(1) != 2; }\n",
       "source_sha256": "39551d658ab9fa413e5b004fb1be2ab945477b93450c09d83cd1e60b99f8e367",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multiset-values-different-key",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<unsigned> values{1u, 1u}; return values.count(1u) != 2; }\n",
+      "source_sha256": "a86421399157821e18623760b72eb326fd379ed7024128e3d765ae37ac7c41cc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multiset-values-alternate-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { using Size = decltype(sizeof(0)); Size operator()(int key) const { return Size(key); } };\nint main() { std::unordered_multiset<int, Hash> values{1, 1}; return values.count(1) != 2; }\n",
+      "source_sha256": "7e3b44c2fd79ff36a3c786e2f65659996504994bf1f2b181aa5f76d833620a68",
+      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedMultisetOriginalUnsignedValues",
     "TranslateTest.CoreV2UnorderedMultisetValuesAlternateHashRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "24bb1e294e6faaee5194ef7e04ca3ead5b385fc723756b36c9d6b1c7ca383c2d",
   "maintained_original_sha256": "f59b6b5c51fc70f851268ca84fd1accdf137b796b27c95213ac5e10418af5741",
@@ -155,5 +155,13 @@
   "current_registry_count": 8432,
   "current_python_registry_tests": 194,
   "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
+    "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c",
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "37408a3d424a21feabe8f64f13399d752a3033d176eedbaf1be4a8708f9262eb",
+  "source_proof_sha256": "bca815bf4959fe5647f01dc8c5921381de591d1bcf4ee1c0c812e7a8be99bde2"
 }

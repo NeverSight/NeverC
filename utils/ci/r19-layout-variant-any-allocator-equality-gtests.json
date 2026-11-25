@@ -78,6 +78,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "variant-equality-floating-alternative",
+      "source": "#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
+      "expected": "accept",
+      "source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "variant-equality-renamed-diagonal-visitor",
       "source": "#define __visit_value_at changed_diagonal_visitor\n#include <variant>\n#undef __visit_value_at\nusing Value = std::variant<short, int>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
       "expected": "reject",
@@ -92,14 +100,6 @@
       "source_sha256": "18e0e4256885ae3a97113d979cb22e9aca254af63169deca9aceafe5693bdecd",
       "public_header": "variant",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "variant-equality-floating-alternative",
-      "source": "#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
-      "expected": "accept",
-      "source_sha256": "77404ac10553dd6415e78b4aff49c79ce4847e99265d7e9951c43929040e3cf2",
-      "public_header": "variant",
-      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -110,7 +110,7 @@
     "TranslateTest.CoreV2VariantEqualityRenamedDiagonalVisitorRejected",
     "TranslateTest.CoreV2VariantEqualityRenamedConversionPolicyRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a",
   "maintained_original_sha256": "bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e",
@@ -122,5 +122,10 @@
   "current_registry_count": 8234,
   "current_python_registry_tests": 142,
   "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "variant-equality": "334ee7f0c947e95b85726f55ae47aeda3caa5c97e157eb1047582ea0aeb778a1"
+  },
+  "native_reference_authentication_sha256": "4fe35865b873b190fff942a84b0f18c284084a80b8a777c7b1fb2053a61db0d3",
+  "source_proof_sha256": "bca815bf4959fe5647f01dc8c5921381de591d1bcf4ee1c0c812e7a8be99bde2"
 }
