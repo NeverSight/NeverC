@@ -28644,6 +28644,18 @@ public:
   bool TraverseCallExpr(CallExpr *Call, DataRecursionQueue *Queue = nullptr) {
     if (auto Bind = traverseBindFactory(Call)) return *Bind;
     if (auto NotFn = traverseNotFnFactory(Call)) return *NotFn;
+    if (A.S.coreV2() && Call->getNumArgs() >= 2) {
+      const auto *Materialized = dyn_cast<MaterializeTemporaryExpr>(Call->getArg(0)->IgnoreParens());
+      if (Materialized && isa<LambdaExpr>(Materialized->getSubExpr()->IgnoreParens())) {
+        const auto Visit = approvedUtilityVariantVisit(A.S, A.Sources, Call, A.Context);
+        if (Visit && Visit->InlineLambda) {
+          if (!WalkUpFromCallExpr(Call)) return false;
+          for (unsigned I = 1; I < Call->getNumArgs(); ++I)
+            if (!TraverseStmt(Call->getArg(I))) return false;
+          return true;
+        }
+      }
+    }
     if (!lazyNamespaceFunctionSignature(Call->getDirectCallee()))
       return RecursiveASTVisitor<Allowlist>::TraverseCallExpr(Call, Queue);
     // Keep selection/default source that can disappear from the instantiated
@@ -31029,10 +31041,14 @@ public:
       if (const auto Visit = approvedUtilityVariantVisit(A.S, A.Sources, C, A.Context)) {
         const auto Visitor = Visit->Callable->getPointeeType();
         if (Visitor->isRecordType()) {
-          checkBinding(C->getArg(0), false);
-          A.type(Visitor, L);
+          if (!Visit->InlineLambda) {
+            checkBinding(C->getArg(0), Visit->Callable->isRValueReferenceType() &&
+                                      !Visit->Result->isReferenceType());
+            A.type(Visitor, L);
+          }
           for (const auto *Method : Visit->Methods) {
-            A.type(Method->getThisType(), L);
+            if (!Visit->InlineLambda)
+              A.type(Method->getThisType(), L);
             for (const auto *Param : Method->parameters())
               A.type(Param->getType(), L);
           }
