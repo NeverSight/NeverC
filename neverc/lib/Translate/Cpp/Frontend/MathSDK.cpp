@@ -54212,6 +54212,11 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
   }
   return true;
 }
+bool forwardListElementType(QualType Type, const ASTContext &Context) {
+  return Context.hasSameType(Type, Context.IntTy) ||
+         (Context.hasSameType(Type, Context.LongTy) &&
+          (Context.getTypeSize(Type) == 32 || Context.getTypeSize(Type) == 64));
+}
 std::optional<UtilityForwardListNodeRecord> forwardListNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
     const ASTContext &Context) {
@@ -54220,8 +54225,9 @@ std::optional<UtilityForwardListNodeRecord> forwardListNode(
   const auto &Args = R->getTemplateArgs();
   if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
       Args[1].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Args[0].getAsType(), Context.IntTy) ||
+      !forwardListElementType(Args[0].getAsType(), Context) ||
       !Context.hasSameType(Args[1].getAsType(), Context.VoidPtrTy)) return std::nullopt;
+  const auto Element = Args[0].getAsType();
   std::vector<ForwardListLeaf> Leaves;
   unsigned Budget = 0;
   if (!forwardListLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 2)
@@ -54231,7 +54237,7 @@ std::optional<UtilityForwardListNodeRecord> forwardListNode(
       Leaves[0].Offset != 0 || Leaves[1].Offset != 64 ||
       Leaves[0].Field->getName() != "__next_" || Leaves[1].Field->getName() != "__value_" ||
       !Context.hasSameType(Leaves[0].Field->getType(), Context.getPointerType(Context.getRecordType(R))) ||
-      !Context.hasSameType(Leaves[1].Field->getType(), Context.IntTy)) return std::nullopt;
+      !Context.hasSameType(Leaves[1].Field->getType(), Element)) return std::nullopt;
   const auto *Begin = forwardListSpecialization(S, SM,
       dyn_cast<CXXRecordDecl>(Leaves[0].Field->getParent()), "__forward_begin_node", "forward_list");
   if (!Begin || Begin->getTemplateArgs().size() != 1 ||
@@ -54254,17 +54260,18 @@ std::optional<UtilityForwardListRecord> approvedUtilityForwardListRecord(
   const auto &Args = R->getTemplateArgs();
   if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
       Args[1].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Args[0].getAsType(), Context.IntTy)) return std::nullopt;
+      !forwardListElementType(Args[0].getAsType(), Context)) return std::nullopt;
+  const auto Element = Args[0].getAsType();
   const auto Allocator = approvedUtilityAllocatorRecord(S, SM,
       forwardListRecordType(Args[1].getAsType()), Context);
-  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) return std::nullopt;
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Element)) return std::nullopt;
   const auto &BaseSpec = *R->bases_begin();
   const auto *Base = forwardListSpecialization(S, SM, forwardListRecordType(BaseSpec.getType()),
                                               "__forward_list_base", "forward_list");
   if (!Base || BaseSpec.isVirtual() || Base->getTemplateArgs().size() != 2 ||
       Base->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       Base->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Element) ||
       !Context.hasSameType(Base->getTemplateArgs()[1].getAsType(), Args[1].getAsType())) return std::nullopt;
   std::vector<ForwardListLeaf> Leaves;
   unsigned Budget = 0;
@@ -54274,7 +54281,8 @@ std::optional<UtilityForwardListRecord> approvedUtilityForwardListRecord(
   const auto Node = forwardListNode(S, SM,
       forwardListRecordType(Leaves[0].Field->getType()->getPointeeType()), Context);
   const auto &Layout = Context.getASTRecordLayout(R);
-  if (!Node || Node->Next != Leaves[0].Field || Layout.getSize().getQuantity() != 8 ||
+  if (!Node || !Context.hasSameType(Node->Value->getType(), Element) ||
+      Node->Next != Leaves[0].Field || Layout.getSize().getQuantity() != 8 ||
       Layout.getAlignment().getQuantity() != 8) return std::nullopt;
   return UtilityForwardListRecord{R, *Node};
 }
@@ -54321,17 +54329,17 @@ bool forwardListFunctionDeclarations(const State &S, const SourceManager &SM,
           !forwardListPinned(S, SM, D->getTemplatedDecl(), "forward_list")) return false;
   return true;
 }
-bool forwardListIntegerValueParameter(QualType T, const ASTContext &Context) {
-  return Context.hasSameType(T, Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-         Context.hasSameType(T, Context.getRValueReferenceType(Context.IntTy));
+bool forwardListIntegerValueParameter(QualType T, QualType Element, const ASTContext &Context) {
+  return Context.hasSameType(T, Context.getLValueReferenceType(Element.withConst())) ||
+         Context.hasSameType(T, Context.getRValueReferenceType(Element));
 }
 bool forwardListIntegerAllocatorParameter(const State &S, const SourceManager &SM,
-                                         QualType T, const ASTContext &Context) {
+                                         QualType T, QualType Element, const ASTContext &Context) {
   if (!T->isLValueReferenceType() || !T->getPointeeType().isConstQualified() ||
       T->getPointeeType().isVolatileQualified()) return false;
   const auto A = approvedUtilityAllocatorRecord(S, SM,
       forwardListRecordType(T->getPointeeType()), Context);
-  return A && Context.hasSameType(A->ElementType, Context.IntTy);
+  return A && Context.hasSameType(A->ElementType, Element);
 }
 bool forwardListIteratorType(const State &S, const SourceManager &SM, QualType T,
                              const UtilityForwardListNodeRecord &Node, bool Const,
@@ -54348,6 +54356,7 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
   if (!C || C->getPrimaryTemplate() || !forwardListFunctionDeclarations(S, SM, C))
     return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, C->getParent(), Context)) {
+    const auto Element = Owner->Node.Value->getType();
     if (!C->getNumParams()) return UtilityForwardListConstruction::Default;
     if (C->getNumParams() == 1 && C->isCopyConstructor() &&
         Context.hasSameType(C->getParamDecl(0)->getType(),
@@ -54358,15 +54367,15 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
             Context.getRValueReferenceType(Context.getRecordType(Owner->Record))))
       return UtilityForwardListConstruction::Move;
     if (C->getNumParams() == 1 &&
-        forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
+        forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Element, Context))
       return UtilityForwardListConstruction::Allocator;
     if (C->getNumParams() == 1 || C->getNumParams() == 2) {
       const auto ListType = C->getParamDecl(0)->getType();
       if (ListType->isReferenceType() || ListType.isVolatileQualified()) return std::nullopt;
       const auto List = approvedUtilityInitializerListRecord(S, SM, forwardListRecordType(ListType), Context);
-      if (List && Context.hasSameType(List->ElementType, Context.IntTy) &&
+      if (List && Context.hasSameType(List->ElementType, Element) &&
           (C->getNumParams() == 1 || forwardListIntegerAllocatorParameter(S, SM,
-              C->getParamDecl(1)->getType(), Context))) return UtilityForwardListConstruction::InitializerList;
+              C->getParamDecl(1)->getType(), Element, Context))) return UtilityForwardListConstruction::InitializerList;
     }
     return std::nullopt;
   }
@@ -54392,6 +54401,7 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       !forwardListFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, M->getParent(), Context)) {
     const auto OwnerType = Context.getRecordType(Owner->Record);
+    const auto Element = Owner->Node.Value->getType();
     if (!M->isConst() && M->isMoveAssignmentOperator() && M->getNumParams() == 1 &&
         Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(OwnerType)) &&
         Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(OwnerType)))
@@ -54409,7 +54419,7 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
           forwardListIteratorType(S, SM, M->getReturnType(), Owner->Node, true, Context))
         return Name == "cbegin" ? UtilityForwardListOperation::Begin :
                Name == "cend" ? UtilityForwardListOperation::End : UtilityForwardListOperation::BeforeBegin;
-      const auto ValueType = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
+      const auto ValueType = M->isConst() ? Element.withConst() : Element;
       if (Name == "front" && Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(ValueType)))
         return UtilityForwardListOperation::Front;
       if (!M->isConst() && M->getReturnType()->isVoidType()) {
@@ -54419,7 +54429,7 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
     }
     if (M->isConst()) return std::nullopt;
     if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
-        forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
+        forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Element, Context))
       return UtilityForwardListOperation::PushFront;
     if (!forwardListIteratorType(S, SM, M->getReturnType(), Owner->Node, false, Context)) return std::nullopt;
     if (Name == "erase_after" && M->getNumParams() == 1 &&
@@ -54427,7 +54437,7 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       return UtilityForwardListOperation::EraseAfter;
     if (Name == "insert_after" && M->getNumParams() == 2 &&
         forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
-        forwardListIntegerValueParameter(M->getParamDecl(1)->getType(), Context))
+        forwardListIntegerValueParameter(M->getParamDecl(1)->getType(), Element, Context))
       return UtilityForwardListOperation::InsertAfter;
     return std::nullopt;
   }
@@ -54439,7 +54449,8 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       (Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(IteratorType.withConst())) ||
        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(IteratorType))))
     return UtilityForwardListOperation::IteratorAssign;
-  const auto Element = I->Const ? Context.IntTy.withConst() : Context.IntTy;
+  const auto Value = I->Node.Value->getType();
+  const auto Element = I->Const ? Value.withConst() : Value;
   if (M->isConst() && !M->getNumParams()) {
     if (M->getOverloadedOperator() == OO_Star &&
         Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element)))
@@ -54518,10 +54529,11 @@ bool forwardListCompilerAlignmentMacro(const State &S, const SourceManager &SM,
 bool forwardListScalarDestruction(const State &S, const SourceManager &SM,
                                   const CallExpr *Call, const ASTContext &Context,
                                   const UtilityForwardListNodeRecord &Owner) {
+  const auto Element = Owner.Value->getType();
   const auto *D = Call && !Call->getNumArgs()
       ? dyn_cast<CXXPseudoDestructorExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
   if (!D || !D->isArrow() || !D->getBase() || !D->getDestroyedTypeInfo() ||
-      !Context.hasSameType(D->getDestroyedType(), Context.IntTy)) return false;
+      !Context.hasSameType(D->getDestroyedType(), Element)) return false;
   const auto File = S.sdkFile(SM, Call->getExprLoc());
   if (!File || File->Root != "libcxx" ||
       (File->Path != "__memory/construct_at.h" && File->Path != "__memory/allocator.h")) return false;
@@ -54530,7 +54542,7 @@ bool forwardListScalarDestruction(const State &S, const SourceManager &SM,
   const auto *Function = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
   if (!Function || Function->getNumParams() != 1 || Function->getParamDecl(0) != Parameter ||
       !Function->getReturnType()->isVoidType() ||
-      !Context.hasSameType(Parameter->getType(), Context.getPointerType(Context.IntTy))) return false;
+      !Context.hasSameType(Parameter->getType(), Context.getPointerType(Element))) return false;
   for (const auto *Redeclaration : Function->redecls())
     if (!forwardListDependencyDeclaration(S, SM, Redeclaration)) return false;
   if (const auto *Method = dyn_cast<CXXMethodDecl>(Function)) {
@@ -54697,7 +54709,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
-      if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
+      if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
            !Context.hasSameType(N->getAllocatedType(), Context.getRecordType(Owner.Record))) ||
           N->getNumPlacementArgs() != 1 ||
           !Function(N->getOperatorNew(), Depth + 1)) return false;

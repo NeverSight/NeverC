@@ -27077,11 +27077,11 @@ class FunctionLowering {
   Expression forwardListNext(Expression Node, SourceLocation L) {
     return nodeFieldAt(std::move(Node), A.Context.VoidPtrTy, 0, L);
   }
-  Expression forwardListValue(Expression Node, bool Const, SourceLocation L) {
+  Expression forwardListValue(Expression Node, QualType Element, SourceLocation L) {
     auto Bytes = binary("+", cast(std::move(Node), "ptr:u8", L),
         quantity(8, "u64", L), "ptr:u8", L);
     return dereference(cast(cast(std::move(Bytes), "ptr:void", L),
-        Const ? "cptr:int" : "ptr:int", L), L);
+        type(A.Context.getPointerType(Element), L), L), L);
   }
   Expression forwardListIterator(QualType T, Expression Node, SourceLocation L) {
     const auto Info = approvedUtilityForwardListIteratorRecord(A.S, A.Sources,
@@ -27098,7 +27098,7 @@ class FunctionLowering {
     assign(forwardListNext(Node, L), std::move(Next), L);
     // The SDK constructs the int after allocation, so an aliased reference
     // observes any source-defined allocation callback before this load.
-    assign(forwardListValue(Node, false, L), dereference(ValueReference, L), L);
+    assign(forwardListValue(Node, Info.Value->getType(), L), dereference(ValueReference, L), L);
     return Node;
   }
   void copyForwardListStorage(Expression Place, Expression Source,
@@ -27113,7 +27113,8 @@ class FunctionLowering {
     jump(Check, L); label(Check, L);
     branch(cast(Current, "bool", L), Add, Done, L);
     label(Add, L);
-    auto Value = address(forwardListValue(Current, true, L), A.Context.IntTy.withConst(), L);
+    const auto Element = Info.Value->getType().withConst();
+    auto Value = address(forwardListValue(Current, Element, L), Element, L);
     auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Info, L);
     assign(dereference(LastLink, L), Node, L);
     assign(LastLink, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
@@ -27188,12 +27189,13 @@ class FunctionLowering {
         return Place;
       }
       auto Node = snapshot(forwardListMember(Place, true, L), L);
+      const auto Value = Iterator->Node.Value->getType();
+      const auto Element = Iterator->Const ? Value.withConst() : Value;
       if (Operation == UtilityForwardListOperation::IteratorDereference)
-        return forwardListValue(Node, Iterator->Const, L);
+        return forwardListValue(Node, Element, L);
       if (Operation == UtilityForwardListOperation::IteratorArrow)
-        return cast(address(forwardListValue(Node, Iterator->Const, L),
-            Iterator->Const ? A.Context.IntTy.withConst() : A.Context.IntTy, L),
-            Iterator->Const ? "cptr:int" : "ptr:int", L);
+        return cast(address(forwardListValue(Node, Element, L), Element, L),
+                    type(Method->getReturnType(), L), L);
       if (Operation == UtilityForwardListOperation::IteratorPreIncrement ||
           Operation == UtilityForwardListOperation::IteratorPostIncrement) {
         std::optional<Expression> Previous;
@@ -27224,8 +27226,11 @@ class FunctionLowering {
               : snapshot(forwardListMember(Place, false, L), L);
       return forwardListIterator(Method->getReturnType(), std::move(Node), L);
     }
-    if (Operation == UtilityForwardListOperation::Front)
-      return forwardListValue(snapshot(forwardListMember(Place, false, L), L), Method->isConst(), L);
+    if (Operation == UtilityForwardListOperation::Front) {
+      const auto Value = Owner->Node.Value->getType();
+      const auto Element = Method->isConst() ? Value.withConst() : Value;
+      return forwardListValue(snapshot(forwardListMember(Place, false, L), L), Element, L);
+    }
     if (Operation == UtilityForwardListOperation::Clear) {
       destroyForwardListStorage(Place, Owner->Node, L);
       return Expression{};
@@ -41120,8 +41125,9 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       jump(Check, L); label(Check, L);
       branch(binary("<", Position, Count, "bool", L), Add, Built, L);
       label(Add, L);
-      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), "int", L),
-          A.Context.IntTy.withConst(), L);
+      const auto Element = Owner->Node.Value->getType();
+      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), type(Element, L), L),
+          Element.withConst(), L);
       auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Owner->Node, L);
       branch(cast(First, "bool", L), Link, SetFirst, L);
       label(Link, L);
