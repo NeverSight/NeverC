@@ -10704,7 +10704,6 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
     const FunctionDecl *Definition = nullptr;
     if (!Method || Method->isStatic() || Method->getOverloadedOperator() != OO_Call ||
         !ordinaryOperator(Method) || !callableMethod(Method) ||
-        Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
         Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
         Method->getRefQualifier() == RQ_RValue || Method->isVolatile() ||
         (Object.isConstQualified() && !Method->isConst()) ||
@@ -10713,6 +10712,17 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
         !S.owns(SM, Method->getLocation()) || !Method->hasBody(Definition) ||
         !S.owns(SM, Definition->getLocation()))
       return false;
+    if (Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate) {
+      const auto *Primary = Method->getPrimaryTemplate();
+      const auto *Pattern = dyn_cast_or_null<CXXMethodDecl>(Method->getTemplateInstantiationPattern());
+      if (Method->getTemplatedKind() != FunctionDecl::TK_FunctionTemplateSpecialization ||
+          Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+          !Primary || !Pattern || !S.owns(SM, Primary->getLocation()) ||
+          !S.owns(SM, Pattern->getLocation()) ||
+          Pattern->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+          Primary->getTemplatedDecl()->getCanonicalDecl() != Pattern->getCanonicalDecl())
+        return false;
+    }
     SelectedMethod = Method;
   } else if (Operation) {
     return false;
