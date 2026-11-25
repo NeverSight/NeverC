@@ -56496,6 +56496,44 @@ std::optional<UtilityListOperation> listValueSwapSignature(
   return UtilityListOperation::Swap;
 }
 
+std::optional<UtilityListOperation> listOwnerComparisonSignature(
+    const State &S, const SourceManager &SM, const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || isa<CXXMethodDecl>(F) || !F->isOverloadedOperator() ||
+      F->getNumParams() != 2 || !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
+      !listStd(F->getDeclContext()) || !listFunctionDeclarations(S, SM, F)) return std::nullopt;
+  const auto *Template = F->getPrimaryTemplate();
+  const auto *Arguments = F->getTemplateSpecializationArgs();
+  if (!Template || Template->getTemplateParameters()->size() != 2 || !Arguments || Arguments->size() != 2)
+    return std::nullopt;
+  for (const auto *Parameter : *Template->getTemplateParameters()) {
+    const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+    if (!Type || Type->isParameterPack() || Type->hasDefaultArgument()) return std::nullopt;
+  }
+  for (const auto &Argument : Arguments->asArray())
+    if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+  for (const auto *Parameter : F->parameters())
+    if (Parameter->hasDefaultArg()) return std::nullopt;
+  const auto Left = F->getParamDecl(0)->getType();
+  if (!Left->isLValueReferenceType() || !Left->getPointeeType().isConstQualified() ||
+      Left->getPointeeType().isVolatileQualified() || !Context.hasSameType(Left, F->getParamDecl(1)->getType()))
+    return std::nullopt;
+  const auto Owner = approvedUtilityListRecord(S, SM, listRecordType(Left->getPointeeType()), Context);
+  const auto *Specialization = Owner ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
+  if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Specialization->getTemplateArgs().get(1).getAsType()))
+    return std::nullopt;
+  switch (F->getOverloadedOperator()) {
+  case OO_EqualEqual: return UtilityListOperation::OwnerEqual;
+  case OO_ExclaimEqual: return UtilityListOperation::OwnerNotEqual;
+  case OO_Less: return UtilityListOperation::OwnerLess;
+  case OO_Greater: return UtilityListOperation::OwnerGreater;
+  case OO_LessEqual: return UtilityListOperation::OwnerLessEqual;
+  case OO_GreaterEqual: return UtilityListOperation::OwnerGreaterEqual;
+  default: return std::nullopt;
+  }
+}
+
 std::optional<UtilityListOperation> listComparisonSignature(
     const State &S, const SourceManager &SM, const FunctionDecl *F,
     const ASTContext &Context) {
@@ -56813,6 +56851,14 @@ std::optional<UtilityListCall> approvedUtilityListCall(
         !S.owns(SM, Call->getCallee()->getExprLoc()) || !listSourceGraph(S, SM, Function, Context, *Node))
       return std::nullopt;
     return UtilityListCall{*Swap, nullptr, Function, 0};
+  }
+  if (const auto Comparison = listOwnerComparisonSignature(S, SM, Function, Context)) {
+    const auto Type = Function->getParamDecl(0)->getType()->getPointeeType();
+    const auto Node = listReceiverNode(S, SM, listRecordType(Type), Context);
+    if (!Node || !listOperandTypes(Call, Function, 0, Context) || !Call->getCallee() ||
+        !S.owns(SM, Call->getCallee()->getExprLoc()) || !listSourceGraph(S, SM, Function, Context, *Node))
+      return std::nullopt;
+    return UtilityListCall{*Comparison, nullptr, Function, 0};
   }
   if (const auto Comparison = listComparisonSignature(S, SM, Function, Context)) {
     const auto T = Function->getParamDecl(0)->getType()->getPointeeType();

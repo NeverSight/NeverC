@@ -4071,6 +4071,7 @@ enum class UtilityListConstruction {
 };
 enum class UtilityListOperation {
   CopyAssign, MoveAssign, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, Erase, EraseRange, Clear, Reverse, Remove, Unique, Merge, Sort,
+  OwnerEqual, OwnerNotEqual, OwnerLess, OwnerGreater, OwnerLessEqual, OwnerGreaterEqual,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
   IteratorEqual, IteratorNotEqual, IteratorAssign
 };

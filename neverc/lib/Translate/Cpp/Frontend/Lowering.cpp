@@ -29427,6 +29427,42 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
+  Expression compareListOwners(Expression Left, Expression Right, bool Ordered, bool Invert, SourceLocation L) {
+    auto LEnd = snapshot(listSentinel(Left, L, true), L);
+    auto REnd = snapshot(listSentinel(Right, L, true), L);
+    auto LNode = temporary("ptr:void", L), RNode = temporary("ptr:void", L);
+    auto Result = temporary("bool", L);
+    assign(Result, boolean(false, L), L);
+    const auto Start = labelName(), Check = labelName(), LeftEnd = labelName(), CheckRight = labelName();
+    const auto Compare = labelName(), Different = labelName(), Advance = labelName(), Done = labelName();
+    if (!Ordered) {
+      branch(binary("==", listMember(Left, "nct_list_size", L), listMember(Right, "nct_list_size", L), "bool", L),
+          Start, Done, L);
+      label(Start, L);
+    }
+    assign(LNode, listMember(Left, "nct_list_next", L), L);
+    assign(RNode, listMember(Right, "nct_list_next", L), L);
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", LNode, LEnd, "bool", L), CheckRight, LeftEnd, L);
+    label(CheckRight, L);
+    branch(binary("!=", RNode, REnd, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    const auto LValue = listValue(LNode, true, L), RValue = listValue(RNode, true, L);
+    branch(binary("==", LValue, RValue, "bool", L), Advance, Different, L);
+    label(Different, L);
+    if (Ordered) assign(Result, binary("<", LValue, RValue, "bool", L), L);
+    jump(Done, L);
+    label(Advance, L);
+    assign(LNode, snapshot(listLink(LNode, false, L), L), L);
+    assign(RNode, snapshot(listLink(RNode, false, L), L), L);
+    jump(Check, L);
+    label(LeftEnd, L);
+    assign(Result, binary(Ordered ? "!=" : "==", RNode, REnd, "bool", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Invert ? binary("==", Result, boolean(false, L), "bool", L) : Result;
+  }
+
   Expression utilityListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityListCall(A.S, A.Sources, Call, A.Context);
@@ -29450,6 +29486,16 @@ class FunctionLowering {
       return binary(Operation == UtilityListOperation::IteratorEqual ? "==" : "!=",
           listIteratorMember(dereference(Operands[0], L), L),
           listIteratorMember(dereference(Operands[1], L), L), "bool", L);
+    if (Operation == UtilityListOperation::OwnerEqual || Operation == UtilityListOperation::OwnerNotEqual ||
+        Operation == UtilityListOperation::OwnerLess || Operation == UtilityListOperation::OwnerGreater ||
+        Operation == UtilityListOperation::OwnerLessEqual || Operation == UtilityListOperation::OwnerGreaterEqual) {
+      const bool Ordered = Operation != UtilityListOperation::OwnerEqual && Operation != UtilityListOperation::OwnerNotEqual;
+      const bool Swap = Operation == UtilityListOperation::OwnerGreater || Operation == UtilityListOperation::OwnerLessEqual;
+      const bool Invert = Operation == UtilityListOperation::OwnerNotEqual ||
+          Operation == UtilityListOperation::OwnerLessEqual || Operation == UtilityListOperation::OwnerGreaterEqual;
+      return compareListOwners(dereference(Operands[Swap ? 1 : 0], L), dereference(Operands[Swap ? 0 : 1], L),
+          Ordered, Invert, L);
+    }
     if (!Receiver && Operation == UtilityListOperation::Swap) {
       listSwapValueStorage(dereference(Operands[0], L), dereference(Operands[1], L), L);
       return Expression{};
