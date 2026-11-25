@@ -247,6 +247,22 @@
       "source_sha256": "d3e27491981d11c704b4d46fd1808cc8d0c6a8e41cbd8b7df60632fb88a5ac2e",
       "original_case_source_sha256": "d3e27491981d11c704b4d46fd1808cc8d0c6a8e41cbd8b7df60632fb88a5ac2e",
       "gtest_body_sha256": "8bdaab33a8e133e6c8555f1efefb276b633a5f6efa56f0d660cff7319c526938"
+    },
+    {
+      "name": "bitset-const-local-guard-const-reference",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsExtendedTemporary",
+      "expected": "accept",
+      "source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
+      "original_case_source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
+      "gtest_body_sha256": "b730a802eb8e771d86ab03b84d5f2abd4eed32c09f9d16a4e66344d84e2138b5"
+    },
+    {
+      "name": "bitset-const-local-guard-conditional-receiver",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionSelectsImmutableReceiver",
+      "expected": "accept",
+      "source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
+      "original_case_source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
+      "gtest_body_sha256": "dedf17ecdc12aca931574c74c4fcd636bec5d59aebe0bba05ef012ff9f2956a8"
     }
   ],
   "negative_cases": [
@@ -265,14 +281,6 @@
       "source_sha256": "ccb8cb373f2ed4b162d69eff65c14eb982962998f7d2c6e27696834322354bb0",
       "original_case_source_sha256": "ccb8cb373f2ed4b162d69eff65c14eb982962998f7d2c6e27696834322354bb0",
       "gtest_body_sha256": "18538266823174ac95fdef2d47762f967d09cc677577494c2480494e5f2d9e90"
-    },
-    {
-      "name": "bitset-const-local-guard-const-reference",
-      "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardConstReferenceRejected",
-      "expected": "reject",
-      "source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
-      "original_case_source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
-      "gtest_body_sha256": "2127b69b34098bbe96858496923673f6ebc313659af745fed6e72746c8b0e320"
     },
     {
       "name": "bitset-const-local-guard-static-const",
@@ -305,14 +313,6 @@
       "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
       "original_case_source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
       "gtest_body_sha256": "00126fa8e5618c6e57d6d7dc3083fd8522cca3e39c1bb6e8599906f294c772c7"
-    },
-    {
-      "name": "bitset-const-local-guard-conditional-receiver",
-      "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardConditionalReceiverRejected",
-      "expected": "reject",
-      "source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
-      "original_case_source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
-      "gtest_body_sha256": "938ec3825dc4f1d0ee9b3181f73701d81eb70b7fa95f7875f61f9cb636cff394"
     },
     {
       "name": "bitset-constant-position-guard-negative",
@@ -619,14 +619,14 @@
     "TranslateTest.CoreV2BitsetConstexprTextPointerPointerTypeAliasRunAtBothOptimizations",
     "TranslateTest.CoreV2BitsetConstexprTextPointerZeroCountRunAtBothOptimizations",
     "TranslateTest.CoreV2BitsetWideSwapAndCheckedPositionsRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsExtendedTemporary",
+    "TranslateTest.CoreV2BitsetUnsignedConversionSelectsImmutableReceiver",
     "TranslateTest.CoreV2BitsetConstLocalGuardMutableLocalRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardAliasToMutableRejected",
-    "TranslateTest.CoreV2BitsetConstLocalGuardConstReferenceRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardStaticConstRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardConstParameterRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardCopyInitializedRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardConstMemberRejected",
-    "TranslateTest.CoreV2BitsetConstLocalGuardConditionalReceiverRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardNegativeRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardOnePastRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardConvertedTooLargeRejected",
@@ -671,8 +671,8 @@
     "constexpr-text-pointer": "2b27588c467d049757d91df44cc4fe949df2b569d53ac50d014220598a5dbea7",
     "composed-witness": "5a2e82d350f86d096d370f25c027052e09c6013d9b1ca9c4c10119d54c4a1e70"
   },
-  "native_reference_selected_executions": 62,
-  "planned_generated_c23_executions": 62,
+  "native_reference_selected_executions": 66,
+  "planned_generated_c23_executions": 66,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
   "source_proof_gate_pending": false,
@@ -757,8 +757,8 @@
       "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){const Bits& bits=Bits(2);return bits.to_ullong()!=2;}\n",
       "source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
       "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
+      "expected": "accept",
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-const-local-guard-static-const",
@@ -797,8 +797,8 @@
       "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nunsigned long long convert(bool select){const Bits a(1),b(2);return (select?a:b).to_ullong();}\nint main(){return convert(true)!=1||convert(false)!=2;}\n",
       "source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
       "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
+      "expected": "accept",
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-constant-position-namespace-constant",

@@ -87,6 +87,14 @@
       "source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
       "original_case_source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
       "gtest_body_sha256": "5d50f9f290933a59324d0bd10ee555be37b6290261809cce5dd31c4fea02ec14"
+    },
+    {
+      "name": "variant-layout-runtime-record",
+      "formal_test_name": "TranslateTest.CoreV2VariantSizeofRuntimeRecordRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "original_case_source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "gtest_body_sha256": "74b10e6a5dec29c7944368a849c3afcab60c96bd56f66a2f780390dda36f09de"
     }
   ],
   "negative_cases": [
@@ -153,14 +161,6 @@
       "source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
       "original_case_source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
       "gtest_body_sha256": "9d2c1d31de0885936ba68119e30dbe272eef0b7d571fb5630d5f168aa69e6dc3"
-    },
-    {
-      "name": "variant-layout-runtime-record",
-      "formal_test_name": "TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected",
-      "expected": "reject",
-      "source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
-      "original_case_source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
-      "gtest_body_sha256": "f87f718b59266881a236fb0e5780344e1ecc795e06b7279bec17bbc46202531f"
     }
   ],
   "new_gtest_names": [
@@ -175,6 +175,7 @@
     "TranslateTest.CoreV2VariantLayoutPointerAlternativeRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantLayoutDuplicateTypesRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantLayoutDeclarationIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSizeofRuntimeRecordRunsAtBothOptimizations",
     "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
     "TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected",
     "TranslateTest.CoreV2VariantMetadataSentinelStorageRejected",
@@ -182,11 +183,10 @@
     "TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected",
     "TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected",
     "TranslateTest.CoreV2VariantLayoutAlteredIndexMemberRejected",
-    "TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected",
-    "TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected"
+    "TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected"
   ],
-  "native_reference_selected_executions": 22,
-  "planned_generated_c23_executions": 22,
+  "native_reference_selected_executions": 24,
+  "planned_generated_c23_executions": 24,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
   "source_proof_gate_pending": true,
