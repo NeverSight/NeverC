@@ -29071,6 +29071,66 @@ class FunctionLowering {
     label(Done, L);
   }
 
+  void listResizeValueStorage(Expression Place, Expression SizeRequested, std::optional<Expression> Fill,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto CurrentSize = snapshot(listMember(Place, "nct_list_size", L), L);
+    const auto Shrink = labelName(), CheckGrow = labelName(), Grow = labelName(), Done = labelName();
+    branch(binary("<", SizeRequested, CurrentSize, "bool", L), Shrink, CheckGrow, L);
+    label(Shrink, L);
+    auto Cursor = temporary("ptr:void", L), Remaining = temporary(Size, L);
+    assign(Cursor, listMember(Place, "nct_list_next", L), L);
+    assign(Remaining, SizeRequested, L);
+    const auto CountShrink = labelName(), Follow = labelName(), Erase = labelName();
+    jump(CountShrink, L); label(CountShrink, L);
+    branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Follow, Erase, L);
+    label(Follow, L);
+    assign(Cursor, snapshot(listLink(Cursor, false, L), L), L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+    jump(CountShrink, L);
+    label(Erase, L);
+    listEraseRange(Place, snapshot(Cursor, L), snapshot(listSentinel(Place, L), L), Info, L);
+    jump(Done, L);
+    label(CheckGrow, L);
+    branch(binary(">", SizeRequested, CurrentSize, "bool", L), Grow, Done, L);
+    label(Grow, L);
+    if (!Fill) {
+      auto Zero = temporary(type(A.Context.IntTy, L), L);
+      initializeZero(Zero, A.Context.IntTy, L);
+      Fill = address(Zero, A.Context.IntTy, L);
+    }
+    auto Added = snapshot(binary("-", SizeRequested, CurrentSize, Size, L), L);
+    auto ToCreate = temporary(Size, L);
+    auto First = temporary("ptr:void", L), Tail = temporary("ptr:void", L);
+    assign(ToCreate, Added, L);
+    initializeZero(First, A.Context.VoidPtrTy, L);
+    initializeZero(Tail, A.Context.VoidPtrTy, L);
+    const auto Make = labelName(), Link = labelName(), SetFirst = labelName(), Advance = labelName(), Commit = labelName();
+    jump(Make, L); label(Make, L);
+    auto Node = listCreateNode(*Fill, Info, L);
+    assign(listLink(Node, true, L), Tail, L);
+    branch(cast(Tail, "bool", L), Link, SetFirst, L);
+    label(Link, L);
+    assign(listLink(Tail, false, L), Node, L);
+    jump(Advance, L);
+    label(SetFirst, L); assign(First, Node, L); jump(Advance, L);
+    label(Advance, L);
+    assign(Tail, Node, L);
+    assign(ToCreate, binary("-", ToCreate, quantity(1, Size, L), Size, L), L);
+    branch(binary("!=", ToCreate, quantity(0, Size, L), "bool", L), Make, Commit, L);
+    label(Commit, L);
+    // The SDK attaches the complete chain after all allocation callbacks.
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto Previous = snapshot(listLink(End, true, L), L);
+    assign(listLink(Previous, false, L), First, L);
+    assign(listLink(First, true, L), Previous, L);
+    assign(listLink(Tail, false, L), End, L);
+    assign(listLink(End, true, L), Tail, L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("+", listMember(Place, "nct_list_size", L), Added, Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
   void destroyListStorage(Expression Place, const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Release = labelName(), Check = labelName(), Element = labelName(), Done = labelName();
     const auto Size = type(A.Context.getSizeType(), L);
@@ -29604,6 +29664,12 @@ class FunctionLowering {
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);
       return Insert ? listIterator(Method->getReturnType(), Node, L) : Expression{};
+    }
+    if (Operation == UtilityListOperation::Resize || Operation == UtilityListOperation::ResizeFill) {
+      std::optional<Expression> Fill;
+      if (Operation == UtilityListOperation::ResizeFill) Fill = Operands[1];
+      listResizeValueStorage(Place, Operands[0], std::move(Fill), Owner->Node, L);
+      return Expression{};
     }
     if (Operation == UtilityListOperation::EraseRange) {
       auto First = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);

@@ -56407,6 +56407,14 @@ std::optional<UtilityListOperation> listMethodSignature(
           return UtilityListOperation::Merge;
       }
     }
+    if (Name == "resize" && M->getRefQualifier() == RQ_None &&
+        (M->getNumParams() == 1 || M->getNumParams() == 2) && !M->getParamDecl(0)->hasDefaultArg() &&
+        M->getReturnType()->isVoidType() && Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) {
+      if (M->getNumParams() == 1) return UtilityListOperation::Resize;
+      if (!M->getParamDecl(1)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())))
+        return UtilityListOperation::ResizeFill;
+    }
     if (Name == "splice" && M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
       const auto Count = M->getNumParams();
       if (Count < 2 || Count > 4) return std::nullopt;
