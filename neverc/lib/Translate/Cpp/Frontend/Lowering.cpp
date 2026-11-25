@@ -27214,7 +27214,9 @@ class FunctionLowering {
     releaseForwardListChain(Output, Info, L);
     jump(Done, L); label(Done, L);
   }
-  Expression mergeForwardListChains(Expression LeftHead, Expression RightHead, SourceLocation L) {
+  Expression mergeForwardListChains(Expression LeftHead, Expression RightHead,
+                                    const std::optional<Expression> &Comparator, QualType ComparatorType,
+                                    SourceLocation L) {
     auto Left = snapshot(std::move(LeftHead), L), Right = snapshot(std::move(RightHead), L);
     auto Head = temporary("ptr:void", L);
     auto Link = snapshot(address(Head, A.Context.VoidPtrTy, L), L);
@@ -27226,8 +27228,12 @@ class FunctionLowering {
     branch(binary("&&", cast(Left, "bool", L), cast(Right, "bool", L), "bool", L), Compare, Tail, L);
     label(Compare, L);
     // Equal elements from the destination precede those from the source.
-    branch(binary("<", forwardListValue(Right, true, L), forwardListValue(Left, true, L), "bool", L),
-        PickRight, PickLeft, L);
+    auto RightValue = forwardListValue(Right, true, L);
+    auto LeftValue = forwardListValue(Left, true, L);
+    auto PickSource = Comparator
+        ? emitBinaryPredicate(*Comparator, ComparatorType, std::move(RightValue), std::move(LeftValue), L)
+        : binary("<", std::move(RightValue), std::move(LeftValue), "bool", L);
+    branch(std::move(PickSource), PickRight, PickLeft, L);
     label(PickLeft, L);
     assign(Item, Left, L);
     assign(Left, forwardListNext(Left, L), L);
@@ -27268,7 +27274,8 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
     return Rest;
   }
-  void sortForwardListStorage(Expression Place, SourceLocation L) {
+  void sortForwardListStorage(Expression Place, const std::optional<Expression> &Comparator,
+                              QualType ComparatorType, SourceLocation L) {
     auto Head = snapshot(forwardListMember(Place, false, L), L);
     auto Width = snapshot(quantity(1, "u64", L), L);
     auto Unsorted = temporary("ptr:void", L);
@@ -27290,7 +27297,7 @@ class FunctionLowering {
     auto Right = splitForwardListRun(Left, Width, L);
     auto Rest = splitForwardListRun(Right, Width, L);
     assign(More, binary("||", More, cast(Rest, "bool", L), "bool", L), L);
-    auto Merged = mergeForwardListChains(Left, Right, L);
+    auto Merged = mergeForwardListChains(Left, Right, Comparator, ComparatorType, L);
     assign(dereference(Link, L), Merged, L);
     auto Current = snapshot(Merged, L);
     jump(Walk, L); label(Walk, L);
@@ -27403,18 +27410,27 @@ class FunctionLowering {
       assignForwardListStorage(Place, {std::move(Current), std::move(End), ForwardListInput::PointerRange}, Owner->Node, L);
       return Expression{};
     }
-    if (Operation == UtilityForwardListOperation::Sort) {
-      sortForwardListStorage(Place, L);
+    const bool CustomSort = Operation == UtilityForwardListOperation::SortWithOrder;
+    const bool CustomMerge = Operation == UtilityForwardListOperation::MergeWithOrder;
+    std::optional<Expression> Comparator;
+    QualType ComparatorType;
+    if (CustomSort || CustomMerge) {
+      const unsigned Index = CustomMerge ? 1 : 0;
+      Comparator = Operands[Index];
+      ComparatorType = Method->getParamDecl(Index)->getType();
+    }
+    if (CustomSort || Operation == UtilityForwardListOperation::Sort) {
+      sortForwardListStorage(Place, Comparator, ComparatorType, L);
       return Expression{};
     }
-    if (Operation == UtilityForwardListOperation::Merge) {
+    if (CustomMerge || Operation == UtilityForwardListOperation::Merge) {
       const auto Merge = labelName(), Done = labelName();
       branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(Operands.front(), "ptr:void", L), "bool", L),
           Merge, Done, L);
       label(Merge, L);
       auto Destination = forwardListMember(Place, false, L);
       auto Source = forwardListMember(dereference(Operands.front(), L), false, L);
-      auto Head = mergeForwardListChains(Destination, Source, L);
+      auto Head = mergeForwardListChains(Destination, Source, Comparator, ComparatorType, L);
       assign(Destination, Head, L);
       initializeZero(Source, A.Context.VoidPtrTy, L);
       jump(Done, L); label(Done, L);
