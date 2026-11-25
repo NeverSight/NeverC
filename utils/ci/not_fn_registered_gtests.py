@@ -3020,9 +3020,6 @@ R19_BITSET_CONST_MEMBER_ADDITIONS_SIZE = 3798
 def restore_bitset_const_member_history(source):
     """Remove the exact combined layout fixture batch from the registry."""
     sha = lambda data: hashlib.sha256(data).hexdigest()
-    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
-        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
-        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     digest = sha(source)
     assert digest in {R19_BITSET_CONST_MEMBER_REGISTERED_SHA256, R19_BITSET_CONST_MEMBER_MAINTAINED_SHA256}
     stop = R19_BITSET_CONST_MEMBER_MAINTAINED_SIZE
@@ -3033,6 +3030,33 @@ def restore_bitset_const_member_history(source):
     restored = restored.replace(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsConstDataMember) {\n  const auto Source = tmpFile("bitset-const-local-guard-const-member.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-const-member.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-const-member" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConstMemberRejected) {\n  const auto Source = tmpFile("bitset-const-local-guard-const-member.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n)r19bitlocal");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     prior = (R19_BITSET_CONST_MEMBER_PREVIOUS_REGISTERED_SHA256 if digest == R19_BITSET_CONST_MEMBER_REGISTERED_SHA256
              else R19_BITSET_CONST_MEMBER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_REGISTERED_SHA256 = '67a66f70e5adb5a9455ea4ee4801e73256e6d488aab8f386a4069565e08fb6af'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SHA256 = 'bcb628bf52b6a9c1a3ae33ff8235e9112668e9ea0a2b1b6b98f828725d28e7c7'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_PREVIOUS_REGISTERED_SHA256 = 'd24f407c3db94555b36bf6d240d2f5d86b909f8c3ca657586b036d717284fae6'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_PREVIOUS_MAINTAINED_SHA256 = '21710e5055cb1257bdf09df7aac3c1a08bfd230586e1bd0a3bba5cbf054b1a5b'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_ADDITIONS_SHA256 = '07a8da9a9651d8d292116a53f21bd703fce15e57017b4ef4555be537bb7659ad'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SIZE = 20836755
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_ADDITIONS_SIZE = 4373
+
+
+def restore_variant_temporary_visitor_binding_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
+        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    digest = sha(source)
+    assert digest in {R19_VARIANT_TEMPORARY_VISITOR_BINDING_REGISTERED_SHA256, R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SHA256}
+    stop = R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_TEMPORARY_VISITOR_BINDING_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_TEMPORARY_VISITOR_BINDING_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_TEMPORARY_VISITOR_BINDING_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_TEMPORARY_VISITOR_BINDING_REGISTERED_SHA256
+             else R19_VARIANT_TEMPORARY_VISITOR_BINDING_PREVIOUS_MAINTAINED_SHA256)
     assert sha(restored) == prior
     return restored
 
@@ -3079,12 +3103,12 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
-    if source_digest == 'af9abe1cfa6a31c802aae77c3d9b6b775f2ddf9495a5a6f6c813383dbc9bd1bf':
+    if source_digest == '0bfd0f954e8d11fc3f8b0a151dc79f9422fb2e904d6a72a8159575e6edb172ac':
         return source
-    if source_digest == '632362d1e8d94658520479efe268f0ce3e14fdc10f01e24558e5f97e7393a56d':
+    if source_digest == 'f38bce991a0f66c4af8475a3238785b19356a9d8a4264600794afb89e03ac417':
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         current = source[:-len(additions)]
-        assert digest(current) == 'af9abe1cfa6a31c802aae77c3d9b6b775f2ddf9495a5a6f6c813383dbc9bd1bf'
+        assert digest(current) == '0bfd0f954e8d11fc3f8b0a151dc79f9422fb2e904d6a72a8159575e6edb172ac'
         return current
     if source_digest == R19_VARIANT_SCALAR_MAINTAINED_SHA256:
         return source
@@ -3715,6 +3739,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_BITSET_CONST_MEMBER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_TEMPORARY_VISITOR_BINDING_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

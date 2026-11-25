@@ -31088,7 +31088,8 @@ public:
       if (const auto Visit = approvedUtilityVariantVisit(A.S, A.Sources, C, A.Context)) {
         const auto Visitor = Visit->Callable->getPointeeType();
         if (Visitor->isRecordType()) {
-          checkBinding(C->getArg(0), false);
+          checkBinding(C->getArg(0), Visit->Callable->isRValueReferenceType() &&
+                                    !Visit->Result->isReferenceType());
           A.type(Visitor, L);
           for (const auto *Method : Visit->Methods) {
             A.type(Method->getThisType(), L);

@@ -18588,3 +18588,10 @@ Wide unsigned conversion can read a const bitset member of a local
 aggregate with a checked default initializer. The proof follows the
 selected initialization and checks for other uses that could let
 a reference to the owning object escape.
+
+## Temporary variant visitors
+
+A named temporary visitor can produce an integer or void in
+variant visitation. The C23 lowering evaluates its construction once,
+uses the selected call operator, and keeps the visitor live until
+the enclosing full expression ends.
