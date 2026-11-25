@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_and_bitset_receivers_registered = cls.registered
+        cls.variant_and_bitset_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_and_bitset_receivers_original = cls.adapter.restore_original_gtests(cls.variant_and_bitset_receivers_registered,
+                                                                        cls.variant_and_bitset_receivers_suffix)
+        cls.registered = cls.adapter.restore_variant_and_bitset_receivers_history(cls.variant_and_bitset_receivers_registered)
         cls.variant_and_any_value_categories_registered = cls.registered
         cls.variant_and_any_value_categories_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_and_any_value_categories_original = cls.adapter.restore_original_gtests(cls.variant_and_any_value_categories_registered,
@@ -3774,6 +3779,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_and_any_value_categories_history(self.variant_and_any_value_categories_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_and_any_value_categories_registered, self.variant_and_any_value_categories_suffix + b' ')
+
+
+    def test_variant_and_bitset_receivers_retains_published_bodies(self):
+        self.assertEqual(self.variant_and_bitset_receivers_original + self.variant_and_bitset_receivers_suffix, self.variant_and_bitset_receivers_registered)
+        self.assertEqual(self.adapter.restore_variant_and_bitset_receivers_history(self.variant_and_bitset_receivers_original),
+                         self.variant_and_any_value_categories_original)
+        output, evidence = self.extractor.extract(self.variant_and_bitset_receivers_original, ['TranslateTest.CoreV2BitsetUnsignedConversionThroughConstCopyAndAliasRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionSelectsOneImmutableReceiverRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitNonowningStaticCastPreservesOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitNonowningMoveConstOperandRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitMixedBoundAndXvalueOperandsRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitUnverifiedXvalueReturningCallRejected'])
+        self.assertEqual(evidence['original_test_names'], 9064)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'bitset-unsigned-conversion-through-const-copy-and-alias', output)
+        self.assertIn(b'variant-visit-unverified-xvalue-returning-call', output)
+
+    def test_variant_and_bitset_receivers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_and_bitset_receivers_history(self.variant_and_bitset_receivers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_and_bitset_receivers_registered, self.variant_and_bitset_receivers_suffix + b' ')
 
 
 if __name__ == '__main__':

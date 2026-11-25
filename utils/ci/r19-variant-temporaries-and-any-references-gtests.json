@@ -55,6 +55,15 @@
       "source_sha256": "c3506a0cc6a0da917d90aa32e0f2015ff6c1d8cbf94749371972d67a0eae1653",
       "original_case_source_sha256": "c3506a0cc6a0da917d90aa32e0f2015ff6c1d8cbf94749371972d67a0eae1653",
       "gtest_body_sha256": "61de08cd116337f7acb9f793dd89c24e04fa20a9b7ca97f6bfa42becc60e6c4b"
+    },
+    {
+      "name": "variant-visit-nonowning-xvalue-operand-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAcceptsTheBoundReferenceCast",
+      "expected": "accept",
+      "source_sha256": "cd8d8712344ef67abf42a19a288dd04cad1f2bdf4edebdba535fc456f01e9a83",
+      "original_case_source_sha256": "cd8d8712344ef67abf42a19a288dd04cad1f2bdf4edebdba535fc456f01e9a83",
+      "gtest_body_sha256": "8a83df8be1409ea54294e1573d0e598fd4c45470d6c1a54f5f64f66163cd9010",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -65,14 +74,6 @@
       "source_sha256": "def3b4e36f6dce6f74e7c64442fbcec7ecbdfc8d506b6d08b124e280e5059669",
       "original_case_source_sha256": "def3b4e36f6dce6f74e7c64442fbcec7ecbdfc8d506b6d08b124e280e5059669",
       "gtest_body_sha256": "592f91d9589d009cd38b4bb37488997f529b1551cdc1fd84e221ed401ffa1947"
-    },
-    {
-      "name": "variant-visit-nonowning-xvalue-operand-guard",
-      "formal_test_name": "TranslateTest.CoreV2VariantVisitNonowningXvalueOperandGuardRejected",
-      "expected": "reject",
-      "source_sha256": "cd8d8712344ef67abf42a19a288dd04cad1f2bdf4edebdba535fc456f01e9a83",
-      "original_case_source_sha256": "cd8d8712344ef67abf42a19a288dd04cad1f2bdf4edebdba535fc456f01e9a83",
-      "gtest_body_sha256": "15d056b4d9e7a47848e68036d52fc744b5a32b97b7e54659e3706339d34c2917"
     },
     {
       "name": "any-active-mutable-reference-wrong-type-guard",
@@ -149,20 +150,20 @@
       "source_sha256": "c3506a0cc6a0da917d90aa32e0f2015ff6c1d8cbf94749371972d67a0eae1653"
     },
     {
+      "name": "variant-visit-nonowning-xvalue-operand-guard",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Value = std::variant<int>;\nint read(int value) { return value; }\nint test(Value& input) { return std::visit(read, static_cast<Value&&>(input)); }\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "cd8d8712344ef67abf42a19a288dd04cad1f2bdf4edebdba535fc456f01e9a83"
+    },
+    {
       "name": "variant-visit-temporary-reference-parameter-guard",
       "public_header": "variant",
       "expected": "reject",
       "source": "#include <variant>\nint read(const int& value) { return value; }\nint test() { return std::visit(read, std::variant<int>{7}); }\n",
       "kind": "source-body-guard",
       "source_sha256": "def3b4e36f6dce6f74e7c64442fbcec7ecbdfc8d506b6d08b124e280e5059669"
-    },
-    {
-      "name": "variant-visit-nonowning-xvalue-operand-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nusing Value = std::variant<int>;\nint read(int value) { return value; }\nint test(Value& input) { return std::visit(read, static_cast<Value&&>(input)); }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "cd8d8712344ef67abf42a19a288dd04cad1f2bdf4edebdba535fc456f01e9a83"
     },
     {
       "name": "any-active-mutable-reference-wrong-type-guard",
@@ -189,8 +190,8 @@
     "TranslateTest.CoreV2AnyActiveFloatReferenceIncrementsPayloadRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyActiveWideReferenceIncrementsPayloadRunAtBothOptimizations",
     "TranslateTest.CoreV2AnyActiveUtfReferenceWritesPayloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitAcceptsTheBoundReferenceCast",
     "TranslateTest.CoreV2VariantVisitTemporaryReferenceParameterGuardRejected",
-    "TranslateTest.CoreV2VariantVisitNonowningXvalueOperandGuardRejected",
     "TranslateTest.CoreV2AnyActiveMutableReferenceWrongTypeGuardRejected",
     "TranslateTest.CoreV2AnyActiveMutableReferenceAliasedResetGuardRejected"
   ],
@@ -213,5 +214,5 @@
     "variant-visit-temporaries-move-replay": "16173b5001c6df4af7a1559a7292422bb5a9eb0f52715e8150a72e2e429da42f"
   },
   "native_reference_authentication_sha256": "674cb78602ef3d695aabbf4c5625231ee4b2e2b1a94ccc849d2ba05d9a599156",
-  "source_proof_sha256": "bca815bf4959fe5647f01dc8c5921381de591d1bcf4ee1c0c812e7a8be99bde2"
+  "source_proof_sha256": "9cb6bafffe5978d749c1e2531e122de008a3906892056a005cf8b3bb6b0b01af"
 }

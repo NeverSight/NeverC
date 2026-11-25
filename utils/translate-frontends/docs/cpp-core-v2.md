@@ -18567,3 +18567,10 @@ range-preserving conversions. An rvalue any cast can read the proven active
 inline scalar slot or bind an rvalue reference to it. An expression sizeof
 uses its verified layout without evaluating the operand. Inline any storage
 retains the exact fundamental pointer type, including typed null values.
+
+## Bitset receivers and borrowed variant xvalues
+
+Checked wide bitset conversion follows const aliases and a conditional
+receiver through the selected constructor and its storage duration.
+Value-returning visitors with value parameters can dispatch on borrowed
+variant xvalues from an exact same-type reference cast or pinned std::move.

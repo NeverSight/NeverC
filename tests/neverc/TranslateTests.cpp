@@ -380468,16 +380468,23 @@ int main(){Bits bits(1);const Bits& r=bits;bits.set(1);return r.to_ullong()!=3;}
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConstReferenceRejected) {
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsExtendedTemporary) {
   const auto Source = tmpFile("bitset-const-local-guard-const-reference.cpp");
   writeFile(Source, R"r19bitlocal(#include <bitset>
 using Bits = std::bitset<129>;
 int main(){const Bits& bits=Bits(2);return bits.to_ullong()!=2;}
 )r19bitlocal");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("bitset-const-local-guard-const-reference.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-const-local-guard-const-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardStaticConstRejected) {
@@ -380530,17 +380537,24 @@ int main(){State state;return state.bits.to_ullong()!=2;}
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConditionalReceiverRejected) {
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionSelectsImmutableReceiver) {
   const auto Source = tmpFile("bitset-const-local-guard-conditional-receiver.cpp");
   writeFile(Source, R"r19bitlocal(#include <bitset>
 using Bits = std::bitset<129>;
 unsigned long long convert(bool select){const Bits a(1),b(2);return (select?a:b).to_ullong();}
 int main(){return convert(true)!=1||convert(false)!=2;}
 )r19bitlocal");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("bitset-const-local-guard-conditional-receiver.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-const-local-guard-conditional-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2BitsetConstantPositionNamespaceConstantRunAtBothOptimizations) {
@@ -404716,7 +404730,7 @@ int test() { return std::visit(read, std::variant<int>{7}); }
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2VariantVisitNonowningXvalueOperandGuardRejected) {
+TEST_F(TranslateTest, CoreV2VariantVisitAcceptsTheBoundReferenceCast) {
   const auto Source = tmpFile("variant-visit-nonowning-xvalue-operand-guard.cpp");
   writeFile(Source, R"r19containers(#include <variant>
 using Value = std::variant<int>;
@@ -404724,9 +404738,7 @@ int read(int value) { return value; }
 int test(Value& input) { return std::visit(read, static_cast<Value&&>(input)); }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2AnyActiveMutableReferenceWritesItsSlotRunAtBothOptimizations) {
@@ -405675,6 +405687,144 @@ int main() {
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionThroughConstCopyAndAliasRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-through-const-copy-and-alias.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+int main() {
+  using Bits = std::bitset<129>;
+  const Bits initial(5);
+  const Bits copied(initial);
+  const Bits& alias = copied;
+  return alias.to_ullong() != 5ULL;
+}
+)r19containers");
+  const auto Output = tmpFile("bitset-unsigned-conversion-through-const-copy-and-alias.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-unsigned-conversion-through-const-copy-and-alias" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionSelectsOneImmutableReceiverRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-selects-one-immutable-receiver.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+static bool select(int& calls) { ++calls; return calls == 1; }
+int main() {
+  using Bits = std::bitset<129>;
+  const Bits first(0x80000000ULL), second(7ULL);
+  int calls = 0;
+  unsigned long a = (select(calls) ? first : second).to_ulong();
+  unsigned long b = (select(calls) ? first : second).to_ulong();
+  return calls != 2 || a != 0x80000000UL || b != 7UL;
+}
+)r19containers");
+  const auto Output = tmpFile("bitset-unsigned-conversion-selects-one-immutable-receiver.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-unsigned-conversion-selects-one-immutable-receiver" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitNonowningStaticCastPreservesOwnerRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-nonowning-static-cast-preserves-owner.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, short>;
+int read(int value) { return value; }
+int main() {
+  Value item(std::in_place_index<1>, short{7});
+  int before = std::visit(read, static_cast<Value&&>(item));
+  item.emplace<0>(11);
+  return before != 7 || std::visit(read, item) != 11;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-nonowning-static-cast-preserves-owner.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-nonowning-static-cast-preserves-owner" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitNonowningMoveConstOperandRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-nonowning-move-const-operand.cpp");
+  writeFile(Source, R"r19containers(#include <utility>
+#include <variant>
+using Value = std::variant<int, short>;
+int read(int value) { return value; }
+int main() {
+  const Value item(std::in_place_index<0>, 13);
+  return std::visit(read, std::move(item)) != 13;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-nonowning-move-const-operand.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-nonowning-move-const-operand" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitMixedBoundAndXvalueOperandsRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-mixed-bound-and-xvalue-operands.cpp");
+  writeFile(Source, R"r19containers(#include <utility>
+#include <variant>
+using Value = std::variant<int, short>;
+int subtract(int left, int right) { return left - right; }
+int main() {
+  Value left(std::in_place_index<1>, short{17});
+  Value right(std::in_place_index<0>, 5);
+  return std::visit(subtract, left, std::move(right)) != 12;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-mixed-bound-and-xvalue-operands.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-mixed-bound-and-xvalue-operands" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitUnverifiedXvalueReturningCallRejected) {
+  const auto Source = tmpFile("variant-visit-unverified-xvalue-returning-call.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int>;
+Value&& produce(Value& value) { return static_cast<Value&&>(value); }
+int read(int value) { return value; }
+int test(Value& item) { return std::visit(read, produce(item)); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
 
