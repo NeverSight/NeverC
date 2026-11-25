@@ -102,6 +102,14 @@
       "source_sha256": "9214fe1e9611dc5299abe81886fa3f48d91bec637673f12511edec684772fab5"
     },
     {
+      "name": "variant-visit-alternatives-reference-result",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n",
+      "source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5"
+    },
+    {
       "name": "variant-visit-alternatives-renamed-exhaustive-check",
       "expected": "reject",
       "public_header": "variant",
@@ -124,14 +132,6 @@
       "kind": "source-body-guard",
       "source": "#include <variant>\nint read(const volatile int& value) { return value; }\nint f(std::variant<int>& state) { return std::visit(read, state); }\n",
       "source_sha256": "b2838cde1a4412115fd3d4b83f3a7616a46d412ac2ff48eba2fef00640157ad3"
-    },
-    {
-      "name": "variant-visit-alternatives-reference-result",
-      "expected": "accept",
-      "public_header": "variant",
-      "kind": "cpp17-operation",
-      "source": "#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n",
-      "source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5"
     }
   ],
   "new_gtest_names": [
@@ -144,7 +144,7 @@
     "TranslateTest.CoreV2VariantVisitAlternativesReferenceToConvertedTemporaryRejected",
     "TranslateTest.CoreV2VariantVisitAlternativesVolatileReferenceRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "4cf479ebbca2e01ad687d823ed65a5638d39ea7b27eb4cafd53442c3fea7b77c",
   "maintained_original_sha256": "4ebe1755104459f128be4ab723a1898ac57af93ceffb33a885f9cbd46f924d69",
@@ -156,5 +156,10 @@
   "current_registry_count": 8256,
   "current_python_registry_tests": 150,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "variant-visit-alternatives": "47b6eb40b4b1e406e9e19f0c1b81c9ee8afa0aaa14b17225a9e75f717422a18b"
+  },
+  "native_reference_authentication_sha256": "f64b24b4e51ea2ba6061d574fcbcf274e35f914b8ed9fab8ff0572b85c8d64f6",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
 }

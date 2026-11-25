@@ -245,22 +245,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-map-const-long-mapped-storage-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, const long> values;\n  return values.try_emplace(1, 2L).second ? 0 : 1;\n}\n",
-      "source_sha256": "16072906859259a92a66a23318152ddd28cc36d1c950f98d1568452206519b15",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-map-unsigned-long-long-different-pair-leaf-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, unsigned long long> values;\n  return values.emplace(std::make_pair(1, 2.0)).second ? 0 : 1;\n}\n",
-      "source_sha256": "b0a5b363088e6fe61494fba041eed9b27683f376f0283f462e5b534a8bffd1a0",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-map-uint-node-and-comparison",
       "expected": "accept",
       "kind": "cpp17-operation",
@@ -290,22 +274,6 @@
       "kind": "cpp17-operation",
       "source": "#include <map>\nint main() {\n  std::map<int, bool> flags;\n  flags.try_emplace(2, true);\n  if (flags[1] || !flags[2])\n    return 1;\n  std::map<int, char> letters;\n  letters.try_emplace(1, 'x');\n  std::map<int, signed char> signed_bytes;\n  signed_bytes.try_emplace(1, static_cast<signed char>(-7));\n  std::map<int, unsigned char> bytes;\n  bytes.try_emplace(1, static_cast<unsigned char>(241));\n  return letters[1] == 'x' && signed_bytes[1] == -7 && bytes[1] == 241 ? 0 : 2;\n}\n",
       "source_sha256": "768af3674ae62871aa19d28bc9c34fe073db21dee496e7a2c12936a521c8f146",
-      "public_header": "map"
-    },
-    {
-      "name": "ordered-map-qualified-uint-value-guard",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include <map>\nint main() {\n  std::map<int, const unsigned> values;\n  return values.try_emplace(1, 5U).second ? 0 : 1;\n}\n",
-      "source_sha256": "0178697cf90f7e7f5b931bb3de77a2c5e18fb44013e2475e9e8124bfae02a079",
-      "public_header": "map"
-    },
-    {
-      "name": "ordered-map-enum-mapped-value-guard",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include <map>\nenum class Flag : unsigned { ready = 1 };\nint main() {\n  std::map<int, Flag> values;\n  return values.try_emplace(1, Flag::ready).second ? 0 : 1;\n}\n",
-      "source_sha256": "e4909773673dc9f29734f935c460b9135f8bc1013f5ee221540de69c74b62767",
       "public_header": "map"
     },
     {
@@ -341,22 +309,6 @@
       "source_sha256": "7693ef2d7152c1d49834ca3477c5909e013a1a6a487c3daa7ec257f273deff71"
     },
     {
-      "name": "climits-quoted-source-include-is-rejected",
-      "public_header": "climits",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include \"climits\"\nint main() { return INT_MAX < 0; }\n",
-      "source_sha256": "47e5b16a54e4b16030245b83d806ae0f152cb2161576201b8e116b474988fb84"
-    },
-    {
-      "name": "limits-resource-header-direct-source-include-is-rejected",
-      "public_header": "climits",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include <limits.h>\nint main() { return INT_MAX < 0; }\n",
-      "source_sha256": "873e94c2f4d128ac79733d9a39919df5e0bd7cc0636c313eca3e965a7544d688"
-    },
-    {
       "name": "ordered-map-at-find-ternary-on-const-reference",
       "public_header": "map",
       "expected": "accept",
@@ -389,22 +341,6 @@
       "source_sha256": "ffcf1955c0d465b6f824d413cc376b24aec245e9038196389dda9765e4fe061a"
     },
     {
-      "name": "ordered-map-at-guard-different-key",
-      "public_header": "map",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include <map>\nint lookup(const std::map<int, int>& values, int key, int other) {\n  return values.find(key) != values.end() ? values.at(other) : -1;\n}\n",
-      "source_sha256": "c0fd2bd8db8a1ff962ed3de497fc49b59fb0cbc8177f6e250aa65507f0754a8d"
-    },
-    {
-      "name": "ordered-map-at-guard-different-owner",
-      "public_header": "map",
-      "expected": "reject",
-      "kind": "source-body-guard",
-      "source": "#include <map>\nint lookup(const std::map<int, int>& values, const std::map<int, int>& other, int key) {\n  return values.find(key) != values.end() ? other.at(key) : -1;\n}\n",
-      "source_sha256": "6b891c6eb6e89bd934599692eefa08681b5585a8e7abedc924d31a3c80bf83e5"
-    },
-    {
       "name": "ordered-map-float-subscript-copy-and-node",
       "public_header": "map",
       "expected": "accept",
@@ -421,12 +357,84 @@
       "source_sha256": "09671fd47cb91fb4f143020b34bb7cd93cdb8d284f2c94be27f4e834443f99bc"
     },
     {
+      "name": "ordered-map-double-comparison-advances-past-unordered-pair-typed-input",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <limits>\n#include <map>\nint main() {\n  const double quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n",
+      "source_sha256": "d030808fb2df2fae6419e66583861dd9dfa72d225f4b3b180c58325111e1a250"
+    },
+    {
       "name": "ordered-map-double-comparison-advances-past-unordered-pair",
       "public_header": "map",
       "expected": "accept",
       "kind": "cpp17-operation",
       "source": "#include <limits>\n#include <map>\nint main() {\n  const auto quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n",
       "source_sha256": "c24284761de5c51a0d5fc38f138f85be4b4bc0d75234fd28daa552cd98a4cbab"
+    },
+    {
+      "name": "ordered-map-const-long-mapped-storage-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, const long> values;\n  return values.try_emplace(1, 2L).second ? 0 : 1;\n}\n",
+      "source_sha256": "16072906859259a92a66a23318152ddd28cc36d1c950f98d1568452206519b15",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-unsigned-long-long-different-pair-leaf-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, unsigned long long> values;\n  return values.emplace(std::make_pair(1, 2.0)).second ? 0 : 1;\n}\n",
+      "source_sha256": "b0a5b363088e6fe61494fba041eed9b27683f376f0283f462e5b534a8bffd1a0",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-map-qualified-uint-value-guard",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint main() {\n  std::map<int, const unsigned> values;\n  return values.try_emplace(1, 5U).second ? 0 : 1;\n}\n",
+      "source_sha256": "0178697cf90f7e7f5b931bb3de77a2c5e18fb44013e2475e9e8124bfae02a079",
+      "public_header": "map"
+    },
+    {
+      "name": "ordered-map-enum-mapped-value-guard",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nenum class Flag : unsigned { ready = 1 };\nint main() {\n  std::map<int, Flag> values;\n  return values.try_emplace(1, Flag::ready).second ? 0 : 1;\n}\n",
+      "source_sha256": "e4909773673dc9f29734f935c460b9135f8bc1013f5ee221540de69c74b62767",
+      "public_header": "map"
+    },
+    {
+      "name": "climits-quoted-source-include-is-rejected",
+      "public_header": "climits",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include \"climits\"\nint main() { return INT_MAX < 0; }\n",
+      "source_sha256": "47e5b16a54e4b16030245b83d806ae0f152cb2161576201b8e116b474988fb84"
+    },
+    {
+      "name": "limits-resource-header-direct-source-include-is-rejected",
+      "public_header": "climits",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <limits.h>\nint main() { return INT_MAX < 0; }\n",
+      "source_sha256": "873e94c2f4d128ac79733d9a39919df5e0bd7cc0636c313eca3e965a7544d688"
+    },
+    {
+      "name": "ordered-map-at-guard-different-key",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, int key, int other) {\n  return values.find(key) != values.end() ? values.at(other) : -1;\n}\n",
+      "source_sha256": "c0fd2bd8db8a1ff962ed3de497fc49b59fb0cbc8177f6e250aa65507f0754a8d"
+    },
+    {
+      "name": "ordered-map-at-guard-different-owner",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, const std::map<int, int>& other, int key) {\n  return values.find(key) != values.end() ? other.at(key) : -1;\n}\n",
+      "source_sha256": "6b891c6eb6e89bd934599692eefa08681b5585a8e7abedc924d31a3c80bf83e5"
     },
     {
       "name": "ordered-map-long-double-storage-guard",
@@ -443,14 +451,6 @@
       "kind": "source-body-guard",
       "source": "#include <map>\nint main() {\n  std::map<int, const double> values;\n  return values.try_emplace(1, 2.0).second ? 0 : 1;\n}\n",
       "source_sha256": "ca5a34f8199caf701fe2135e426e8318983b517262f0c8b52d21a501ca6e8558"
-    },
-    {
-      "name": "ordered-map-double-comparison-advances-past-unordered-pair-typed-input",
-      "public_header": "map",
-      "expected": "accept",
-      "kind": "cpp17-operation",
-      "source": "#include <limits>\n#include <map>\nint main() {\n  const double quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n",
-      "source_sha256": "d030808fb2df2fae6419e66583861dd9dfa72d225f4b3b180c58325111e1a250"
     }
   ],
   "new_gtest_names": [
@@ -483,7 +483,7 @@
     "TranslateTest.CoreV2OrderedMapLongDoubleStorageGuardRejected",
     "TranslateTest.CoreV2OrderedMapConstDoubleStorageGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "dda90aa52bb9d02f2257863826aa5451ceab4a59fb15d0ba585d94651a2c1bf3",
   "maintained_original_sha256": "9a95c101b8902270e68741a842e565bf4bab4f74737a45b32a5f13d16859812b",
@@ -495,5 +495,16 @@
   "current_registry_count": 8921,
   "current_python_registry_tests": 272,
   "native_reference_selected_executions": 36,
-  "planned_generated_c23_executions": 36
+  "planned_generated_c23_executions": 36,
+  "native_reference_proofs": {
+    "climits": "33bdf57d36833668e608066eb1065e3bf3c607601573ee36af6ef998fbe6f41f",
+    "ordered-long-navigation": "0ffa21135bf2e19ca5b7b800c3c832ce9d45f2e3930e133e5c7b0bcf18159d0b",
+    "ordered-map-float": "760559df7326c21d012df460fd5a7035266ce4597af9925657d2619e8c9467b6",
+    "ordered-map-guarded-at": "90048dc90094c0eae7fb2d568395c00cd5e39d5b68721b030abd83e5763a8fd5",
+    "ordered-map-integral-values": "28d73f3b71d64cad03ecee6dbc6a1c4d66028c63a06539a38de5ed16642d1f54",
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
+    "pair-numeric-limits": "07cca5d914b063de0f0895f43402fd453476c92c6deacc4caf1db89e33cb7153"
+  },
+  "native_reference_authentication_sha256": "d149db0d9fd5e1472e31004c1c772cd924584593d271eea0e4eefc3bd4f07551",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
 }

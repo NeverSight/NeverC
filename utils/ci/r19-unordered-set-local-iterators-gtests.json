@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomHashRejected",
     "TranslateTest.CoreV2UnorderedSetLocalIteratorsCustomEqualityRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "0ef88a0571d525b7d64559b6af9a40ca1b7c8753b94cf130f6ec3397ed438b62",
   "maintained_original_sha256": "7103b1330261f496dad389a54d80f8d6be1864a02ae967b62c2fb4e32b06340a",
@@ -155,5 +155,11 @@
   "current_registry_count": 8488,
   "current_python_registry_tests": 208,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-local-iterators": "cbdcc10947c84bcb12d21f3bc773303f4bd31ce6e8f2e951d2f4e6ece6951e83",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "73e54165d07dcb3b35b80286ea39b302714813c6e81794484c67e0aec2f9400a",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
 }

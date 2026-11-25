@@ -177,7 +177,7 @@
     "TranslateTest.CoreV2UnorderedSetIteratorRangeUnsignedKeyIteratorInsertionRejected",
     "TranslateTest.CoreV2UnorderedSetIteratorRangeCustomHashIteratorConstructionRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "9b7d4cac8fbb215fad4d796e7e7cfd7cfcecc7d84384cff249ccbb08f68d9621",
   "maintained_original_sha256": "128ff7799af546d360def0abcb3e0ba34a382cd3629da0794750c8e444e5434c",
@@ -189,5 +189,10 @@
   "current_registry_count": 8562,
   "current_python_registry_tests": 226,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-iterator-range": "bf4e91471cfb1b103493171bb1b986df60e494b969beefe7fb497d9cfa5c48bf"
+  },
+  "native_reference_authentication_sha256": "df924412b577fd3141ea587be901d547a1eb934a3c5192dbdf88abf08b5e61cd",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
 }

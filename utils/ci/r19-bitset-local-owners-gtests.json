@@ -85,22 +85,6 @@
       "source_sha256": "fe54857a5d3ce037f300b1dced03107c4b427c2e8fb41fe468a5eeb905d2b62b"
     },
     {
-      "name": "bitset-unsigned-conversion-copy-after-mutation-guard",
-      "public_header": "bitset",
-      "expected": "reject",
-      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  Bits input(4);\n  input.set(90);\n  const Bits copy = input;\n  return copy.to_ullong() != 4;\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "d39c731d49f132c12eb59b161fbe07b04ce317ddd4414f3dab06b042f0ebbbc9"
-    },
-    {
-      "name": "bitset-unsigned-conversion-copy-from-aliased-owner-guard",
-      "public_header": "bitset",
-      "expected": "reject",
-      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  Bits input(4);\n  Bits* alias = &input;\n  alias->set(90);\n  const Bits copy = input;\n  return copy.to_ullong() != 4;\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "23d3fb87bfba8a4929a843067603e0faf7a8910570a676016081aca493564280"
-    },
-    {
       "name": "bitset-unsigned-conversion-static-constant-fits-unsigned-long",
       "public_header": "bitset",
       "expected": "accept",
@@ -115,6 +99,22 @@
       "source": "#include <bitset>\nbool select(int& calls) { return ++calls == 1; }\nint main() {\n  using Bits = std::bitset<129>;\n  static const Bits first(6), second(7);\n  int calls = 0;\n  unsigned long long left = (select(calls) ? first : second).to_ullong();\n  unsigned long long right = (select(calls) ? first : second).to_ullong();\n  return calls != 2 || left != 6 || right != 7;\n}\n",
       "kind": "cpp17-operation",
       "source_sha256": "077963ab7668ffcbaa35dcdf7990316dc8879e6fd574d7e776f2eec6b1def015"
+    },
+    {
+      "name": "bitset-unsigned-conversion-copy-after-mutation-guard",
+      "public_header": "bitset",
+      "expected": "reject",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  Bits input(4);\n  input.set(90);\n  const Bits copy = input;\n  return copy.to_ullong() != 4;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "d39c731d49f132c12eb59b161fbe07b04ce317ddd4414f3dab06b042f0ebbbc9"
+    },
+    {
+      "name": "bitset-unsigned-conversion-copy-from-aliased-owner-guard",
+      "public_header": "bitset",
+      "expected": "reject",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  Bits input(4);\n  Bits* alias = &input;\n  alias->set(90);\n  const Bits copy = input;\n  return copy.to_ullong() != 4;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "23d3fb87bfba8a4929a843067603e0faf7a8910570a676016081aca493564280"
     },
     {
       "name": "bitset-unsigned-conversion-dynamic-static-initialization-guard",
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2BitsetUnsignedConversionDynamicStaticInitializationGuardRejected",
     "TranslateTest.CoreV2BitsetUnsignedConversionMutableStaticBindingGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "841a079cfa207ab9e62cca16bfc1575d14f1021f1cd3a4166965319a45070628",
   "maintained_original_sha256": "48e1f05751a00c512de0c0f78c9ca29ea059b41c927fcdfa468a1e76891e52f9",
@@ -155,5 +155,11 @@
   "current_registry_count": 9072,
   "current_python_registry_tests": 294,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "bitset-const-static-unsigned-replay": "ce04fd417d7df7f8acec5e43b1072804aea691cceed7922f35a6c75caebada2c",
+    "bitset-unaliased-copy": "76610846ae7580bb48502fa59e90616b94ee92adebc66499915936f77c4d660a"
+  },
+  "native_reference_authentication_sha256": "709f15aeb971daf0ac0768d444ddfc399f1a53b1d59d5b272840a82401b1c884",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
 }

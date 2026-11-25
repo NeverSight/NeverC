@@ -101,22 +101,6 @@
       "source_sha256": "f3eb968ca25957f91a4aeed5b938dee7d5e69bce5aa693f0e36eede807333195"
     },
     {
-      "name": "any-bool-inline-value-mismatch",
-      "expected": "reject",
-      "public_header": "any",
-      "kind": "source-body-guard",
-      "source": "#include <any>\nint main() {\n  const std::any value{1};\n  return std::any_cast<bool>(value) ? 0 : 1;\n}\n",
-      "source_sha256": "d5e03b534a70db55941c205033c550c5f8d50bbdac8139c31a4c2d109431e621"
-    },
-    {
-      "name": "any-bool-inline-dynamic-value-tag",
-      "expected": "reject",
-      "public_header": "any",
-      "kind": "source-body-guard",
-      "source": "#include <any>\nbool read(const std::any& value) { return std::any_cast<bool>(value); }\n",
-      "source_sha256": "b0cb54c44350fb4ee1931b49fca503a2fc34d84ad94d9fd968536686d1e3517e"
-    },
-    {
       "name": "any-bool-inline-pointer-payload",
       "expected": "accept",
       "public_header": "any",
@@ -131,6 +115,22 @@
       "kind": "cpp17-operation",
       "source": "#include <any>\nint main() {\n  std::any value{true};\n  bool& result = std::any_cast<bool&>(value);\n  return result ? 0 : 1;\n}\n",
       "source_sha256": "3b63f6b82ceac0a587c0d7c94e561561888706e5f0e43c41371af97928b4e6f0"
+    },
+    {
+      "name": "any-bool-inline-value-mismatch",
+      "expected": "reject",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source": "#include <any>\nint main() {\n  const std::any value{1};\n  return std::any_cast<bool>(value) ? 0 : 1;\n}\n",
+      "source_sha256": "d5e03b534a70db55941c205033c550c5f8d50bbdac8139c31a4c2d109431e621"
+    },
+    {
+      "name": "any-bool-inline-dynamic-value-tag",
+      "expected": "reject",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source": "#include <any>\nbool read(const std::any& value) { return std::any_cast<bool>(value); }\n",
+      "source_sha256": "b0cb54c44350fb4ee1931b49fca503a2fc34d84ad94d9fd968536686d1e3517e"
     }
   ],
   "new_gtest_names": [
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2AnyBoolInlineValueMismatchRejected",
     "TranslateTest.CoreV2AnyBoolInlineDynamicValueTagRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf",
   "maintained_original_sha256": "bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e",
@@ -155,5 +155,12 @@
   "current_registry_count": 8318,
   "current_python_registry_tests": 166,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "any-active-mutable-reference": "48c5bf01bc62c9cc06f7956355c46a38b033a773d095c14cffbf7ba449c26bc1",
+    "any-bool-inline": "044bf8aa978cbd0f4b8836a804d995d7647cbd9684e816714ade71c239445bb0",
+    "any-integer-pointer-values": "3cc63e628ea4625533ed2535b5a93c89b4d29439f9d68843e90ac9a2c66c9348"
+  },
+  "native_reference_authentication_sha256": "88401f98169e4c411e788d3cff221042d6527707e2e90a070fc2f4e891ae7893",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
 }

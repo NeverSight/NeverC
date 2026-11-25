@@ -181,22 +181,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-range-reverse-iterator-guard",
-      "expected": "accept",
-      "public_header": "set",
-      "source": "#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "4e81aefa2b585ad79d336d8ffde7ab174bed4ea020736deb046cae8db5a070e8",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-range-foreign-cursor-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, int> input{{2, 8}, {4, 9}};\n  std::map<int, int> output;\n  output.insert(std::make_move_iterator(input.begin()), std::make_move_iterator(input.end()));\n  return output.size() == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "048d832e608d6c904cbafe8f249f7d2ca4c6492ae5de758e617d507c72aeaa87",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-explicit-default-policies",
       "expected": "accept",
       "public_header": "set",
@@ -226,22 +210,6 @@
       "public_header": "map",
       "source": "#include <map>\nusing Map = std::multimap<int, int>;\n\nint main() {\n  Map a{Map::key_compare{}};\n  Map b{Map::allocator_type{}};\n  Map c{Map::key_compare{}, Map::allocator_type{}};\n  if (!a.empty() || !b.empty() || c.begin() != c.end())\n    return 1;\n  a.insert({{3, 4}, {3, 9}});\n  b.insert({{2, 8}});\n  c.insert({{5, 1}, {1, 7}});\n  auto position = a.begin();\n  if (position->second != 4)\n    return 2;\n  ++position;\n  if (position->second != 9)\n    return 2;\n  return b.begin()->second == 8 && c.begin()->first == 1 && c.begin()->second == 7 ? 0 : 3;\n}\n",
       "source_sha256": "dfd79422a8f74dadb6ec1e58ee6ab80ab401844754884b5516c9510dc8c40909",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-explicit-stateful-policy-guard",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Compare {\n  bool descending;\n  bool operator()(int a, int b) const { return descending ? a > b : a < b; }\n};\n\nint main() {\n  std::set<int, Compare> values(Compare{true});\n  values.insert(1);\n  values.insert(3);\n  return *values.begin() == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "dfe667a73ae49002c8e8bdd495b44f1052115c1b10a3d24cad5c97dc24e2f0e6",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-allocator-copy-construction-guard",
-      "expected": "accept",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map source;\n  source[2] = 1;\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n",
-      "source_sha256": "edf19973a7f75d150c08221c24672b74eff36e3bc51aa262b6d435d26d359395",
       "kind": "cpp17-operation"
     },
     {
@@ -277,11 +245,19 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-allocator-observer-custom-policy-guard",
+      "name": "ordered-allocator-copy-construction-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map source;\n  source[2] = 1;\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "edf19973a7f75d150c08221c24672b74eff36e3bc51aa262b6d435d26d359395",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-range-reverse-iterator-guard",
       "expected": "accept",
       "public_header": "set",
-      "source": "#include <set>\n#include <functional>\nint main() {\n  const std::set<int, std::greater<int>> values{1, 2, 3};\n  return values.get_allocator() == std::allocator<int>{} && *values.begin() == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "da1450a8ba9836abff9bb98b6e876f902ed0e43bf1f63ae8cef74e661842b046",
+      "source": "#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "4e81aefa2b585ad79d336d8ffde7ab174bed4ea020736deb046cae8db5a070e8",
       "kind": "cpp17-operation"
     },
     {
@@ -291,6 +267,30 @@
       "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values{{1, 7}};\n  return values.get_allocator() == Map::allocator_type{} && values.begin()->second == 7 ? 0 : 1;\n}\n",
       "source_sha256": "8b166212a15e7d07cc7536efff2b8525552bcef7c3bf80cd0d0a57c2f2b26b2d",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-allocator-observer-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\nint main() {\n  const std::set<int, std::greater<int>> values{1, 2, 3};\n  return values.get_allocator() == std::allocator<int>{} && *values.begin() == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "da1450a8ba9836abff9bb98b6e876f902ed0e43bf1f63ae8cef74e661842b046",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-range-foreign-cursor-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\n#include <iterator>\nint main() {\n  std::map<int, int> input{{2, 8}, {4, 9}};\n  std::map<int, int> output;\n  output.insert(std::make_move_iterator(input.begin()), std::make_move_iterator(input.end()));\n  return output.size() == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "048d832e608d6c904cbafe8f249f7d2ca4c6492ae5de758e617d507c72aeaa87",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-explicit-stateful-policy-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Compare {\n  bool descending;\n  bool operator()(int a, int b) const { return descending ? a > b : a < b; }\n};\n\nint main() {\n  std::set<int, Compare> values(Compare{true});\n  values.insert(1);\n  values.insert(3);\n  return *values.begin() == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "dfe667a73ae49002c8e8bdd495b44f1052115c1b10a3d24cad5c97dc24e2f0e6",
+      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -313,7 +313,7 @@
     "TranslateTest.CoreV2OrderedRangeForeignCursorGuardRejected",
     "TranslateTest.CoreV2OrderedExplicitStatefulPolicyGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "17da38c2da417df36c10d23081658af9f94798cdf66f91fffd1eb0a07b8f5fd9",
   "maintained_original_sha256": "615020e719791e665aa2823bf4bd2e007176c2aebf65ab55c8ff693bff2f3d00",
@@ -325,5 +325,14 @@
   "current_registry_count": 8788,
   "current_python_registry_tests": 260,
   "native_reference_selected_executions": 32,
-  "planned_generated_c23_executions": 32
+  "planned_generated_c23_executions": 32,
+  "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
+    "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c",
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
+    "ordered-policies-and-iterator-ranges": "e18fa9b070d855db549dc7598c7e0e04cf32debea3025ba99cf1e9da7e71504f",
+    "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd"
+  },
+  "native_reference_authentication_sha256": "b774175b65a1cd3a910eaac82dde75b65493edcc4714a864255ba5c340f31d4e",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
 }
