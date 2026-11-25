@@ -54360,6 +54360,19 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
     if (C->getNumParams() == 1 &&
         forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
       return UtilityForwardListConstruction::Allocator;
+    if (Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType())) {
+      if (C->getNumParams() == 1 ||
+          (C->getNumParams() == 2 && forwardListIntegerAllocatorParameter(S, SM,
+              C->getParamDecl(1)->getType(), Context)))
+        return UtilityForwardListConstruction::Count;
+      if ((C->getNumParams() == 2 || C->getNumParams() == 3) &&
+          Context.hasSameType(C->getParamDecl(1)->getType(),
+                              Context.getLValueReferenceType(Context.IntTy.withConst())) &&
+          (C->getNumParams() == 2 || forwardListIntegerAllocatorParameter(S, SM,
+              C->getParamDecl(2)->getType(), Context)))
+        return UtilityForwardListConstruction::FillCount;
+      return std::nullopt;
+    }
     if (C->getNumParams() == 1 || C->getNumParams() == 2) {
       const auto ListType = C->getParamDecl(0)->getType();
       if (ListType->isReferenceType() || ListType.isVolatileQualified()) return std::nullopt;
@@ -54943,6 +54956,33 @@ bool forwardListResizeBody(const CXXMethodDecl *Method) {
          Grow && Grow->size() == 2 && isa<IfStmt>(Grow->body_back());
 }
 
+bool forwardListCountConstructionBody(const CXXConstructorDecl *Constructor,
+                                      UtilityForwardListConstruction Kind) {
+  const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(Constructor->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  if (!Body || Body->size() != 1) return false;
+  if (Kind == UtilityForwardListConstruction::Count) {
+    const auto *Guard = dyn_cast<IfStmt>(Body->body_front());
+    const auto *Compare = Guard && !Guard->getElse()
+        ? dyn_cast<BinaryOperator>(Guard->getCond()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Zero = Compare ? dyn_cast<IntegerLiteral>(Compare->getRHS()->IgnoreParenImpCasts()) : nullptr;
+    const auto *Loop = Guard ? dyn_cast<CompoundStmt>(Guard->getThen()) : nullptr;
+    return Compare && Compare->getOpcode() == BO_GT && Zero && Zero->getValue().isZero() &&
+           variantParameter(Compare->getLHS(), Definition->getParamDecl(0)) &&
+           Loop && Loop->size() == 1 && isa<ForStmt>(Loop->body_front());
+  }
+  const auto *Expression = dyn_cast<Expr>(Body->body_front());
+  const auto *Insert = Expression ? dyn_cast<CXXMemberCallExpr>(Expression->IgnoreUnlessSpelledInSource()) : nullptr;
+  const auto *Selected = Insert ? Insert->getMethodDecl() : nullptr;
+  const auto *Receiver = Insert ? Insert->getImplicitObjectArgument() : nullptr;
+  return Selected && Selected->getIdentifier() && Selected->getName() == "insert_after" &&
+         !Selected->getPrimaryTemplate() && Insert->getNumArgs() == 3 && Receiver &&
+         isa<CXXThisExpr>(Receiver->IgnoreParenImpCasts()) &&
+         Selected->getParent()->getCanonicalDecl() == Definition->getParent()->getCanonicalDecl() &&
+         variantParameter(Insert->getArg(1), Definition->getParamDecl(0)) &&
+         variantParameter(Insert->getArg(2), Definition->getParamDecl(1));
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -55070,6 +55110,9 @@ std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruc
       !Context.hasSameUnqualifiedType(Construction->getType(), Context.getRecordType(C->getParent())) ||
       !forwardListSourceGraph(S, SM, C, Context, *Node) ||
       (*Kind == UtilityForwardListConstruction::Move && !forwardListMoveBody(S, SM, C, *Node, Context)))
+    return std::nullopt;
+  if ((*Kind == UtilityForwardListConstruction::Count || *Kind == UtilityForwardListConstruction::FillCount) &&
+      !forwardListCountConstructionBody(C, *Kind))
     return std::nullopt;
   if (*Kind == UtilityForwardListConstruction::Copy) {
     const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(C->getDefinition());
