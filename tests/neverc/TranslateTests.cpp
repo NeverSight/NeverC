@@ -406198,6 +406198,89 @@ int f(std::variant<int, short>& value) {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2VariantVisitInstantiatesSelectedVisitorOperatorRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-instantiates-selected-visitor-operator.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+struct Measure {
+  template<class T> int operator()(T value) const { return 10 * int(sizeof(T)) + int(value); }
+};
+int main() {
+  std::variant<int, short> value(std::in_place_index<1>, short(5));
+  const Measure measure{};
+  return std::visit(measure, value) != 10 * int(sizeof(short)) + 5;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-instantiates-selected-visitor-operator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-instantiates-selected-visitor-operator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitInstantiatesTwoTemplateArgumentsRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-instantiates-two-template-arguments.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+struct Difference {
+  template<class L, class R>
+  int operator()(const L& left, const R& right) const {
+    return int(left) - int(right) + int(sizeof(L)) - int(sizeof(R));
+  }
+};
+int main() {
+  using Item = std::variant<int, short>;
+  Item left(18);
+  const Item right(std::in_place_index<1>, short(6));
+  Difference difference{};
+  return std::visit(difference, left, right) != 12 + int(sizeof(int)) - int(sizeof(short));
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-instantiates-two-template-arguments.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-instantiates-two-template-arguments" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitInstantiatesVoidVisitorOperatorRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-instantiates-void-visitor-operator.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+struct Write {
+  int* output;
+  template<class T> void operator()(const T& value) const { *output = int(value); }
+};
+int main() {
+  std::variant<int, short> value(std::in_place_index<1>, short(11));
+  int output = 0;
+  const Write write{&output};
+  std::visit(write, value);
+  return output != 11;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-instantiates-void-visitor-operator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-instantiates-void-visitor-operator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

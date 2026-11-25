@@ -18595,3 +18595,10 @@ A named temporary visitor can produce an integer or void in
 variant visitation. The C23 lowering evaluates its construction once,
 uses the selected call operator, and keeps the visitor live until
 the enclosing full expression ends.
+
+## Named templated variant visitors
+
+An owned, named visitor can use a templated call operator in variant
+visitation. The source proof checks the selected specialization for
+each alternative combination and uses its concrete parameter types
+and return type in the existing dispatch.
