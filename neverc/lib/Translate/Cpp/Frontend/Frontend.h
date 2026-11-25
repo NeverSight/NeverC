@@ -4013,7 +4013,7 @@ std::optional<UtilityForwardListIteratorRecord> approvedUtilityForwardListIterat
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
 enum class UtilityForwardListConstruction {
-  Default, Allocator, InitializerList, PointerRange, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
+  Default, Allocator, InitializerList, PointerRange, IteratorRange, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityForwardListOperation {
   Empty, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, Clear, MoveAssign, CopyAssign, AssignInitializerList, AssignInitializerListOperator, AssignCount, AssignPointerRange,
