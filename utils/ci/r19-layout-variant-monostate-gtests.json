@@ -1,0 +1,96 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-monostate-comparison-same-index-has-no-payload-order",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateComparisonSameIndexHasNoPayloadOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9947f1411dbe4a65a6c5bd3ec86a7373392b86e655c14a9ac0eeb10de92d5ce8",
+      "original_case_source_sha256": "9947f1411dbe4a65a6c5bd3ec86a7373392b86e655c14a9ac0eeb10de92d5ce8",
+      "gtest_body_sha256": "d6ffc74a69102b5d19aa2b7e4562913c3cc1d36bf31cd88b5094f7a8de31d91c"
+    },
+    {
+      "name": "variant-monostate-comparison-distinct-empty-alternative-indexes",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateComparisonDistinctEmptyAlternativeIndexesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "06c1961142225e285c1aa907292bd35e3ec87f5d59389a2949afe4bb9216ebf9",
+      "original_case_source_sha256": "06c1961142225e285c1aa907292bd35e3ec87f5d59389a2949afe4bb9216ebf9",
+      "gtest_body_sha256": "bb78e5939faa288220f5e4a7d35ca08d900adbbe4330ccd6eb0fa318c9e53a10"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-monostate-comparison-replacement-empty-class",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateComparisonReplacementEmptyClassRejected",
+      "expected": "reject",
+      "source_sha256": "2a42cdc91347511bfbee4573c9df8be307acd4f01fddd6b14eaad5d06203c8c9",
+      "original_case_source_sha256": "2a42cdc91347511bfbee4573c9df8be307acd4f01fddd6b14eaad5d06203c8c9",
+      "gtest_body_sha256": "0aa0cd8e9a7d7994cdbb064b523bf2905b94d6d236af8b45728d1d5a004f48cc"
+    },
+    {
+      "name": "variant-monostate-comparison-renamed-sdk-monostate",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateComparisonRenamedSdkMonostateRejected",
+      "expected": "reject",
+      "source_sha256": "ae88a1178a1451bd9aa7952d08222061aee097e4bd64cc05d67d2a8d97a62269",
+      "original_case_source_sha256": "ae88a1178a1451bd9aa7952d08222061aee097e4bd64cc05d67d2a8d97a62269",
+      "gtest_body_sha256": "7d2e5864ef0679ceb253ae9afc11b3e4e736025c3deb39b833a3a11c60eef5e3"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-monostate-comparison-same-index-has-no-payload-order",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<std::monostate, int>;\nint main() {\n  const Value a, b;\n  if (!(a == b) || a != b || a < b || a > b || !(a <= b) || !(a >= b))\n    return 1;\n  const Value c(std::in_place_index<1>, -9), d(std::in_place_index<1>, 3);\n  if (!(a < c) || !(c > a) || a == c || !(a != c)) return 2;\n  return !(c < d) || !(d >= c) || c == d;\n}\n",
+      "source_sha256": "9947f1411dbe4a65a6c5bd3ec86a7373392b86e655c14a9ac0eeb10de92d5ce8"
+    },
+    {
+      "name": "variant-monostate-comparison-distinct-empty-alternative-indexes",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<std::monostate, int, std::monostate>;\nint left_reads, right_reads;\nconst Value& left(const Value& v) { ++left_reads; return v; }\nconst Value& right(const Value& v) { ++right_reads; return v; }\nint main() {\n  const Value a, b(std::in_place_index<2>);\n  if (!std::operator<(left(a), right(b))) return 1;\n  if (std::operator==(left(a), right(b))) return 2;\n  if (!std::operator>=(left(b), right(b))) return 3;\n  return left_reads != 3 || right_reads != 3;\n}\n",
+      "source_sha256": "06c1961142225e285c1aa907292bd35e3ec87f5d59389a2949afe4bb9216ebf9"
+    },
+    {
+      "name": "variant-monostate-comparison-replacement-empty-class",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nstruct Empty {};\nconstexpr bool operator<(Empty, Empty) noexcept { return true; }\nusing Value = std::variant<Empty, int>;\nbool compare(const Value& a, const Value& b) { return a < b; }\n",
+      "source_sha256": "2a42cdc91347511bfbee4573c9df8be307acd4f01fddd6b14eaad5d06203c8c9"
+    },
+    {
+      "name": "variant-monostate-comparison-renamed-sdk-monostate",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#define monostate alternate_monostate\n#include <variant>\n#undef monostate\nusing Value = std::variant<std::alternate_monostate, int>;\nbool compare(const Value& a, const Value& b) { return a == b; }\n",
+      "source_sha256": "ae88a1178a1451bd9aa7952d08222061aee097e4bd64cc05d67d2a8d97a62269"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantMonostateComparisonSameIndexHasNoPayloadOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateComparisonDistinctEmptyAlternativeIndexesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateComparisonReplacementEmptyClassRejected",
+    "TranslateTest.CoreV2VariantMonostateComparisonRenamedSdkMonostateRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "a3158aff714f9c7210acd778f40955583603c761d9a34cd95890a2cf28b231e4",
+  "maintained_original_sha256": "079938a41465897ea07a93d6707738c9173278fee37980e4ee3757da699028eb",
+  "previous_registered_source_sha256": "f4438c626036d992e46581f28d2eb2660ec440254ae2e7e70a3badcc0a478224",
+  "previous_maintained_original_sha256": "d46e00876290437ca25e5bb20bee825ac7fefe03bd6447d02e060695381d35f9",
+  "restorer_sha256": "a83e5fb34801f8236d2e6892b15815f1df01cd5596901bb3e86809389956fa26",
+  "extractor_sha256": "cc39c0ec8b0db69486a95f153f89ef6dffc3936b83145db49fb0717c13706d4e",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8244,
+  "current_python_registry_tests": 146,
+  "native_reference_selected_executions": 4,
+  "planned_generated_c23_executions": 4,
+  "native_reference_proofs": {
+    "variant-monostate-comparison": "1075e17f4c7d244de59a2c1512119dabdfe252e99720098b0d3b25db93f0ee96"
+  },
+  "native_reference_authentication_sha256": "4447816e58e7695bf95ee8585f7294cda63e377cbe7dd6fb1f1e7b4ac52c4db1",
+  "source_proof_sha256": "fc8032f630f76dcb4baf833e88c74ad68240b6b5e0653368175bdc8ca079204c"
+}

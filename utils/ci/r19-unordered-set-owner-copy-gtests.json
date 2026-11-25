@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-owner-copy-unique-const-source-owns-distinct-nodes",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOwnerCopyUniqueConstSourceOwnsDistinctNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c3864fdeb3caae8a7e4580f23682f648be1f92b585af561b6a98fbe74a7973ea",
+      "original_case_source_sha256": "c3864fdeb3caae8a7e4580f23682f648be1f92b585af561b6a98fbe74a7973ea",
+      "gtest_body_sha256": "0d814727d794deb367e6a0875506bbaf4d376b2a0612b1fa1de491f8b032f766"
+    },
+    {
+      "name": "unordered-set-owner-copy-multiset-copy-preserves-counts-and-independent-erase",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOwnerCopyMultisetCopyPreservesCountsAndIndependentEraseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "322299cbea5f328fef07209b0f0e1f331d869e860b8e8e802e238bfd8424a4d3",
+      "original_case_source_sha256": "322299cbea5f328fef07209b0f0e1f331d869e860b8e8e802e238bfd8424a4d3",
+      "gtest_body_sha256": "96c80ae697442d2a2ba81837a971eac2fd4eb7f466a1a1b6a29ae570dd55f1c9"
+    },
+    {
+      "name": "unordered-set-owner-copy-reserved-empty-copy-keeps-bucket-policy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOwnerCopyReservedEmptyCopyKeepsBucketPolicyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9160a68137553e592a7f9e404bec3e4516a2f3e1a9cc4084c1d361052eedfce8",
+      "original_case_source_sha256": "9160a68137553e592a7f9e404bec3e4516a2f3e1a9cc4084c1d361052eedfce8",
+      "gtest_body_sha256": "7abe47ccf7a41a2ba1d9ee828397b8b68228771f3482cf8e9a3228770920bc17"
+    },
+    {
+      "name": "unordered-set-owner-copy-reference-producing-source-evaluated-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOwnerCopyReferenceProducingSourceEvaluatedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dce8dd1c320b3a1e48d8b9a730e4dc9ab45a00792e6da36ed9834eaf807d151d",
+      "original_case_source_sha256": "dce8dd1c320b3a1e48d8b9a730e4dc9ab45a00792e6da36ed9834eaf807d151d",
+      "gtest_body_sha256": "1d932f5a25359990414e37fe7456bf89007134d5cf15b2da44584064457e9602"
+    },
+    {
+      "name": "unordered-set-owner-copy-explicit-allocator-copy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalAllocatorCopyRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1dba24a284c29a629caf72a44ba0b72c8865582d940a5de88c6f1fbdabadd0e4",
+      "original_case_source_sha256": "1dba24a284c29a629caf72a44ba0b72c8865582d940a5de88c6f1fbdabadd0e4",
+      "gtest_body_sha256": "09e1a7cd3a03b0a233e0641994dab3e6078b7e7e1d7428b793be9d965d1dc313"
+    },
+    {
+      "name": "unordered-set-owner-copy-explicit-allocator-multiset-copy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetOriginalAllocatorCopyRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f2856bb20efbd88a95e06d80be1a8f1075b42f26986b3a8314fa59936c517385",
+      "original_case_source_sha256": "f2856bb20efbd88a95e06d80be1a8f1075b42f26986b3a8314fa59936c517385",
+      "gtest_body_sha256": "80b605a7bc5c0559ac31903e64ca2cb82a8602a073e414a3f24ff81254c202b2"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-owner-copy-other-key-copy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOwnerCopyOtherKeyCopyRejected",
+      "expected": "reject",
+      "source_sha256": "8db557cecd87d8162f4e1cb07237c90f9417cc458e000fb3962a5d429e06f977",
+      "original_case_source_sha256": "8db557cecd87d8162f4e1cb07237c90f9417cc458e000fb3962a5d429e06f977",
+      "gtest_body_sha256": "e4455e844e41dc8903edd2f67cdcd6f15214742714c432de38c879c4656c969a"
+    },
+    {
+      "name": "unordered-set-owner-copy-custom-equality-copy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOwnerCopyCustomEqualityCopyRejected",
+      "expected": "reject",
+      "source_sha256": "a612f5577bbaf3d15076ebbf4e98a5160fc701345f74e880d0629687e40b7984",
+      "original_case_source_sha256": "a612f5577bbaf3d15076ebbf4e98a5160fc701345f74e880d0629687e40b7984",
+      "gtest_body_sha256": "b3d268ea0ca255971ee9f306031a188211fb3c2a77292a3324cfb85797c3e62f"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-owner-copy-unique-const-source-owns-distinct-nodes",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{5, 11, -7};\n  values.rehash(29);\n  values.max_load_factor(2.5f);\n  const auto& source = values;\n  std::unordered_set<int> copy(source);\n  return copy.size() != 3 || copy.count(-7) != 1 || copy.bucket_count() != source.bucket_count() ||\n         copy.max_load_factor() != 2.5f || &*copy.find(-7) == &*source.find(-7);\n}\n",
+      "source_sha256": "c3864fdeb3caae8a7e4580f23682f648be1f92b585af561b6a98fbe74a7973ea",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-owner-copy-multiset-copy-preserves-counts-and-independent-erase",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{8, 8, -3, 8, -3, 4};\n  source.rehash(23);\n  source.max_load_factor(2.0f);\n  const std::unordered_multiset<int> copy(source);\n  auto removed = source.erase(8);\n  return removed != 3 || source.count(8) != 0 || copy.count(8) != 3 || copy.count(-3) != 2 ||\n         copy.bucket_count() != 23 || copy.max_load_factor() != 2.0f;\n}\n",
+      "source_sha256": "322299cbea5f328fef07209b0f0e1f331d869e860b8e8e802e238bfd8424a4d3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-owner-copy-reserved-empty-copy-keeps-bucket-policy",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source;\n  source.rehash(31);\n  source.max_load_factor(3.5f);\n  std::unordered_multiset<int> copy(source);\n  copy.insert({-1, -1});\n  return !source.empty() || copy.count(-1) != 2 || copy.bucket_count() != source.bucket_count() ||\n         copy.max_load_factor() != 3.5f;\n}\n",
+      "source_sha256": "9160a68137553e592a7f9e404bec3e4516a2f3e1a9cc4084c1d361052eedfce8",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-owner-copy-reference-producing-source-evaluated-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nint accesses;\nconst Set& input(const Set& values) { ++accesses; return values; }\nint main() {\n  Set values{0, 6, 18};\n  Set copy(input(values));\n  values.clear();\n  return accesses != 1 || !values.empty() || copy.size() != 3 || copy.count(6) != 1;\n}\n",
+      "source_sha256": "dce8dd1c320b3a1e48d8b9a730e4dc9ab45a00792e6da36ed9834eaf807d151d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-owner-copy-explicit-allocator-copy",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> source{1};\n  std::unordered_set<int> copy(source, std::allocator<int>{});\n  return copy.empty();\n}\n",
+      "source_sha256": "1dba24a284c29a629caf72a44ba0b72c8865582d940a5de88c6f1fbdabadd0e4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-owner-copy-explicit-allocator-multiset-copy",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{8, 8};\n  std::unordered_multiset<int> copy(source, std::allocator<int>{});\n  return copy.count(8) != 2;\n}\n",
+      "source_sha256": "f2856bb20efbd88a95e06d80be1a8f1075b42f26986b3a8314fa59936c517385",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-owner-copy-other-key-copy",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<long> source;\n  std::unordered_multiset<long> copy(source);\n  return copy.empty();\n}\n",
+      "source_sha256": "8db557cecd87d8162f4e1cb07237c90f9417cc458e000fb3962a5d429e06f977",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-owner-copy-custom-equality-copy",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  std::unordered_set<int, std::hash<int>, Equal> source;\n  std::unordered_set<int, std::hash<int>, Equal> copy(source);\n  return copy.empty();\n}\n",
+      "source_sha256": "a612f5577bbaf3d15076ebbf4e98a5160fc701345f74e880d0629687e40b7984",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetOwnerCopyUniqueConstSourceOwnsDistinctNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOwnerCopyMultisetCopyPreservesCountsAndIndependentEraseRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOwnerCopyReservedEmptyCopyKeepsBucketPolicyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOwnerCopyReferenceProducingSourceEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalAllocatorCopyRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetOriginalAllocatorCopyRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOwnerCopyOtherKeyCopyRejected",
+    "TranslateTest.CoreV2UnorderedSetOwnerCopyCustomEqualityCopyRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "9d45502a38f1ee189fb816f0ffaa6f9a83d66b4c2e00792e08094a09ebf71090",
+  "maintained_original_sha256": "b5861e602fe2e117514cbc02fbff1737609071bd6aa6d4452161039c5c032491",
+  "previous_registered_source_sha256": "544d50088e1e4062a33c132ff8abb4e60c2f5d88f1f9c3d498ed68d92dffdd40",
+  "previous_maintained_original_sha256": "91ca47fa646e424eed96bb7914230e20deb00af9f7afee5efc04af1e71492b9e",
+  "restorer_sha256": "9a26cbedc6bd4525c6f7f75741792d5aae1881ccf74d1a21d0f88af6c24ff66d",
+  "extractor_sha256": "8a62c9356422f7cac8f065a07ec232997cf177effb02e8ed0a6091e06215b5df",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8536,
+  "current_python_registry_tests": 220,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-owner-copy": "9d4b27a82684c5b4c9119f2c2570a7396aa2569d48ac850aece4ad5edf3de3b6",
+    "unordered-set-storage-construction": "9005a76d9532e4c4a9e301c517dd51fa24734609763fb1008eea27c3ed872306"
+  },
+  "native_reference_authentication_sha256": "63c3eb2b16a126d9fa9ae4d4443c5896ff962dc300e0f77cd3455efbf18050c3",
+  "source_proof_sha256": "fc8032f630f76dcb4baf833e88c74ad68240b6b5e0653368175bdc8ca079204c"
+}
