@@ -1,0 +1,958 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-monostate-identity",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6eaa811a2d866010b224bc31e5095e25cddb79b56f1ea35319c69740834ea064",
+      "original_case_source_sha256": "6eaa811a2d866010b224bc31e5095e25cddb79b56f1ea35319c69740834ea064",
+      "gtest_body_sha256": "9c68361faedb231b2e6bb7d82302df692c6a77ef4960df2e0ec24be045e07a65"
+    },
+    {
+      "name": "variant-monostate-standalone-layout",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateStandaloneLayoutRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "654846929b3599b627c09a02bc3f350c8eadbb0a2fc143871296579635df435b",
+      "original_case_source_sha256": "654846929b3599b627c09a02bc3f350c8eadbb0a2fc143871296579635df435b",
+      "gtest_body_sha256": "d234ee3a09c3eb7e4d6e22f314bfcd73bfa49fe2e02af3322b33c8f1ef2a58fe"
+    },
+    {
+      "name": "variant-monostate-variant-layout",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateVariantLayoutRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "18dd81925dea008036b74a96b96027f39edf01ec89832cb811aa12383853ca48",
+      "original_case_source_sha256": "18dd81925dea008036b74a96b96027f39edf01ec89832cb811aa12383853ca48",
+      "gtest_body_sha256": "174be3ab1bef29a11fec07e863438fee740aeeae32a064ca521814a6d67330cb"
+    },
+    {
+      "name": "variant-monostate-monostate-only-variant",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateMonostateOnlyVariantRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "aa78be3e0d17d9aa244c6b44e624dfca84b279db0e0b8bbf28c47d4237c517d0",
+      "original_case_source_sha256": "aa78be3e0d17d9aa244c6b44e624dfca84b279db0e0b8bbf28c47d4237c517d0",
+      "gtest_body_sha256": "23da7305d682b9b9a531d19da27de1ab73fa0ca55a43b67ec7c04a335c625b96"
+    },
+    {
+      "name": "any-layout-direct-size-align",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "original_case_source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "gtest_body_sha256": "d1b9f8164e9fcfc157872e6e15d98a68fc69d62ad5606456c19d3e2e9464f512"
+    },
+    {
+      "name": "any-layout-const-reference-size",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "original_case_source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "gtest_body_sha256": "9935e0fdd45a9d0503ce76e708ffa250304005796a22c79b4e8e90be4fef50b6"
+    },
+    {
+      "name": "any-layout-wrapped-pointer-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "original_case_source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "gtest_body_sha256": "813a84526b66ebee3c14a9dd47f486ee235888ae7ec0332965d9bf78d1e87d77"
+    },
+    {
+      "name": "any-layout-constant-array-bound",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "original_case_source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "gtest_body_sha256": "9dac99bd61c4e166d86d4376daaa57891288ef117e1faa7002fad1e9738c3892"
+    },
+    {
+      "name": "associative-map-identity",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeMapIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "492574bc00c372eeda659ffb4ab1e5b4135992f66920efce3ec3a98eb35d8e18",
+      "original_case_source_sha256": "492574bc00c372eeda659ffb4ab1e5b4135992f66920efce3ec3a98eb35d8e18",
+      "gtest_body_sha256": "cc38b102acf0f023b60f320dc918fd9d95f15e444d52d2db3b9c5de6734b0128"
+    },
+    {
+      "name": "associative-map-aliases",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeMapAliasesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "523497b17effc7b3d959de9f6c69a2fb2c037936209d94b0104ea5db04e1c96a",
+      "original_case_source_sha256": "523497b17effc7b3d959de9f6c69a2fb2c037936209d94b0104ea5db04e1c96a",
+      "gtest_body_sha256": "3ab901bbcfead6552c418423b4aafee5336f282529800301c0f72eab59cecaf3"
+    },
+    {
+      "name": "associative-map-sizeof",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeMapSizeofRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5f06fa7603d11eec5a6580f745a40d6f08d2d889c19e7611e753e527fca06a5b",
+      "original_case_source_sha256": "5f06fa7603d11eec5a6580f745a40d6f08d2d889c19e7611e753e527fca06a5b",
+      "gtest_body_sha256": "69c10a74a7f2a04e2c9cf4cccd73660093d7742355bc6e3f5d3c1dd2666158c7"
+    },
+    {
+      "name": "associative-map-alignof",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeMapAlignofRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c43d36f9f10c36c1245dec254caf125739e6055dcce414c067d4baf60ab0e40c",
+      "original_case_source_sha256": "c43d36f9f10c36c1245dec254caf125739e6055dcce414c067d4baf60ab0e40c",
+      "gtest_body_sha256": "1c254c675038fbca16da698a72450dc63b26cd67aedd4048c891e0ad1c428dae"
+    },
+    {
+      "name": "associative-set-identity",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeSetIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "22bf5a09bea4a87a8c9e597ba078d0c1c0d896a644ffe0d8515ffcc31afc7857",
+      "original_case_source_sha256": "22bf5a09bea4a87a8c9e597ba078d0c1c0d896a644ffe0d8515ffcc31afc7857",
+      "gtest_body_sha256": "d8bff84f7958810c5453586cb884b6b667f3e7d2e3eb12218b232f0489f4e828"
+    },
+    {
+      "name": "associative-set-aliases",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeSetAliasesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a97df71b6769a15a8a88aeb141b04cf249704df5b4635e495c34d89e1d076539",
+      "original_case_source_sha256": "a97df71b6769a15a8a88aeb141b04cf249704df5b4635e495c34d89e1d076539",
+      "gtest_body_sha256": "d9017e0364e1abe451662577c3b388e55881491621848a71b20c9667fed1c13c"
+    },
+    {
+      "name": "associative-set-sizeof",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeSetSizeofRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d11c902e3a8805d337339df6131a29c25e7a8c47f79269718b476c0edee92977",
+      "original_case_source_sha256": "d11c902e3a8805d337339df6131a29c25e7a8c47f79269718b476c0edee92977",
+      "gtest_body_sha256": "f5cdfbff19b170e0606f7ce5b5087e55e6c8ce48e2be38169195b8da3f924b16"
+    },
+    {
+      "name": "associative-set-alignof",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeSetAlignofRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c1606138757ff7f9cbe0c9ef50145a9bb7794252373943e7541b6c9744099b58",
+      "original_case_source_sha256": "c1606138757ff7f9cbe0c9ef50145a9bb7794252373943e7541b6c9744099b58",
+      "gtest_body_sha256": "44a4c8da7707c6fdf53e78a384e794dde6530a60483e56b7ced032f80e7b60c3"
+    },
+    {
+      "name": "associative-unordered_set-identity",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeUnorderedSetIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6afa0b589b37a71fd561658914639e6be4c400ebd6eb38c287c9b4e488986b32",
+      "original_case_source_sha256": "6afa0b589b37a71fd561658914639e6be4c400ebd6eb38c287c9b4e488986b32",
+      "gtest_body_sha256": "f8c12fa4d17eedc9071cadbaaf1aeb28d29c0f0c62c2800a6cfde5919f6aceaf"
+    },
+    {
+      "name": "associative-unordered_set-aliases",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeUnorderedSetAliasesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a391ca18a484c448efc42398119ec64960d666eec9ee4c75e07f178288212204",
+      "original_case_source_sha256": "a391ca18a484c448efc42398119ec64960d666eec9ee4c75e07f178288212204",
+      "gtest_body_sha256": "e4a9f61503a65dffa7ee66c0c0813c66e314eb9894a841cc604f6edeb8ff8b1f"
+    },
+    {
+      "name": "associative-unordered_set-sizeof",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeUnorderedSetSizeofRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "df1d6d3f9204803ae430711abe7277e4867a673edc2f2adc71593371f94ed188",
+      "original_case_source_sha256": "df1d6d3f9204803ae430711abe7277e4867a673edc2f2adc71593371f94ed188",
+      "gtest_body_sha256": "903df6529bd3266c1dc14e3bb84fd2d330fc43777a67e8571a6eb443ad3618fb"
+    },
+    {
+      "name": "associative-unordered_set-alignof",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeUnorderedSetAlignofRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fc33bdcaa9bb7310e5ad4a2254a8d13d2b07b79cc67c8089a441a087cf1e58ff",
+      "original_case_source_sha256": "fc33bdcaa9bb7310e5ad4a2254a8d13d2b07b79cc67c8089a441a087cf1e58ff",
+      "gtest_body_sha256": "2e70decceaf866ef2797d5b69f70ee3b3fadd9530d8ccad01a58c684090b7aa6"
+    },
+    {
+      "name": "variant-monostate-value-active-empty",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateValueActiveEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "884bf83e2d05905d58df4e3a6e09c7b0d99e05c0eee28f901ea37a53940511f4",
+      "original_case_source_sha256": "884bf83e2d05905d58df4e3a6e09c7b0d99e05c0eee28f901ea37a53940511f4",
+      "gtest_body_sha256": "dfa74632849a8533f04fb8e17fe27452987c6cda7732baf49ddbfbdd8427789f"
+    },
+    {
+      "name": "variant-monostate-value-const-address",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateValueConstAddressRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "209061b04cc497c07938bfbf323d9636715a8fcdab08fad8946f75d0b9196cc5",
+      "original_case_source_sha256": "209061b04cc497c07938bfbf323d9636715a8fcdab08fad8946f75d0b9196cc5",
+      "gtest_body_sha256": "4db5757c645738ab6f1e7846f7fdeaf004a0f33755a671748ec50ebbaaeb697e"
+    },
+    {
+      "name": "variant-monostate-value-copy-and-assign",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateValueCopyAndAssignRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0ca7fc750bb48a52e776156c1c9e150f995e39dfcdc8ba963788a61fe9cc3ab2",
+      "original_case_source_sha256": "0ca7fc750bb48a52e776156c1c9e150f995e39dfcdc8ba963788a61fe9cc3ab2",
+      "gtest_body_sha256": "6077f60a6e5ff35be8ebfbe7697eb82e2ef77a0ba6d636ca094ee122b2158ce3"
+    },
+    {
+      "name": "variant-monostate-value-duplicate-empty",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateValueDuplicateEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b7d40fe9813db149ad617ff6288ae77e9a2ba0729644d3c6ba0868bcac07be48",
+      "original_case_source_sha256": "b7d40fe9813db149ad617ff6288ae77e9a2ba0729644d3c6ba0868bcac07be48",
+      "gtest_body_sha256": "87ad3f22752ecf4e40df31275bfa9a299cbcf4169d3d1ebcefa979c39a2fb4d6"
+    },
+    {
+      "name": "variant-index-construction-repeated-type",
+      "formal_test_name": "TranslateTest.CoreV2VariantIndexConstructionRepeatedTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "46796682c823097ce7b9fa9352c05b301c8ebb28b5f6a58d26c2f310b86d6024",
+      "original_case_source_sha256": "46796682c823097ce7b9fa9352c05b301c8ebb28b5f6a58d26c2f310b86d6024",
+      "gtest_body_sha256": "b4a25ae42b4108070e04ee9b2fe0c1200610a9c0df986710fcc62241cd0ff130"
+    },
+    {
+      "name": "variant-index-construction-zero-initialized",
+      "formal_test_name": "TranslateTest.CoreV2VariantIndexConstructionZeroInitializedRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "377b38ba9ef29d7e0e2e37b34a2f79833ed87adac074c639b45cb489b1e7a0a3",
+      "original_case_source_sha256": "377b38ba9ef29d7e0e2e37b34a2f79833ed87adac074c639b45cb489b1e7a0a3",
+      "gtest_body_sha256": "7a64c8f0ca1def8e5316a526a2d8b73c833880200af4c51de2d2da951a0e3400"
+    },
+    {
+      "name": "variant-index-construction-argument-effect",
+      "formal_test_name": "TranslateTest.CoreV2VariantIndexConstructionArgumentEffectRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "21fde8ff8563a8e2f066ab7a0d13d1037700de8e388ee37e094d9f07c21116c6",
+      "original_case_source_sha256": "21fde8ff8563a8e2f066ab7a0d13d1037700de8e388ee37e094d9f07c21116c6",
+      "gtest_body_sha256": "f6c47e9d22f0e2f16a9936d5f185c60f272a256dae38b4bb12b8dfa1ccc88b25"
+    },
+    {
+      "name": "variant-index-construction-empty-nonfirst",
+      "formal_test_name": "TranslateTest.CoreV2VariantIndexConstructionEmptyNonfirstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "afa65f0c4a309186d69391d49fbb8563cc1510ba50e46bd5ede142caeba4a7c6",
+      "original_case_source_sha256": "afa65f0c4a309186d69391d49fbb8563cc1510ba50e46bd5ede142caeba4a7c6",
+      "gtest_body_sha256": "a03ee311b12a4496c004f262de82e478cd210d901c446bb2f8c4ff39d3b4dbba"
+    },
+    {
+      "name": "variant-type-construction-value-and-effect",
+      "formal_test_name": "TranslateTest.CoreV2VariantTypeConstructionValueAndEffectRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ef38b294e72754fbcdd7b9e19ce4b71d3aad9bee0dda93d0723327fb8969d5ab",
+      "original_case_source_sha256": "ef38b294e72754fbcdd7b9e19ce4b71d3aad9bee0dda93d0723327fb8969d5ab",
+      "gtest_body_sha256": "37cb0a5939301d2b8138d01becc3b6a9bacbaf1b7da0367190854dbc42ee34f4"
+    },
+    {
+      "name": "variant-type-construction-value-initialize-pointer",
+      "formal_test_name": "TranslateTest.CoreV2VariantTypeConstructionValueInitializePointerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b10f0fe33a9bb23323bf66ae33e9e85d76a48296aebdc4a9d6a58779c76843d4",
+      "original_case_source_sha256": "b10f0fe33a9bb23323bf66ae33e9e85d76a48296aebdc4a9d6a58779c76843d4",
+      "gtest_body_sha256": "f9095dd238f99ffd40ab42940020a492207da66dcf390e63faef8003b740a76a"
+    },
+    {
+      "name": "variant-type-construction-empty-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantTypeConstructionEmptyAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "48d28cd131b882db81cbb2a1ed879b4515f679fa336271c9aa6d65c4789bd76f",
+      "original_case_source_sha256": "48d28cd131b882db81cbb2a1ed879b4515f679fa336271c9aa6d65c4789bd76f",
+      "gtest_body_sha256": "dacb0cb6a6db0358dd84ec35d2d6ca9bd279c774c947b22a25c2772f23e004be"
+    },
+    {
+      "name": "variant-type-construction-zero-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantTypeConstructionZeroIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "93791407fcfbf902c10f9a186055d37fa3726aa39a1166db3738704dc046fcb5",
+      "original_case_source_sha256": "93791407fcfbf902c10f9a186055d37fa3726aa39a1166db3738704dc046fcb5",
+      "gtest_body_sha256": "8125eebd37c83a57f3f752ea4b318258cf4c9ccd9a39165e7695b3b2894f4c09"
+    },
+    {
+      "name": "associative-map-custom-type-or-policy",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapStoresFloatMappedValues",
+      "expected": "accept",
+      "source_sha256": "88bf568067fdfc57040ec38c85093d93836588f77865df73aef3e7e044027736",
+      "original_case_source_sha256": "88bf568067fdfc57040ec38c85093d93836588f77865df73aef3e7e044027736",
+      "gtest_body_sha256": "cbcdc28ec120779c9066a398585869f0f4ade407bf8b5addc11d99baa813ed9a"
+    },
+    {
+      "name": "associative-set-custom-type-or-policy",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
+      "original_case_source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
+      "gtest_body_sha256": "e005d7446163b0567a864b6f2a5a5e1f31c1e33d0e99da2ce99c5a91001a3da5"
+    },
+    {
+      "name": "any-layout-unevaluated-object",
+      "formal_test_name": "TranslateTest.CoreV2AnySizeofExpressionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "original_case_source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "gtest_body_sha256": "f0e7d9bc1051b65db7085ab66e701e3c803456ca1adfb9304356bfb44cddf8e5"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "original_case_source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "gtest_body_sha256": "439acaabe9d4aec876f102c4d551ba25c13319b61ba0de0d836955351bfce5c7"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-monostate-source-redeclaration",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected",
+      "expected": "reject",
+      "source_sha256": "dbbbe7f8e323793aca965ec0869fb6c63bb16dc1508eeb952bcebba76171280f",
+      "original_case_source_sha256": "dbbbe7f8e323793aca965ec0869fb6c63bb16dc1508eeb952bcebba76171280f",
+      "gtest_body_sha256": "b0ace9396eb2ee68550635cb234a0ec05ced20e72d1d7bd0c4677775b3afe032"
+    },
+    {
+      "name": "variant-monostate-volatile-layout",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected",
+      "expected": "reject",
+      "source_sha256": "9108cce766d2798ef2ef952082f60edb1642c83aa3cb57a37705781d1fc4fa1b",
+      "original_case_source_sha256": "9108cce766d2798ef2ef952082f60edb1642c83aa3cb57a37705781d1fc4fa1b",
+      "gtest_body_sha256": "f3990629c2dc83ee6d98477dd3c460d6b0c762f5b74a04b30fc5080fc97295c1"
+    },
+    {
+      "name": "any-layout-volatile-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutVolatileTypeRejected",
+      "expected": "reject",
+      "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "original_case_source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "gtest_body_sha256": "13b3f15901461b080b4c298532d43864515a132a41af9ed067aa842f5120afda"
+    },
+    {
+      "name": "any-layout-altered-handler-field",
+      "formal_test_name": "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected",
+      "expected": "reject",
+      "source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "original_case_source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "gtest_body_sha256": "379e84e0204fd7c335a7decc34c43487fc04fe2f3e38644d634bb7e508b3f8cd"
+    },
+    {
+      "name": "associative-map-renamed-container-storage",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeMapRenamedContainerStorageRejected",
+      "expected": "reject",
+      "source_sha256": "a319f8015e18501c73d83e35a4d6207a595195e797349289cefcf1c9cbf35167",
+      "original_case_source_sha256": "a319f8015e18501c73d83e35a4d6207a595195e797349289cefcf1c9cbf35167",
+      "gtest_body_sha256": "334c92a1cf165e79b82a1e4964c321a29ccbbe94e314279e771ecc0d462e915f"
+    },
+    {
+      "name": "associative-map-runtime-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeMapRuntimeStorageGuardRejected",
+      "expected": "reject",
+      "source_sha256": "5174929925c12414408c4aa1d12b6af448a77b0b559ed3ee7bb1c84965e9bd3d",
+      "original_case_source_sha256": "5174929925c12414408c4aa1d12b6af448a77b0b559ed3ee7bb1c84965e9bd3d",
+      "gtest_body_sha256": "e4962618d04bf0c02bbf1a67bac8ae9c0b5b8849ccde934534b9fddc4804a25f"
+    },
+    {
+      "name": "associative-set-renamed-container-storage",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeSetRenamedContainerStorageRejected",
+      "expected": "reject",
+      "source_sha256": "53a096081f396f5037faa2224ee64c21da07acdbaf1dfb8ba0e174e30b60993e",
+      "original_case_source_sha256": "53a096081f396f5037faa2224ee64c21da07acdbaf1dfb8ba0e174e30b60993e",
+      "gtest_body_sha256": "aed1f8175b4e514fa7b80fb188dcea66133dd39d491ccf4d5f09811e69b93c84"
+    },
+    {
+      "name": "associative-set-runtime-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeSetRuntimeStorageGuardRejected",
+      "expected": "reject",
+      "source_sha256": "2d8975090b33bc795dbc0406f4abea501ecc70ae7d3a3a45872ab5bee45787e3",
+      "original_case_source_sha256": "2d8975090b33bc795dbc0406f4abea501ecc70ae7d3a3a45872ab5bee45787e3",
+      "gtest_body_sha256": "acca838fcd9097c87e926d20fd7676afe132fc6f5b7d95b8825a325df8995646"
+    },
+    {
+      "name": "associative-unordered_set-custom-type-or-policy",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeUnorderedSetCustomTypeOrPolicyRejected",
+      "expected": "reject",
+      "source_sha256": "67b4ca6a91e3af81cbfdb39a50a5c9b77f2973e905b55feb3b0847183a51edbc",
+      "original_case_source_sha256": "67b4ca6a91e3af81cbfdb39a50a5c9b77f2973e905b55feb3b0847183a51edbc",
+      "gtest_body_sha256": "bb4247b3d216aaa5d974cfd61976144abecd1876c27fcae7cb9352e02db6629f"
+    },
+    {
+      "name": "associative-unordered_set-renamed-container-storage",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeUnorderedSetRenamedContainerStorageRejected",
+      "expected": "reject",
+      "source_sha256": "9ea46d8162d2b5e356e607979a4a93e3fd298f148079ebe4fc0478e2a0befb32",
+      "original_case_source_sha256": "9ea46d8162d2b5e356e607979a4a93e3fd298f148079ebe4fc0478e2a0befb32",
+      "gtest_body_sha256": "8a76e2617d4cd96501c5e7244220f5f14bace7c119bd8f0e4303c08321c0bf9e"
+    },
+    {
+      "name": "associative-unordered_set-runtime-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeUnorderedSetRuntimeStorageGuardRejected",
+      "expected": "reject",
+      "source_sha256": "2974dea75758668d11fc8c459deb16afcab32b668fb82792189a668830f83d8d",
+      "original_case_source_sha256": "2974dea75758668d11fc8c459deb16afcab32b668fb82792189a668830f83d8d",
+      "gtest_body_sha256": "a07b8dedc8557ed0377189d975b620c781f3b639191e8643312543dccb7f8759"
+    },
+    {
+      "name": "associative-unordered-map-non-default-key",
+      "formal_test_name": "TranslateTest.CoreV2AssociativeUnorderedMapNonDefaultKeyRejected",
+      "expected": "reject",
+      "source_sha256": "f89f5cf6f548e1578c22fffb2fb6ae8709f3d17b4e01561318234962824eb70c",
+      "original_case_source_sha256": "f89f5cf6f548e1578c22fffb2fb6ae8709f3d17b4e01561318234962824eb70c",
+      "gtest_body_sha256": "bc178cea97bb0bf67d76fae4c5c01c0af1b6b4e48d60ad04a33ed029ed11b779"
+    },
+    {
+      "name": "variant-monostate-value-foreign-empty",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateValueForeignEmptyRejected",
+      "expected": "reject",
+      "source_sha256": "0a3b0ca8a4c6cb87bf333eb829ef9256065572ea6ad7eca0651a1048eb14a9f1",
+      "original_case_source_sha256": "0a3b0ca8a4c6cb87bf333eb829ef9256065572ea6ad7eca0651a1048eb14a9f1",
+      "gtest_body_sha256": "066d846dded19504db975ffd726c6472679b8ab3e52ebfc04750c5d7c6b15676"
+    },
+    {
+      "name": "variant-monostate-value-runtime-redeclaration",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateValueRuntimeRedeclarationRejected",
+      "expected": "reject",
+      "source_sha256": "9fb3e476a0a0ebde04d125392a83a4907597405ebc6edd38abf9445f449722e1",
+      "original_case_source_sha256": "9fb3e476a0a0ebde04d125392a83a4907597405ebc6edd38abf9445f449722e1",
+      "gtest_body_sha256": "220e405c8bf1a3920356644cf0294b0cd4d7de5c64a80852a33dafefdecc0fd8"
+    },
+    {
+      "name": "variant-index-construction-written-tag-object",
+      "formal_test_name": "TranslateTest.CoreV2VariantIndexConstructionWrittenTagObjectRejected",
+      "expected": "reject",
+      "source_sha256": "10832c227ab99a9bdb6e04ce071831e6215da90978dbf3304dabca650f0e9985",
+      "original_case_source_sha256": "10832c227ab99a9bdb6e04ce071831e6215da90978dbf3304dabca650f0e9985",
+      "gtest_body_sha256": "f8617506783a6fabc5960e8613ed01e370ba9807b45723e5fc4f9906f9612a6f"
+    },
+    {
+      "name": "variant-index-construction-escaping-tag",
+      "formal_test_name": "TranslateTest.CoreV2VariantIndexConstructionEscapingTagRejected",
+      "expected": "reject",
+      "source_sha256": "139caa6c0f89212be3132fdc3e808c45eb99a53529c9b8ec8da4bf30ae9a9075",
+      "original_case_source_sha256": "139caa6c0f89212be3132fdc3e808c45eb99a53529c9b8ec8da4bf30ae9a9075",
+      "gtest_body_sha256": "d6b98fca27b0f77bb0feb6d021b62a0800ac15c15ffc576266f3e53df2de3ad3"
+    },
+    {
+      "name": "variant-type-construction-written-tag-object",
+      "formal_test_name": "TranslateTest.CoreV2VariantTypeConstructionWrittenTagObjectRejected",
+      "expected": "reject",
+      "source_sha256": "d1a7e87e203638173aa5dfc848b6075f2d104c4605af9ef28bdb9bb8e1ce0e8d",
+      "original_case_source_sha256": "d1a7e87e203638173aa5dfc848b6075f2d104c4605af9ef28bdb9bb8e1ce0e8d",
+      "gtest_body_sha256": "d294778950d4051ce2da7b00da42e353b4c5c5c293185e54840118f88ce07f15"
+    },
+    {
+      "name": "variant-type-construction-effectful-tag",
+      "formal_test_name": "TranslateTest.CoreV2VariantTypeConstructionEffectfulTagRejected",
+      "expected": "reject",
+      "source_sha256": "0a007fc382ecbb0dcb888cc69ee302a107858c18cd6781d4ed45daaafcad0678",
+      "original_case_source_sha256": "0a007fc382ecbb0dcb888cc69ee302a107858c18cd6781d4ed45daaafcad0678",
+      "gtest_body_sha256": "e036d917f33c7abed9e3155376ce2fd6b5b8117878a9ff8c52e8112dbe875b44"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantMonostateIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateStandaloneLayoutRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateVariantLayoutRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateMonostateOnlyVariantRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutDirectSizeAlignRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutConstReferenceSizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutWrappedPointerTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutConstantArrayBoundRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeMapIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeMapAliasesRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeMapSizeofRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeMapAlignofRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeSetIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeSetAliasesRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeSetSizeofRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeSetAlignofRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeUnorderedSetIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeUnorderedSetAliasesRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeUnorderedSetSizeofRunAtBothOptimizations",
+    "TranslateTest.CoreV2AssociativeUnorderedSetAlignofRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateValueActiveEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateValueConstAddressRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateValueCopyAndAssignRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateValueDuplicateEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantIndexConstructionRepeatedTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantIndexConstructionZeroInitializedRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantIndexConstructionArgumentEffectRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantIndexConstructionEmptyNonfirstRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTypeConstructionValueAndEffectRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTypeConstructionValueInitializePointerRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTypeConstructionEmptyAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTypeConstructionZeroIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapStoresFloatMappedValues",
+    "TranslateTest.CoreV2AssociativeSetCustomTypeOrPolicyRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnySizeofExpressionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateSourceRedeclarationRejected",
+    "TranslateTest.CoreV2VariantMonostateVolatileLayoutRejected",
+    "TranslateTest.CoreV2AnyLayoutVolatileTypeRejected",
+    "TranslateTest.CoreV2AnyLayoutAlteredHandlerFieldRejected",
+    "TranslateTest.CoreV2AssociativeMapRenamedContainerStorageRejected",
+    "TranslateTest.CoreV2AssociativeMapRuntimeStorageGuardRejected",
+    "TranslateTest.CoreV2AssociativeSetRenamedContainerStorageRejected",
+    "TranslateTest.CoreV2AssociativeSetRuntimeStorageGuardRejected",
+    "TranslateTest.CoreV2AssociativeUnorderedSetCustomTypeOrPolicyRejected",
+    "TranslateTest.CoreV2AssociativeUnorderedSetRenamedContainerStorageRejected",
+    "TranslateTest.CoreV2AssociativeUnorderedSetRuntimeStorageGuardRejected",
+    "TranslateTest.CoreV2AssociativeUnorderedMapNonDefaultKeyRejected",
+    "TranslateTest.CoreV2VariantMonostateValueForeignEmptyRejected",
+    "TranslateTest.CoreV2VariantMonostateValueRuntimeRedeclarationRejected",
+    "TranslateTest.CoreV2VariantIndexConstructionWrittenTagObjectRejected",
+    "TranslateTest.CoreV2VariantIndexConstructionEscapingTagRejected",
+    "TranslateTest.CoreV2VariantTypeConstructionWrittenTagObjectRejected",
+    "TranslateTest.CoreV2VariantTypeConstructionEffectfulTagRejected"
+  ],
+  "source_cases": [
+    {
+      "name": "variant-monostate-identity",
+      "source": "#include <variant>\n#include <type_traits>\nusing M = std::monostate;\nusing V = std::variant<M, int>;\nint main() {\n  return !std::is_same_v<M, std::variant_alternative_t<0, V>> ||\n         !std::is_same_v<const M, std::variant_alternative_t<0, const V>> ||\n         std::variant_size_v<V> != 2;\n}\n",
+      "source_sha256": "6eaa811a2d866010b224bc31e5095e25cddb79b56f1ea35319c69740834ea064",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-monostate-standalone-layout",
+      "source": "#include <variant>\nusing M = std::monostate;\nint main() { return sizeof(M) != 1 || alignof(const M&) != 1 || sizeof(M[5]) != 5; }\n",
+      "source_sha256": "654846929b3599b627c09a02bc3f350c8eadbb0a2fc143871296579635df435b",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-monostate-variant-layout",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, int>;\nusing R = std::variant<unsigned char, int>;\nint main() { return sizeof(V) != sizeof(R) || alignof(const V&) != alignof(R); }\n",
+      "source_sha256": "18dd81925dea008036b74a96b96027f39edf01ec89832cb811aa12383853ca48",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-monostate-monostate-only-variant",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, std::monostate>;\nusing R = std::variant<unsigned char, unsigned char>;\nint main() { return sizeof(V) != sizeof(R) || alignof(V) != alignof(R); }\n",
+      "source_sha256": "aa78be3e0d17d9aa244c6b44e624dfca84b279db0e0b8bbf28c47d4237c517d0",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-layout-direct-size-align",
+      "source": "#include <any>\nint main() {\n  return sizeof(std::any) != 4 * sizeof(void*) || alignof(std::any) != alignof(void*);\n}\n",
+      "source_sha256": "201a27f97d7608f76199eb51db1c5f0ee52ff11ec42f6b00aebe22f850fd2d0e",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-layout-const-reference-size",
+      "source": "#include <any>\nusing A = std::any;\nint main() { return sizeof(const A&) != sizeof(A) || alignof(const A&) != alignof(void*); }\n",
+      "source_sha256": "5277fc2d120c71cde0ac3b24ca68223ff28b929d70c41e2d1f2a7d829331e0e6",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-layout-wrapped-pointer-type",
+      "source": "#include <any>\n#include <type_traits>\nusing A = const std::any;\nstatic_assert(std::is_same_v<A*, const std::any*>);\nint main() { return sizeof(A) != 4 * sizeof(void*); }\n",
+      "source_sha256": "6a682c1046de8dfb62a522c14193363c122f222148a4a5d922754efc64d0ad7c",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-layout-constant-array-bound",
+      "source": "#include <any>\nconstexpr auto Count = sizeof(std::any);\nint main() { unsigned char bytes[Count]{}; return sizeof(bytes) != 4 * sizeof(void*); }\n",
+      "source_sha256": "9ad0f23c43c9ed005c1b09d17cd7ddc1137da356f97a13b8c6eceae0f697fc29",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-map-identity",
+      "expected": "accept",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, int>;\nint main() { return !std::is_same_v<Container, std::map<int, int>>; }\n",
+      "public_header": "map",
+      "source_sha256": "492574bc00c372eeda659ffb4ab1e5b4135992f66920efce3ec3a98eb35d8e18",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-map-aliases",
+      "expected": "accept",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, int>;\nint main() { return !std::is_same_v<Container::key_type, int> || !std::is_same_v<Container::value_type, std::pair<const int, int>>; }\n",
+      "public_header": "map",
+      "source_sha256": "523497b17effc7b3d959de9f6c69a2fb2c037936209d94b0104ea5db04e1c96a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-map-sizeof",
+      "expected": "accept",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, int>;\nint main() { return sizeof(Container) != 3 * sizeof(void*); }\n",
+      "public_header": "map",
+      "source_sha256": "5f06fa7603d11eec5a6580f745a40d6f08d2d889c19e7611e753e527fca06a5b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-map-alignof",
+      "expected": "accept",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, int>;\nint main() { return alignof(const Container&) != alignof(void*); }\n",
+      "public_header": "map",
+      "source_sha256": "c43d36f9f10c36c1245dec254caf125739e6055dcce414c067d4baf60ab0e40c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-set-identity",
+      "expected": "accept",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int>;\nint main() { return !std::is_same_v<Container, std::set<int>>; }\n",
+      "public_header": "set",
+      "source_sha256": "22bf5a09bea4a87a8c9e597ba078d0c1c0d896a644ffe0d8515ffcc31afc7857",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-set-aliases",
+      "expected": "accept",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int>;\nint main() { return !std::is_same_v<Container::key_type, int> || !std::is_same_v<Container::value_type, int>; }\n",
+      "public_header": "set",
+      "source_sha256": "a97df71b6769a15a8a88aeb141b04cf249704df5b4635e495c34d89e1d076539",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-set-sizeof",
+      "expected": "accept",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int>;\nint main() { return sizeof(Container) != 3 * sizeof(void*); }\n",
+      "public_header": "set",
+      "source_sha256": "d11c902e3a8805d337339df6131a29c25e7a8c47f79269718b476c0edee92977",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-set-alignof",
+      "expected": "accept",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int>;\nint main() { return alignof(const Container&) != alignof(void*); }\n",
+      "public_header": "set",
+      "source_sha256": "c1606138757ff7f9cbe0c9ef50145a9bb7794252373943e7541b6c9744099b58",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-unordered_set-identity",
+      "expected": "accept",
+      "source": "#include <unordered_set>\n#include <type_traits>\nusing Container = std::unordered_set<int>;\nint main() { return !std::is_same_v<Container, std::unordered_set<int>>; }\n",
+      "public_header": "unordered_set",
+      "source_sha256": "6afa0b589b37a71fd561658914639e6be4c400ebd6eb38c287c9b4e488986b32",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-unordered_set-aliases",
+      "expected": "accept",
+      "source": "#include <unordered_set>\n#include <type_traits>\nusing Container = std::unordered_set<int>;\nint main() { return !std::is_same_v<Container::key_type, int> || !std::is_same_v<Container::value_type, int>; }\n",
+      "public_header": "unordered_set",
+      "source_sha256": "a391ca18a484c448efc42398119ec64960d666eec9ee4c75e07f178288212204",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-unordered_set-sizeof",
+      "expected": "accept",
+      "source": "#include <unordered_set>\n#include <type_traits>\nusing Container = std::unordered_set<int>;\nint main() { return sizeof(Container) != 5 * sizeof(void*); }\n",
+      "public_header": "unordered_set",
+      "source_sha256": "df1d6d3f9204803ae430711abe7277e4867a673edc2f2adc71593371f94ed188",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-unordered_set-alignof",
+      "expected": "accept",
+      "source": "#include <unordered_set>\n#include <type_traits>\nusing Container = std::unordered_set<int>;\nint main() { return alignof(const Container&) != alignof(void*); }\n",
+      "public_header": "unordered_set",
+      "source_sha256": "fc33bdcaa9bb7310e5ad4a2254a8d13d2b07b79cc67c8089a441a087cf1e58ff",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-monostate-value-active-empty",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, int>;\nint main() {\n  V value;\n  return value.index() != 0 || value.valueless_by_exception() ||\n         !std::holds_alternative<std::monostate>(value) ||\n         !std::get_if<0>(&value) || !std::get_if<std::monostate>(&value) ||\n         std::get_if<1>(&value);\n}\n",
+      "source_sha256": "884bf83e2d05905d58df4e3a6e09c7b0d99e05c0eee28f901ea37a53940511f4",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-monostate-value-const-address",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, int>;\nint main() {\n  const V value;\n  const V* absent = nullptr;\n  const auto* first = std::get_if<std::monostate>(&value);\n  return first == nullptr || first != &std::get<std::monostate>(value) ||\n         std::get_if<0>(absent) != nullptr || std::get_if<1>(&value) != nullptr;\n}\n",
+      "source_sha256": "209061b04cc497c07938bfbf323d9636715a8fcdab08fad8946f75d0b9196cc5",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-monostate-value-copy-and-assign",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, int>;\nint main() {\n  V source;\n  V copy(source);\n  const V scalar(37);\n  source = scalar;\n  const auto* number = std::get_if<int>(&source);\n  return !number || *number != 37 || std::get_if<0>(&source) != nullptr ||\n         !std::get_if<0>(&copy) || copy.index() != 0;\n}\n",
+      "source_sha256": "0ca7fc750bb48a52e776156c1c9e150f995e39dfcdc8ba963788a61fe9cc3ab2",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-monostate-value-duplicate-empty",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, std::monostate>;\nint main() {\n  V value;\n  return value.index() != 0 || !std::get_if<0>(&value) || std::get_if<1>(&value);\n}\n",
+      "source_sha256": "b7d40fe9813db149ad617ff6288ae77e9a2ba0729644d3c6ba0868bcac07be48",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-index-construction-repeated-type",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, int> value(std::in_place_index<1>, 31);\n  auto* selected = std::get_if<1>(&value);\n  return value.index() != 1 || !selected || *selected != 31 || std::get_if<0>(&value);\n}\n",
+      "expected": "accept",
+      "source_sha256": "46796682c823097ce7b9fa9352c05b301c8ebb28b5f6a58d26c2f310b86d6024",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-index-construction-zero-initialized",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, long> value(std::in_place_index<1>);\n  auto* selected = std::get_if<1>(&value);\n  return value.index() != 1 || !selected || *selected != 0;\n}\n",
+      "expected": "accept",
+      "source_sha256": "377b38ba9ef29d7e0e2e37b34a2f79833ed87adac074c639b45cb489b1e7a0a3",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-index-construction-argument-effect",
+      "source": "#include <variant>\nlong payload;\nlong& next() { ++payload; return payload; }\nint main() {\n  const std::variant<int, long> value(std::in_place_index<1>, next());\n  return payload != 1 || std::get<1>(value) != 1;\n}\n",
+      "expected": "accept",
+      "source_sha256": "21fde8ff8563a8e2f066ab7a0d13d1037700de8e388ee37e094d9f07c21116c6",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-index-construction-empty-nonfirst",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, std::monostate> value(std::in_place_index<1>);\n  return !std::holds_alternative<std::monostate>(value) || !std::get_if<1>(&value) ||\n         std::get_if<0>(&value) != nullptr;\n}\n",
+      "expected": "accept",
+      "source_sha256": "afa65f0c4a309186d69391d49fbb8563cc1510ba50e46bd5ede142caeba4a7c6",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-type-construction-value-and-effect",
+      "source": "#include <variant>\nlong count;\nlong& next() { ++count; return count; }\nint main() {\n  using Selected = long;\n  const std::variant<int, Selected> value(std::in_place_type<Selected>, next());\n  return count != 1 || value.index() != 1 || std::get<Selected>(value) != 1;\n}\n",
+      "expected": "accept",
+      "source_sha256": "ef38b294e72754fbcdd7b9e19ce4b71d3aad9bee0dda93d0723327fb8969d5ab",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-type-construction-value-initialize-pointer",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, int*> value(std::in_place_type<int*>);\n  auto** selected = std::get_if<int*>(&value);\n  return value.index() != 1 || selected == nullptr || *selected != nullptr;\n}\n",
+      "expected": "accept",
+      "source_sha256": "b10f0fe33a9bb23323bf66ae33e9e85d76a48296aebdc4a9d6a58779c76843d4",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-type-construction-empty-alternative",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, std::monostate> value(std::in_place_type<std::monostate>);\n  return value.index() != 1 || !std::holds_alternative<std::monostate>(value) ||\n         std::get_if<int>(&value) != nullptr;\n}\n",
+      "expected": "accept",
+      "source_sha256": "48d28cd131b882db81cbb2a1ed879b4515f679fa336271c9aa6d65c4789bd76f",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-type-construction-zero-index",
+      "source": "#include <variant>\nint main() {\n  std::variant<unsigned, long> value(std::in_place_type<unsigned>, 19u);\n  auto* selected = std::get_if<unsigned>(&value);\n  return value.index() != 0 || !selected || *selected != 19u;\n}\n",
+      "expected": "accept",
+      "source_sha256": "93791407fcfbf902c10f9a186055d37fa3726aa39a1166db3738704dc046fcb5",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-map-custom-type-or-policy",
+      "expected": "accept",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, double>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "map",
+      "source_sha256": "88bf568067fdfc57040ec38c85093d93836588f77865df73aef3e7e044027736",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "associative-set-custom-type-or-policy",
+      "expected": "accept",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "set",
+      "source_sha256": "5d674630e9854e321866b52759f46850d03cf9fe9f5c935cafbe22e599d15e88",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-layout-unevaluated-object",
+      "source": "#include <any>\nint main() { return sizeof(std::any{}) == 0; }\n",
+      "source_sha256": "5278dfce87347efa957ae0f03e37f99eecffa766b587b335e4549476911d1f86",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-layout-runtime-construction",
+      "source": "#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n",
+      "source_sha256": "1c0aecdfffec40a492044d742b531113f07cb24a9349c2252458ac1ea9d6af7c",
+      "public_header": "any",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-monostate-source-redeclaration",
+      "source": "#include <variant>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct monostate;\n_LIBCPP_END_NAMESPACE_STD\nusing V = std::variant<std::monostate, int>;\nint main() { return sizeof(V) == 0; }\n",
+      "source_sha256": "dbbbe7f8e323793aca965ec0869fb6c63bb16dc1508eeb952bcebba76171280f",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-monostate-volatile-layout",
+      "source": "#include <variant>\nusing M = volatile std::monostate;\nint main() { return sizeof(M) == 0; }\n",
+      "source_sha256": "9108cce766d2798ef2ef952082f60edb1642c83aa3cb57a37705781d1fc4fa1b",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-layout-volatile-type",
+      "source": "#include <any>\nint main() { return sizeof(volatile std::any) == 0; }\n",
+      "source_sha256": "1ecfee06639d780177450455d5e5f062161a73ff61cf7609ad230f0483f5c90a",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-layout-altered-handler-field",
+      "source": "#define __h_ altered_handler\n#include <any>\n#undef __h_\nint main() { return sizeof(std::any) == 0; }\n",
+      "source_sha256": "0139ae2709d2c40215491b158005e081a1643be08431f3da8dfd8acc92f6968a",
+      "public_header": "any",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-map-renamed-container-storage",
+      "expected": "reject",
+      "source": "#define __tree_ altered_owner_storage\n#include <map>\n#include <type_traits>\n#undef __tree_\nusing Container = std::map<int, int>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "map",
+      "source_sha256": "a319f8015e18501c73d83e35a4d6207a595195e797349289cefcf1c9cbf35167",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-map-runtime-storage-guard",
+      "expected": "reject",
+      "source": "#include <map>\n#include <type_traits>\nusing Container = std::map<int, int>;\nint main() { Container value; return sizeof(value) == 0; }\n",
+      "public_header": "map",
+      "source_sha256": "5174929925c12414408c4aa1d12b6af448a77b0b559ed3ee7bb1c84965e9bd3d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-set-renamed-container-storage",
+      "expected": "reject",
+      "source": "#define __tree_ altered_owner_storage\n#include <set>\n#include <type_traits>\n#undef __tree_\nusing Container = std::set<int>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "set",
+      "source_sha256": "53a096081f396f5037faa2224ee64c21da07acdbaf1dfb8ba0e174e30b60993e",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-set-runtime-storage-guard",
+      "expected": "reject",
+      "source": "#include <set>\n#include <type_traits>\nusing Container = std::set<int>;\nint main() { Container value; return sizeof(value) == 0; }\n",
+      "public_header": "set",
+      "source_sha256": "2d8975090b33bc795dbc0406f4abea501ecc70ae7d3a3a45872ab5bee45787e3",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-unordered_set-custom-type-or-policy",
+      "expected": "reject",
+      "source": "#include <unordered_set>\n#include <type_traits>\nstruct CustomHash { unsigned long long operator()(int key) const { return static_cast<unsigned int>(key); } };\nusing Container = std::unordered_set<int, CustomHash>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "unordered_set",
+      "source_sha256": "67b4ca6a91e3af81cbfdb39a50a5c9b77f2973e905b55feb3b0847183a51edbc",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-unordered_set-renamed-container-storage",
+      "expected": "reject",
+      "source": "#define __table_ altered_owner_storage\n#include <unordered_set>\n#include <type_traits>\n#undef __table_\nusing Container = std::unordered_set<int>;\nint main() { return sizeof(Container) == 0; }\n",
+      "public_header": "unordered_set",
+      "source_sha256": "9ea46d8162d2b5e356e607979a4a93e3fd298f148079ebe4fc0478e2a0befb32",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-unordered_set-runtime-storage-guard",
+      "expected": "reject",
+      "source": "#include <unordered_set>\n#include <type_traits>\nusing Container = std::unordered_set<int>;\nint main() { Container value; return sizeof(value) == 0; }\n",
+      "public_header": "unordered_set",
+      "source_sha256": "2974dea75758668d11fc8c459deb16afcab32b668fb82792189a668830f83d8d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "associative-unordered-map-non-default-key",
+      "expected": "reject",
+      "source": "#include <unordered_map>\nusing Map = std::unordered_map<long long, int>;\nint main() { return sizeof(Map) == 0; }\n",
+      "public_header": "unordered_map",
+      "source_sha256": "f89f5cf6f548e1578c22fffb2fb6ae8709f3d17b4e01561318234962824eb70c",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-monostate-value-foreign-empty",
+      "source": "#include <variant>\nstruct Empty {};\nint main() {\n  std::variant<Empty, int> value;\n  return value.index();\n}\n",
+      "source_sha256": "0a3b0ca8a4c6cb87bf333eb829ef9256065572ea6ad7eca0651a1048eb14a9f1",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-monostate-value-runtime-redeclaration",
+      "source": "#include <variant>\n_LIBCPP_BEGIN_NAMESPACE_STD\nstruct monostate;\n_LIBCPP_END_NAMESPACE_STD\nint main() {\n  std::variant<std::monostate, int> value;\n  return value.index();\n}\n",
+      "source_sha256": "9fb3e476a0a0ebde04d125392a83a4907597405ebc6edd38abf9445f449722e1",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-index-construction-written-tag-object",
+      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value(std::in_place_index_t<1>{}, 12L);\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "10832c227ab99a9bdb6e04ce071831e6215da90978dbf3304dabca650f0e9985",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-index-construction-escaping-tag",
+      "source": "#include <variant>\nint f() {\n  const auto* tag = &std::in_place_index<1>;\n  return tag != nullptr;\n}\n",
+      "expected": "reject",
+      "source_sha256": "139caa6c0f89212be3132fdc3e808c45eb99a53529c9b8ec8da4bf30ae9a9075",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-type-construction-written-tag-object",
+      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value(std::in_place_type_t<long>{}, 19L);\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "d1a7e87e203638173aa5dfc848b6075f2d104c4605af9ef28bdb9bb8e1ce0e8d",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-type-construction-effectful-tag",
+      "source": "#include <variant>\nint effects;\nstd::in_place_type_t<long> select_type() {\n  ++effects;\n  return std::in_place_type<long>;\n}\nint f() {\n  std::variant<int, long> value(select_type(), 19L);\n  return value.index();\n}\n",
+      "expected": "reject",
+      "source_sha256": "0a007fc382ecbb0dcb888cc69ee302a107858c18cd6781d4ed45daaafcad0678",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "deduplicated_exact_monostate_cases": [
+    "variant-monostate-identity",
+    "variant-monostate-monostate-only-variant",
+    "variant-monostate-source-redeclaration",
+    "variant-monostate-standalone-layout",
+    "variant-monostate-variant-layout",
+    "variant-monostate-volatile-layout"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29",
+  "maintained_original_sha256": "71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947",
+  "previous_registered_source_sha256": "08b0ce98b80e83b85d6aea6acc547f7e087c561d69d1c97c5d6fc9ed2aee3abc",
+  "previous_maintained_original_sha256": "2a750a4f20ba6f0674466279aa069b55d0dc71afd4062fc701b22cf286e7c49b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "restorer_sha256": "ddf0744dcec8add24da9fe5645422487d47955b6a7a225bdb1e94178e5a0109b",
+  "extractor_sha256": "4f9a108a7a4c93d16ced521dff9abb11d00e776f3078ab7def070cccca3c5253",
+  "current_registry_count": 8097,
+  "current_python_registry_tests": 120,
+  "native_reference_selected_executions": 70,
+  "planned_generated_c23_executions": 70,
+  "native_reference_proofs": {
+    "any-layout": "d89e6931c9771241a94eaf5f31750e55821fa0ad1d094572d74c24deb800234a",
+    "associative-metadata": "c2b4b1e86ecb64c73bdaec0c5c07756cbad3a260c465a48f1a9676bcdbc13572",
+    "monostate-layout": "bf435677f94f07928028e6b92e80db3e9b2a9e6b6d6d34849af06d12675501d6",
+    "variant-any-sizeof-expression-replay": "f6616e5d860e92b55d2861a53b6ab3ee778624959a0d22f9c15173122dbef208",
+    "variant-in-place-runtime": "bd90cf05c8c2a12d4d00b5759d5195f30114f5f455e69bb3142e391e6e176475"
+  },
+  "native_reference_authentication_sha256": "7584659f76602ac9e7f24f3d176e221eee91ec0a8cc6a6c020893b3cade62721",
+  "source_proof_sha256": "4418e08c490db8e328b3fa65694870af607d9d08d34ca56a39a55127c2aa1ed7"
+}

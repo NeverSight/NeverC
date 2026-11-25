@@ -1,0 +1,96 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-visit-captureless-selected-integral-result",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitCapturelessSelectedIntegralResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e3e17488e4e7b1d897f3fbf6bb9e2bcf73262c4786e138cec78caf465070f81d",
+      "original_case_source_sha256": "e3e17488e4e7b1d897f3fbf6bb9e2bcf73262c4786e138cec78caf465070f81d",
+      "gtest_body_sha256": "f90dfff05fd5ebdd88d0cfca793e2ac01533c10941e8c9be1c73dfa776e6a6d4"
+    },
+    {
+      "name": "variant-visit-captureless-dispatches-two-selected-indices",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitCapturelessDispatchesTwoSelectedIndicesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "04b5886cac71257ca3350e35750d25f49fb87442695d3d0084168466bb673be3",
+      "original_case_source_sha256": "04b5886cac71257ca3350e35750d25f49fb87442695d3d0084168466bb673be3",
+      "gtest_body_sha256": "f4305fdce551ce0aa48c5e1903b44b41fe6a8d3d6809eae1480459fe0009573c"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-visit-capturing-lambda-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitCapturingLambdaGuardRejected",
+      "expected": "reject",
+      "source_sha256": "c06e34e479b4a4c546d90459a1ebf24c3d0093125c8dc85569ff13a34cdff4a6",
+      "original_case_source_sha256": "c06e34e479b4a4c546d90459a1ebf24c3d0093125c8dc85569ff13a34cdff4a6",
+      "gtest_body_sha256": "47350ae848a0d1c638aeba1b3bb57dd6f61056c273d7d552fdb71c3ce5f33d26"
+    },
+    {
+      "name": "variant-visit-captureless-nonparameter-source-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitCapturelessNonparameterSourceGuardRejected",
+      "expected": "reject",
+      "source_sha256": "94a0bd0b01bc6bf43f3dc3814fe947b042cb124e865ba9d8dbc055789c4e3e79",
+      "original_case_source_sha256": "94a0bd0b01bc6bf43f3dc3814fe947b042cb124e865ba9d8dbc055789c4e3e79",
+      "gtest_body_sha256": "0479769727a3662b4ba5c6b686d7c846b7b722f7530ad14a5e52421b1525d0fe"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-visit-captureless-selected-integral-result",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  using Item = std::variant<int, short>;\n  Item value(std::in_place_index<1>, short(4));\n  return std::visit([](auto input) -> int { return int(input) * 3 + 1; }, value) != 13;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "e3e17488e4e7b1d897f3fbf6bb9e2bcf73262c4786e138cec78caf465070f81d"
+    },
+    {
+      "name": "variant-visit-captureless-dispatches-two-selected-indices",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  using Item = std::variant<int, short>;\n  const Item left(std::in_place_index<1>, short(17));\n  Item right(6);\n  return std::visit([](auto a, auto b) -> int { return int(a) - int(b); }, left, right) != 11;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "04b5886cac71257ca3350e35750d25f49fb87442695d3d0084168466bb673be3"
+    },
+    {
+      "name": "variant-visit-capturing-lambda-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, short> value(3);\n  int offset = 2;\n  return std::visit([offset](auto x) -> int { return int(x) + offset; }, value) != 5;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "c06e34e479b4a4c546d90459a1ebf24c3d0093125c8dc85569ff13a34cdff4a6"
+    },
+    {
+      "name": "variant-visit-captureless-nonparameter-source-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nint bias = 2;\nint main() {\n  std::variant<int, short> value(3);\n  return std::visit([](auto x) -> int { return int(x) + bias; }, value) != 5;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "94a0bd0b01bc6bf43f3dc3814fe947b042cb124e865ba9d8dbc055789c4e3e79"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantVisitCapturelessSelectedIntegralResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitCapturelessDispatchesTwoSelectedIndicesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitCapturingLambdaGuardRejected",
+    "TranslateTest.CoreV2VariantVisitCapturelessNonparameterSourceGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "a04814ab0205839486630e2b37acc1aa3694b84163d9f5662f2468ac9b9765bf",
+  "maintained_original_sha256": "8ddf7129b52ae199ed136802c6cef2f7a1349d5fcfd940c372373bf730bf68de",
+  "previous_registered_source_sha256": "09743ceb993860cd5315ea8d340ccb1f1e5e15ba5f084f8242173aad8e67d4d1",
+  "previous_maintained_original_sha256": "5067723d6daf17e8fcc1a67b0ef269ebb100726af8e5adb2e1911ff4fdfeadd0",
+  "restorer_sha256": "96738c9104813f2adfb51762fe1a52ca1ff9608696f4d9c835a11b975dfcc432",
+  "extractor_sha256": "d8cacf83de5734287e5a3799bb312809b2b9fccb38c1f0ad02e24323ae28c27f",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9087,
+  "current_python_registry_tests": 302,
+  "native_reference_selected_executions": 4,
+  "planned_generated_c23_executions": 4,
+  "native_reference_proofs": {
+    "variant-captureless-visit": "0bfca10da7cfdcb50c5eb36420d0dcac50ee27f3648fc3733a1a15bcfb26847c"
+  },
+  "native_reference_authentication_sha256": "dcd726901c8e6b775cb91fa42f86afd31f437696836d4c79238758ab92c721e0",
+  "source_proof_sha256": "4418e08c490db8e328b3fa65694870af607d9d08d34ca56a39a55127c2aa1ed7"
+}

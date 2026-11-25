@@ -1,0 +1,234 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-map-float-insertion-zero-and-copy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMapFloatInsertionZeroAndCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a92a87235b504bb6c6ccf74d165561aea1590266bb07613b4cc179f697bee5e8",
+      "original_case_source_sha256": "a92a87235b504bb6c6ccf74d165561aea1590266bb07613b4cc179f697bee5e8",
+      "gtest_body_sha256": "80e610282f73f9f6173d0ef09cec0790a623251f43826f4cc2f3d45377a7d817"
+    },
+    {
+      "name": "unordered-multimap-double-mapped-permutation",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapDoubleMappedPermutationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3d0f58338773f7576332b5d66d42b9cecc1132bcd0afff5b651e4e643b0a13ad",
+      "original_case_source_sha256": "3d0f58338773f7576332b5d66d42b9cecc1132bcd0afff5b651e4e643b0a13ad",
+      "gtest_body_sha256": "14419cc9443199c42d955c07e1128d7f0780a36cb68eae12ed9697b81492657e"
+    },
+    {
+      "name": "unordered-map-unsigned-long-long-node-round-trip",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMapUnsignedLongLongNodeRoundTripRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "586d0a573c835d89366f3ac0b2d6f4e1dc00989f0a12d9faed237b006ef41ee4",
+      "original_case_source_sha256": "586d0a573c835d89366f3ac0b2d6f4e1dc00989f0a12d9faed237b006ef41ee4",
+      "gtest_body_sha256": "dc18910cab7d0a221151730e97c0f632dc5bc77a9855c279a7d2f4f4ea0b4c96"
+    },
+    {
+      "name": "unordered-map-short-and-bool-mapped-storage",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMapShortAndBoolMappedStorageRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a344b6c2fc95b317ad95ee4a9eb12309e163ca714c326e9837075c2909d8c68c",
+      "original_case_source_sha256": "a344b6c2fc95b317ad95ee4a9eb12309e163ca714c326e9837075c2909d8c68c",
+      "gtest_body_sha256": "236e4e28144ee1bb218928381afdc7a77043d03b854386bf47367c01f968ab50"
+    },
+    {
+      "name": "ordered-set-forward-range-between-standard-orders",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetForwardRangeBetweenStandardOrdersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5a6b75d38d9071fc00dc003a62788f5b110f28faf0a15a1c2b681b40a5456b1f",
+      "original_case_source_sha256": "5a6b75d38d9071fc00dc003a62788f5b110f28faf0a15a1c2b681b40a5456b1f",
+      "gtest_body_sha256": "e4b03bfcd5fe57979c54515a0fa0862b60e46489faa9637be96c235a2e28733f"
+    },
+    {
+      "name": "ordered-map-reverse-range-between-standard-orders",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapReverseRangeBetweenStandardOrdersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c002f8aef7395bfa4b2f3ec7d3b5fb740d76d6a14c907b1ba0281b4f524c142b",
+      "original_case_source_sha256": "c002f8aef7395bfa4b2f3ec7d3b5fb740d76d6a14c907b1ba0281b4f524c142b",
+      "gtest_body_sha256": "500f82e1b9e1b0f8d8d0f7809032d3cf94bae658c5670ed20b38da9eb0733d29"
+    },
+    {
+      "name": "ordered-map-shared-cursor-across-comparator-specializations",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapSharedCursorAcrossComparatorSpecializationsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a450ab643423fb5cea469f52d2b58ed850758ca71b99a868c62621449a17a365",
+      "original_case_source_sha256": "a450ab643423fb5cea469f52d2b58ed850758ca71b99a868c62621449a17a365",
+      "gtest_body_sha256": "f7871ddc46e81859477bd076d6fb476b947f5d46859f8ab6621c3cfba99c1fb4"
+    },
+    {
+      "name": "unordered-multiset-unsigned-from-signed-short-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetUnsignedFromSignedShortRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0b67fcae006f04c59e9a889a7759118922800fd31ed58bbc76f4301bd576eed3",
+      "original_case_source_sha256": "0b67fcae006f04c59e9a889a7759118922800fd31ed58bbc76f4301bd576eed3",
+      "gtest_body_sha256": "87a95e5ba203275eac5daa56dc03a9751fbc4569f855d8e455be39d5bcb054cf"
+    },
+    {
+      "name": "unordered-set-long-range-insertion-with-duplicate-negative-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetLongRangeInsertionWithDuplicateNegativeKeyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5ac19e8a75e1dbe2ae9d6a2fda180e92f22a3505b391af35c9593f2e40f4f0cd",
+      "original_case_source_sha256": "5ac19e8a75e1dbe2ae9d6a2fda180e92f22a3505b391af35c9593f2e40f4f0cd",
+      "gtest_body_sha256": "69c049dbfad8248881b16c24e331b5c3e62d5a1aa3fd4497abe54af8ad98b7b4"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-map-const-double-mapped-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMapConstDoubleMappedPayloadGuardRejected",
+      "expected": "reject",
+      "source_sha256": "827709887030fad7af83aef79facc301ca907e4623a8b4987252b47f9085e2cc",
+      "original_case_source_sha256": "827709887030fad7af83aef79facc301ca907e4623a8b4987252b47f9085e2cc",
+      "gtest_body_sha256": "eb226ffda36cd527c24f87fec8187d7f02501f25b3acba76fe15b3329250b0b5"
+    },
+    {
+      "name": "unordered-map-long-double-mapped-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMapLongDoubleMappedPayloadGuardRejected",
+      "expected": "reject",
+      "source_sha256": "3c96579aa64dfadf1bdf627125464ef9d81976241eb30c8a450cfea115d839c9",
+      "original_case_source_sha256": "3c96579aa64dfadf1bdf627125464ef9d81976241eb30c8a450cfea115d839c9",
+      "gtest_body_sha256": "7924e11924ab0a3e5cf16f9a4513f8aa9c99208d1449793b7c7add5237444baf"
+    },
+    {
+      "name": "unordered-set-unchecked-float-pointer-range-guard",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetUncheckedFloatPointerRangeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "220b13ce1e5a1b7dfee7b57cb8db562ac3416dc24269d119f619e597820e53cb",
+      "original_case_source_sha256": "220b13ce1e5a1b7dfee7b57cb8db562ac3416dc24269d119f619e597820e53cb",
+      "gtest_body_sha256": "b78ea0712a28c74aa1b3bdfbd4adf517fd66fb664cb436b6a5dea488680cfba2"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-map-float-insertion-zero-and-copy",
+      "public_header": "unordered_map",
+      "expected": "accept",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, float> first;\n  first.try_emplace(4, 1.25f);\n  first[4] += 2.0f;\n  first.insert_or_assign(5, -0.0f);\n  auto second = first;\n  second[5] = 0.0f;\n  if (!(first == second) || second[4] != 3.25f)\n    return 1;\n  return second[6] == 0.0f && second.size() == 3 && first.size() == 2 ? 0 : 2;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "a92a87235b504bb6c6ccf74d165561aea1590266bb07613b4cc179f697bee5e8"
+    },
+    {
+      "name": "unordered-multimap-double-mapped-permutation",
+      "public_header": "unordered_map",
+      "expected": "accept",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  const std::pair<int, double> input[]{{3, 1.5}, {3, 2.25}, {3, 1.5}, {4, -0.0}};\n  const std::pair<int, double> output[]{{4, 0.0}, {3, 2.25}, {3, 1.5}, {3, 1.5}};\n  std::unordered_multimap<int, double> first;\n  first.insert(input, input + 4);\n  std::unordered_multimap<int, double> second;\n  second.insert(output, output + 4);\n  if (!(first == second) || first.count(3) != 3)\n    return 1;\n  auto zeros = second.equal_range(4);\n  zeros.first->second = 0.5;\n  return first != second ? 0 : 2;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "3d0f58338773f7576332b5d66d42b9cecc1132bcd0afff5b651e4e643b0a13ad"
+    },
+    {
+      "name": "unordered-map-unsigned-long-long-node-round-trip",
+      "public_header": "unordered_map",
+      "expected": "accept",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  std::unordered_map<int, unsigned long long> values;\n  values.try_emplace(8, 0xfedcba9876543210ULL);\n  auto node = values.extract(8);\n  node.mapped() += 31ULL;\n  auto result = values.insert(std::move(node));\n  return result.inserted && result.position->second == 0xfedcba987654322fULL &&\n      values[8] > 0x8000000000000000ULL ? 0 : 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "586d0a573c835d89366f3ac0b2d6f4e1dc00989f0a12d9faed237b006ef41ee4"
+    },
+    {
+      "name": "unordered-map-short-and-bool-mapped-storage",
+      "public_header": "unordered_map",
+      "expected": "accept",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  const std::pair<int, short> input[]{{-1, -2048}, {2, 4096}};\n  std::unordered_map<int, short> numbers;\n  numbers.insert(input, input + 2);\n  std::unordered_map<int, bool> flags;\n  flags.try_emplace(1, true);\n  if (flags[2] || !flags[1])\n    return 1;\n  numbers[2] += 29;\n  return numbers[-1] == -2048 && numbers[2] == 4125 ? 0 : 2;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "a344b6c2fc95b317ad95ee4a9eb12309e163ca714c326e9837075c2909d8c68c"
+    },
+    {
+      "name": "ordered-set-forward-range-between-standard-orders",
+      "public_header": "set",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<>> high{5, 2, 7};\n  std::set<int, std::less<>> low{3};\n  auto selected = high.find(5);\n  if (selected == high.end() || *selected != 5)\n    return 1;\n  low.insert(high.begin(), high.end());\n  auto second = low.begin();\n  ++second;\n  return low.size() == 4 && *low.begin() == 2 && *second == 3 && *high.begin() == 7 ? 0 : 2;\n}\n",
+      "source_sha256": "5a6b75d38d9071fc00dc003a62788f5b110f28faf0a15a1c2b681b40a5456b1f"
+    },
+    {
+      "name": "ordered-map-reverse-range-between-standard-orders",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  const std::map<int, long, std::greater<int>> high{{1, -1201340L}, {7, 98764L}};\n  std::map<int, long> low(high.rbegin(), high.rend());\n  auto first = low.begin();\n  if (first == low.end() || first->first != 1 || first->second != -1201340L)\n    return 1;\n  ++first;\n  return first != low.end() && first->first == 7 && first->second == 98764L ? 0 : 2;\n}\n",
+      "source_sha256": "c002f8aef7395bfa4b2f3ec7d3b5fb740d76d6a14c907b1ba0281b4f524c142b"
+    },
+    {
+      "name": "ordered-map-shared-cursor-across-comparator-specializations",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <iterator>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> high{{1, 10}, {2, 20}, {3, 30}};\n  const std::map<int, int> low{{1, 11}, {2, 21}, {3, 31}};\n  auto desc = std::next(high.begin());\n  auto asc = std::next(low.rbegin());\n  if (desc->first != 2 || asc->first != 2)\n    return 1;\n  desc->second += 7;\n  return high.find(2)->second == 27 && asc->second == 21 ? 0 : 2;\n}\n",
+      "source_sha256": "a450ab643423fb5cea469f52d2b58ed850758ca71b99a868c62621449a17a365"
+    },
+    {
+      "name": "unordered-multiset-unsigned-from-signed-short-range",
+      "public_header": "unordered_set",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const short data[] = {-1, 6, -1, 6};\n  std::unordered_multiset<unsigned> values(data, data + 4, 19);\n  return values.size() == 4 && values.count(-1U) == 2 && values.count(6U) == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "0b67fcae006f04c59e9a889a7759118922800fd31ed58bbc76f4301bd576eed3"
+    },
+    {
+      "name": "unordered-set-long-range-insertion-with-duplicate-negative-key",
+      "public_header": "unordered_set",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const long values[] = {-19001903L, 130227L, -19001903L};\n  std::unordered_set<int> set{-11};\n  set.insert(values, values + 3);\n  return set.size() == 3 && set.count(-19001903) == 1 && set.count(130227) == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "5ac19e8a75e1dbe2ae9d6a2fda180e92f22a3505b391af35c9593f2e40f4f0cd"
+    },
+    {
+      "name": "unordered-map-const-double-mapped-payload-guard",
+      "public_header": "unordered_map",
+      "expected": "reject",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, const double> values;\n  return values.try_emplace(4, 1.25).second ? 0 : 1;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "827709887030fad7af83aef79facc301ca907e4623a8b4987252b47f9085e2cc"
+    },
+    {
+      "name": "unordered-map-long-double-mapped-payload-guard",
+      "public_header": "unordered_map",
+      "expected": "reject",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, long double> values;\n  return values.try_emplace(4, 1.25L).second ? 0 : 1;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "3c96579aa64dfadf1bdf627125464ef9d81976241eb30c8a450cfea115d839c9"
+    },
+    {
+      "name": "unordered-set-unchecked-float-pointer-range-guard",
+      "public_header": "unordered_set",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <unordered_set>\nint main() {\n  const float values[] = {2.25f, -3.75f};\n  std::unordered_set<int> set(values, values + 2);\n  return set.empty();\n}\n",
+      "source_sha256": "220b13ce1e5a1b7dfee7b57cb8db562ac3416dc24269d119f619e597820e53cb"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedMapFloatInsertionZeroAndCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapDoubleMappedPermutationRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMapUnsignedLongLongNodeRoundTripRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMapShortAndBoolMappedStorageRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetForwardRangeBetweenStandardOrdersRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapReverseRangeBetweenStandardOrdersRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapSharedCursorAcrossComparatorSpecializationsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetUnsignedFromSignedShortRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetLongRangeInsertionWithDuplicateNegativeKeyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMapConstDoubleMappedPayloadGuardRejected",
+    "TranslateTest.CoreV2UnorderedMapLongDoubleMappedPayloadGuardRejected",
+    "TranslateTest.CoreV2UnorderedSetUncheckedFloatPointerRangeGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "9a53740d79d62df82fe3fd1efbb81b4e479555d5c6c41815036f82a5e4e844d3",
+  "maintained_original_sha256": "fd6daaebffdceb8456e0d0ad6a42e754ac6e98c4a9fa9ec310991260f1f13a61",
+  "previous_registered_source_sha256": "761303846e426d5bbefc5a1c38824d52c024d59eb2ad50c9d287766008c5d648",
+  "previous_maintained_original_sha256": "5d9c5fe9375bb0ede15a85f8f32304c2b6a8695de38d1eb85b85738d0d8f8ab4",
+  "restorer_sha256": "a6c1ecdb1d57ec3c35c264dfbf34eeb9438e29fc6d807022948d184df26f9c21",
+  "extractor_sha256": "874226870038afc6f3ca2950729096d27e343c26ab0bc610d9f231e4aeaf0d74",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8962,
+  "current_python_registry_tests": 276,
+  "native_reference_selected_executions": 18,
+  "planned_generated_c23_executions": 18,
+  "native_reference_proofs": {
+    "ordered-shared-cursor": "109121d160959c31c4b776897084dbde4c3a7a2312db9721fbff0b2cbee95a36",
+    "unordered-scalar-mapped": "4e1c1b09d57ea1b12f157c47ee177c6bffa8dbe1958a64712242ea3e9e164918",
+    "unordered-set-converted-input": "a1e2ec71a39a7abb4a49a0250b68e068892b32b04057b3ceaf963d94a2abd4ee"
+  },
+  "native_reference_authentication_sha256": "f18485f97614e3fda4b7b241b99a159181e44fffc8f5dec6661d3e1c462a30fe",
+  "source_proof_sha256": "4418e08c490db8e328b3fa65694870af607d9d08d34ca56a39a55127c2aa1ed7"
+}

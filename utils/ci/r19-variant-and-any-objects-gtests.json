@@ -1,0 +1,440 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-visit-mutable-reference-result-aliases-payload",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitMutableReferenceResultAliasesPayloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e182d9ed328aaf2fb7595c9ded97de135d9999be9cc34dd94a389fde96dea5e9",
+      "original_case_source_sha256": "e182d9ed328aaf2fb7595c9ded97de135d9999be9cc34dd94a389fde96dea5e9",
+      "gtest_body_sha256": "0ce03883a6bb595b4b73e30bc4766ea9ba216da19033d2baeaf18a0924ae5b01"
+    },
+    {
+      "name": "variant-visit-const-reference-result-selects-overload",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitConstReferenceResultSelectsOverloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1e625ebcc6e969c0d858d10c3bd8186d7ed09e1ffbc0eee5261b556ce1f88e44",
+      "original_case_source_sha256": "1e625ebcc6e969c0d858d10c3bd8186d7ed09e1ffbc0eee5261b556ce1f88e44",
+      "gtest_body_sha256": "b5f695845a6ad24f7c7cbe36a01f9873212957fb961c3d9b5598f475148761a4"
+    },
+    {
+      "name": "variant-visit-rvalue-reference-result-preserves-identity",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitRvalueReferenceResultPreservesIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e5e1be6ff9d00f5de1421057ede4f628a4852f48b5890efb32d0ce39e1777874",
+      "original_case_source_sha256": "e5e1be6ff9d00f5de1421057ede4f628a4852f48b5890efb32d0ce39e1777874",
+      "gtest_body_sha256": "5e2d4a756ff9bcb543102e3fd405e02d16b525abf641031fd3481bf875332541"
+    },
+    {
+      "name": "any-repeated-active-value-and-reference-casts",
+      "formal_test_name": "TranslateTest.CoreV2AnyRepeatedActiveValueAndReferenceCastsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4dd664169c180ae0bc5bf0e349ce730ce42defadd6b82a2726924f1516b14822",
+      "original_case_source_sha256": "4dd664169c180ae0bc5bf0e349ce730ce42defadd6b82a2726924f1516b14822",
+      "gtest_body_sha256": "ef66dfde7e438dff1b083fea2c22669f749b2285b4db2a2c1e4263a511c8d9ac"
+    },
+    {
+      "name": "any-repeated-active-casts-reference-same-slot",
+      "formal_test_name": "TranslateTest.CoreV2AnyRepeatedActiveCastsReferenceSameSlotRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "80ee590b14e30c0f31ff917d68447bd9ee42c598a0febcc7a2134034d8fa4d5b",
+      "original_case_source_sha256": "80ee590b14e30c0f31ff917d68447bd9ee42c598a0febcc7a2134034d8fa4d5b",
+      "gtest_body_sha256": "52a6d37bfbab289a10c1a803cfdb1f3e203eaf886ad2ca739f2145ecff56533b"
+    },
+    {
+      "name": "any-repeated-active-cast-in-loop",
+      "formal_test_name": "TranslateTest.CoreV2AnyRepeatedActiveCastInLoopRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1627efd1cd2ab7463a267c22ca659adbe5780e31bd8e9fc4c92a0fc16845eea5",
+      "original_case_source_sha256": "1627efd1cd2ab7463a267c22ca659adbe5780e31bd8e9fc4c92a0fc16845eea5",
+      "gtest_body_sha256": "461795a3b4f5881b0e941c641b40af31a5c512b28f856d16cf66c4f090da4bf4"
+    },
+    {
+      "name": "variant-trivial-aggregate-default-initializes-members",
+      "formal_test_name": "TranslateTest.CoreV2VariantTrivialAggregateDefaultInitializesMembersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "75ed2dca6eb2d6b447c3c49f541f5676a6054e7ce171fb4b06679c70000e3745",
+      "original_case_source_sha256": "75ed2dca6eb2d6b447c3c49f541f5676a6054e7ce171fb4b06679c70000e3745",
+      "gtest_body_sha256": "bd2be3c020749cdffea1a9800b80bfa21ba0e8c6be1cfae5aa377271b2728256"
+    },
+    {
+      "name": "variant-trivial-aggregate-in-place-copy-preserves-members",
+      "formal_test_name": "TranslateTest.CoreV2VariantTrivialAggregateInPlaceCopyPreservesMembersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9e5c69703f1fe59d571ee8ba0f3395c3651121ed470726075b8d92950701f22c",
+      "original_case_source_sha256": "9e5c69703f1fe59d571ee8ba0f3395c3651121ed470726075b8d92950701f22c",
+      "gtest_body_sha256": "76915a82501c2ada9e76855a743d59a711883cc7df10e78335b5e727efa276db"
+    },
+    {
+      "name": "variant-trivial-aggregate-copy-preserves-active-payload",
+      "formal_test_name": "TranslateTest.CoreV2VariantTrivialAggregateCopyPreservesActivePayloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1abdc4ea811f9cae16d512fb7daa5b68fe4c72d67fc3efa7aacfe6b445a52cc4",
+      "original_case_source_sha256": "1abdc4ea811f9cae16d512fb7daa5b68fe4c72d67fc3efa7aacfe6b445a52cc4",
+      "gtest_body_sha256": "2991def25ac3084de1b78ba52ae61e3fc33b95deae9ae21f8fee76769d1c7745"
+    },
+    {
+      "name": "variant-visit-aggregate-mutable-payload",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAggregateMutablePayloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bf23c726cbc678343c893b22d31e90cc6eba4b7602b43e79d4e57a705ee914ac",
+      "original_case_source_sha256": "bf23c726cbc678343c893b22d31e90cc6eba4b7602b43e79d4e57a705ee914ac",
+      "gtest_body_sha256": "06a3d0d94ad4404ad23bfc05e35130bf29f95a8d5cf02b2bae618dea64a0188e"
+    },
+    {
+      "name": "variant-visit-const-aggregate-selects-overload",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitConstAggregateSelectsOverloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "60ae712bc8952209155226a1f6a8022550edabead2c2389e806d09773bf9290b",
+      "original_case_source_sha256": "60ae712bc8952209155226a1f6a8022550edabead2c2389e806d09773bf9290b",
+      "gtest_body_sha256": "e55d6f8faa22f3fb3a3033d3c74610dbfd4511967bb21f8407387d727da53400"
+    },
+    {
+      "name": "variant-visit-multiple-live-aggregate-payloads",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitMultipleLiveAggregatePayloadsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2c5e69b4c30e58cb180d4be71a2c5f6dcf89e6cb9efaaff1e6d4e534189992fb",
+      "original_case_source_sha256": "2c5e69b4c30e58cb180d4be71a2c5f6dcf89e6cb9efaaff1e6d4e534189992fb",
+      "gtest_body_sha256": "d417b8333f67d1e8e64c35177cdd9be5a9940b22a1f8f0786d3e94feef7de091"
+    },
+    {
+      "name": "variant-aggregate-emplace-default-payload",
+      "formal_test_name": "TranslateTest.CoreV2VariantAggregateEmplaceDefaultPayloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2e066f7779f217f00f19349434e68569129fa1c8c49782bcab74dd59f4050822",
+      "original_case_source_sha256": "2e066f7779f217f00f19349434e68569129fa1c8c49782bcab74dd59f4050822",
+      "gtest_body_sha256": "421be7975b6db5c00a8c0573fa39eadd014dcc10a508ca482cce67b9d3de82bd"
+    },
+    {
+      "name": "variant-aggregate-emplace-copies-payload",
+      "formal_test_name": "TranslateTest.CoreV2VariantAggregateEmplaceCopiesPayloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ef04abece465e46c65a5c17adb510c6444c522bec58fd906b2385f1ffdfb1173",
+      "original_case_source_sha256": "ef04abece465e46c65a5c17adb510c6444c522bec58fd906b2385f1ffdfb1173",
+      "gtest_body_sha256": "2b1ecce8be5c3fac4fc8007173086b1c9a7ed5175dcfdf96659692918452c612"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-visit-reference-result-borrows-temporary-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitReferenceResultBorrowsTemporaryGuardRejected",
+      "expected": "reject",
+      "source_sha256": "f8806f1ad36f8f0092cea884d08fedd448d7d4a64e92eb7c9adeb1bc3b38f741",
+      "original_case_source_sha256": "f8806f1ad36f8f0092cea884d08fedd448d7d4a64e92eb7c9adeb1bc3b38f741",
+      "gtest_body_sha256": "1233b0ee57b9ea54951b3846b7195441bd4eb5785b2f3097f4b6a93c82cc753c"
+    },
+    {
+      "name": "variant-visit-volatile-reference-result-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitVolatileReferenceResultGuardRejected",
+      "expected": "reject",
+      "source_sha256": "16ae164f7cf91142e5bd40ce2e5512ddd824c15abdea3141dcc7f3aa228f28fb",
+      "original_case_source_sha256": "16ae164f7cf91142e5bd40ce2e5512ddd824c15abdea3141dcc7f3aa228f28fb",
+      "gtest_body_sha256": "78374561b7d9ac5684b34536d40749e6a44c75fe48f7e248d4101d8b846b88d8"
+    },
+    {
+      "name": "any-repeated-active-casts-with-reset-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyRepeatedActiveCastsWithResetGuardRejected",
+      "expected": "reject",
+      "source_sha256": "a39a9e55caf6b27cd28a83d377fb39be3139e5b6f6b6eeeb2d04366aaa6dcbe1",
+      "original_case_source_sha256": "a39a9e55caf6b27cd28a83d377fb39be3139e5b6f6b6eeeb2d04366aaa6dcbe1",
+      "gtest_body_sha256": "03c519d9ee6319f8cecbeb7323d6ea43d4ffe2ef47a26a3ff3b58d012bfe3a9b"
+    },
+    {
+      "name": "any-repeated-active-casts-with-retagging-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyRepeatedActiveCastsWithRetaggingGuardRejected",
+      "expected": "reject",
+      "source_sha256": "688d40f2694069ec2561900c0326618b411dac70dec577fe44419d19dc0a3a0b",
+      "original_case_source_sha256": "688d40f2694069ec2561900c0326618b411dac70dec577fe44419d19dc0a3a0b",
+      "gtest_body_sha256": "b2a5bebf92df2b09ed54c13b4f9f3ccf9909b129a4eeb8132674e81ce75190fb"
+    },
+    {
+      "name": "any-repeated-active-casts-with-wrong-sibling-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyRepeatedActiveCastsWithWrongSiblingGuardRejected",
+      "expected": "reject",
+      "source_sha256": "1666cdd8e63feb97377fa21f05a11348a97718ee41a44f58f8cffe195461e5af",
+      "original_case_source_sha256": "1666cdd8e63feb97377fa21f05a11348a97718ee41a44f58f8cffe195461e5af",
+      "gtest_body_sha256": "ba1e8701641bdd2269afdbbf1e0ab044900f6575f11e7b4c15a6493471ce44de"
+    },
+    {
+      "name": "variant-unchecked-bit-field-record-alternative-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantUncheckedBitFieldRecordAlternativeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "ff2d885af0302822f5214183b7876f25f9e31b0a3779af17582bfdbd8918f94a",
+      "original_case_source_sha256": "ff2d885af0302822f5214183b7876f25f9e31b0a3779af17582bfdbd8918f94a",
+      "gtest_body_sha256": "d001bf9564319e42096b03741c3fb43c850dc525c652d387977e6a04c5fdb44a"
+    },
+    {
+      "name": "variant-nontrivial-record-initialization-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantNontrivialRecordInitializationGuardRejected",
+      "expected": "reject",
+      "source_sha256": "f5358972cd1a2593aab341c93154b6854dd7c10f01cfb559ddf0f7d8cf86870e",
+      "original_case_source_sha256": "f5358972cd1a2593aab341c93154b6854dd7c10f01cfb559ddf0f7d8cf86870e",
+      "gtest_body_sha256": "822d8c8feaef33aea9e21b7391192a79121908f23f012611327253bfdf40e643"
+    },
+    {
+      "name": "variant-visit-aggregate-temporary-reference-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAggregateTemporaryReferenceGuardRejected",
+      "expected": "reject",
+      "source_sha256": "eeeaccccefab510105fd80821f1db69117e629995b3be467091d14a109eeee6b",
+      "original_case_source_sha256": "eeeaccccefab510105fd80821f1db69117e629995b3be467091d14a109eeee6b",
+      "gtest_body_sha256": "f166aae68bea9c4f551f21907a8ea37d006934d102d98899c0a59763fa1ee7b8"
+    },
+    {
+      "name": "variant-visit-aggregate-implicit-copy-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAggregateImplicitCopyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "722e6b7bf694355a89ee581940a1d56978ffb375b05fc868e840aef8c01c4ce0",
+      "original_case_source_sha256": "722e6b7bf694355a89ee581940a1d56978ffb375b05fc868e840aef8c01c4ce0",
+      "gtest_body_sha256": "529bcede2d16ba1a9293ad122b7f8f3ff6db1768c019383d4c3a482188041234"
+    },
+    {
+      "name": "variant-visit-volatile-aggregate-reference-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitVolatileAggregateReferenceGuardRejected",
+      "expected": "reject",
+      "source_sha256": "0e998ef488753ee2ef1f001de7eb2c7acc9d7da9d65bfff1f31efcc21cb8cfc9",
+      "original_case_source_sha256": "0e998ef488753ee2ef1f001de7eb2c7acc9d7da9d65bfff1f31efcc21cb8cfc9",
+      "gtest_body_sha256": "7d49ba058685e159229868590a5c42a607e420fe0deeab4ad4b593939b1fe812"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-visit-mutable-reference-result-aliases-payload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint& identity(int& value) { return value; }\nint main() {\n  std::variant<int> value{2};\n  int& slot = std::visit(identity, value);\n  auto* address = &slot;\n  slot = 8;\n  auto* active = std::get_if<0>(&value);\n  return address != active || !active || *active != 8;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "e182d9ed328aaf2fb7595c9ded97de135d9999be9cc34dd94a389fde96dea5e9"
+    },
+    {
+      "name": "variant-visit-const-reference-result-selects-overload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Visitor {\n  double backing;\n  const double& operator()(const double& value) const { return value; }\n  const double& operator()(const int&) const { return backing; }\n};\nint main() {\n  using Value = std::variant<double, int>;\n  const Value direct{3.5}, fallback{7};\n  const Visitor visitor{8.5};\n  auto* active = std::get_if<0>(&direct);\n  const double& selected = std::visit(visitor, direct);\n  const double& other = std::visit(visitor, fallback);\n  return !active || &selected != active || &other != &visitor.backing || selected != 3.5 || other != 8.5;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "1e625ebcc6e969c0d858d10c3bd8186d7ed09e1ffbc0eee5261b556ce1f88e44"
+    },
+    {
+      "name": "variant-visit-rvalue-reference-result-preserves-identity",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint&& select(int& value) { return static_cast<int&&>(value); }\nint main() {\n  std::variant<int> value{4};\n  auto&& slot = std::visit(select, value);\n  auto* active = std::get_if<0>(&value);\n  slot = 12;\n  return !active || &slot != active || *active != 12;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "e5e1be6ff9d00f5de1421057ede4f628a4852f48b5890efb32d0ce39e1777874"
+    },
+    {
+      "name": "any-repeated-active-value-and-reference-casts",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  std::any value{4};\n  int before = std::any_cast<int>(value);\n  int& slot = std::any_cast<int&>(value);\n  slot = 9;\n  return before != 4 || std::any_cast<int>(value) != 9;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "4dd664169c180ae0bc5bf0e349ce730ce42defadd6b82a2726924f1516b14822"
+    },
+    {
+      "name": "any-repeated-active-casts-reference-same-slot",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  std::any value{true};\n  bool& slot = std::any_cast<bool&>(value);\n  const bool& read = std::any_cast<const bool&>(value);\n  slot = false;\n  return &read != &slot || read;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "80ee590b14e30c0f31ff917d68447bd9ee42c598a0febcc7a2134034d8fa4d5b"
+    },
+    {
+      "name": "any-repeated-active-cast-in-loop",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  std::any value{3L};\n  for (int index = 0; index < 2; ++index) ++std::any_cast<long&>(value);\n  return std::any_cast<long>(value) != 5L;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "1627efd1cd2ab7463a267c22ca659adbe5780e31bd8e9fc4c92a0fc16845eea5"
+    },
+    {
+      "name": "variant-trivial-aggregate-default-initializes-members",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { int count; double amount; };\nint main() {\n  std::variant<Payload, int> value;\n  auto* active = std::get_if<Payload>(&value);\n  if (!active || active->count != 0 || active->amount != 0.0) return 1;\n  active->count = 6;\n  return !std::holds_alternative<Payload>(value) || active->count != 6;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "75ed2dca6eb2d6b447c3c49f541f5676a6054e7ce171fb4b06679c70000e3745"
+    },
+    {
+      "name": "variant-trivial-aggregate-in-place-copy-preserves-members",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { int count; double amount; };\nint main() {\n  Payload original{7, 4.5};\n  std::variant<int, Payload> value{std::in_place_type<Payload>, original};\n  original.count = 9;\n  auto* active = std::get_if<1>(&value);\n  return !active || active->count != 7 || active->amount != 4.5 || value.index() != 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "9e5c69703f1fe59d571ee8ba0f3395c3651121ed470726075b8d92950701f22c"
+    },
+    {
+      "name": "variant-trivial-aggregate-copy-preserves-active-payload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { short code; int size; };\nint main() {\n  using Value = std::variant<int, Payload>;\n  Payload payload{3, 16};\n  Value original{std::in_place_index<1>, payload};\n  const Value copy{original};\n  auto* active = std::get_if<Payload>(&copy);\n  return !active || active->code != 3 || active->size != 16;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "1abdc4ea811f9cae16d512fb7daa5b68fe4c72d67fc3efa7aacfe6b445a52cc4"
+    },
+    {
+      "name": "variant-visit-aggregate-mutable-payload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { int count; double weight; };\nvoid increase(Payload& payload) { payload.count += 3; }\nint main() {\n  std::variant<Payload> value;\n  std::visit(increase, value);\n  auto* active = std::get_if<0>(&value);\n  return !active || active->count != 3 || active->weight != 0.0;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "bf23c726cbc678343c893b22d31e90cc6eba4b7602b43e79d4e57a705ee914ac"
+    },
+    {
+      "name": "variant-visit-const-aggregate-selects-overload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { int amount; };\nstruct Read {\n  int operator()(const Payload& value) const { return value.amount; }\n  int operator()(const int& value) const { return value; }\n};\nint main() {\n  Payload initial{7};\n  const std::variant<Payload, int> left{std::in_place_index<0>, initial}, right{4};\n  const Read read{};\n  return std::visit(read, left) != 7 || std::visit(read, right) != 4;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "60ae712bc8952209155226a1f6a8022550edabead2c2389e806d09773bf9290b"
+    },
+    {
+      "name": "variant-visit-multiple-live-aggregate-payloads",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Input { int amount; };\nstruct Output { int value; int calls; };\nint put(const Input& input, Output& output) {\n  ++output.calls;\n  output.value += input.amount;\n  return output.value;\n}\nint main() {\n  const Input input{5};\n  const std::variant<Input> left{std::in_place_index<0>, input};\n  std::variant<Output> right;\n  int result = std::visit(put, left, right);\n  const auto* active = std::get_if<0>(&right);\n  return !active || result != 5 || active->value != 5 || active->calls != 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "2c5e69b4c30e58cb180d4be71a2c5f6dcf89e6cb9efaaff1e6d4e534189992fb"
+    },
+    {
+      "name": "variant-aggregate-emplace-default-payload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { int count; double mark; };\nint main() {\n  std::variant<int, Payload> value{8};\n  Payload& active = value.emplace<Payload>();\n  if (active.count != 0 || active.mark != 0.0) return 1;\n  active.count = 4;\n  auto* checked = std::get_if<1>(&value);\n  return !checked || &active != checked || checked->count != 4 || value.index() != 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "2e066f7779f217f00f19349434e68569129fa1c8c49782bcab74dd59f4050822"
+    },
+    {
+      "name": "variant-aggregate-emplace-copies-payload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { short code; int amount; };\nint main() {\n  Payload initial{5, 11};\n  std::variant<int, Payload> value{8};\n  Payload& active = value.emplace<1>(initial);\n  initial.amount = 20;\n  const auto* checked = std::get_if<Payload>(&value);\n  return !checked || checked != &active || checked->code != 5 || checked->amount != 11;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "ef04abece465e46c65a5c17adb510c6444c522bec58fd906b2385f1ffdfb1173"
+    },
+    {
+      "name": "variant-visit-reference-result-borrows-temporary-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nconst int& identity(const int& value) { return value; }\nconst int& bad() {\n  using Value = std::variant<int>;\n  return std::visit(identity, static_cast<const Value&>(Value{5}));\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "f8806f1ad36f8f0092cea884d08fedd448d7d4a64e92eb7c9adeb1bc3b38f741"
+    },
+    {
+      "name": "variant-visit-volatile-reference-result-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nvolatile int& borrow(int& value) { return value; }\nvolatile int& bad(std::variant<int>& value) { return std::visit(borrow, value); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "16ae164f7cf91142e5bd40ce2e5512ddd824c15abdea3141dcc7f3aa228f28fb"
+    },
+    {
+      "name": "any-repeated-active-casts-with-reset-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int before = std::any_cast<int>(value);\n  value.reset();\n  return before + std::any_cast<int>(value);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "a39a9e55caf6b27cd28a83d377fb39be3139e5b6f6b6eeeb2d04366aaa6dcbe1"
+    },
+    {
+      "name": "any-repeated-active-casts-with-retagging-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int before = std::any_cast<int>(value);\n  value = std::any{true};\n  return before + std::any_cast<int>(value);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "688d40f2694069ec2561900c0326618b411dac70dec577fe44419d19dc0a3a0b"
+    },
+    {
+      "name": "any-repeated-active-casts-with-wrong-sibling-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int first = std::any_cast<int>(value);\n  return first + std::any_cast<bool>(value);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "1666cdd8e63feb97377fa21f05a11348a97718ee41a44f58f8cffe195461e5af"
+    },
+    {
+      "name": "variant-unchecked-bit-field-record-alternative-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload { unsigned code : 3; };\nint test() { std::variant<Payload, int> value; return int(value.index()); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "ff2d885af0302822f5214183b7876f25f9e31b0a3779af17582bfdbd8918f94a"
+    },
+    {
+      "name": "variant-nontrivial-record-initialization-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload {\n  int code;\n  Payload() noexcept : code(17) {}\n};\nint test() { std::variant<Payload, int> value; return int(value.index()); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "f5358972cd1a2593aab341c93154b6854dd7c10f01cfb559ddf0f7d8cf86870e"
+    },
+    {
+      "name": "variant-visit-aggregate-temporary-reference-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload { int count; };\nint read(const Payload& value) { return value.count; }\nint test() { return std::visit(read, std::variant<Payload>{}); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "eeeaccccefab510105fd80821f1db69117e629995b3be467091d14a109eeee6b"
+    },
+    {
+      "name": "variant-visit-aggregate-implicit-copy-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload { int count; };\nint read(Payload value) { return value.count; }\nint test(std::variant<Payload>& value) { return std::visit(read, value); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "722e6b7bf694355a89ee581940a1d56978ffb375b05fc868e840aef8c01c4ce0"
+    },
+    {
+      "name": "variant-visit-volatile-aggregate-reference-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload { int count; };\nint read(volatile Payload& value) { return value.count; }\nint test(std::variant<Payload>& value) { return std::visit(read, value); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "0e998ef488753ee2ef1f001de7eb2c7acc9d7da9d65bfff1f31efcc21cb8cfc9"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantVisitMutableReferenceResultAliasesPayloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitConstReferenceResultSelectsOverloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitRvalueReferenceResultPreservesIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyRepeatedActiveValueAndReferenceCastsRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyRepeatedActiveCastsReferenceSameSlotRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyRepeatedActiveCastInLoopRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTrivialAggregateDefaultInitializesMembersRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTrivialAggregateInPlaceCopyPreservesMembersRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTrivialAggregateCopyPreservesActivePayloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitAggregateMutablePayloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitConstAggregateSelectsOverloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitMultipleLiveAggregatePayloadsRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantAggregateEmplaceDefaultPayloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantAggregateEmplaceCopiesPayloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitReferenceResultBorrowsTemporaryGuardRejected",
+    "TranslateTest.CoreV2VariantVisitVolatileReferenceResultGuardRejected",
+    "TranslateTest.CoreV2AnyRepeatedActiveCastsWithResetGuardRejected",
+    "TranslateTest.CoreV2AnyRepeatedActiveCastsWithRetaggingGuardRejected",
+    "TranslateTest.CoreV2AnyRepeatedActiveCastsWithWrongSiblingGuardRejected",
+    "TranslateTest.CoreV2VariantUncheckedBitFieldRecordAlternativeGuardRejected",
+    "TranslateTest.CoreV2VariantNontrivialRecordInitializationGuardRejected",
+    "TranslateTest.CoreV2VariantVisitAggregateTemporaryReferenceGuardRejected",
+    "TranslateTest.CoreV2VariantVisitAggregateImplicitCopyGuardRejected",
+    "TranslateTest.CoreV2VariantVisitVolatileAggregateReferenceGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "6c8f8fdd9fad8c417eb6fbb85441efde19d2baab6c1dce99ddd405a58986abc1",
+  "maintained_original_sha256": "0900451648aa61cc024f0d051071bdc8b7afb25c758ce6884588c79c65402be2",
+  "previous_registered_source_sha256": "79ff43760d160576bec03ce6e60d3037c02f7455c8c2bfa9c2595d185e0e99e4",
+  "previous_maintained_original_sha256": "537f4693223fffb776096f73b1fe10a33f2e97eeebf84a4301dffe9cf4af64dd",
+  "restorer_sha256": "fcd62fefe775b34d695e0a2197cd09f1766998fae178d2a41d5e3d4e6f20a36a",
+  "extractor_sha256": "d863d974ba692f70e822c00e0378338da395312179a97929d9d6b3b2ba43357b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9043,
+  "current_python_registry_tests": 288,
+  "native_reference_selected_executions": 28,
+  "planned_generated_c23_executions": 28,
+  "native_reference_proofs": {
+    "any-repeated-active-cast": "f9948a7ad6f69232afca2f4886b5251e1ad181cf95aa37073370b6d3568bec32",
+    "variant-aggregate-emplace": "36f561f6699a515d56c55bc495e5684d5b4fee54ad21c969e72791445eea2ddb",
+    "variant-trivial-aggregate": "171f91b042bcb654e07f2b9b81d48d75ca2539963b11755e24601b71d3317a94",
+    "variant-visit-aggregate-reference": "0d106e0264415398a1cebc103c5d738206aa97be91ac0a1d209592a16b5b23c5",
+    "variant-visit-reference-result-replay": "5eebfdc22c751c5e76a7f3630043abfb602e2b756a0bf26b536fb145da59ae75"
+  },
+  "native_reference_authentication_sha256": "3bcd53baeb90a1a8a7d927ee70ee645aa101c7c0692d64ffc4ec41a6f407a0d3",
+  "source_proof_sha256": "4418e08c490db8e328b3fa65694870af607d9d08d34ca56a39a55127c2aa1ed7"
+}
