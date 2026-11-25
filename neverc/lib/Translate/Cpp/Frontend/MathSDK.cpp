@@ -10686,11 +10686,69 @@ static bool variantVisitParameter(const State &S, const SourceManager &SM,
            variantTrivialRecordAlternative(S, SM, Value.getUnqualifiedType(), Context)));
 }
 
+static bool variantInlineVisitExpression(
+    const State &S, const SourceManager &SM, const Expr *Expression,
+    const CXXMethodDecl *Method, unsigned Depth, unsigned &Nodes) {
+  if (!Expression || Depth >= 64 || ++Nodes > 200000 ||
+      !S.owns(SM, Expression->getExprLoc()) || !Expression->getType()->isIntegerType())
+    return false;
+  if (isa<IntegerLiteral, CharacterLiteral, CXXBoolLiteralExpr>(Expression))
+    return true;
+  if (const auto *Read = dyn_cast<DeclRefExpr>(Expression)) {
+    const auto *Param = dyn_cast<ParmVarDecl>(Read->getDecl());
+    return Param && Param->getFunctionScopeIndex() < Method->getNumParams() &&
+           Param->getCanonicalDecl() ==
+               Method->getParamDecl(Param->getFunctionScopeIndex())->getCanonicalDecl();
+  }
+  if (const auto *Paren = dyn_cast<ParenExpr>(Expression))
+    return variantInlineVisitExpression(S, SM, Paren->getSubExpr(), Method, Depth + 1, Nodes);
+  if (const auto *Cast = dyn_cast<CastExpr>(Expression)) {
+    if (!isa<ImplicitCastExpr, CXXFunctionalCastExpr>(Cast) ||
+        (Cast->getCastKind() != CK_NoOp && Cast->getCastKind() != CK_LValueToRValue &&
+         Cast->getCastKind() != CK_IntegralCast && Cast->getCastKind() != CK_IntegralToBoolean))
+      return false;
+    return variantInlineVisitExpression(S, SM, Cast->getSubExpr(), Method, Depth + 1, Nodes);
+  }
+  if (const auto *Unary = dyn_cast<UnaryOperator>(Expression)) {
+    if (Unary->getOpcode() != UO_Plus && Unary->getOpcode() != UO_Minus)
+      return false;
+    return variantInlineVisitExpression(S, SM, Unary->getSubExpr(), Method, Depth + 1, Nodes);
+  }
+  if (const auto *Binary = dyn_cast<BinaryOperator>(Expression)) {
+    if (Binary->getOpcode() != BO_Add && Binary->getOpcode() != BO_Sub &&
+        Binary->getOpcode() != BO_Mul)
+      return false;
+    return variantInlineVisitExpression(S, SM, Binary->getLHS(), Method, Depth + 1, Nodes) &&
+           variantInlineVisitExpression(S, SM, Binary->getRHS(), Method, Depth + 1, Nodes);
+  }
+  return false;
+}
+
+static bool variantInlineVisitMethod(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const CXXRecordDecl *Closure, unsigned &Nodes) {
+  const auto *Operator = Closure->getLambdaCallOperator();
+  if (!Operator || !S.owns(SM, Operator->getLocation()) ||
+      !llvm::all_of(Method->parameters(), [](const ParmVarDecl *Param) {
+        return Param->getType()->isIntegerType();
+      }))
+    return false;
+  if (Method->getCanonicalDecl() != Operator->getCanonicalDecl()) {
+    const auto *Template = Method->getPrimaryTemplate();
+    if (Method->getTemplatedKind() != FunctionDecl::TK_FunctionTemplateSpecialization ||
+        Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+        !Template || Template->getTemplatedDecl()->getCanonicalDecl() != Operator->getCanonicalDecl())
+      return false;
+  }
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  return Return && variantInlineVisitExpression(S, SM, Return->getRetValue(), Method, 0, Nodes);
+}
+
 static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APValue &Entry,
     const FieldDecl *Capture, llvm::ArrayRef<UtilityVariantRecord> Variants,
     llvm::ArrayRef<unsigned> Indices, llvm::ArrayRef<QualType> Inputs, const FunctionDecl *Base,
     QualType Object, QualType Result, const CXXMethodDecl *&SelectedMethod,
-    const ASTContext &Context) {
+    const ASTContext &Context, unsigned &InlineNodes) {
   const auto *Target = variantVisitDispatchTarget(S, SM, Entry, Capture, Variants, Indices, Context);
   if (!Target || !Context.hasSameType(Target->getType(), Result.getNonReferenceType()) ||
       Target->isLValue() != Result->isLValueReferenceType() ||
@@ -10700,11 +10758,11 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
   const auto *Operation = dyn_cast<CXXOperatorCallExpr>(Target);
   const auto *Record = Object.isNull() ? nullptr : Object->getAsCXXRecordDecl();
   if (Record) {
+    const bool Inline = Record->isLambda();
     const auto *Method = dyn_cast_or_null<CXXMethodDecl>(Operation ? Operation->getDirectCallee() : nullptr);
     const FunctionDecl *Definition = nullptr;
     if (!Method || Method->isStatic() || Method->getOverloadedOperator() != OO_Call ||
-        !ordinaryOperator(Method) || !callableMethod(Method) ||
-        Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+        (!Inline && (!ordinaryOperator(Method) || !callableMethod(Method))) ||
         Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
         Method->getRefQualifier() == RQ_RValue || Method->isVolatile() ||
         (Object.isConstQualified() && !Method->isConst()) ||
@@ -10712,6 +10770,19 @@ static bool variantVisitLeaf(const State &S, const SourceManager &SM, const APVa
         Method->getNumParams() != Count ||
         !S.owns(SM, Method->getLocation()) || !Method->hasBody(Definition) ||
         !S.owns(SM, Definition->getLocation()))
+      return false;
+    if (!Inline && Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate) {
+      const auto *Primary = Method->getPrimaryTemplate();
+      const auto *Pattern = dyn_cast_or_null<CXXMethodDecl>(Method->getTemplateInstantiationPattern());
+      if (Method->getTemplatedKind() != FunctionDecl::TK_FunctionTemplateSpecialization ||
+          Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+          !Primary || !Pattern || !S.owns(SM, Primary->getLocation()) ||
+          !S.owns(SM, Pattern->getLocation()) ||
+          Pattern->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+          Primary->getTemplatedDecl()->getCanonicalDecl() != Pattern->getCanonicalDecl())
+        return false;
+    }
+    if (Inline && !variantInlineVisitMethod(S, SM, Method, Record, InlineNodes))
       return false;
     SelectedMethod = Method;
   } else if (Operation) {
@@ -10855,11 +10926,12 @@ static bool variantVisitMatrix(const State &S, const SourceManager &SM,
   if (!Matrix->getInit()->EvaluateAsRValue(Evaluated, Context) || Evaluated.HasSideEffects)
     return false;
   llvm::SmallVector<unsigned, 2> Indices(Count, 0);
+  unsigned InlineNodes = 0;
   auto CheckEntries = [&](auto &&Self, const APValue &Entry, unsigned Dimension) -> bool {
     if (Dimension == Count) {
       const CXXMethodDecl *Method = nullptr;
       if (!variantVisitLeaf(S, SM, Entry, Capture, Variants, Indices, Inputs, Base,
-                                    Object, Result, Method, Context))
+                                    Object, Result, Method, Context, InlineNodes))
         return false;
       Methods.push_back(Method);
       return true;
@@ -10937,15 +11009,37 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
   const auto *Object = Type->getAsCXXRecordDecl();
   std::vector<QualType> Inputs;
   QualType ObjectType;
+  bool InlineLambda = false;
   if (Object) {
     const auto *Definition = Object->getDefinition();
     const auto *Operand = Call->getArg(0);
-    if (!Definition || !Definition->getIdentifier() || Definition->isUnion() ||
-        Definition->isLambda() || Definition->isLocalClass() || Definition->isDynamicClass() ||
+    if (!Definition || Definition->isUnion() || Definition->isDynamicClass() ||
         Definition->getNumBases() || !S.owns(SM, Definition->getLocation()) ||
-        !Operand->isLValue() || !Parameter->isLValueReferenceType() ||
         !Context.hasSameType(Type, Operand->getType()))
       return std::nullopt;
+    InlineLambda = Definition->isLambda();
+    if (!InlineLambda && (!Definition->getIdentifier() || Definition->isLocalClass()))
+      return std::nullopt;
+    if (Operand->isLValue()) {
+      if (InlineLambda || !Parameter->isLValueReferenceType())
+        return std::nullopt;
+    } else {
+      // The selected call uses the object while its full expression is live.
+      const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Operand->IgnoreParens());
+      if (!Temporary || !Parameter->isRValueReferenceType() ||
+          Result->isReferenceType() || !Definition->hasTrivialDestructor() ||
+          Temporary->getStorageDuration() != SD_FullExpression || Temporary->getExtendingDecl() ||
+          !Temporary->getSubExpr()->isPRValue() ||
+          !Context.hasSameType(Temporary->getSubExpr()->getType(), Type))
+        return std::nullopt;
+      if (InlineLambda) {
+        const auto *Lambda = dyn_cast<LambdaExpr>(Temporary->getSubExpr()->IgnoreParens());
+        if (!Lambda || Lambda->getCaptureDefault() != LCD_None || Lambda->capture_size() ||
+            !Result->isIntegerType() ||
+            Lambda->getLambdaClass()->getCanonicalDecl() != Definition->getCanonicalDecl())
+          return std::nullopt;
+      }
+    }
     ObjectType = Type;
   } else {
     if (!Type->isFunctionType() && !Type->isFunctionPointerType())
@@ -11005,7 +11099,7 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
                                   Methods, Context))
     return std::nullopt;
   return UtilityVariantVisit{
-      std::move(Variants), Parameter, std::move(Inputs), Result, std::move(Methods)};
+      std::move(Variants), Parameter, std::move(Inputs), Result, std::move(Methods), InlineLambda};
 }
 
 struct VariantComparisonOperator {

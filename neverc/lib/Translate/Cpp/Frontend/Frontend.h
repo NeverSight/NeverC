@@ -3500,6 +3500,7 @@ struct UtilityVariantVisit {
   std::vector<clang::QualType> Arguments;
   clang::QualType Result;
   std::vector<const clang::CXXMethodDecl *> Methods;
+  bool InlineLambda = false;
 };
 std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     const State &S, const clang::SourceManager &SM, const clang::CallExpr *Call,
