@@ -29107,7 +29107,7 @@ class FunctionLowering {
     jump(Check, L); label(Done, L);
   }
 
-  void listSpliceAllValueStorage(Expression Place, Expression Source, SourceLocation L) {
+  void listSpliceAllValueStorage(Expression Place, Expression Source, Expression Position, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Transfer = labelName(), Done = labelName();
     branch(binary("!=", listMember(Source, "nct_list_size", L), quantity(0, Size, L), "bool", L), Transfer, Done, L);
@@ -29115,7 +29115,6 @@ class FunctionLowering {
     auto First = snapshot(listMember(Source, "nct_list_next", L), L);
     auto Last = snapshot(listMember(Source, "nct_list_prev", L), L);
     auto Count = snapshot(listMember(Source, "nct_list_size", L), L);
-    auto Position = snapshot(listSentinel(Place, L), L);
     auto Previous = snapshot(listLink(Position, true, L), L);
     initializeListStorage(Source, L);
     assign(listLink(Previous, false, L), First, L);
@@ -29123,6 +29122,62 @@ class FunctionLowering {
     assign(listLink(Last, false, L), Position, L);
     assign(listLink(Position, true, L), Last, L);
     assign(listMember(Place, "nct_list_size", L), binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void listRelinkSpliceRange(Expression Position, Expression First, Expression Last, Expression After, SourceLocation L) {
+    auto Previous = snapshot(listLink(First, true, L), L);
+    assign(listLink(Previous, false, L), After, L);
+    assign(listLink(After, true, L), Previous, L);
+    // When Position is After in a same-owner range, it now has a different prev.
+    auto TargetPrevious = snapshot(listLink(Position, true, L), L);
+    assign(listLink(TargetPrevious, false, L), First, L);
+    assign(listLink(First, true, L), TargetPrevious, L);
+    assign(listLink(Last, false, L), Position, L);
+    assign(listLink(Position, true, L), Last, L);
+  }
+
+  void listSpliceOneValueStorage(Expression Place, Expression Source, Expression Position, Expression Node, SourceLocation L) {
+    const auto CheckNext = labelName(), Transfer = labelName(), Done = labelName();
+    branch(binary("!=", Position, Node, "bool", L), CheckNext, Done, L);
+    label(CheckNext, L);
+    auto Next = snapshot(listLink(Node, false, L), L);
+    branch(binary("!=", Position, Next, "bool", L), Transfer, Done, L);
+    label(Transfer, L);
+    listRelinkSpliceRange(Position, Node, Node, Next, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    assign(listMember(Source, "nct_list_size", L),
+        binary("-", listMember(Source, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("+", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void listSpliceRangeValueStorage(Expression Place, Expression Source, Expression Position,
+      Expression First, Expression After, SourceLocation L) {
+    const auto Prepare = labelName(), CountNodes = labelName(), CountCheck = labelName(), Advance = labelName();
+    const auto Resize = labelName(), Transfer = labelName(), Done = labelName();
+    branch(binary("!=", First, After, "bool", L), Prepare, Done, L);
+    label(Prepare, L);
+    auto Last = snapshot(listLink(After, true, L), L);
+    branch(binary("!=", listSentinel(Place, L), listSentinel(Source, L), "bool", L), CountNodes, Transfer, L);
+    label(CountNodes, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Current = temporary("ptr:void", L), Count = temporary(Size, L);
+    assign(Current, First, L);
+    assign(Count, quantity(0, Size, L), L);
+    jump(CountCheck, L); label(CountCheck, L);
+    branch(binary("!=", Current, After, "bool", L), Advance, Resize, L);
+    label(Advance, L);
+    assign(Current, snapshot(listLink(Current, false, L), L), L);
+    assign(Count, binary("+", Count, quantity(1, Size, L), Size, L), L);
+    jump(CountCheck, L);
+    label(Resize, L);
+    assign(listMember(Source, "nct_list_size", L), binary("-", listMember(Source, "nct_list_size", L), Count, Size, L), L);
+    assign(listMember(Place, "nct_list_size", L), binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    jump(Transfer, L);
+    label(Transfer, L);
+    listRelinkSpliceRange(Position, First, Last, After, L);
     jump(Done, L); label(Done, L);
   }
 
@@ -29298,9 +29353,26 @@ class FunctionLowering {
         label(Copy, L); listAssignValueStorage(Place, Source, Owner->Node, L); jump(Done, L); label(Done, L);
       } else {
         destroyListStorage(Place, Owner->Node, L);
-        listSpliceAllValueStorage(Place, Source, L);
+        listSpliceAllValueStorage(Place, Source, snapshot(listSentinel(Place, L), L), L);
       }
       return Place;
+    }
+    if (Operation == UtilityListOperation::SpliceAll || Operation == UtilityListOperation::SpliceOne ||
+        Operation == UtilityListOperation::SpliceRange) {
+      auto Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
+      auto Source = dereference(Operands[1], L);
+      if (Operation == UtilityListOperation::SpliceAll) {
+        listSpliceAllValueStorage(Place, Source, Position, L);
+      } else {
+        auto First = snapshot(listIteratorMember(dereference(Operands[2], L), L), L);
+        if (Operation == UtilityListOperation::SpliceOne) {
+          listSpliceOneValueStorage(Place, Source, Position, First, L);
+        } else {
+          auto After = snapshot(listIteratorMember(dereference(Operands[3], L), L), L);
+          listSpliceRangeValueStorage(Place, Source, Position, First, After, L);
+        }
+      }
+      return Expression{};
     }
     if (Operation == UtilityListOperation::Swap) {
       listSwapValueStorage(Place, dereference(Operands[0], L), L); return Expression{};
@@ -41904,7 +41976,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       if (*Kind == UtilityListConstruction::Copy || *Kind == UtilityListConstruction::Move) {
         auto Source = dereference(Operands[0], L);
         if (*Kind == UtilityListConstruction::Copy) listCopyValueStorage(Place, Source, Owner->Node, L);
-        else listSpliceAllValueStorage(Place, Source, L);
+        else listSpliceAllValueStorage(Place, Source, snapshot(listSentinel(Place, L), L), L);
         return;
       }
       if (*Kind != UtilityListConstruction::InitializerList) return;

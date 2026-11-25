@@ -56394,6 +56394,22 @@ std::optional<UtilityListOperation> listMethodSignature(
       }
     }
     if (M->isConst()) return std::nullopt;
+    if (Name == "splice" && M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
+      const auto Count = M->getNumParams();
+      if (Count < 2 || Count > 4) return std::nullopt;
+      const auto Source = M->getParamDecl(1)->getType();
+      if (!Context.hasSameType(Source, Context.getLValueReferenceType(Type)) &&
+          !Context.hasSameType(Source, Context.getRValueReferenceType(Type)))
+        return std::nullopt;
+      for (unsigned I = 0; I < Count; ++I) {
+        const auto *Param = M->getParamDecl(I);
+        if (Param->hasDefaultArg() || (I != 1 && !listIteratorType(S, SM, Param->getType(), Owner->Node, true, Context)))
+          return std::nullopt;
+      }
+      if (Count == 2) return UtilityListOperation::SpliceAll;
+      if (Count == 3) return UtilityListOperation::SpliceOne;
+      return UtilityListOperation::SpliceRange;
+    }
     if ((Name == "push_front" || Name == "push_back") && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
         listIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return Name == "push_front" ? UtilityListOperation::PushFront : UtilityListOperation::PushBack;
