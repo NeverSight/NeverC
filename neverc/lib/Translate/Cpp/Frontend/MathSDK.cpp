@@ -10880,6 +10880,44 @@ static bool variantVisitMatrix(const State &S, const SourceManager &SM,
   return CheckEntries(CheckEntries, Evaluated.Val, 0);
 }
 
+static const Expr *variantVisitSourceCast(const State &S, const SourceManager &SM,
+    const Expr *Operand, QualType Reference, const ASTContext &Context) {
+  const auto *Call = dyn_cast<CallExpr>(Operand->IgnoreParens());
+  if (!Call || !Call->isXValue() || Call->getNumArgs() != 1 || !directFunctionReference(Call))
+    return nullptr;
+  const auto *Function = Call->getDirectCallee();
+  if (!Function || !Function->getIdentifier() || isa<CXXMethodDecl>(Function) ||
+      Function->isImplicit() || Function->isInvalidDecl() || Function->isDeleted() ||
+      Function->isVariadic() || Function->isConsteval() || Function->getBuiltinID() ||
+      Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Function->hasAttrs() || Function->getNumParams() != 1 ||
+      !S.owns(SM, Function->getLocation()) ||
+      !Context.hasSameType(Function->getReturnType(), Reference))
+    return nullptr;
+
+  const auto *Argument = Call->getArg(0);
+  const auto Type = Reference.getNonReferenceType();
+  const auto Input = Context.getLValueReferenceType(Type);
+  if (!Argument->isLValue() || isa<CXXDefaultArgExpr>(Argument) ||
+      !Context.hasSameType(Argument->getType(), Type) ||
+      !Context.hasSameType(Function->getParamDecl(0)->getType(), Input))
+    return nullptr;
+
+  const FunctionDecl *Definition = nullptr;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getBody(Definition));
+  if (!Body || Body->size() != 1 || !Definition || Definition->hasAttrs() ||
+      !S.owns(SM, Definition->getLocation()))
+    return nullptr;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_front());
+  const auto *Result = Return ? Return->getRetValue() : nullptr;
+  const auto *Cast = Result ? dyn_cast<CXXStaticCastExpr>(Result->IgnoreParens()) : nullptr;
+  if (!Cast || Cast->getCastKind() != CK_NoOp || !Cast->isXValue() ||
+      !S.owns(SM, Cast->getExprLoc()) || !Context.hasSameType(Cast->getTypeAsWritten(), Reference) ||
+      !variantParameter(Cast->getSubExpr(), Definition->getParamDecl(0)))
+    return nullptr;
+  return Argument;
+}
+
 std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
     const State &S, const SourceManager &SM, const CallExpr *Call, const ASTContext &Context) {
   constexpr unsigned MaxMatrixEntries = 64;
@@ -10903,9 +10941,27 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
       return std::nullopt;
     if (!Operand->isLValue()) {
       const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Operand->IgnoreParens());
-      if (!Temporary || Temporary->getStorageDuration() != SD_FullExpression ||
-          Temporary->getExtendingDecl() || !Temporary->getSubExpr()->isPRValue())
-        return std::nullopt;
+      if (Temporary) {
+        if (Temporary->getStorageDuration() != SD_FullExpression ||
+            Temporary->getExtendingDecl() || !Temporary->getSubExpr()->isPRValue())
+          return std::nullopt;
+      } else {
+        // A checked reference cast borrows the existing operand for this call.
+        // The dispatch still requires value parameters for xvalue alternatives.
+        const auto *Cast = dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParens());
+        const auto *Source = Cast && Cast->getCastKind() == CK_NoOp &&
+            Context.hasSameType(Cast->getTypeAsWritten(), Reference)
+            ? Cast->getSubExpr() : variantVisitMoveSource(S, SM, Operand, Context);
+        if (!Source)
+          Source = variantVisitSourceCast(S, SM, Operand, Reference, Context);
+        const auto *Binding = Source ? dyn_cast<DeclRefExpr>(Source->IgnoreParens()) : nullptr;
+        const auto *Variable = Binding ? dyn_cast<VarDecl>(Binding->getDecl()) : nullptr;
+        if (!Operand->isXValue() || !Variable || Variable->isImplicit() ||
+            !Variable->hasLocalStorage() || !S.owns(SM, Variable->getLocation()) ||
+            !S.owns(SM, Operand->getExprLoc()) || !Binding->isLValue() ||
+            !Context.hasSameType(Binding->getType(), Value))
+          return std::nullopt;
+      }
     }
     auto V = approvedUtilityVariantRecord(S, SM, Operand->getType(), Context);
     if (!V || V->Alternatives.empty() || V->Alternatives.size() > 8 ||
