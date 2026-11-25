@@ -4018,7 +4018,7 @@ enum class UtilityForwardListConstruction {
 enum class UtilityForwardListOperation {
   Empty, GetAllocator, MaxSize, Begin, End, BeforeBegin, Front, PushFront, PopFront, InsertAfter, EraseAfter, EraseRange, Clear, MoveAssign,
   SpliceAll, SpliceOne, SpliceRange, EmplaceFront, EmplaceAfter,
-  Reverse, Swap, FreeSwap, CopyAssign, AssignInitializerList, AssignInitializerListOperator, AssignCount, AssignPointerRange, AssignIteratorRange, Merge, Sort, RemoveValue, Unique, Resize, ResizeFill,
+  Reverse, Swap, FreeSwap, CopyAssign, AssignInitializerList, AssignInitializerListOperator, AssignCount, AssignPointerRange, AssignIteratorRange, Merge, Sort, MergeWithOrder, SortWithOrder, RemoveValue, Unique, RemoveIf, UniqueWithPredicate, Resize, ResizeFill,
   InsertAfterCount, InsertAfterInitializerList, InsertAfterPointerRange, InsertAfterIteratorRange,
   OwnerEqual, OwnerNotEqual, OwnerLess, OwnerGreater, OwnerLessEqual, OwnerGreaterEqual,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement,

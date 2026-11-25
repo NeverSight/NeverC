@@ -18661,3 +18661,9 @@ the original range, including empty input.
 The default-allocator forward_list<int> supports equality and lexicographical
 ordering, allocator queries and explicit allocator copy and move. Checked
 iterator ranges also support construction, assignment and insertion.
+
+## Forward list function comparisons and predicates
+
+The default-allocator forward_list<int> accepts checked function pointers for
+stable sort and merge, removal by a predicate, and adjacent duplicate
+removal by a two-argument predicate.

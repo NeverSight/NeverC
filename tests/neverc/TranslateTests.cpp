@@ -408440,7 +408440,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListRemovePredicateGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListRemovesWithFunctionPredicate) {
   const auto Source = tmpFile("forward-list-remove-predicate-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 bool matches(int value) { return value == 5; }
@@ -408450,13 +408450,20 @@ int main() {
   return !list.empty();
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-remove-predicate-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-remove-predicate-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListUniqueCustomPredicateGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListKeepsOneWithFunctionPredicate) {
   const auto Source = tmpFile("forward-list-unique-custom-predicate-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 bool equal(int left, int right) { return left == right; }
@@ -408466,10 +408473,17 @@ int main() {
   return list.front() != 3;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-unique-custom-predicate-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-unique-custom-predicate-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListFilterOtherElementGuardRejected) {
@@ -408599,7 +408613,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListMergeCustomComparatorGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListMergesWithFunctionComparison) {
   const auto Source = tmpFile("forward-list-merge-custom-comparator-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 bool less(int a, int b) { return a < b; }
@@ -408610,13 +408624,20 @@ int main() {
   return left.front() != 1;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-merge-custom-comparator-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-merge-custom-comparator-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListMergeRvalueCustomComparatorGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListMergesRvalueWithFunctionComparison) {
   const auto Source = tmpFile("forward-list-merge-rvalue-custom-comparator-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 #include <utility>
@@ -408628,10 +408649,17 @@ int main() {
   return left.front() != 3;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-merge-rvalue-custom-comparator-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-merge-rvalue-custom-comparator-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListMergeOtherElementGuardRejected) {
@@ -408754,7 +408782,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListSortCustomFunctionGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListSortsWithFunctionComparison) {
   const auto Source = tmpFile("forward-list-sort-custom-function-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 bool greater(int left, int right) { return left > right; }
@@ -408764,10 +408792,17 @@ int main() {
   return list.front() != 2;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-sort-custom-function-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-sort-custom-function-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListSortCustomObjectGuardRejected) {
@@ -409712,6 +409747,194 @@ int main() {
   std::forward_list<int> from{3, 5}, into;
   into.insert_after(into.cbefore_begin(), std::make_move_iterator(from.begin()), std::make_move_iterator(from.end()));
   return into.front() != 3;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListOrderFunctionKeepsStabilityAndNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-order-function-keeps-stability-and-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool descending(int a, int b) { return a > b; }
+int main() {
+  std::forward_list<int> left{1, 7, 3, 3}, right{5, 3};
+  auto first_three = left.begin();
+  ++first_three;
+  ++first_three;
+  auto next_three = first_three;
+  ++next_three;
+  auto other_three = right.begin();
+  ++other_three;
+  left.sort(&descending);
+  left.merge(right, descending);
+  auto it = left.begin();
+  if (!right.empty() || *it != 7 || *++it != 5 || ++it != first_three)
+    return 1;
+  if (++it != next_three || ++it != other_three || *++it != 1)
+    return 2;
+  return ++it != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-order-function-keeps-stability-and-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-order-function-keeps-stability-and-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListSortObservableFunctionGuardRejected) {
+  const auto Source = tmpFile("forward-list-sort-observable-function-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int count;
+bool compare(int a, int b) { ++count; return a < b; }
+int main() {
+  std::forward_list<int> owner{3, 1, 7};
+  owner.sort(compare);
+  return owner.front() != 1 || count == 0;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMergeOtherFunctionSignatureGuardRejected) {
+  const auto Source = tmpFile("forward-list-merge-other-function-signature-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool compare(long a, long b) { return a < b; }
+int main() {
+  std::forward_list<int> left{1, 7}, right{3, 5};
+  left.merge(right, compare);
+  return !right.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRemovePredicateEvaluatesOnceInOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-remove-predicate-evaluates-once-in-order.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int trace;
+int calls;
+bool even(int value) {
+  trace = trace * 10 + value;
+  ++calls;
+  return value % 2 == 0;
+}
+using Predicate = bool (*)(int);
+int selections;
+Predicate select() {
+  ++selections;
+  return even;
+}
+int main() {
+  std::forward_list<int> values{2, 4, 3, 6, 5};
+  auto it = values.begin();
+  ++it;
+  ++it;
+  auto last = it;
+  ++last;
+  ++last;
+  values.remove_if(select());
+  if (selections != 1 || calls != 5 || trace != 24365)
+    return 1;
+  auto cursor = values.begin();
+  return cursor != it || *cursor != 3 || ++cursor != last || *cursor != 5 || ++cursor != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-remove-predicate-evaluates-once-in-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-remove-predicate-evaluates-once-in-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUniquePredicateKeepsFirstAndComparesAdjacentRunsRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-unique-predicate-keeps-first-and-compares-adjacent-runs.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int trace;
+int calls;
+bool same_parity(int first, int next) {
+  trace = 100 * trace + 10 * first + next;
+  ++calls;
+  return first % 2 == next % 2;
+}
+int main() {
+  std::forward_list<int> values{2, 4, 5, 7, 6};
+  auto first = values.begin();
+  auto second = first;
+  ++second;
+  ++second;
+  auto third = second;
+  ++third;
+  ++third;
+  values.unique(same_parity);
+  if (calls != 4 || trace != 24255756)
+    return 1;
+  auto it = values.begin();
+  return it != first || *it != 2 || ++it != second || *it != 5 ||
+         ++it != third || *it != 6 || ++it != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-unique-predicate-keeps-first-and-compares-adjacent-runs.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-unique-predicate-keeps-first-and-compares-adjacent-runs" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUniquePredicateOtherFunctionSignatureGuardRejected) {
+  const auto Source = tmpFile("forward-list-unique-predicate-other-function-signature-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool equal(long first, long next) { return first == next; }
+int main() {
+  std::forward_list<int> values{3, 3};
+  values.unique(equal);
+  return values.front() != 3;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRemovePredicateObjectGuardRejected) {
+  const auto Source = tmpFile("forward-list-remove-predicate-object-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Matches {
+  int value;
+  bool operator()(int input) const { return value == input; }
+};
+int main() {
+  std::forward_list<int> values{2, 3, 5};
+  values.remove_if(Matches{2});
+  return values.front() != 3;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

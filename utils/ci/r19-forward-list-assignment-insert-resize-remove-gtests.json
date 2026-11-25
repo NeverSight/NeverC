@@ -143,6 +143,22 @@
       "source_sha256": "86ae32e7a8afb1894d545b49579530842b1e27090516e2cd0474ecaa768ca33d",
       "original_case_source_sha256": "86ae32e7a8afb1894d545b49579530842b1e27090516e2cd0474ecaa768ca33d",
       "gtest_body_sha256": "45f1ca760fcdd861ef982eafb003db7ac330e0d48b4e93079d7a591d49d5b137"
+    },
+    {
+      "name": "forward-list-remove-predicate-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRemovesWithFunctionPredicate",
+      "expected": "accept",
+      "source_sha256": "7de07c122d9865b9cb226a292315f8ca05268230d35fd52e201e1020a0d09c1e",
+      "original_case_source_sha256": "7de07c122d9865b9cb226a292315f8ca05268230d35fd52e201e1020a0d09c1e",
+      "gtest_body_sha256": "a4f87c388cd5617507adecddf2caf7914fa558a939a61283c30a801232ee21cd"
+    },
+    {
+      "name": "forward-list-unique-custom-predicate-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListKeepsOneWithFunctionPredicate",
+      "expected": "accept",
+      "source_sha256": "2fb4deafc0ae86145f32ab42b17343829273cb9358a9fd9b8f100d43f0c8db00",
+      "original_case_source_sha256": "2fb4deafc0ae86145f32ab42b17343829273cb9358a9fd9b8f100d43f0c8db00",
+      "gtest_body_sha256": "43bf7cfad6e630305400019f6bb5d59e45bc2f1900a55e9c5b1eacc0219817dd"
     }
   ],
   "negative_cases": [
@@ -201,22 +217,6 @@
       "source_sha256": "c9d0957c88c5adf7d1f3352b45e9e0df0742abeda9aac16fca3e36eda9055b53",
       "original_case_source_sha256": "c9d0957c88c5adf7d1f3352b45e9e0df0742abeda9aac16fca3e36eda9055b53",
       "gtest_body_sha256": "26e219d3ae1c62bcd15eb4f0befc731924ad1446c52b38eec854d761f2db22a9"
-    },
-    {
-      "name": "forward-list-remove-predicate-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListRemovePredicateGuardRejected",
-      "expected": "reject",
-      "source_sha256": "7de07c122d9865b9cb226a292315f8ca05268230d35fd52e201e1020a0d09c1e",
-      "original_case_source_sha256": "7de07c122d9865b9cb226a292315f8ca05268230d35fd52e201e1020a0d09c1e",
-      "gtest_body_sha256": "94cf53d70cadc2bbd205f1c5c55702230c724d16028bd8e1c6f37b4582d82f02"
-    },
-    {
-      "name": "forward-list-unique-custom-predicate-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListUniqueCustomPredicateGuardRejected",
-      "expected": "reject",
-      "source_sha256": "2fb4deafc0ae86145f32ab42b17343829273cb9358a9fd9b8f100d43f0c8db00",
-      "original_case_source_sha256": "2fb4deafc0ae86145f32ab42b17343829273cb9358a9fd9b8f100d43f0c8db00",
-      "gtest_body_sha256": "e906a8e5463799b989a8d1d09c22bd4f843d9d19c73968b5acb0fe9698adf1cc"
     },
     {
       "name": "forward-list-filter-other-element-guard",
@@ -373,6 +373,22 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "forward-list-remove-predicate-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nbool matches(int value) { return value == 5; }\nint main() {\n  std::forward_list<int> list{5};\n  list.remove_if(matches);\n  return !list.empty();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "7de07c122d9865b9cb226a292315f8ca05268230d35fd52e201e1020a0d09c1e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-unique-custom-predicate-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nbool equal(int left, int right) { return left == right; }\nint main() {\n  std::forward_list<int> list{3, 3};\n  list.unique(equal);\n  return list.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "2fb4deafc0ae86145f32ab42b17343829273cb9358a9fd9b8f100d43f0c8db00",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "forward-list-initializer-assignment-other-element-guard",
       "expected": "reject",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> list;\n  list = {3L, 5L};\n  return list.front() != 3L;\n}\n",
@@ -429,22 +445,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "forward-list-remove-predicate-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\nbool matches(int value) { return value == 5; }\nint main() {\n  std::forward_list<int> list{5};\n  list.remove_if(matches);\n  return !list.empty();\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "7de07c122d9865b9cb226a292315f8ca05268230d35fd52e201e1020a0d09c1e",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "forward-list-unique-custom-predicate-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\nbool equal(int left, int right) { return left == right; }\nint main() {\n  std::forward_list<int> list{3, 3};\n  list.unique(equal);\n  return list.front() != 3;\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "2fb4deafc0ae86145f32ab42b17343829273cb9358a9fd9b8f100d43f0c8db00",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "forward-list-filter-other-element-guard",
       "expected": "reject",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> list{5L, 5L};\n  list.unique();\n  list.remove(5L);\n  return !list.empty();\n}\n",
@@ -472,6 +472,8 @@
     "TranslateTest.CoreV2ForwardListFilterAllNoneAndEmptyRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListAssignsFromCheckedIteratorRange",
     "TranslateTest.CoreV2ForwardListInsertsFromCheckedIteratorRange",
+    "TranslateTest.CoreV2ForwardListRemovesWithFunctionPredicate",
+    "TranslateTest.CoreV2ForwardListKeepsOneWithFunctionPredicate",
     "TranslateTest.CoreV2ForwardListInitializerAssignmentOtherElementGuardRejected",
     "TranslateTest.CoreV2ForwardListAssignConvertedPointerElementsGuardRejected",
     "TranslateTest.CoreV2ForwardListInsertRangeConvertedPointerGuardRejected",
@@ -479,8 +481,6 @@
     "TranslateTest.CoreV2ForwardListResizeDefaultOtherElementGuardRejected",
     "TranslateTest.CoreV2ForwardListResizeFillOtherElementGuardRejected",
     "TranslateTest.CoreV2ForwardListResizeIndirectMemberGuardRejected",
-    "TranslateTest.CoreV2ForwardListRemovePredicateGuardRejected",
-    "TranslateTest.CoreV2ForwardListUniqueCustomPredicateGuardRejected",
     "TranslateTest.CoreV2ForwardListFilterOtherElementGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -494,9 +494,10 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9169,
   "current_python_registry_tests": 312,
-  "native_reference_selected_executions": 36,
-  "planned_generated_c23_executions": 36,
+  "native_reference_selected_executions": 40,
+  "planned_generated_c23_executions": 40,
   "native_reference_proofs": {
+    "forward-list-filter-function": "cdaf87c834775b6a00adf8cebd928b7f46eec74a3ae2e981a490345da9bed1e6",
     "forward-list-initializer-assignment": "f5e86efb560af95a7315ac44f68a7e3bbe310d81d17a1688d7f39b1d59e5ffc2",
     "forward-list-input-assignment": "abc454be92e498d2a48d86f14749166ad5c768ab023154bc140f2c97febdbd79",
     "forward-list-insert-ranges": "bf6bdf67768be935fb8c49749545dfcad3ed6683119883e70188f51402777b65",
@@ -504,6 +505,6 @@
     "forward-list-remove-and-unique": "add5cfe4b15ee7dafb2e74b646009f5e30a8ecd8a17f45b7e9344e8022a8e348",
     "forward-list-resize": "bd171431830b9158bf5d23321f033d2986c18d90885750bb4a4a959bafd144f2"
   },
-  "native_reference_authentication_sha256": "6887d185691167d395e9b250d32c0f61b4f72b4d933695efabb9653aa946994c",
-  "source_proof_sha256": "fc8032f630f76dcb4baf833e88c74ad68240b6b5e0653368175bdc8ca079204c"
+  "native_reference_authentication_sha256": "495b4aa41d9f43741fa04f7f385d322bcbef2a91e8648def93dc9747b16c1ded",
+  "source_proof_sha256": "747c7fc5a065650287ccf63eb447b9b2bc34bee8bb820b2c815b9911dfbad0b1"
 }

@@ -27278,16 +27278,16 @@ class FunctionLowering {
     Decrement();
     jump(GrowCheck, L); label(Done, L);
   }
-  Expression detachForwardListMatches(Expression Link, Expression First, Expression Reference,
-                                      Expression Removed, SourceLocation L) {
+  template <class Match>
+  Expression detachForwardListMatches(Expression Link, Expression First, Expression Removed,
+                                      const Match &Matches, SourceLocation L) {
     auto Last = snapshot(First, L);
     auto Following = snapshot(forwardListNext(Last, L), L);
     const auto Check = labelName(), Compare = labelName(), Extend = labelName(), Detach = labelName();
     jump(Check, L); label(Check, L);
     branch(cast(Following, "bool", L), Compare, Detach, L);
     label(Compare, L);
-    branch(binary("==", forwardListValue(Following, true, L), dereference(Reference, L), "bool", L),
-        Extend, Detach, L);
+    branch(Matches(Following), Extend, Detach, L);
     label(Extend, L);
     assign(Last, Following, L);
     assign(Following, forwardListNext(Last, L), L);
@@ -27298,8 +27298,14 @@ class FunctionLowering {
     assign(Link, Following, L);
     return Following;
   }
-  void removeForwardListValues(Expression Place, Expression Reference,
+  void removeForwardListValues(Expression Place, Expression Filter, QualType PredicateType,
                                const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    const auto Matches = [&](const Expression &Node) {
+      auto Value = forwardListValue(Node, true, L);
+      return PredicateType.isNull()
+          ? binary("==", std::move(Value), dereference(Filter, L), "bool", L)
+          : emitUnaryPredicate(Filter, PredicateType, std::move(Value), L);
+    };
     auto Removed = temporary("ptr:void", L);
     initializeZero(Removed, A.Context.VoidPtrTy, L);
     auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
@@ -27310,10 +27316,9 @@ class FunctionLowering {
     assign(Current, dereference(Link, L), L);
     branch(cast(Current, "bool", L), Compare, Done, L);
     label(Compare, L);
-    branch(binary("==", forwardListValue(Current, true, L), dereference(Reference, L), "bool", L),
-        Remove, Advance, L);
+    branch(Matches(Current), Remove, Advance, L);
     label(Remove, L);
-    assign(Current, detachForwardListMatches(dereference(Link, L), Current, Reference, Removed, L), L);
+    assign(Current, detachForwardListMatches(dereference(Link, L), Current, Removed, Matches, L), L);
     branch(cast(Current, "bool", L), Advance, Done, L);
     label(Advance, L);
     assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
@@ -27321,7 +27326,8 @@ class FunctionLowering {
     // The value reference may designate an element that was removed.
     releaseForwardListChain(Removed, A.zero(A.Context.VoidPtrTy, L), Info, L);
   }
-  void uniqueForwardListValues(Expression Place, const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+  void uniqueForwardListValues(Expression Place, std::optional<Expression> Predicate, QualType PredicateType,
+                               const UtilityForwardListNodeRecord &Info, SourceLocation L) {
     auto Removed = temporary("ptr:void", L);
     initializeZero(Removed, A.Context.VoidPtrTy, L);
     auto Current = snapshot(forwardListMember(Place, false, L), L);
@@ -27334,17 +27340,24 @@ class FunctionLowering {
     auto Successor = snapshot(Link, L);
     branch(cast(Successor, "bool", L), Compare, Done, L);
     label(Compare, L);
-    auto Reference = snapshot(address(forwardListValue(Current, true, L), A.Context.IntTy.withConst(), L), L);
-    branch(binary("==", forwardListValue(Successor, true, L), dereference(Reference, L), "bool", L),
-        Remove, Advance, L);
+    const auto Matches = [&](const Expression &Node) {
+      auto First = forwardListValue(Current, true, L);
+      auto Next = forwardListValue(Node, true, L);
+      return Predicate
+          ? emitBinaryPredicate(*Predicate, PredicateType, std::move(First), std::move(Next), L)
+          : binary("==", std::move(First), std::move(Next), "bool", L);
+    };
+    branch(Matches(Successor), Remove, Advance, L);
     label(Remove, L);
-    assign(Current, detachForwardListMatches(Link, Successor, Reference, Removed, L), L);
+    assign(Current, detachForwardListMatches(Link, Successor, Removed, Matches, L), L);
     jump(Check, L); label(Advance, L);
     assign(Current, Successor, L);
     jump(Check, L); label(Done, L);
     releaseForwardListChain(Removed, A.zero(A.Context.VoidPtrTy, L), Info, L);
   }
-  Expression mergeForwardListChains(Expression LeftHead, Expression RightHead, SourceLocation L) {
+  Expression mergeForwardListChains(Expression LeftHead, Expression RightHead,
+                                    const std::optional<Expression> &Comparator, QualType ComparatorType,
+                                    SourceLocation L) {
     auto Left = snapshot(std::move(LeftHead), L), Right = snapshot(std::move(RightHead), L);
     auto Head = temporary("ptr:void", L);
     auto Link = snapshot(address(Head, A.Context.VoidPtrTy, L), L);
@@ -27356,8 +27369,12 @@ class FunctionLowering {
     branch(combineForwardListConditions("&", cast(Left, "bool", L), cast(Right, "bool", L), L), Compare, Tail, L);
     label(Compare, L);
     // Equal elements from the destination precede those from the source.
-    branch(binary("<", forwardListValue(Right, true, L), forwardListValue(Left, true, L), "bool", L),
-        PickRight, PickLeft, L);
+    auto RightValue = forwardListValue(Right, true, L);
+    auto LeftValue = forwardListValue(Left, true, L);
+    auto PickSource = Comparator
+        ? emitBinaryPredicate(*Comparator, ComparatorType, std::move(RightValue), std::move(LeftValue), L)
+        : binary("<", std::move(RightValue), std::move(LeftValue), "bool", L);
+    branch(std::move(PickSource), PickRight, PickLeft, L);
     label(PickLeft, L);
     assign(Item, Left, L);
     assign(Left, forwardListNext(Left, L), L);
@@ -27398,7 +27415,8 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
     return Rest;
   }
-  void sortForwardListStorage(Expression Place, SourceLocation L) {
+  void sortForwardListStorage(Expression Place, const std::optional<Expression> &Comparator,
+                              QualType ComparatorType, SourceLocation L) {
     auto Head = snapshot(forwardListMember(Place, false, L), L);
     auto Width = snapshot(quantity(1, "u64", L), L);
     auto Unsorted = temporary("ptr:void", L);
@@ -27420,7 +27438,7 @@ class FunctionLowering {
     auto Right = splitForwardListRun(Left, Width, L);
     auto Rest = splitForwardListRun(Right, Width, L);
     assign(More, combineForwardListConditions("|", More, cast(Rest, "bool", L), L), L);
-    auto Merged = mergeForwardListChains(Left, Right, L);
+    auto Merged = mergeForwardListChains(Left, Right, Comparator, ComparatorType, L);
     assign(dereference(Link, L), Merged, L);
     auto Current = snapshot(Merged, L);
     jump(Walk, L); label(Walk, L);
@@ -27671,26 +27689,43 @@ class FunctionLowering {
       resizeForwardListStorage(Place, Operands[0], std::move(ValueReference), Owner->Node, L);
       return Expression{};
     }
-    if (Operation == UtilityForwardListOperation::RemoveValue) {
-      removeForwardListValues(Place, Operands[0], Owner->Node, L);
+    if (Operation == UtilityForwardListOperation::RemoveValue || Operation == UtilityForwardListOperation::RemoveIf) {
+      const auto PredicateType = Operation == UtilityForwardListOperation::RemoveIf
+          ? Method->getParamDecl(0)->getType() : QualType{};
+      removeForwardListValues(Place, Operands[0], PredicateType, Owner->Node, L);
       return Expression{};
     }
-    if (Operation == UtilityForwardListOperation::Unique) {
-      uniqueForwardListValues(Place, Owner->Node, L);
+    if (Operation == UtilityForwardListOperation::Unique || Operation == UtilityForwardListOperation::UniqueWithPredicate) {
+      std::optional<Expression> Predicate;
+      QualType PredicateType;
+      if (Operation == UtilityForwardListOperation::UniqueWithPredicate) {
+        Predicate = Operands[0];
+        PredicateType = Method->getParamDecl(0)->getType();
+      }
+      uniqueForwardListValues(Place, std::move(Predicate), PredicateType, Owner->Node, L);
       return Expression{};
     }
-    if (Operation == UtilityForwardListOperation::Sort) {
-      sortForwardListStorage(Place, L);
+    const bool CustomSort = Operation == UtilityForwardListOperation::SortWithOrder;
+    const bool CustomMerge = Operation == UtilityForwardListOperation::MergeWithOrder;
+    std::optional<Expression> Comparator;
+    QualType ComparatorType;
+    if (CustomSort || CustomMerge) {
+      const unsigned Index = CustomMerge ? 1 : 0;
+      Comparator = Operands[Index];
+      ComparatorType = Method->getParamDecl(Index)->getType();
+    }
+    if (CustomSort || Operation == UtilityForwardListOperation::Sort) {
+      sortForwardListStorage(Place, Comparator, ComparatorType, L);
       return Expression{};
     }
-    if (Operation == UtilityForwardListOperation::Merge) {
+    if (CustomMerge || Operation == UtilityForwardListOperation::Merge) {
       const auto Merge = labelName(), Done = labelName();
       branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(Operands.front(), "ptr:void", L), "bool", L),
           Merge, Done, L);
       label(Merge, L);
       auto Destination = forwardListMember(Place, false, L);
       auto Source = forwardListMember(dereference(Operands.front(), L), false, L);
-      auto Head = mergeForwardListChains(Destination, Source, L);
+      auto Head = mergeForwardListChains(Destination, Source, Comparator, ComparatorType, L);
       assign(Destination, Head, L);
       initializeZero(Source, A.Context.VoidPtrTy, L);
       jump(Done, L); label(Done, L);

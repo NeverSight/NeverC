@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.forward_list_function_comparisons_and_predicates_registered = cls.registered
+        cls.forward_list_function_comparisons_and_predicates_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_function_comparisons_and_predicates_original = cls.adapter.restore_original_gtests(cls.forward_list_function_comparisons_and_predicates_registered,
+                                                                        cls.forward_list_function_comparisons_and_predicates_suffix)
+        cls.registered = cls.adapter.restore_forward_list_function_comparisons_and_predicates_history(cls.forward_list_function_comparisons_and_predicates_registered)
         cls.forward_list_comparisons_observers_and_iterators_registered = cls.registered
         cls.forward_list_comparisons_observers_and_iterators_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.forward_list_comparisons_observers_and_iterators_original = cls.adapter.restore_original_gtests(cls.forward_list_comparisons_observers_and_iterators_registered,
@@ -4096,6 +4101,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_forward_list_comparisons_observers_and_iterators_history(self.forward_list_comparisons_observers_and_iterators_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.forward_list_comparisons_observers_and_iterators_registered, self.forward_list_comparisons_observers_and_iterators_suffix + b' ')
+
+
+    def test_forward_list_function_comparisons_and_predicates_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_function_comparisons_and_predicates_original + self.forward_list_function_comparisons_and_predicates_suffix, self.forward_list_function_comparisons_and_predicates_registered)
+        self.assertEqual(self.adapter.restore_forward_list_function_comparisons_and_predicates_history(self.forward_list_function_comparisons_and_predicates_original),
+                         self.forward_list_comparisons_observers_and_iterators_original)
+        output, evidence = self.extractor.extract(self.forward_list_function_comparisons_and_predicates_original, ['TranslateTest.CoreV2ForwardListOrderFunctionKeepsStabilityAndNodesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRemovePredicateEvaluatesOnceInOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUniquePredicateKeepsFirstAndComparesAdjacentRunsRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSortObservableFunctionGuardRejected', 'TranslateTest.CoreV2ForwardListMergeOtherFunctionSignatureGuardRejected', 'TranslateTest.CoreV2ForwardListUniquePredicateOtherFunctionSignatureGuardRejected', 'TranslateTest.CoreV2ForwardListRemovePredicateObjectGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9229)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-order-function-keeps-stability-and-nodes', output)
+        self.assertIn(b'forward-list-remove-predicate-object-guard', output)
+
+    def test_forward_list_function_comparisons_and_predicates_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_function_comparisons_and_predicates_history(self.forward_list_function_comparisons_and_predicates_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_function_comparisons_and_predicates_registered, self.forward_list_function_comparisons_and_predicates_suffix + b' ')
 
 
 if __name__ == '__main__':

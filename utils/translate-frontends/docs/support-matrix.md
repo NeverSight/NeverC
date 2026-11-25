@@ -1123,3 +1123,10 @@ The combined compiler passes 7,980 source requests across six 64-bit targets
 and 1434 formal tests on Linux x86-64. All 960 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Forward list function comparisons and predicates
+
+The combined compiler passes 8,022 source requests across six 64-bit targets
+and 1441 formal tests on Linux x86-64. All 968 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.
