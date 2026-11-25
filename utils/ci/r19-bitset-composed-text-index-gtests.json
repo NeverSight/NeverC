@@ -279,6 +279,14 @@
       "source_sha256": "c34b57ceb60f96dbb45f71dc4f738c95b20524179ec35bb4355ebfdf7746ce89",
       "original_case_source_sha256": "c34b57ceb60f96dbb45f71dc4f738c95b20524179ec35bb4355ebfdf7746ce89",
       "gtest_body_sha256": "3f13f58ccd483294cee6d7cb906653747afd6097a9e4a35541419e258e1c78d8"
+    },
+    {
+      "name": "bitset-const-local-guard-const-member",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsConstDataMember",
+      "expected": "accept",
+      "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
+      "original_case_source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
+      "gtest_body_sha256": "80b4708ee802cc776a086abd7ad00642bffd2947e46ab547fff5d67191300cbf"
     }
   ],
   "negative_cases": [
@@ -305,14 +313,6 @@
       "source_sha256": "14f65c012de3c0b2f26b7deba0e19c8b215dfe2deb7e4036dccb0f9617865b0d",
       "original_case_source_sha256": "14f65c012de3c0b2f26b7deba0e19c8b215dfe2deb7e4036dccb0f9617865b0d",
       "gtest_body_sha256": "91b7b8f7f384fa0bd51871c3746083512e40fcb1e3eb19315304eb75c9cd76fc"
-    },
-    {
-      "name": "bitset-const-local-guard-const-member",
-      "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardConstMemberRejected",
-      "expected": "reject",
-      "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
-      "original_case_source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
-      "gtest_body_sha256": "00126fa8e5618c6e57d6d7dc3083fd8522cca3e39c1bb6e8599906f294c772c7"
     },
     {
       "name": "bitset-constant-position-guard-negative",
@@ -623,10 +623,10 @@
     "TranslateTest.CoreV2BitsetUnsignedConversionSelectsImmutableReceiver",
     "TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseLocal",
     "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsStaticConstant",
+    "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsConstDataMember",
     "TranslateTest.CoreV2BitsetConstLocalGuardMutableLocalRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardAliasToMutableRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardConstParameterRejected",
-    "TranslateTest.CoreV2BitsetConstLocalGuardConstMemberRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardNegativeRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardOnePastRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardConvertedTooLargeRejected",
@@ -662,8 +662,9 @@
     "TranslateTest.CoreV2BitsetConstexprTextPointerGuardOwnedDecoderRejected",
     "TranslateTest.CoreV2BitsetWideSwapAndOutOfBoundsPositionRejected"
   ],
-  "native_reference_authentication_sha256": "9feeb3c4db9a034aad56b2c2b7ecd1fdf59faa72ffa03228181440e386671639",
+  "native_reference_authentication_sha256": "e00f9af1732c6792de2f14766f6ed87a68aa28a7dbd5ff9e214bd03442892854",
   "native_reference_proofs": {
+    "bitset-const-member": "f6a998ed0442766f1ef9697e02a8800fa0a70d5931683e1381bae381022a4c34",
     "bitset-const-static-unsigned-replay": "ce04fd417d7df7f8acec5e43b1072804aea691cceed7922f35a6c75caebada2c",
     "bitset-reference-materialization": "81867ed88acbf1edd6052562dfe20dfc33a45dd67a18ddb7aaf31e6913b7b521",
     "bitset-unaliased-copy": "76610846ae7580bb48502fa59e90616b94ee92adebc66499915936f77c4d660a",
@@ -674,8 +675,8 @@
     "owned-string-representation": "07e846ae1ab33e30136acbdfdf50b65df7fe748295c6416fdfb5b6cc630d478e",
     "unsigned-index-type": "af6abbe53a224b21e46ecc2b7803fb918b4ca574b5ceb0bb519e8b4112811941"
   },
-  "native_reference_selected_executions": 70,
-  "planned_generated_c23_executions": 70,
+  "native_reference_selected_executions": 72,
+  "planned_generated_c23_executions": 72,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
   "source_proof_gate_pending": false,
@@ -972,6 +973,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "bitset-const-local-guard-const-member",
+      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n",
+      "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "bitset-const-local-guard-mutable-local",
       "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){Bits bits(1);bits.set(1);return bits.to_ullong()!=3;}\n",
       "source_sha256": "9bc9705d5169bc1c8f6d7942720ec1132136971f8d574f62500c9034332814aa",
@@ -991,14 +1000,6 @@
       "name": "bitset-const-local-guard-const-parameter",
       "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nunsigned long long convert(const Bits& bits){return bits.to_ullong();}\nint main(){const Bits bits(2);return convert(bits)!=2;}\n",
       "source_sha256": "14f65c012de3c0b2f26b7deba0e19c8b215dfe2deb7e4036dccb0f9617865b0d",
-      "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "bitset-const-local-guard-const-member",
-      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n",
-      "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
       "public_header": "bitset",
       "expected": "reject",
       "kind": "source-body-guard"
@@ -1276,5 +1277,5 @@
       "kind": "source-body-guard"
     }
   ],
-  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
 }

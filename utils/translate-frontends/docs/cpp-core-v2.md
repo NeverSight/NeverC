@@ -18581,3 +18581,10 @@ Wide bitset conversion can follow a checked copy from a single-use
 automatic object and a const local static object with constant
 initialization. The source proof uses the selected constructor, exact
 object identity, and storage duration.
+
+## Const bitset data members
+
+Wide unsigned conversion can read a const bitset member of a local
+aggregate with a checked default initializer. The proof follows the
+selected initialization and checks for other uses that could let
+a reference to the owning object escape.

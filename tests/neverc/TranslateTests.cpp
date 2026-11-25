@@ -380545,17 +380545,24 @@ int main(){Bits a(3);const Bits b=a;return b.to_ullong()!=3;}
   }
 }
 
-TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConstMemberRejected) {
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsConstDataMember) {
   const auto Source = tmpFile("bitset-const-local-guard-const-member.cpp");
   writeFile(Source, R"r19bitlocal(#include <bitset>
 using Bits = std::bitset<129>;
 struct State{const Bits bits{2};};
 int main(){State state;return state.bits.to_ullong()!=2;}
 )r19bitlocal");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("bitset-const-local-guard-const-member.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-const-local-guard-const-member" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionSelectsImmutableReceiver) {
@@ -406002,6 +406009,87 @@ int main() {
   static Bits payload(1);
   payload.set(90);
   return payload.to_ullong() != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionDefaultMemberInAggregateListRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-default-member-in-aggregate-list.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+struct State { const std::bitset<129> bits{0x80000000ULL}; };
+int main() {
+  const State state{};
+  return state.bits.to_ulong() != 0x80000000UL;
+}
+)r19containers");
+  const auto Output = tmpFile("bitset-unsigned-conversion-default-member-in-aggregate-list.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-unsigned-conversion-default-member-in-aggregate-list" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionConditionalConstMembersRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-conditional-const-members.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+struct First { const std::bitset<129> bits{5}; };
+struct Second { const std::bitset<129> bits{9}; };
+bool choose(int& reads) { ++reads; return reads == 1; }
+int main() {
+  First first;
+  Second second;
+  int reads = 0;
+  const bool selected = choose(reads);
+  return (selected ? first.bits : second.bits).to_ullong() != 5 || reads != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("bitset-unsigned-conversion-conditional-const-members.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-unsigned-conversion-conditional-const-members" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionExplicitMemberInitializerGuardRejected) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-explicit-member-initializer-guard.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+using Bits = std::bitset<129>;
+struct State { const Bits bits{2}; };
+int main() {
+  State state{Bits{4}};
+  return state.bits.to_ullong() != 4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAliasedMemberOwnerGuardRejected) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-aliased-member-owner-guard.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+struct State { const std::bitset<129> bits{2}; };
+int main() {
+  State state;
+  const State* alias = &state;
+  return alias == nullptr || state.bits.to_ullong() != 2;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

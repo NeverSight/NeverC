@@ -52960,6 +52960,80 @@ static bool bitsetOnlyLocalUse(const State &S, const SourceManager &SM,
   return Check(Check, Body, 0) && Found;
 }
 
+static const Expr *bitsetDefaultMemberInitializer(
+    const State &S, const SourceManager &SM, const MemberExpr *Member,
+    const ASTContext &Context) {
+  if (Member->isArrow())
+    return nullptr;
+  const auto *Field = dyn_cast<FieldDecl>(Member->getMemberDecl());
+  if (!Field || Field->isMutable() || !Field->hasInClassInitializer() ||
+      !S.owns(SM, Field->getLocation()))
+    return nullptr;
+  const auto Type = Field->getType();
+  if (!Type.isConstQualified() || Type.isVolatileQualified() ||
+      Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
+    return nullptr;
+  const auto Bitset = approvedUtilityBitsetRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+  if (!Bitset || (Bitset->Storage && Bitset->Storage->isMutable()))
+    return nullptr;
+
+  const auto *Read = dyn_cast<DeclRefExpr>(Member->getBase()->IgnoreParens());
+  const auto *Variable = Read ? dyn_cast<VarDecl>(Read->getDecl()) : nullptr;
+  if (!Variable || isa<ParmVarDecl>(Variable) || Variable->isImplicit() ||
+      !Variable->hasLocalStorage() || !Variable->hasInit() ||
+      !S.owns(SM, Variable->getLocation()))
+    return nullptr;
+  const auto Owner = Variable->getType();
+  if (Owner->isReferenceType() || Owner.isVolatileQualified() ||
+      Owner.isRestrictQualified() || Owner.getAddressSpace() != LangAS::Default)
+    return nullptr;
+  const auto *Record = Owner->getAsCXXRecordDecl();
+  const auto *Definition = Record ? Record->getDefinition() : nullptr;
+  if (!Definition || !Definition->isAggregate() || Definition->isUnion() ||
+      !Definition->isStandardLayout() || Definition->getNumBases() ||
+      !Definition->hasTrivialDestructor() || !S.owns(SM, Definition->getLocation()))
+    return nullptr;
+  auto Fields = Definition->field_begin();
+  if (Fields == Definition->field_end() || *Fields != Field ||
+      ++Fields != Definition->field_end() || !bitsetOnlyLocalUse(S, SM, Variable, Read))
+    return nullptr;
+
+  // Read only the selected initializer for the field of this actual object.
+  const auto *Init = Variable->getInit()->IgnoreImplicit()->IgnoreParens();
+  const Expr *Selected = nullptr;
+  if (const auto *Construction = dyn_cast<CXXConstructExpr>(Init)) {
+    const auto *Constructor = Construction->getConstructor();
+    if (!Constructor || !Constructor->isDefaultConstructor() ||
+        !Constructor->isImplicit() || !Constructor->isDefaulted() ||
+        Constructor->getParent()->getCanonicalDecl() != Definition->getCanonicalDecl() ||
+        Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+        Construction->getNumArgs())
+      return nullptr;
+    auto Initializers = Constructor->init_begin();
+    if (Initializers == Constructor->init_end())
+      return nullptr;
+    const auto *Initializer = *Initializers++;
+    if (Initializers != Constructor->init_end() || !Initializer->isMemberInitializer() ||
+        Initializer->getMember() != Field)
+      return nullptr;
+    Selected = Initializer->getInit();
+  } else if (const auto *List = dyn_cast<InitListExpr>(Init)) {
+    if (List->isSyntacticForm())
+      List = List->getSemanticForm();
+    if (!List || List->getNumInits() != 1)
+      return nullptr;
+    Selected = List->getInit(0);
+  }
+  const auto *Default = dyn_cast_or_null<CXXDefaultInitExpr>(Selected);
+  if (!Default || Default->getField() != Field)
+    return nullptr;
+  const auto *Expression = Default->getExpr();
+  if (!Expression || !Context.hasSameUnqualifiedType(Expression->getType(), Type) ||
+      !Expression->isCXX11ConstantExpr(Context))
+    return nullptr;
+  return Expression->IgnoreImplicit()->IgnoreParens();
+}
+
 static bool bitsetUnsignedSourceFits(const State &S, const SourceManager &SM,
                                      const Expr *Receiver, QualType Result, const ASTContext &Context,
                                      unsigned Depth, unsigned &Nodes, bool CopySource = false) {
@@ -52971,6 +53045,10 @@ static bool bitsetUnsignedSourceFits(const State &S, const SourceManager &SM,
       return false;
     return bitsetUnsignedSourceFits(S, SM, Conditional->getTrueExpr(), Result, Context, Depth + 1, Nodes) &&
            bitsetUnsignedSourceFits(S, SM, Conditional->getFalseExpr(), Result, Context, Depth + 1, Nodes);
+  }
+  if (const auto *Member = dyn_cast<MemberExpr>(Value)) {
+    const auto *Init = bitsetDefaultMemberInitializer(S, SM, Member, Context);
+    return Init && bitsetUnsignedSourceFits(S, SM, Init, Result, Context, Depth + 1, Nodes);
   }
   if (const auto *Reference = dyn_cast<DeclRefExpr>(Value)) {
     const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
