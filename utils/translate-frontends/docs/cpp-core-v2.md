@@ -18649,3 +18649,9 @@ Default unique keeps the first node in each run of equal values.
 The default-allocator forward_list<int> merges sorted owners and sorts
 their nodes in place with the pinned default comparator. Both operations
 preserve equal-element ordering and retained node addresses.
+
+## Forward list count and pointer-range construction
+
+The default-allocator forward_list<int> accepts checked count and pointer-range
+constructors. The constructors allocate independent nodes and preserve
+the original range, including empty input.
