@@ -27091,14 +27091,23 @@ class FunctionLowering {
     assign(forwardListMember(Result, true, L), std::move(Node), L);
     return Result;
   }
+  Expression forwardListInputValue(Expression Reference, QualType InputElement,
+                                   QualType Element, SourceLocation L) {
+    auto Value = dereference(std::move(Reference), L);
+    if (!InputElement.isNull() && !A.Context.hasSameType(InputElement, Element))
+      return cast(std::move(Value), type(Element, L), L);
+    return Value;
+  }
   Expression forwardListCreateNode(Expression ValueReference, Expression Next,
-      const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+      const UtilityForwardListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
         quantity(16, "u64", L), L), "ptr:void", L), L);
     assign(forwardListNext(Node, L), std::move(Next), L);
     // The SDK constructs the element after allocation, so an aliased reference
     // observes any source-defined allocation callback before this load.
-    assign(forwardListValue(Node, Info.Value->getType(), L), dereference(ValueReference, L), L);
+    const auto Element = Info.Value->getType();
+    assign(forwardListValue(Node, Element, L),
+           forwardListInputValue(std::move(ValueReference), InputElement, Element, L), L);
     return Node;
   }
   struct ForwardListInput {
@@ -27106,6 +27115,7 @@ class FunctionLowering {
     Expression Current;
     std::optional<Expression> Limit;
     Kind Mode = Nodes;
+    QualType PointerElement = {};
   };
 
   ForwardListInput forwardListInitializerInput(Expression Carrier, const CXXRecordDecl *Record,
@@ -27117,11 +27127,12 @@ class FunctionLowering {
     auto Remaining = snapshot(cast(fieldStorage(std::move(Carrier), List->Size, L), "u64", L), L);
     return {std::move(Current), std::move(Remaining), ForwardListInput::CountedArray};
   }
-  ForwardListInput forwardListPointerInput(Expression First, Expression End, QualType Element, SourceLocation L) {
+  ForwardListInput forwardListPointerInput(Expression First, Expression End, QualType PointerType, SourceLocation L) {
+    const auto Element = PointerType->getPointeeType().getUnqualifiedType();
     const auto Pointer = type(A.Context.getPointerType(Element.withConst()), L);
     auto Current = snapshot(cast(std::move(First), Pointer, L), L);
     auto Last = snapshot(cast(std::move(End), Pointer, L), L);
-    return {std::move(Current), std::move(Last), ForwardListInput::PointerRange};
+    return {std::move(Current), std::move(Last), ForwardListInput::PointerRange, Element};
   }
   ForwardListInput forwardListIteratorInput(Expression First, Expression Last, SourceLocation L) {
     auto Current = snapshot(forwardListMember(dereference(std::move(First), L), true, L), L);
@@ -27146,7 +27157,8 @@ class FunctionLowering {
     }
     if (Input.Mode != ForwardListInput::RepeatedValue) {
       auto One = quantity(1, type(A.Context.getPointerDiffType(), L), L);
-      const auto Element = Info.Value->getType();
+      const auto Element = Input.Mode == ForwardListInput::PointerRange
+          ? Input.PointerElement : Info.Value->getType();
       auto Next = index(Input.Current, std::move(One), type(Element, L), L);
       assign(Input.Current, address(std::move(Next), Element.withConst(), L), L);
     }
@@ -27165,7 +27177,8 @@ class FunctionLowering {
     branch(forwardListHasInput(Input, L), Add, Done, L);
     label(Add, L);
     auto Value = forwardListInputReference(Input, Info, L);
-    auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    auto Node = forwardListCreateNode(std::move(Value), A.zero(A.Context.VoidPtrTy, L), Info, L,
+                                      Input.PointerElement);
     assign(dereference(LastLink, L), Node, L);
     assign(LastLink, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
     if (LastInserted) assign(*LastInserted, Node, L);
@@ -27235,7 +27248,10 @@ class FunctionLowering {
     jump(Check, L); label(Check, L);
     branch(combineForwardListConditions("&", forwardListHasInput(Input, L), cast(Output, "bool", L), L), Replace, Resize, L);
     label(Replace, L);
-    assign(forwardListValue(Output, Info.Value->getType(), L), dereference(forwardListInputReference(Input, Info, L), L), L);
+    const auto Element = Info.Value->getType();
+    auto Value = forwardListInputValue(forwardListInputReference(Input, Info, L),
+                                       Input.PointerElement, Element, L);
+    assign(forwardListValue(Output, Element, L), std::move(Value), L);
     advanceForwardListInput(Input, Info, L);
     assign(Link, address(forwardListNext(Output, L), A.Context.VoidPtrTy, L), L);
     assign(Output, dereference(Link, L), L);
@@ -27677,7 +27693,7 @@ class FunctionLowering {
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::AssignPointerRange) {
-      auto Input = forwardListPointerInput(Operands[0], Operands[1], Element, L);
+      auto Input = forwardListPointerInput(Operands[0], Operands[1], Method->getParamDecl(0)->getType(), L);
       assignForwardListStorage(Place, Input, Owner->Node, L);
       return Expression{};
     }
@@ -27834,7 +27850,7 @@ class FunctionLowering {
           return {Operands[2], std::move(Count), ForwardListInput::RepeatedValue};
         }
         if (Operation == UtilityForwardListOperation::InsertAfterPointerRange)
-          return forwardListPointerInput(Operands[1], Operands[2], Element, L);
+          return forwardListPointerInput(Operands[1], Operands[2], Method->getParamDecl(1)->getType(), L);
         if (Operation == UtilityForwardListOperation::InsertAfterIteratorRange)
           return forwardListIteratorInput(Operands[1], Operands[2], L);
         const auto *Record = Method->getParamDecl(1)->getType()->getAsCXXRecordDecl();
@@ -41731,7 +41747,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return;
       }
       if (*Kind == UtilityForwardListConstruction::PointerRange) {
-        auto Input = forwardListPointerInput(Operands[0], Operands[1], Element, L);
+        auto Input = forwardListPointerInput(Operands[0], Operands[1],
+                                            C->getConstructor()->getParamDecl(0)->getType(), L);
         insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);
         return;
       }
