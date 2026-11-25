@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_and_any_value_categories_registered = cls.registered
+        cls.variant_and_any_value_categories_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_and_any_value_categories_original = cls.adapter.restore_original_gtests(cls.variant_and_any_value_categories_registered,
+                                                                        cls.variant_and_any_value_categories_suffix)
+        cls.registered = cls.adapter.restore_variant_and_any_value_categories_history(cls.variant_and_any_value_categories_registered)
         cls.variant_and_any_objects_registered = cls.registered
         cls.variant_and_any_objects_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_and_any_objects_original = cls.adapter.restore_original_gtests(cls.variant_and_any_objects_registered,
@@ -3751,6 +3756,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_and_any_objects_history(self.variant_and_any_objects_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_and_any_objects_registered, self.variant_and_any_objects_suffix + b' ')
+
+
+    def test_variant_and_any_value_categories_retains_published_bodies(self):
+        self.assertEqual(self.variant_and_any_value_categories_original + self.variant_and_any_value_categories_suffix, self.variant_and_any_value_categories_registered)
+        self.assertEqual(self.adapter.restore_variant_and_any_value_categories_history(self.variant_and_any_value_categories_original),
+                         self.variant_and_any_objects_original)
+        output, evidence = self.extractor.extract(self.variant_and_any_value_categories_original, ['TranslateTest.CoreV2VariantEmplaceIntegerConversionReturnsSlotRunAtBothOptimizations', 'TranslateTest.CoreV2VariantInPlaceUnsignedToWiderSignedRunAtBothOptimizations', 'TranslateTest.CoreV2AnyMovedLocalCastPreservesScalarRunAtBothOptimizations', 'TranslateTest.CoreV2AnyRvalueReferenceCastAliasesPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2AnyExplicitRvalueCastAliasesPointerPayloadRunAtBothOptimizations', 'TranslateTest.CoreV2VariantSizeofExpressionSkipsSideEffectsRunAtBothOptimizations', 'TranslateTest.CoreV2AnySizeofExpressionSkipsPayloadConstructionRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFundamentalPointerCopyKeepsDoubleTypeRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFundamentalPointerKeepsConstBoolRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFundamentalPointerDistinguishesUtfAndIntegersRunAtBothOptimizations', 'TranslateTest.CoreV2AnyFundamentalPointerEmplaceDistinguishesLongRunAtBothOptimizations', 'TranslateTest.CoreV2VariantEmplaceLossyIntegerConversionGuardRejected', 'TranslateTest.CoreV2AnyMovedLocalAfterResetGuardRejected', 'TranslateTest.CoreV2AnyRvalueCastUnprovedCallerOwnedTypeGuardRejected', 'TranslateTest.CoreV2AnyRvalueCastTemporaryReferenceGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9058)
+        self.assertEqual(evidence['selected_count'], 15)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-emplace-integer-conversion-returns-slot', output)
+        self.assertIn(b'any-rvalue-cast-temporary-reference-guard', output)
+
+    def test_variant_and_any_value_categories_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_and_any_value_categories_history(self.variant_and_any_value_categories_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_and_any_value_categories_registered, self.variant_and_any_value_categories_suffix + b' ')
 
 
 if __name__ == '__main__':

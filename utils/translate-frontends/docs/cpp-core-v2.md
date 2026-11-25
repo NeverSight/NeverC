@@ -18559,3 +18559,11 @@ its layout. A checked visitor can return a reference to a live variant
 payload. A visitor can also take a trivial aggregate payload by const
 or mutable reference. Repeated casts on a local any use its initialized
 inline slot while the compiler can prove its active type.
+
+## Variant forwarding and any value categories
+
+Variant construction and emplacement accept checked integer promotions and
+range-preserving conversions. An rvalue any cast can read the proven active
+inline scalar slot or bind an rvalue reference to it. An expression sizeof
+uses its verified layout without evaluating the operand. Inline any storage
+retains the exact fundamental pointer type, including typed null values.

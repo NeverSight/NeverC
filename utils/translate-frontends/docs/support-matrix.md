@@ -1032,3 +1032,10 @@ The combined compiler passes 6,906 source requests across six 64-bit targets
 and 1255 formal tests on Linux x86-64. All 835 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Variant forwarding and any value categories
+
+The combined compiler passes 6,996 source requests across six 64-bit targets
+and 1270 formal tests on Linux x86-64. All 849 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

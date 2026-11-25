@@ -72,6 +72,15 @@
       "original_case_source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
       "gtest_body_sha256": "e5a5c5b976a6fda90a5d2127b5aa3c1f1e8b5935c789ecc2120e7a85314e7a57",
       "source_only": true
+    },
+    {
+      "name": "variant-emplace-widening-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceAcceptsIntegerWidening",
+      "expected": "accept",
+      "source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
+      "original_case_source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
+      "gtest_body_sha256": "d29c0972e467928727459c65ed57f3d26ff5fb10d59f02787579fed988387c61",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -82,14 +91,6 @@
       "source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
       "original_case_source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
       "gtest_body_sha256": "b28ea595171225fa65d3b19d22b2f0e56df01c2892389e9e6782b447d1159753"
-    },
-    {
-      "name": "variant-emplace-widening-operand",
-      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceWideningOperandRejected",
-      "expected": "reject",
-      "source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
-      "original_case_source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
-      "gtest_body_sha256": "67c3fa344239137773bffb32c35a8dffbff6dce705421de6268e5314ffb6514c"
     },
     {
       "name": "variant-emplace-volatile-operand",
@@ -110,8 +111,8 @@
     "TranslateTest.CoreV2VariantEmplaceEmptyAlternativeRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantEmplaceReceiverBeforeInputRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody",
+    "TranslateTest.CoreV2VariantEmplaceAcceptsIntegerWidening",
     "TranslateTest.CoreV2MonostateComparisonSdkAddressRejected",
-    "TranslateTest.CoreV2VariantEmplaceWideningOperandRejected",
     "TranslateTest.CoreV2VariantEmplaceVolatileOperandRejected"
   ],
   "source_cases": [
@@ -188,19 +189,19 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "variant-emplace-widening-operand",
+      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value;\n  return value.emplace<1>(11);\n}\n",
+      "expected": "accept",
+      "source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "monostate-comparison-sdk-address",
       "public_header": "variant",
       "source": "#include <variant>\nint f() {\n  using Compare = bool (*)(std::monostate, std::monostate) noexcept;\n  auto call = static_cast<Compare>(&std::operator==);\n  return call({}, {});\n}\n",
       "source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
       "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "variant-emplace-widening-operand",
-      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value;\n  return value.emplace<1>(11);\n}\n",
-      "expected": "reject",
-      "source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
-      "public_header": "variant",
       "kind": "source-body-guard"
     },
     {
@@ -234,5 +235,5 @@
     "variant-monostate": "8667d3acb39d6c128cfef45c419d722b98a60057a681a1601dc544aa41c18161"
   },
   "native_reference_authentication_sha256": "274314d32fb7d7f9eadd6f44b8392b311919b0579d697e04747256f3e9c1f49f",
-  "source_proof_sha256": "5d91a6a9065074b92e3ed7473b63e2d5f9fed7aba021ba3d3734017810ba7f10"
+  "source_proof_sha256": "bca815bf4959fe5647f01dc8c5921381de591d1bcf4ee1c0c812e7a8be99bde2"
 }
