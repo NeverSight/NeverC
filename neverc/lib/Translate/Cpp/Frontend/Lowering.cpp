@@ -29644,6 +29644,15 @@ class FunctionLowering {
     if (Operation == UtilityListOperation::Swap) {
       listSwapValueStorage(Place, dereference(Operands[0], L), L); return Expression{};
     }
+    if (Operation == UtilityListOperation::GetAllocator) {
+      auto Allocator = temporary(type(Call->getType(), L), L);
+      initializeZero(Allocator, Call->getType(), L);
+      return Allocator;
+    }
+    if (Operation == UtilityListOperation::MaxSize) {
+      if (!Proof->Maximum) reject(L, "list max_size", "The checked node allocator capacity is required.");
+      return quantity(*Proof->Maximum, type(Call->getType(), L), L);
+    }
     if (Operation == UtilityListOperation::Size) return listMember(Place, "nct_list_size", L);
     if (Operation == UtilityListOperation::Empty)
       return binary("==", listMember(Place, "nct_list_size", L),

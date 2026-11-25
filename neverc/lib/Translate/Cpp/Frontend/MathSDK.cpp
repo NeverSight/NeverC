@@ -56362,6 +56362,39 @@ std::optional<UtilityListConstruction> listConstructorSignature(
   return std::nullopt;
 }
 
+bool listNodeAllocatorMember(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Storage, const CXXRecordDecl *Node, const Expr *Value, const ASTContext &Context) {
+  const auto *Read = Value ? dyn_cast<MemberExpr>(Value->IgnoreParenImpCasts()) : nullptr;
+  const auto *Member = Read ? dyn_cast<FieldDecl>(Read->getMemberDecl()) : nullptr;
+  if (!Storage || !Node || !Member || !Member->getIdentifier() || Member->getName() != "__node_alloc_" ||
+      !listPinned(S, SM, Member, "list") || Member->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl() ||
+      !isa<CXXThisExpr>(Read->getBase()->IgnoreParenImpCasts()))
+    return false;
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM, listRecordType(Member->getType()), Context);
+  return Allocator && Context.hasSameType(Allocator->ElementType, Context.getRecordType(Node));
+}
+
+bool listGetAllocatorBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context) {
+  const auto *Definition = M->getDefinition();
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *Value = Return && Return->getRetValue() ? Return->getRetValue()->IgnoreUnlessSpelledInSource() : nullptr;
+  if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Value))
+    Value = Cast->getSubExpr()->IgnoreParenImpCasts();
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Value);
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Allocator = Constructor
+      ? approvedUtilityAllocatorRecord(S, SM, Constructor->getParent(), Context) : std::nullopt;
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Owner.Node.Value->getType()) ||
+      !Context.hasSameType(Construction->getType(), M->getReturnType()) ||
+      Construction->getNumArgs() != 1 || Constructor->getNumParams() != 1 ||
+      !listPinned(S, SM, Constructor, "__memory/allocator.h") || Owner.Record->getNumBases() != 1)
+    return false;
+  const auto *Storage = listRecordType(Owner.Record->bases_begin()->getType());
+  return listNodeAllocatorMember(S, SM, Storage, Owner.Node.Record, Construction->getArg(0), Context);
+}
+
 std::optional<UtilityListOperation> listMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
@@ -56388,6 +56421,12 @@ std::optional<UtilityListOperation> listMethodSignature(
         Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Type)))
       return UtilityListOperation::Swap;
     if (!M->getNumParams()) {
+      if (Name == "get_allocator" && M->isConst() && M->getRefQualifier() == RQ_None &&
+          listGetAllocatorBody(S, SM, M, *Owner, Context))
+        return UtilityListOperation::GetAllocator;
+      if (Name == "max_size" && M->isConst() && M->getRefQualifier() == RQ_None &&
+          Context.hasSameType(M->getReturnType(), Context.getSizeType()))
+        return UtilityListOperation::MaxSize;
       if (Name == "size" && M->isConst() && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
         return UtilityListOperation::Size;
       if (Name == "empty" && M->isConst() && Context.hasSameType(M->getReturnType(), Context.BoolTy))
@@ -56913,7 +56952,12 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
-  return UtilityListCall{*Operation, Receiver, Function, Offset};
+  std::optional<uint64_t> Maximum;
+  if (*Operation == UtilityListOperation::MaxSize) {
+    Maximum = containerNodeMaximum(S, SM, Method, Context, "list", "__list_node");
+    if (!Maximum) return std::nullopt;
+  }
+  return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum};
 }
 
 
@@ -138766,7 +138810,26 @@ std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager
   if (!utilityCheckedMinimum(S, SM, Min, Context, Size))
     return std::nullopt;
 
-  const auto *TraitsCall = dyn_cast_or_null<CallExpr>(orderedExpression(Min->getArg(0)));
+  const Expr *AllocatorBound = orderedExpression(Min->getArg(0));
+  const CXXRecordDecl *ListAllocatorStorage = nullptr;
+  const CXXRecordDecl *ListNode = nullptr;
+  if (Header == "list") {
+    const auto Owner = approvedUtilityListRecord(S, SM, Method->getParent(), Context);
+    const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(AllocatorBound);
+    const auto *ReadMethod = Read ? Read->getMethodDecl() : nullptr;
+    if (!Owner || Owner->Record->getNumBases() != 1 || !ReadMethod || !ReadMethod->getIdentifier() ||
+        ReadMethod->getName() != "__node_alloc_max_size" || !ReadMethod->isConst() || ReadMethod->isStatic() ||
+        ReadMethod->isVirtual() || ReadMethod->getNumParams() || Read->getNumArgs() || !orderedReceiver(Read) ||
+        !Context.hasSameType(ReadMethod->getReturnType(), Size) || !orderedPinnedFunction(S, SM, ReadMethod, "list"))
+      return std::nullopt;
+    const auto *Storage = listRecordType(Owner->Record->bases_begin()->getType());
+    if (!Storage || ReadMethod->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl())
+      return std::nullopt;
+    AllocatorBound = orderedExpression(orderedReturn(ReadMethod));
+    ListAllocatorStorage = Storage;
+    ListNode = Owner->Node.Record;
+  }
+  const auto *TraitsCall = dyn_cast_or_null<CallExpr>(AllocatorBound);
   const auto *TraitsMethod = TraitsCall ? dyn_cast_or_null<CXXMethodDecl>(TraitsCall->getDirectCallee()) : nullptr;
   if (!TraitsMethod || TraitsMethod->getName() != "max_size" || !TraitsMethod->isStatic() ||
       TraitsCall->getNumArgs() != 1 || TraitsMethod->getNumParams() != 1 ||
@@ -138783,6 +138846,9 @@ std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager
   if (ForwardListNode) {
     if (Header != "forward_list" ||
         !forwardListAllocatorMember(S, SM, Storage, ForwardListNode, TraitsCall->getArg(0), Context))
+      return std::nullopt;
+  } else if (ListAllocatorStorage) {
+    if (!listNodeAllocatorMember(S, SM, ListAllocatorStorage, ListNode, TraitsCall->getArg(0), Context))
       return std::nullopt;
   } else {
     const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(TraitsCall->getArg(0)));

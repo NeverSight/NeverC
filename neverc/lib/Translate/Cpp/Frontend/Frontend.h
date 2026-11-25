@@ -4070,7 +4070,7 @@ enum class UtilityListConstruction {
   Default, Allocator, InitializerList, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityListOperation {
-  CopyAssign, MoveAssign, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, Erase, EraseRange, Resize, ResizeFill, Clear, Reverse, Remove, Unique, Merge, Sort,
+  CopyAssign, MoveAssign, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, GetAllocator, MaxSize, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, Erase, EraseRange, Resize, ResizeFill, Clear, Reverse, Remove, Unique, Merge, Sort,
   OwnerEqual, OwnerNotEqual, OwnerLess, OwnerGreater, OwnerLessEqual, OwnerGreaterEqual,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
   IteratorEqual, IteratorNotEqual, IteratorAssign
@@ -4081,6 +4081,7 @@ struct UtilityListCall {
   const clang::Expr *Receiver = nullptr;
   const clang::FunctionDecl *Function = nullptr;
   unsigned ArgumentOffset = 0;
+  std::optional<uint64_t> Maximum = std::nullopt;
 };
 std::optional<UtilityListConstruction> approvedUtilityListConstruction(
     const State &S, const clang::SourceManager &SM,
