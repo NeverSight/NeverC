@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-scalar-insertion-set-returns-position-and-insertion-flag",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetScalarInsertionSetReturnsPositionAndInsertionFlagRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8b10c5f7ae601e758e1f82e7b61bcf45beb43740b48d9eaa0254c84ec39cdeeb",
+      "original_case_source_sha256": "8b10c5f7ae601e758e1f82e7b61bcf45beb43740b48d9eaa0254c84ec39cdeeb",
+      "gtest_body_sha256": "5634d437c22ee71c4c66a978aac1be121b117739285bc24c03f0f10950439d31"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-set-insertion-evaluates-receiver-and-argument-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetScalarInsertionSetInsertionEvaluatesReceiverAndArgumentOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f8310f6d6c52df95fa12cfd1f96dbdff2cc18b424c0311028c10441a944dfb48",
+      "original_case_source_sha256": "f8310f6d6c52df95fa12cfd1f96dbdff2cc18b424c0311028c10441a944dfb48",
+      "gtest_body_sha256": "561590ee58fa07fc42cc6d019f4ddf21645a15a598f02bc86f40c62a610d0d60"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-multiset-returns-the-new-node",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetScalarInsertionMultisetReturnsTheNewNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4ee0102db9839653a7029d356c9ef8daa35df6f85840e80f22c1869c4a9d4e61",
+      "original_case_source_sha256": "4ee0102db9839653a7029d356c9ef8daa35df6f85840e80f22c1869c4a9d4e61",
+      "gtest_body_sha256": "d6c2df1ab4f63dc52768881c73275ce396f5454e4fe0c316b2be781fc20d3957"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-mixed-scalar-and-list-insert",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetScalarInsertionMixedScalarAndListInsertRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3de76d16e0e5a09795525a1e4fa84822b5186d85c9e5d6c6f2df1189b27a35ff",
+      "original_case_source_sha256": "3de76d16e0e5a09795525a1e4fa84822b5186d85c9e5d6c6f2df1189b27a35ff",
+      "gtest_body_sha256": "ff78b15f7212fe094517f3605b5414acfe02e86fce939c80f39eb7d011838032"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-insert-with-hint",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalHintedInsertRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9093f70f4ab2740954e61520008f406ca8a0f0ccf6f1dbf41185f3046faf4c69",
+      "original_case_source_sha256": "9093f70f4ab2740954e61520008f406ca8a0f0ccf6f1dbf41185f3046faf4c69",
+      "gtest_body_sha256": "902adc6eefb2d23928f5af7e05b2989431db8730a9111030f4edef5b7841e7f1"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerScalarInsertionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f21d07cecbfe974a0ef19816e73e5bfea9dc503e0398baf1bf4d95512f24ae10",
+      "original_case_source_sha256": "f21d07cecbfe974a0ef19816e73e5bfea9dc503e0398baf1bf4d95512f24ae10",
+      "gtest_body_sha256": "713ac17540051104300c534a918e6b30452309ea45db63ba36f5c4cb23da7098"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-scalar-insertion-custom-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetScalarInsertionCustomHashRejected",
+      "expected": "reject",
+      "source_sha256": "2c71817d45ad59a5f896476e6f05b0eb30e6841de8cda7fda3d4ed96d9149eae",
+      "original_case_source_sha256": "2c71817d45ad59a5f896476e6f05b0eb30e6841de8cda7fda3d4ed96d9149eae",
+      "gtest_body_sha256": "4aae32ab2d2361ff534174bc5793a356e326625bf29fccf850d897af07d9a4e3"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-different-key-type",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetScalarInsertionDifferentKeyTypeRejected",
+      "expected": "reject",
+      "source_sha256": "8686d83784690139a5ca7ee0c1b1d2a50d7ed5c7e01bb4127a636044f307a09c",
+      "original_case_source_sha256": "8686d83784690139a5ca7ee0c1b1d2a50d7ed5c7e01bb4127a636044f307a09c",
+      "gtest_body_sha256": "c7303d448b54ba9a2cdd648eb7402e01d34b054296850967d60bcf18347796ff"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-scalar-insertion-set-returns-position-and-insertion-flag",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.reserve(8);\n  auto first = values.insert(11);\n  if (!first.second || first.first == values.end() || *first.first != 11) return 1;\n  const int key = 11;\n  auto second = values.insert(key);\n  return second.second || second.first != first.first || second.first != values.find(key) || values.size() != 1;\n}\n",
+      "source_sha256": "8b10c5f7ae601e758e1f82e7b61bcf45beb43740b48d9eaa0254c84ec39cdeeb",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-set-insertion-evaluates-receiver-and-argument-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nint trace;\nSet& receiver(Set& values) { trace = trace * 10 + 1; return values; }\nint argument() { trace = trace * 10 + 2; return -7; }\nint main() {\n  Set values;\n  if (!receiver(values).insert(argument()).second || trace != 12) return 1;\n  return values.count(-7) != 1 || values.insert(-7).second;\n}\n",
+      "source_sha256": "f8310f6d6c52df95fa12cfd1f96dbdff2cc18b424c0311028c10441a944dfb48",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-multiset-returns-the-new-node",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values;\n  values.reserve(8);\n  const int key = -4;\n  auto first = values.insert(key);\n  auto second = values.insert(-4);\n  return first == second || first == values.end() || second == values.end() ||\n      *first != -4 || *second != -4 || values.count(-4) != 2;\n}\n",
+      "source_sha256": "4ee0102db9839653a7029d356c9ef8daa35df6f85840e80f22c1869c4a9d4e61",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-mixed-scalar-and-list-insert",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 7, 3};\n  values.insert({3, 7});\n  auto added = values.insert(3);\n  if (*added != 3 || values.count(3) != 4 || values.count(7) != 2) return 1;\n  return values.erase(3) != 4 || values.count(7) != 2;\n}\n",
+      "source_sha256": "3de76d16e0e5a09795525a1e4fa84822b5186d85c9e5d6c6f2df1189b27a35ff",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-insert-with-hint",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }\n",
+      "source_sha256": "9093f70f4ab2740954e61520008f406ca8a0f0ccf6f1dbf41185f3046faf4c69",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* p = &values; return !p->insert(2).second; }\n",
+      "source_sha256": "f21d07cecbfe974a0ef19816e73e5bfea9dc503e0398baf1bf4d95512f24ae10",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-custom-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int value) const { return static_cast<unsigned long>(value); } };\nint main() { std::unordered_set<int, Hash> values; return !values.insert(2).second; }\n",
+      "source_sha256": "2c71817d45ad59a5f896476e6f05b0eb30e6841de8cda7fda3d4ed96d9149eae",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-scalar-insertion-different-key-type",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<long> values; return *values.insert(2L) != 2; }\n",
+      "source_sha256": "8686d83784690139a5ca7ee0c1b1d2a50d7ed5c7e01bb4127a636044f307a09c",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetScalarInsertionSetReturnsPositionAndInsertionFlagRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetScalarInsertionSetInsertionEvaluatesReceiverAndArgumentOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetScalarInsertionMultisetReturnsTheNewNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetScalarInsertionMixedScalarAndListInsertRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalHintedInsertRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerScalarInsertionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetScalarInsertionCustomHashRejected",
+    "TranslateTest.CoreV2UnorderedSetScalarInsertionDifferentKeyTypeRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "8ce9d74ac0d9d4d1810ff9e409a535692b199d5e8c705fa190c864aa4448adff",
+  "maintained_original_sha256": "c5ff82c8dc13eb2e50d661a576629adc82e54a54d6485bf6441f491dacaeac06",
+  "previous_registered_source_sha256": "2e9d95851ee84e83c378685f8e976bd2b1e10f762966d0ab2ef61c0ebf78d182",
+  "previous_maintained_original_sha256": "ba8bed2d85cd298d5366b5b93516e4f955509abde146b71335c934aa9c50bc87",
+  "restorer_sha256": "64e412ff73221206b5254e00e32a0fe422be477e56d1b06d3619cf5366706a14",
+  "extractor_sha256": "addfb1d401dc7979df1d09ee970e82dfded7f52f9318dcce9d0974f04a13d885",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8464,
+  "current_python_registry_tests": 202,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
+    "unordered-set-scalar-insertion": "4005a929cf17d6233da104ca6dcc0bf4caafeba088eeac323738f4dd1b58424c"
+  },
+  "native_reference_authentication_sha256": "9f6f16b6ec4168784788f91fa97dfd5c4864613662192ffdea53c6b38222c0fa",
+  "source_proof_sha256": "47a3b2ec5817c6202e10ddc8cda73f1f4cd31c7d1de380237ff6c00c81fee356"
+}

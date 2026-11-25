@@ -87,6 +87,14 @@
       "source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
       "original_case_source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
       "gtest_body_sha256": "5d50f9f290933a59324d0bd10ee555be37b6290261809cce5dd31c4fea02ec14"
+    },
+    {
+      "name": "variant-layout-runtime-record",
+      "formal_test_name": "TranslateTest.CoreV2VariantSizeofRuntimeRecordRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "original_case_source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "gtest_body_sha256": "74b10e6a5dec29c7944368a849c3afcab60c96bd56f66a2f780390dda36f09de"
     }
   ],
   "negative_cases": [
@@ -153,14 +161,6 @@
       "source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
       "original_case_source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
       "gtest_body_sha256": "9d2c1d31de0885936ba68119e30dbe272eef0b7d571fb5630d5f168aa69e6dc3"
-    },
-    {
-      "name": "variant-layout-runtime-record",
-      "formal_test_name": "TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected",
-      "expected": "reject",
-      "source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
-      "original_case_source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
-      "gtest_body_sha256": "f87f718b59266881a236fb0e5780344e1ecc795e06b7279bec17bbc46202531f"
     }
   ],
   "new_gtest_names": [
@@ -175,6 +175,7 @@
     "TranslateTest.CoreV2VariantLayoutPointerAlternativeRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantLayoutDuplicateTypesRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantLayoutDeclarationIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSizeofRuntimeRecordRunsAtBothOptimizations",
     "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
     "TranslateTest.CoreV2VariantMetadataVariantSizeStorageRejected",
     "TranslateTest.CoreV2VariantMetadataSentinelStorageRejected",
@@ -182,14 +183,13 @@
     "TranslateTest.CoreV2VariantMetadataVolatileAlternativeRejected",
     "TranslateTest.CoreV2VariantMetadataDirectVolatileAlternativeRejected",
     "TranslateTest.CoreV2VariantLayoutAlteredIndexMemberRejected",
-    "TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected",
-    "TranslateTest.CoreV2VariantLayoutRuntimeRecordRejected"
+    "TranslateTest.CoreV2VariantLayoutUnsupportedLargeFloatRejected"
   ],
-  "native_reference_selected_executions": 22,
-  "planned_generated_c23_executions": 22,
+  "native_reference_selected_executions": 24,
+  "planned_generated_c23_executions": 24,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "37e42c15db2bcd9a9d39b25b1ee8af5407e13fe5419eb392fb2672120813a706",
   "maintained_original_sha256": "e51b392c0556e228dc98fa264fa5fc80232273c8bf68b4645b4f1c78b9cd1951",
@@ -200,5 +200,174 @@
   "current_python_registry_tests": 116,
   "previous7998_and_raw109_gtest_bytes_unchanged": true,
   "restorer_sha256": "8c2cd05e26a532785d225e7c042e0517335fae384c82cdce0857d865937e2113",
-  "extractor_sha256": "dc88f0f93bcad019f21001d0a16cd9334cb8a644c74693cd4318e47dfaa06f81"
+  "extractor_sha256": "dc88f0f93bcad019f21001d0a16cd9334cb8a644c74693cd4318e47dfaa06f81",
+  "source_cases": [
+    {
+      "name": "variant-metadata-size-and-sentinel",
+      "source": "#include <variant>\nusing V = std::variant<int,double,unsigned long long>;\nint main() {\n  return std::variant_size_v<V> != 3 ||\n         std::variant_npos != static_cast<decltype(sizeof(int))>(-1);\n}\n",
+      "source_sha256": "1821c930c7718dab2e4a1c85fac35a2a54df1b6b44077ce27d1216d9a8417b59",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-metadata-alternative",
+      "source": "#include <variant>\nusing V = std::variant<int,double>;\nusing R = std::variant_alternative_t<1,V>;\nR answer(){return 3.5;}\nint main(){return answer()!=3.5;}\n",
+      "source_sha256": "c6096b784cc92dfbd53c4da37ca52def7be97935ccd286a7c96771e0d2cddb8c",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-metadata-const-alternative",
+      "source": "#include <variant>\n#include <type_traits>\nusing V = std::variant<int,int,float>;\nusing R = std::variant_alternative_t<1,const V>;\nstatic_assert(std::is_same_v<R,const int>);\nint main(){R value=17;return value!=17;}\n",
+      "source_sha256": "d17457b2d0cd393586073f44d8a703a41aed7dc90a2ee6f4a4b4fa62f488b814",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-metadata-nested-alternative",
+      "source": "#include <variant>\nusing Inner = std::variant<int,float>;\nusing Outer = std::variant<Inner,char>;\nusing Selected = std::variant_alternative_t<0,Outer>;\nint main(){return std::variant_size_v<Selected>!=2;}\n",
+      "source_sha256": "dc4c8c56ad858f2a29353ae3e21cb65e84d78ad259e8f20e4075034c125e4b45",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-metadata-size-qualification",
+      "source": "#include <variant>\nusing V = std::variant<int,char>;\nint main(){return std::variant_size_v<const V>!=2;}\n",
+      "source_sha256": "fb3190c6d9b4abd963420756d30e2c9edda2d28506854de8f1e2bc0a663ed6a5",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-metadata-written-index",
+      "source": "#include <variant>\nusing V = std::variant<int,float,unsigned long>;\nconstexpr unsigned last(){return 3-1;}\nusing R = std::variant_alternative_t<last(),V>;\nint main(){R v=19UL;return v!=19UL;}\n",
+      "source_sha256": "817fe49de65c4603ec824163283f406e0ed3b28684d6e0d36bb6129655f67cd6",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-layout-mixed-scalar",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nint main() { return sizeof(V) != 2 * sizeof(double) || alignof(V) != alignof(double); }\n",
+      "source_sha256": "fd5375fe54e55082f24f29d9606b7071d2e1d079e40efc6fbf53933d9c290039",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-layout-reference-and-const",
+      "source": "#include <variant>\nusing V = std::variant<long long, char>;\nint main() { return sizeof(const V&) != sizeof(V) || alignof(const V&) != alignof(long long); }\n",
+      "source_sha256": "3954097a772508976bbb4722aaf6e3be9d4508d9c8c66e16dd2848779915516b",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-layout-pointer-alternative",
+      "source": "#include <variant>\nusing V = std::variant<int*, bool>;\nint main() { return sizeof(V) != 2 * sizeof(int*) || alignof(V) != alignof(int*); }\n",
+      "source_sha256": "36bd58a2cd3d28d3b4d803004210174b9ae7221f0412c8d20344dc11cfca58ac",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-layout-duplicate-types",
+      "source": "#include <variant>\nusing V = std::variant<double, int, double>;\nint main() { return sizeof(V) != 2 * sizeof(double) || alignof(V) != alignof(double); }\n",
+      "source_sha256": "4ebf37513236931e7c03fd748b6ead4d1b844a2eaf11841b2d6b13aca6c6a435",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-layout-declaration-index",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nconstexpr auto Width = sizeof(V);\nint main() { unsigned char bytes[Width]{}; return sizeof(bytes) != 2 * sizeof(double); }\n",
+      "source_sha256": "9022b3e384b7c4bcef54366d25504832d8a5f557d1584c01344478b01cdc65c2",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-layout-runtime-record",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nint main() { V value{9}; return sizeof(value) == 0; }\n",
+      "source_sha256": "6843c422dfd7c3635c10f7186e59ee3d70e4e1a30bf2bf9e5bf6da82dc32f3c6",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-metadata-runtime-value",
+      "source": "#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n",
+      "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-metadata-variant-size-storage",
+      "source": "#include <variant>\nusing V=std::variant<int,double>;\nint main(){const auto *p=&std::variant_size_v<V>;return *p!=2;}\n",
+      "source_sha256": "9ccf2c93a351e40824802f652a81e40589492c8647f92d6bfc561905145f1e70",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-sentinel-storage",
+      "source": "#include <variant>\nint main(){auto p=&std::variant_npos;return *p==0;}\n",
+      "source_sha256": "24f80a6c04f4fe1b2f45c803ffca08f1615e3e7175a99461c5e021ea59c95c1e",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-source-specialization",
+      "source": "#include <variant>\nstruct Record {};\nnamespace std { template<> struct variant_size<Record> : integral_constant<size_t,1> {}; }\nint main(){return std::variant_size_v<Record>!=1;}\n",
+      "source_sha256": "420061391e62da7a022135e4665a6b2634d3d7c185d59226f3467fdb06599652",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-volatile-alternative",
+      "source": "#include <variant>\nusing V = std::variant<int,volatile int>;\nint main(){return std::variant_size_v<V>!=2;}\n",
+      "source_sha256": "183d66330ac3a342ba78e7de509f31634693734f5cb099a54eb8ee30b0b4202a",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-metadata-direct-volatile-alternative",
+      "source": "#include <variant>\nint main() { return std::variant_size_v<std::variant<int, volatile int>> != 2; }\n",
+      "source_sha256": "f16a98dec1073e3828959c3c26a467a3cc5bffb020543a584d5df2f14089a8a9",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-layout-altered-index-member",
+      "source": "#define __index substituted_index\n#include <variant>\n#undef __index\nusing V = std::variant<int, double>;\nint main() { return sizeof(V) == 0; }\n",
+      "source_sha256": "e4b3d865a8d1c2101b4e04d54256c44cb28fca5ee43b800c39cc3440bb87e824",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-layout-unsupported-large-float",
+      "source": "#include <variant>\nusing V = std::variant<int, long double>;\nint main() { return sizeof(V) == 0; }\n",
+      "source_sha256": "948e0238367d06624aa1f69088027f1fdcf1e57342f18224b5c73cab10af9621",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    }
+  ],
+  "native_reference_proofs": {
+    "variant-any-sizeof-expression-replay": "f6616e5d860e92b55d2861a53b6ab3ee778624959a0d22f9c15173122dbef208",
+    "variant-metadata-layout": "20eac60f2926a226b3bdadfa34045214d7452dae9cb71f99b5d40f79a469286c",
+    "variant-scalar-runtime": "07ea60a20ba37e38c9239712660b6c63e9c4c8598061d0af9c36008b349c6e29"
+  },
+  "native_reference_authentication_sha256": "228481d1072ff54bcc8cbe9794830d85ef743a6b092c0b4af92f2b4358fe870b",
+  "source_proof_sha256": "47a3b2ec5817c6202e10ddc8cda73f1f4cd31c7d1de380237ff6c00c81fee356"
 }
