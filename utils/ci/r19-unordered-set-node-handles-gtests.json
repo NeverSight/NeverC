@@ -1,0 +1,285 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-node-handles-unique-extracts-key-and-mutates-detached-value",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueExtractsKeyAndMutatesDetachedValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ffc5d02095c7baaa259301c8699b1ea85f559cac8c602fa23290f5855d969ebc",
+      "original_case_source_sha256": "ffc5d02095c7baaa259301c8699b1ea85f559cac8c602fa23290f5855d969ebc",
+      "gtest_body_sha256": "92e7d7d239970690871c55b7fc19a3c3abcef7f17182c547948c79b03e32ce7e"
+    },
+    {
+      "name": "unordered-set-node-handles-multiset-extracts-one-node-from-const-iterator",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetExtractsOneNodeFromConstIteratorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3f47f6a88a0bf02369e321792a9d863071c30781684ca8186dcba44f9dc25f82",
+      "original_case_source_sha256": "3f47f6a88a0bf02369e321792a9d863071c30781684ca8186dcba44f9dc25f82",
+      "gtest_body_sha256": "35cbdc5096d2bb1e0a9e26e3bc082534308ed53f16008ff40207d93880464536"
+    },
+    {
+      "name": "unordered-set-node-handles-default-and-missing-key-handles-stay-empty",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesDefaultAndMissingKeyHandlesStayEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d0f5b400e96d33594dad30170ba6a9d2700423589074aec25f41bc8988b90345",
+      "original_case_source_sha256": "d0f5b400e96d33594dad30170ba6a9d2700423589074aec25f41bc8988b90345",
+      "gtest_body_sha256": "73f656b6e8c3ac6595a3ba2d8f6a04844234d8d5d28a9bf509a81d0f3fe8e192"
+    },
+    {
+      "name": "unordered-set-node-handles-set-and-multiset-handle-moves-release-the-previous-node",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesSetAndMultisetHandleMovesReleaseThePreviousNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ae131180b71e0cb8c7fd1142470de4532dbce108d1c6cca8848d3d97e7e5545f",
+      "original_case_source_sha256": "ae131180b71e0cb8c7fd1142470de4532dbce108d1c6cca8848d3d97e7e5545f",
+      "gtest_body_sha256": "aeb205548956462b357765462f64215563c4453b76cd04fa25293315486ecb36"
+    },
+    {
+      "name": "unordered-set-node-handles-swapped-node-retains-allocator-and-value",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesSwappedNodeRetainsAllocatorAndValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ebb94cf8aec2552c81415a3609d668232470a3e7ea0a3c219106ca95c3d35c23",
+      "original_case_source_sha256": "ebb94cf8aec2552c81415a3609d668232470a3e7ea0a3c219106ca95c3d35c23",
+      "gtest_body_sha256": "da7a995ca296cce35a5e1209a4b581fbb6bda5ffee48337737a803e3716eb6a1"
+    },
+    {
+      "name": "unordered-set-node-handles-unique-duplicate-returns-owning-node-for-retry",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueDuplicateReturnsOwningNodeForRetryRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "60aa98f2594121645d17e16c26cdd0b740be16a7192b5cc8123f955a2e81af58",
+      "original_case_source_sha256": "60aa98f2594121645d17e16c26cdd0b740be16a7192b5cc8123f955a2e81af58",
+      "gtest_body_sha256": "65ab87806598cdca3e6297f1367c524245ba784df2ee468d9e519d30cafee28f"
+    },
+    {
+      "name": "unordered-set-node-handles-unique-hinted-duplicate-retains-the-supplied-handle",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueHintedDuplicateRetainsTheSuppliedHandleRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "79b039428676f21bdf657a3532cd9ada10be3d395a19674ca58e6f241410526c",
+      "original_case_source_sha256": "79b039428676f21bdf657a3532cd9ada10be3d395a19674ca58e6f241410526c",
+      "gtest_body_sha256": "21e5c5fe1624cfb1a6c21f53ab2bf032b4c65e3d6f6e12d51ffe4e44a7e1f36a"
+    },
+    {
+      "name": "unordered-set-node-handles-multiset-insert-node-preserves-storage-and-rehashes-mutated-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetInsertNodePreservesStorageAndRehashesMutatedKeyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1e7dd60c9c57ed12d36e7b082424833ab1377b86d78dd62017660a59b548bb0b",
+      "original_case_source_sha256": "1e7dd60c9c57ed12d36e7b082424833ab1377b86d78dd62017660a59b548bb0b",
+      "gtest_body_sha256": "a73977d389d940473c04f81c07f97fb081c0d45d8a83190a80eb93b6ffa9391a"
+    },
+    {
+      "name": "unordered-set-node-handles-multiset-hint-inserts-the-transferred-node-with-its-equivalents",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetHintInsertsTheTransferredNodeWithItsEquivalentsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1f224da4f59ed39612b5d844e3aab076ce13d708b4ab01939c32548f13810b97",
+      "original_case_source_sha256": "1f224da4f59ed39612b5d844e3aab076ce13d708b4ab01939c32548f13810b97",
+      "gtest_body_sha256": "879362ba68378d7d0bb0b470cec882b93ae99586401addea75c76d5a7284e62d"
+    },
+    {
+      "name": "unordered-set-node-handles-inserting-empty-handle-returns-end-in-both-containers",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesInsertingEmptyHandleReturnsEndInBothContainersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "692b2f351c7955a57bc39e69f34d171e716bc136a4318d0793ef350586e6c780",
+      "original_case_source_sha256": "692b2f351c7955a57bc39e69f34d171e716bc136a4318d0793ef350586e6c780",
+      "gtest_body_sha256": "08280f6d714c14a118cad8c6575793994727b9815251ef5c39056e4d98e21ddc"
+    },
+    {
+      "name": "unordered-set-node-handles-other-key-default-node-handle",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalUnsignedEmptyNodeHandle",
+      "expected": "accept",
+      "source_sha256": "f13ed81fbc60edec4c2be42b089fdb2d833eaf0987ebaed98ff90e9f46e26c11",
+      "original_case_source_sha256": "f13ed81fbc60edec4c2be42b089fdb2d833eaf0987ebaed98ff90e9f46e26c11",
+      "gtest_body_sha256": "489dcf5154cb6bb900ddbef46ab91eb6eb423d63bff7e87d283ce43bc5a69bdf",
+      "expected_exit_code": 1
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-node-handles-other-key-set-node-extraction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesOtherKeySetNodeExtractionRejected",
+      "expected": "reject",
+      "source_sha256": "74735b64daa82a0a3a8770f618096f22e88ea27904c8c41867b018bd42882289",
+      "original_case_source_sha256": "74735b64daa82a0a3a8770f618096f22e88ea27904c8c41867b018bd42882289",
+      "gtest_body_sha256": "b13b5e7e3ccd9b9a2717cd66ff8dc99946c99272050d900911a02b9d68d73ac1"
+    },
+    {
+      "name": "unordered-set-node-handles-custom-policy-multiset-node-extraction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesCustomPolicyMultisetNodeExtractionRejected",
+      "expected": "reject",
+      "source_sha256": "c2d4bfc8615b7c514d01a7ff98941eaf30358b273fdbfcf782947e92863ec499",
+      "original_case_source_sha256": "c2d4bfc8615b7c514d01a7ff98941eaf30358b273fdbfcf782947e92863ec499",
+      "gtest_body_sha256": "27ab70b41561c28c18c861195c471c51d85742186289a0694d12f0743095a5cb"
+    },
+    {
+      "name": "unordered-set-node-handles-custom-hash-unique-handle-insert",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesCustomHashUniqueHandleInsertRejected",
+      "expected": "reject",
+      "source_sha256": "26613d52f9947c1468fca96b7856c5d23b9eecbf5dc912289b46f820ee7e7351",
+      "original_case_source_sha256": "26613d52f9947c1468fca96b7856c5d23b9eecbf5dc912289b46f820ee7e7351",
+      "gtest_body_sha256": "92c47b6d517aca25345b481b8a67659332a4901d7115082340e0c71a8281bf92"
+    },
+    {
+      "name": "unordered-set-node-handles-custom-equality-multiset-handle-insert",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetNodeHandlesCustomEqualityMultisetHandleInsertRejected",
+      "expected": "reject",
+      "source_sha256": "229827f83844ab23f80051324d1d8a2a8f44786ae16c69a9d45ffc22fd6016cf",
+      "original_case_source_sha256": "229827f83844ab23f80051324d1d8a2a8f44786ae16c69a9d45ffc22fd6016cf",
+      "gtest_body_sha256": "8ee6db437af0ed3f1bc89c7960c9a49d1bed1114621e8591808d4dc480638273"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-node-handles-unique-extracts-key-and-mutates-detached-value",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{3, 11};\n  auto node = values.extract(11);\n  if (!node || node.empty() || values.count(11)) return 1;\n  node.value() = -5;\n  const auto& observed = node;\n  return observed.value() != -5 || values.count(3) != 1;\n}\n",
+      "source_sha256": "ffc5d02095c7baaa259301c8699b1ea85f559cac8c602fa23290f5855d969ebc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-multiset-extracts-one-node-from-const-iterator",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{5, 5, 19};\n  const auto& source = values;\n  auto* receiver = &values;\n  auto node = receiver->extract(source.find(5));\n  return !node || node.value() != 5 || values.count(5) != 1 || values.count(19) != 1;\n}\n",
+      "source_sha256": "3f47f6a88a0bf02369e321792a9d863071c30781684ca8186dcba44f9dc25f82",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-default-and-missing-key-handles-stay-empty",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  using Set = std::unordered_set<int>;\n  Set values{7};\n  Set::node_type initial;\n  const auto absent = values.extract(-9);\n  return !initial.empty() || bool(initial) || !absent.empty() || bool(absent) || values.count(7) != 1;\n}\n",
+      "source_sha256": "d0f5b400e96d33594dad30170ba6a9d2700423589074aec25f41bc8988b90345",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-set-and-multiset-handle-moves-release-the-previous-node",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_set<int> unique{17};\n  std::unordered_multiset<int> multi{31, 31};\n  auto one = unique.extract(17);\n  auto two = multi.extract(31);\n  auto moved = std::move(one);\n  if (one || !moved || moved.value() != 17) return 1;\n  moved = std::move(two);\n  return !two.empty() || !moved || moved.value() != 31 || multi.count(31) != 1;\n}\n",
+      "source_sha256": "ae131180b71e0cb8c7fd1142470de4532dbce108d1c6cca8848d3d97e7e5545f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-swapped-node-retains-allocator-and-value",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  using Set = std::unordered_multiset<int>;\n  Set values{21};\n  auto extracted = values.extract(21);\n  Set::node_type other;\n  extracted.swap(other);\n  if (!extracted.empty() || !other || other.value() != 21) return 1;\n  auto allocator = other.get_allocator();\n  auto* storage = allocator.allocate(1);\n  const bool allocated = storage != nullptr;\n  allocator.deallocate(storage, 1);\n  return !allocated;\n}\n",
+      "source_sha256": "ebb94cf8aec2552c81415a3609d668232470a3e7ea0a3c219106ca95c3d35c23",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-unique-duplicate-returns-owning-node-for-retry",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_set<int> source{3, 5};\n  std::unordered_set<int> target{3};\n  auto node = source.extract(3);\n  auto failed = target.insert(std::move(node));\n  if (failed.inserted || node || !failed.node || failed.node.value() != 3 || *failed.position != 3) return 1;\n  failed.node.value() = 29;\n  auto added = target.insert(std::move(failed.node));\n  return !added.inserted || added.node || failed.node || *added.position != 29 || target.count(29) != 1;\n}\n",
+      "source_sha256": "60aa98f2594121645d17e16c26cdd0b740be16a7192b5cc8123f955a2e81af58",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-unique-hinted-duplicate-retains-the-supplied-handle",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_set<int> source{5};\n  std::unordered_set<int> target{5};\n  auto node = source.extract(5);\n  auto where = target.insert(target.end(), std::move(node));\n  return !node || node.value() != 5 || where == target.end() || *where != 5 || target.size() != 1;\n}\n",
+      "source_sha256": "79b039428676f21bdf657a3532cd9ada10be3d395a19674ca58e6f241410526c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-multiset-insert-node-preserves-storage-and-rehashes-mutated-key",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_set<int> source{7};\n  std::unordered_multiset<int> target{17, 17};\n  target.rehash(8);\n  const int* address = &*source.find(7);\n  auto node = source.extract(7);\n  node.value() = 17;\n  auto inserted = target.insert(std::move(node));\n  return node || inserted == target.end() || &*inserted != address || *inserted != 17 ||\n         target.count(17) != 3 || !source.empty();\n}\n",
+      "source_sha256": "1e7dd60c9c57ed12d36e7b082424833ab1377b86d78dd62017660a59b548bb0b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-multiset-hint-inserts-the-transferred-node-with-its-equivalents",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<int> source{5, 5};\n  std::unordered_multiset<int> target{5, 5, 13};\n  target.rehash(16);\n  auto it = source.find(5);\n  const int* address = &*it;\n  auto node = source.extract(it);\n  auto added = target.insert(target.find(5), std::move(node));\n  return node || &*added != address || target.count(5) != 3 || target.count(13) != 1 || source.count(5) != 1;\n}\n",
+      "source_sha256": "1f224da4f59ed39612b5d844e3aab076ce13d708b4ab01939c32548f13810b97",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-inserting-empty-handle-returns-end-in-both-containers",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  using Set = std::unordered_set<int>;\n  Set unique{9};\n  std::unordered_multiset<int> multi{9, 9};\n  Set::node_type empty;\n  auto result = unique.insert(std::move(empty));\n  auto no_node = multi.insert(multi.end(), std::move(empty));\n  return result.inserted || result.node || result.position != unique.end() || no_node != multi.end() ||\n         unique.count(9) != 1 || multi.count(9) != 2;\n}\n",
+      "source_sha256": "692b2f351c7955a57bc39e69f34d171e716bc136a4318d0793ef350586e6c780",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-other-key-default-node-handle",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<unsigned>::node_type empty;\n  return empty.empty();\n}\n",
+      "source_sha256": "f13ed81fbc60edec4c2be42b089fdb2d833eaf0987ebaed98ff90e9f46e26c11",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-node-handles-other-key-set-node-extraction",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<long> values{5};\n  auto node = values.extract(5);\n  return node.empty();\n}\n",
+      "source_sha256": "74735b64daa82a0a3a8770f618096f22e88ea27904c8c41867b018bd42882289",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-node-handles-custom-policy-multiset-node-extraction",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  std::unordered_multiset<int, std::hash<int>, Equal> values{5, 5};\n  auto node = values.extract(values.find(5));\n  return node.empty();\n}\n",
+      "source_sha256": "c2d4bfc8615b7c514d01a7ff98941eaf30358b273fdbfcf782947e92863ec499",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-node-handles-custom-hash-unique-handle-insert",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nstruct Hash { unsigned long operator()(int value) const { return static_cast<unsigned>(value); } };\nint main() {\n  std::unordered_set<int> source{7};\n  std::unordered_set<int, Hash> target;\n  auto node = source.extract(7);\n  return !target.insert(std::move(node)).inserted;\n}\n",
+      "source_sha256": "26613d52f9947c1468fca96b7856c5d23b9eecbf5dc912289b46f820ee7e7351",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-node-handles-custom-equality-multiset-handle-insert",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  std::unordered_set<int> source{7};\n  std::unordered_multiset<int, std::hash<int>, Equal> target;\n  auto node = source.extract(7);\n  return target.insert(std::move(node)) == target.end();\n}\n",
+      "source_sha256": "229827f83844ab23f80051324d1d8a2a8f44786ae16c69a9d45ffc22fd6016cf",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueExtractsKeyAndMutatesDetachedValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetExtractsOneNodeFromConstIteratorRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesDefaultAndMissingKeyHandlesStayEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesSetAndMultisetHandleMovesReleaseThePreviousNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesSwappedNodeRetainsAllocatorAndValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueDuplicateReturnsOwningNodeForRetryRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesUniqueHintedDuplicateRetainsTheSuppliedHandleRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetInsertNodePreservesStorageAndRehashesMutatedKeyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesMultisetHintInsertsTheTransferredNodeWithItsEquivalentsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesInsertingEmptyHandleReturnsEndInBothContainersRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalUnsignedEmptyNodeHandle",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesOtherKeySetNodeExtractionRejected",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesCustomPolicyMultisetNodeExtractionRejected",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesCustomHashUniqueHandleInsertRejected",
+    "TranslateTest.CoreV2UnorderedSetNodeHandlesCustomEqualityMultisetHandleInsertRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "b0308b64ace4efb64a2604478a35fe72ff13fa010ae2441d52038ecf5cca67c0",
+  "maintained_original_sha256": "40a07a2f7ba2b85c8d134ae3d3d3a2ae1a52479182df85070c11a53307d580bc",
+  "previous_registered_source_sha256": "f5e26a202434cdb9bd8355501131c4a429f332a1562877587e07556f9f6a48d4",
+  "previous_maintained_original_sha256": "8ee172c3bf7dae6f0e65cce5d6c44e5bfda3406278f19ccffadfbdeacbc69edc",
+  "restorer_sha256": "d70055329029772ad9b671f1def31e30dee9c0631e42619cb472db732faad806",
+  "extractor_sha256": "d470a333d23078996d70bc4eb05495f571b22b2256b96e390bdc63320140fc99",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8603,
+  "current_python_registry_tests": 234,
+  "native_reference_selected_executions": 22,
+  "planned_generated_c23_executions": 22,
+  "native_reference_proofs": {
+    "unordered-set-node-handles": "54d21177d92142c8feb22b200eb074fc21ec65557fc29bf930ac8b8f3a3436c9",
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "f29e6d3487fff622b9658aeab735e2fee1f13bbd03673da97f8388ff14174a1c",
+  "source_proof_sha256": "4d5998c1e9c058985b76cc24097b986fc29256094084336af40b618ed28cf583"
+}

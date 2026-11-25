@@ -1,0 +1,234 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-find-and-traverse-with-unique-owner-in-same-translation",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorFindAndTraverseWithUniqueOwnerInSameTranslationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1010237e6224435dc6c94239a86f4768f34c39dd2fba328d8e285ce5aa6ff9bf",
+      "original_case_source_sha256": "1010237e6224435dc6c94239a86f4768f34c39dd2fba328d8e285ce5aa6ff9bf",
+      "gtest_body_sha256": "554af85b4c9c285f22d3c016539b09084dbd98f8ca8be9a8f5e027099781f72f"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-const-equal-range-reaches-the-end-of-the-group",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorConstEqualRangeReachesTheEndOfTheGroupRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1d1a3fd109038227e917410848de0e39d437606c6470f175bff29ad1e3aa3cf6",
+      "original_case_source_sha256": "1d1a3fd109038227e917410848de0e39d437606c6470f175bff29ad1e3aa3cf6",
+      "gtest_body_sha256": "a1780cb57d11d4bfb3171f8fae64134577d0b0fb07bd23c5eca5eefad7e78454"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-erase-position-and-range-unlink-only-selected-nodes",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorErasePositionAndRangeUnlinkOnlySelectedNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "72a71afffb70ece729f3f995b2c1d5ab0f68a1d5f653ddafc67f598d814a08d5",
+      "original_case_source_sha256": "72a71afffb70ece729f3f995b2c1d5ab0f68a1d5f653ddafc67f598d814a08d5",
+      "gtest_body_sha256": "876ba1a3b8d5c35effe3e6b0168ed654bf3714c398b438d75390d286f5d2abda"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-local-const-iteration-sees-the-matching-bucket",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorLocalConstIterationSeesTheMatchingBucketRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c3d9e16a6d914c3afb93540fcdcc4f4b9d3aa9c495c23e81d4b35452dba4cf75",
+      "original_case_source_sha256": "c3d9e16a6d914c3afb93540fcdcc4f4b9d3aa9c495c23e81d4b35452dba4cf75",
+      "gtest_body_sha256": "fb01469f7e8588636e530ab1da1e9d9a2ffc0a2f2e0cac10fc49fe1e86a1ac1f"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-emplace-and-insert-return-the-new-equivalent-node",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierEmplaceAndInsertReturnTheNewEquivalentNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "453f0214fae24aacedb186a99faaf45fcf9d50e4e82da0383fccb279eb2d22a2",
+      "original_case_source_sha256": "453f0214fae24aacedb186a99faaf45fcf9d50e4e82da0383fccb279eb2d22a2",
+      "gtest_body_sha256": "adb0e83f5a889df653400cbcd149ce4a1ca893dac36f1ca880bc6ac1bed23dc4"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-hinted-insertion-keeps-equivalent-keys-contiguous",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierHintedInsertionKeepsEquivalentKeysContiguousRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ed4b6e1ed9376bb3531324868e43e2fccd0c83a6412588f1ff810b0f7874b852",
+      "original_case_source_sha256": "ed4b6e1ed9376bb3531324868e43e2fccd0c83a6412588f1ff810b0f7874b852",
+      "gtest_body_sha256": "0b047568ff1b4456a2eb94be67f7f75832cc5b9960f583c9235ceeaf035074a1"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-iterator-input-converts-between-compatible-mapped-owners",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierIteratorInputConvertsBetweenCompatibleMappedOwnersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "18e7f704b45369ec5d2f0095db30e895e8b3874e757eebdc2b53e6e734173784",
+      "original_case_source_sha256": "18e7f704b45369ec5d2f0095db30e895e8b3874e757eebdc2b53e6e734173784",
+      "gtest_body_sha256": "8d45b6f3f9eb20866e877bf89dd11038a887493c6084c205a6c8ce0317f5b041"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-merge-into-multi-preserves-payload-addresses",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoMultiPreservesPayloadAddressesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "de96f7ae215475874587065fe1fd6c3bbae07e3e8da96a753a4fbedaef4cb5ff",
+      "original_case_source_sha256": "de96f7ae215475874587065fe1fd6c3bbae07e3e8da96a753a4fbedaef4cb5ff",
+      "gtest_body_sha256": "254e87b6370a042a6331b599d10d453c515e428cf42d0435bb8af21a4c4acf11"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-merge-into-unique-leaves-equivalent-untransferred-nodes",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoUniqueLeavesEquivalentUntransferredNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e19d9511affd1d6f35e22f3e355f1db8670f69115148bfea87fe8b11cc6ece03",
+      "original_case_source_sha256": "e19d9511affd1d6f35e22f3e355f1db8670f69115148bfea87fe8b11cc6ece03",
+      "gtest_body_sha256": "b9b10ddf9773d39c68deb6035df95403a6fc53a8cae6239e43b1153617f05567"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorOtherMappedTypeIteratorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e6b7c2618da55e93d977bb0a02c2d8357fd018fd3228ca9fe5b071e7a2571f73",
+      "original_case_source_sha256": "e6b7c2618da55e93d977bb0a02c2d8357fd018fd3228ca9fe5b071e7a2571f73",
+      "gtest_body_sha256": "ada2df703c44234ee64562f76fe89897feb11811b74e9b33b37c4c7acc78f2b4",
+      "expected_exit_code": 1
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-custom-policy-iterator",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorCustomPolicyIteratorRejected",
+      "expected": "reject",
+      "source_sha256": "07ae7cc725d75ad61519b549c945585eacf879721e6fc13e1406ac4f434f1375",
+      "original_case_source_sha256": "07ae7cc725d75ad61519b549c945585eacf879721e6fc13e1406ac4f434f1375",
+      "gtest_body_sha256": "2c1fce63fc79c59c11066e7972b8b9a54b7decd19fed7ceaf946d705f88bf872"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-merge-from-user-hash-policy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeFromUserHashPolicyRejected",
+      "expected": "reject",
+      "source_sha256": "5db6827df2e17fa6a1a51e4e47533c2151743c9015226c0eb1272c4aed072344",
+      "original_case_source_sha256": "5db6827df2e17fa6a1a51e4e47533c2151743c9015226c0eb1272c4aed072344",
+      "gtest_body_sha256": "90c78436fde37caf2a9476e2f3215e089ddfcb2b4821c9c2d89f2d026509446a"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-find-and-traverse-with-unique-owner-in-same-translation",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, int> unique{{4, 17}};\n  std::unordered_multimap<int, int> multi{{4, 3}, {4, 9}, {7, 30}};\n  auto first = multi.find(4);\n  if (first == multi.end() || unique.begin()->second != 17) return 1;\n  first->second += 2;\n  int sum = 0;\n  for (const auto& pair : multi) sum += pair.second;\n  return sum != 44 || multi.find(9) != multi.end() || multi.count(4) != 2;\n}\n",
+      "source_sha256": "1010237e6224435dc6c94239a86f4768f34c39dd2fba328d8e285ce5aa6ff9bf",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-const-equal-range-reaches-the-end-of-the-group",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, int> values{{-1, 2}, {3, 9}, {-1, 5}, {-1, 8}};\n  auto group = values.equal_range(-1);\n  int count = 0, sum = 0;\n  for (auto it = group.first; it != group.second; ++it) {\n    if (it->first != -1) return 1;\n    ++count;\n    sum += it->second;\n  }\n  auto missing = values.equal_range(77);\n  return count != 3 || sum != 15 || missing.first != values.cend() || missing.second != values.cend();\n}\n",
+      "source_sha256": "1d1a3fd109038227e917410848de0e39d437606c6470f175bff29ad1e3aa3cf6",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-erase-position-and-range-unlink-only-selected-nodes",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, int> values{{4, 2}, {4, 3}, {9, 17}, {4, 8}};\n  auto group = values.equal_range(4);\n  std::unordered_multimap<int, int>::const_iterator first = group.first;\n  auto next = values.erase(first);\n  if (next == group.second || next->first != 4 || values.count(4) != 2) return 1;\n  const auto after = values.erase(next, group.second);\n  return after != group.second || values.count(4) || values.size() != 1 || values.begin()->second != 17;\n}\n",
+      "source_sha256": "72a71afffb70ece729f3f995b2c1d5ab0f68a1d5f653ddafc67f598d814a08d5",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-local-const-iteration-sees-the-matching-bucket",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, int> values{{3, 5}, {3, 12}, {8, 7}};\n  values.rehash(16);\n  const auto index = values.bucket(3);\n  const auto& view = values;\n  int count = 0, sum = 0;\n  for (auto it = view.cbegin(index); it != view.cend(index); it++) {\n    if (it->first != 3) return 1;\n    ++count;\n    sum += it->second;\n  }\n  return count != 2 || view.bucket_size(index) != 2 || sum != 17;\n}\n",
+      "source_sha256": "c3d9e16a6d914c3afb93540fcdcc4f4b9d3aa9c495c23e81d4b35452dba4cf75",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-emplace-and-insert-return-the-new-equivalent-node",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  std::unordered_multimap<int, int> values{{5, 13}};\n  values.reserve(12);\n  auto first = values.emplace(5, 8);\n  const std::pair<const int, int> input(5, 21);\n  auto second = values.insert(input);\n  return first == second || first->first != 5 || first->second != 8 ||\n         second->second != 21 || values.count(5) != 3;\n}\n",
+      "source_sha256": "453f0214fae24aacedb186a99faaf45fcf9d50e4e82da0383fccb279eb2d22a2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-hinted-insertion-keeps-equivalent-keys-contiguous",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, int> values{{5, 2}, {5, 3}, {3, 11}};\n  auto next = values.emplace_hint(values.find(5), 5, 7);\n  const auto group = values.equal_range(5);\n  int sum = 0, count = 0;\n  for (auto it = group.first; it != group.second; ++it) { sum += it->second; ++count; }\n  return next->first != 5 || next->second != 7 || sum != 12 || count != 3;\n}\n",
+      "source_sha256": "ed4b6e1ed9376bb3531324868e43e2fccd0c83a6412588f1ff810b0f7874b852",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-iterator-input-converts-between-compatible-mapped-owners",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, int> source{{5, 2}, {3, 13}};\n  std::unordered_multimap<int, int> values{{5, 3}};\n  values.insert(source.cbegin(), source.cend());\n  return values.count(5) != 2 || values.count(3) != 1 ||\n         values.find(3)->second != 13 || source.size() != 2;\n}\n",
+      "source_sha256": "18e7f704b45369ec5d2f0095db30e895e8b3874e757eebdc2b53e6e734173784",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-merge-into-multi-preserves-payload-addresses",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, int> source{{5, 13}, {6, 21}};\n  std::unordered_multimap<int, int> target{{5, 3}, {5, 8}};\n  const int* payload = &source.find(6)->second;\n  target.merge(source);\n  return !source.empty() || target.count(5) != 3 || target.size() != 4 ||\n         &target.find(6)->second != payload;\n}\n",
+      "source_sha256": "de96f7ae215475874587065fe1fd6c3bbae07e3e8da96a753a4fbedaef4cb5ff",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-merge-into-unique-leaves-equivalent-untransferred-nodes",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  std::unordered_multimap<int, int> source{{3, 13}, {3, 21}, {5, 8}, {5, 7}};\n  std::unordered_map<int, int> target{{5, 100}};\n  target.merge(std::move(source));\n  return target.size() != 2 || target.find(5)->second != 100 ||\n         source.size() != 3 || source.count(3) != 1 || source.count(5) != 2 ||\n         target.find(3)->second + source.find(3)->second != 34;\n}\n",
+      "source_sha256": "e19d9511affd1d6f35e22f3e355f1db8670f69115148bfea87fe8b11cc6ece03",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, long> values{{3, 5L}};\n  return values.begin()->second == 5L;\n}\n",
+      "source_sha256": "e6b7c2618da55e93d977bb0a02c2d8357fd018fd3228ca9fe5b071e7a2571f73",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-custom-policy-iterator",
+      "expected": "reject",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nstruct Hash { unsigned operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_multimap<int, int, Hash> values{{3, 5}};\n  return values.find(3)->second;\n}\n",
+      "source_sha256": "07ae7cc725d75ad61519b549c945585eacf879721e6fc13e1406ac4f434f1375",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-modifier-merge-from-user-hash-policy",
+      "expected": "reject",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nstruct Hash { unsigned operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_map<int, int, Hash> source;\n  std::unordered_multimap<int, int> target;\n  target.merge(source);\n  return target.size();\n}\n",
+      "source_sha256": "5db6827df2e17fa6a1a51e4e47533c2151743c9015226c0eb1272c4aed072344",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorFindAndTraverseWithUniqueOwnerInSameTranslationRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorConstEqualRangeReachesTheEndOfTheGroupRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorErasePositionAndRangeUnlinkOnlySelectedNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorLocalConstIterationSeesTheMatchingBucketRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierEmplaceAndInsertReturnTheNewEquivalentNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierHintedInsertionKeepsEquivalentKeysContiguousRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierIteratorInputConvertsBetweenCompatibleMappedOwnersRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoMultiPreservesPayloadAddressesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeIntoUniqueLeavesEquivalentUntransferredNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorOtherMappedTypeIteratorRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorCustomPolicyIteratorRejected",
+    "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeFromUserHashPolicyRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "5154f39ad36ff5cf9458d53e32b1e84016330df198e3af32b5efdac45ec7d06b",
+  "maintained_original_sha256": "ad6cdfb5806a10416b5bec0e8a1c2d7f4e700c8a7bd317d057ae676eb7e52e68",
+  "previous_registered_source_sha256": "1e0bbf4c8f5a577626fcbd4167012527fe20826396391e8d4a58c24c8f278168",
+  "previous_maintained_original_sha256": "a302000f528d3c79c9d2169d56f19ecc664d4c5245e897a333bb2f561a1c0f64",
+  "restorer_sha256": "4f8ae909318f595a71cb177c87a1e2edefc1222dbd2b8ef47cafd1f5aad15850",
+  "extractor_sha256": "cceadf26c64f5c18e76e0243b76bbe297bc23b051dcec22ff1a3437cf9831c8d",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8643,
+  "current_python_registry_tests": 242,
+  "native_reference_selected_executions": 20,
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "unordered-map-wide-mapped": "a277fa7cd60cbb7628d63cec83f9dfbada19f9b3987d1d367d42072a0704e5af",
+    "unordered-multimap-iteration-and-transfer": "5e6445641c2df0eb3cd22c8082490cd1e3fb9b9926e649f64439101d271e7a5f"
+  },
+  "native_reference_authentication_sha256": "46fbf8332b6f2f9f80a082827c4a96990964c5a4dc2775455a25cbd331c1caef",
+  "source_proof_sha256": "4d5998c1e9c058985b76cc24097b986fc29256094084336af40b618ed28cf583"
+}
