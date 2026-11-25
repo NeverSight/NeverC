@@ -54400,6 +54400,17 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
         Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(OwnerType.withConst())) &&
         Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(OwnerType)))
       return UtilityForwardListOperation::CopyAssign;
+    if (!M->isConst() && M->getNumParams() == 1 && !M->getParamDecl(0)->getType()->isReferenceType()) {
+      const auto List = approvedUtilityInitializerListRecord(S, SM,
+          forwardListRecordType(M->getParamDecl(0)->getType()), Context);
+      if (List && Context.hasSameType(List->ElementType, Context.IntTy)) {
+        if (M->getOverloadedOperator() == OO_Equal &&
+            Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(OwnerType)))
+          return UtilityForwardListOperation::AssignInitializerListOperator;
+        if (M->getIdentifier() && M->getName() == "assign" && M->getReturnType()->isVoidType())
+          return UtilityForwardListOperation::AssignInitializerList;
+      }
+    }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
     if (!M->getNumParams()) {
@@ -54815,6 +54826,44 @@ bool forwardListCopyAssignmentBody(const State &S, const SourceManager &SM,
          isa<CXXThisExpr>(Dereference->getSubExpr()->IgnoreParenImpCasts());
 }
 
+bool forwardListInitializerAssignmentBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const bool ReturnsOwner = Method->getOverloadedOperator() == OO_Equal;
+  if (!Body || Body->size() != (ReturnsOwner ? 2u : 1u)) return false;
+  const auto *Parameter = Definition->getParamDecl(0);
+  const auto List = approvedUtilityInitializerListRecord(S, SM, forwardListRecordType(Parameter->getType()), Context);
+  const auto *Range = dyn_cast<CXXMemberCallExpr>(Body->body_front());
+  const auto *Assign = Range ? Range->getMethodDecl() : nullptr;
+  const auto *Receiver = Range ? Range->getImplicitObjectArgument() : nullptr;
+  if (!List || !Assign || !Assign->getIdentifier() || Assign->getName() != "assign" ||
+      !Assign->getPrimaryTemplate() || Assign->getNumParams() != 2 || Range->getNumArgs() != 2 ||
+      !Assign->getReturnType()->isVoidType() || !Receiver ||
+      !isa<CXXThisExpr>(Receiver->IgnoreParenImpCasts()) ||
+      Assign->getParent()->getCanonicalDecl() != Definition->getParent()->getCanonicalDecl())
+    return false;
+  const auto Iterator = List->Begin->getType();
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Bound = dyn_cast<CXXMemberCallExpr>(Range->getArg(I)->IgnoreUnlessSpelledInSource());
+    const auto *Accessor = Bound ? Bound->getMethodDecl() : nullptr;
+    if (!Accessor || !Accessor->getIdentifier() || Accessor->getName() != (I == 0 ? "begin" : "end") ||
+        !Accessor->isConst() || Bound->getNumArgs() ||
+        Accessor->getParent()->getCanonicalDecl() != List->Record->getCanonicalDecl() ||
+        !forwardListPinned(S, SM, Accessor, "initializer_list") ||
+        !Context.hasSameType(Accessor->getReturnType(), Iterator) ||
+        !Context.hasSameType(Assign->getParamDecl(I)->getType(), Iterator) ||
+        !variantParameter(Bound->getImplicitObjectArgument(), Parameter))
+      return false;
+  }
+  if (!ReturnsOwner) return true;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Dereference = Return && Return->getRetValue()
+      ? dyn_cast<UnaryOperator>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  return Dereference && Dereference->getOpcode() == UO_Deref &&
+         isa<CXXThisExpr>(Dereference->getSubExpr()->IgnoreParenImpCasts());
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -54998,6 +55047,10 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
     return std::nullopt;
   if (*Operation == UtilityForwardListOperation::CopyAssign &&
       !forwardListCopyAssignmentBody(S, SM, Method, Context))
+    return std::nullopt;
+  if ((*Operation == UtilityForwardListOperation::AssignInitializerList ||
+       *Operation == UtilityForwardListOperation::AssignInitializerListOperator) &&
+      !forwardListInitializerAssignmentBody(S, SM, Method, Context))
     return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
