@@ -41056,6 +41056,13 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "forward-list construction", "The checked integer owner layout is required.");
+      if (*Kind == UtilityForwardListConstruction::Move) {
+        auto Source = dereference(Operands.front(), L);
+        auto Head = snapshot(forwardListMember(Source, false, L), L);
+        assign(forwardListMember(Place, false, L), std::move(Head), L);
+        assign(forwardListMember(Source, false, L), A.zero(A.Context.VoidPtrTy, L), L);
+        return;
+      }
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
       if (*Kind != UtilityForwardListConstruction::InitializerList) return;
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,

@@ -18608,3 +18608,10 @@ and return type in the existing dispatch.
 Checked captureless generic visitors dispatch on the concrete selected
 specialization for each variant alternative. The translator checks the
 visitor body and its storage dependencies during the full expression.
+
+## Variant reference forwarding and forward_list move construction
+
+Variant visitation follows source functions that return a checked cast
+of the same live argument. Move construction of a default-allocator
+forward_list<int> transfers its checked node chain, preserving node
+addresses and leaving the source empty for reuse.

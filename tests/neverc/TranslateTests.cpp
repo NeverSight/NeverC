@@ -405837,7 +405837,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2VariantVisitUnverifiedXvalueReturningCallRejected) {
+TEST_F(TranslateTest, CoreV2VariantVisitUsesCheckedSourceXvalueReturn) {
   const auto Source = tmpFile("variant-visit-unverified-xvalue-returning-call.cpp");
   writeFile(Source, R"r19containers(#include <variant>
 using Value = std::variant<int>;
@@ -405846,9 +405846,7 @@ int read(int value) { return value; }
 int test(Value& item) { return std::visit(read, produce(item)); }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionCopiesSingleUseLocalRunAtBothOptimizations) {
@@ -406344,6 +406342,242 @@ int bias = 2;
 int main() {
   std::variant<int, short> value(3);
   return std::visit([](auto x) -> int { return int(x) + bias; }, value) != 5;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitSourceCastPreservesLiveOwnerRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-source-cast-preserves-live-owner.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, short>;
+Value&& forward_value(Value& value) { return static_cast<Value&&>(value); }
+int read(int value) { return value; }
+int main() {
+  Value item(std::in_place_index<1>, short{7});
+  int before = std::visit(read, forward_value(item));
+  item.emplace<0>(11);
+  return before != 7 || std::visit(read, item) != 11;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-source-cast-preserves-live-owner.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-source-cast-preserves-live-owner" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitSourceCastBorrowsConstOwnerRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-source-cast-borrows-const-owner.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int, short>;
+const Value&& view_value(const Value& value) { return static_cast<const Value&&>(value); }
+int read(int value) { return value + 2; }
+int main() {
+  const Value item(std::in_place_index<0>, 13);
+  return std::visit(read, view_value(item)) != 15;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-source-cast-borrows-const-owner.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-source-cast-borrows-const-owner" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitSourceCastAndPinnedMoveRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-source-cast-and-pinned-move.cpp");
+  writeFile(Source, R"r19containers(#include <utility>
+#include <variant>
+using Value = std::variant<int, short>;
+Value&& forward_value(Value& value) { return static_cast<Value&&>((value)); }
+int subtract(int left, int right) { return left - right; }
+int main() {
+  Value left(std::in_place_index<1>, short{17});
+  Value right(5);
+  return std::visit(subtract, forward_value(left), std::move(right)) != 12;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-source-cast-and-pinned-move.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-source-cast-and-pinned-move" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitSourceCastEffectfulBodyGuardRejected) {
+  const auto Source = tmpFile("variant-visit-source-cast-effectful-body-guard.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int>;
+Value&& forward_value(Value& value) {
+  value.emplace<0>(9);
+  return static_cast<Value&&>(value);
+}
+int read(int value) { return value; }
+int test(Value& item) { return std::visit(read, forward_value(item)); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitSourceCastOtherOwnerGuardRejected) {
+  const auto Source = tmpFile("variant-visit-source-cast-other-owner-guard.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+using Value = std::variant<int>;
+Value other(9);
+Value&& forward_value(Value&) { return static_cast<Value&&>(other); }
+int read(int value) { return value; }
+int test(Value& item) { return std::visit(read, forward_value(item)); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMovePreservesNodeReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-move-preserves-node-references.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+int main() {
+  std::forward_list<int> source{4, 7};
+  int *first = &source.front();
+  auto current = source.begin();
+  ++current;
+  int *second = &*current;
+  std::forward_list<int> destination(std::move(source));
+  if (!source.empty() || &destination.front() != first) return 1;
+  auto next = destination.begin();
+  ++next;
+  return &*next != second || *first != 4 || *second != 7;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-move-preserves-node-references.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-move-preserves-node-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMovedFromOwnerCanBeReusedRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-moved-from-owner-can-be-reused.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+int main() {
+  std::forward_list<int> original{3, 5};
+  std::forward_list<int> moved(std::move(original));
+  original.push_front(9);
+  moved.pop_front();
+  return original.front() != 9 || moved.front() != 5;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-moved-from-owner-can-be-reused.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-moved-from-owner-can-be-reused" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMoveEmptyOwnerRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-move-empty-owner.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+int main() {
+  std::forward_list<int> original;
+  std::forward_list<int> moved(std::move(original));
+  if (!original.empty() || !moved.empty()) return 1;
+  moved.push_front(6);
+  return moved.front() != 6 || !original.empty();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-move-empty-owner.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-move-empty-owner" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCopyKeepsIndependentOwnerGuardRejected) {
+  const auto Source = tmpFile("forward-list-copy-keeps-independent-owner-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  std::forward_list<int> original{5, 7};
+  std::forward_list<int> copied(original);
+  return &copied.front() == &original.front();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMoveAllocatorOverloadGuardRejected) {
+  const auto Source = tmpFile("forward-list-move-allocator-overload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <memory>
+#include <utility>
+int main() {
+  std::forward_list<int> original{2, 4};
+  std::forward_list<int> moved(std::move(original), std::allocator<int>{});
+  return moved.front() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListMoveOtherElementGuardRejected) {
+  const auto Source = tmpFile("forward-list-move-other-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+int main() {
+  std::forward_list<long> original{1L, 2L};
+  std::forward_list<long> moved(std::move(original));
+  return moved.front() != 1L;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

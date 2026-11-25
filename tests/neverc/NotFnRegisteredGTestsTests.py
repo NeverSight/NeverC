@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_forwarding_and_forward_list_registered = cls.registered
+        cls.variant_forwarding_and_forward_list_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_forwarding_and_forward_list_original = cls.adapter.restore_original_gtests(cls.variant_forwarding_and_forward_list_registered,
+                                                                        cls.variant_forwarding_and_forward_list_suffix)
+        cls.registered = cls.adapter.restore_variant_forwarding_and_forward_list_history(cls.variant_forwarding_and_forward_list_registered)
         cls.variant_captureless_visit_registered = cls.registered
         cls.variant_captureless_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_captureless_visit_original = cls.adapter.restore_original_gtests(cls.variant_captureless_visit_registered,
@@ -3912,6 +3917,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_captureless_visit_history(self.variant_captureless_visit_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_captureless_visit_registered, self.variant_captureless_visit_suffix + b' ')
+
+
+    def test_variant_forwarding_and_forward_list_retains_published_bodies(self):
+        self.assertEqual(self.variant_forwarding_and_forward_list_original + self.variant_forwarding_and_forward_list_suffix, self.variant_forwarding_and_forward_list_registered)
+        self.assertEqual(self.adapter.restore_variant_forwarding_and_forward_list_history(self.variant_forwarding_and_forward_list_original),
+                         self.variant_captureless_visit_original)
+        output, evidence = self.extractor.extract(self.variant_forwarding_and_forward_list_original, ['TranslateTest.CoreV2VariantVisitSourceCastPreservesLiveOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitSourceCastBorrowsConstOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitSourceCastAndPinnedMoveRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMovePreservesNodeReferencesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMovedFromOwnerCanBeReusedRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMoveEmptyOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitSourceCastEffectfulBodyGuardRejected', 'TranslateTest.CoreV2VariantVisitSourceCastOtherOwnerGuardRejected', 'TranslateTest.CoreV2ForwardListCopyKeepsIndependentOwnerGuardRejected', 'TranslateTest.CoreV2ForwardListMoveAllocatorOverloadGuardRejected', 'TranslateTest.CoreV2ForwardListMoveOtherElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9098)
+        self.assertEqual(evidence['selected_count'], 11)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-move-preserves-node-references', output)
+        self.assertIn(b'variant-visit-source-cast-other-owner-guard', output)
+
+    def test_variant_forwarding_and_forward_list_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_forwarding_and_forward_list_history(self.variant_forwarding_and_forward_list_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_forwarding_and_forward_list_registered, self.variant_forwarding_and_forward_list_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -39,18 +39,18 @@
       "source_sha256": "61c5d345eb4be08db62c8bf136c676a0d7296c077e41c7a2ece08af04146e41c",
       "original_case_source_sha256": "61c5d345eb4be08db62c8bf136c676a0d7296c077e41c7a2ece08af04146e41c",
       "gtest_body_sha256": "060c63b65727630ab5b953d844b18f5694d852a0a044d8495e0697c22cf1352e"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "variant-visit-unverified-xvalue-returning-call",
-      "formal_test_name": "TranslateTest.CoreV2VariantVisitUnverifiedXvalueReturningCallRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitUsesCheckedSourceXvalueReturn",
+      "expected": "accept",
       "source_sha256": "efbf45a652be61dd3507647e8735ed57806040721b14a3349ab46de86c0a9b86",
       "original_case_source_sha256": "efbf45a652be61dd3507647e8735ed57806040721b14a3349ab46de86c0a9b86",
-      "gtest_body_sha256": "dacc0f863b9a18c4d215ab6d99cbc99266cb04d7d643a96c128d428f08d555dc"
+      "gtest_body_sha256": "2e0e0589c53c0d15ea8fffb1c92026aa3ca129d806234a7c263f15e6403bc1af",
+      "source_only": true
     }
   ],
+  "negative_cases": [],
   "source_cases": [
     {
       "name": "bitset-unsigned-conversion-through-const-copy-and-alias",
@@ -95,9 +95,9 @@
     {
       "name": "variant-visit-unverified-xvalue-returning-call",
       "public_header": "variant",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <variant>\nusing Value = std::variant<int>;\nValue&& produce(Value& value) { return static_cast<Value&&>(value); }\nint read(int value) { return value; }\nint test(Value& item) { return std::visit(read, produce(item)); }\n",
-      "kind": "source-body-guard",
+      "kind": "cpp17-operation",
       "source_sha256": "efbf45a652be61dd3507647e8735ed57806040721b14a3349ab46de86c0a9b86"
     }
   ],
@@ -107,7 +107,7 @@
     "TranslateTest.CoreV2VariantVisitNonowningStaticCastPreservesOwnerRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantVisitNonowningMoveConstOperandRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantVisitMixedBoundAndXvalueOperandsRunAtBothOptimizations",
-    "TranslateTest.CoreV2VariantVisitUnverifiedXvalueReturningCallRejected"
+    "TranslateTest.CoreV2VariantVisitUsesCheckedSourceXvalueReturn"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -127,5 +127,5 @@
     "variant-visit-borrowed-xvalues": "1f94b16e7ffb3dda60d1960bc273f71d0cca5052c5a28ff8c69cbe9c51c465a5"
   },
   "native_reference_authentication_sha256": "137766e9577c839cbc0399c97d8693c158fe7fe9693ffea9b27f96f984f6d6f6",
-  "source_proof_sha256": "35723ca145d11d089e6494b3202a425522850ced8520b52e25ab9d3180d886ae"
+  "source_proof_sha256": "2f4384d0910900c60905fdbf52aa3fdaa2b460f48cfdf1ecfa9847915d12d63a"
 }
