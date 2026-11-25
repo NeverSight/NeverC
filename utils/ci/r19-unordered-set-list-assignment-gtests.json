@@ -1,0 +1,164 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-list-assignment-unique-list-assignment-keeps-buckets-and-load-factor",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetListAssignmentUniqueListAssignmentKeepsBucketsAndLoadFactorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "91dc9d15824d6b94eac4e9cdceb42cbd2881d26f95febf04333cce3e80153804",
+      "original_case_source_sha256": "91dc9d15824d6b94eac4e9cdceb42cbd2881d26f95febf04333cce3e80153804",
+      "gtest_body_sha256": "109a7e7644443e734f379e4461b4bdb7c660353b45fb6f063f628caa209e757c"
+    },
+    {
+      "name": "unordered-set-list-assignment-multi-list-assignment-groups-colliding-duplicates",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetListAssignmentMultiListAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5d2b07da71613296ad42fd1fb758136220a364275daa824f2643e75c7868869f",
+      "original_case_source_sha256": "5d2b07da71613296ad42fd1fb758136220a364275daa824f2643e75c7868869f",
+      "gtest_body_sha256": "9fc3b41eeda8d30a8730a350367267d6704b75d45cb1c6f16a2e4bc07a958b05"
+    },
+    {
+      "name": "unordered-set-list-assignment-explicit-empty-list-assignment-clears-reserved-storage",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetListAssignmentExplicitEmptyListAssignmentClearsReservedStorageRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4cf8a1f1ec227eb105a377da51a9ea93868f5e5c526fa62a5804c5371d5ae13f",
+      "original_case_source_sha256": "4cf8a1f1ec227eb105a377da51a9ea93868f5e5c526fa62a5804c5371d5ae13f",
+      "gtest_body_sha256": "f317abc4236668f1386545d1f684f9446e7e4daff20d08a975e365177b063b03"
+    },
+    {
+      "name": "unordered-set-list-assignment-list-assignment-evaluates-braced-input-before-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetListAssignmentListAssignmentEvaluatesBracedInputBeforeReceiverRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "91dcecc82ae300a47ee39a1c9df518bb7eb4d44565cefe51fe1d8e88459ea048",
+      "original_case_source_sha256": "91dcecc82ae300a47ee39a1c9df518bb7eb4d44565cefe51fe1d8e88459ea048",
+      "gtest_body_sha256": "372db9384dce2d0ada6a42434efde403b3710dcd2ad2623fc2ee2e387273e7be"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-list-assignment-custom-hash-list-assignment",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetListAssignmentCustomHashListAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "f353ede623d7a4b2a7ed18ee70ecbf8336452278ca5aec4e78144c3d0eba014c",
+      "original_case_source_sha256": "f353ede623d7a4b2a7ed18ee70ecbf8336452278ca5aec4e78144c3d0eba014c",
+      "gtest_body_sha256": "fd286c33a5d939530f9fcfefff61b5aa2d987618e8c2f1ca95dc07b206ee4c65"
+    },
+    {
+      "name": "unordered-set-list-assignment-custom-equality-multi-list-assignment",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetListAssignmentCustomEqualityMultiListAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "7341d9d164e6d24b6a9fd56b05f8f18bdb68863bfe2ef25d1420c281471148cf",
+      "original_case_source_sha256": "7341d9d164e6d24b6a9fd56b05f8f18bdb68863bfe2ef25d1420c281471148cf",
+      "gtest_body_sha256": "91c238f4ce732b856f3ee37600a22bf868ab8fb520efb01ae29e025cfc536d73"
+    },
+    {
+      "name": "unordered-set-list-assignment-long-key-list-assignment",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetListAssignmentLongKeyListAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "10739e48bbf08e0dcf723b1de679266feb7457417180590ef41cc07c7bda901b",
+      "original_case_source_sha256": "10739e48bbf08e0dcf723b1de679266feb7457417180590ef41cc07c7bda901b",
+      "gtest_body_sha256": "770bb0b2897d8350e95f729334bea930da0cbb38224d55693f01328cdf16038f"
+    },
+    {
+      "name": "unordered-set-list-assignment-short-key-multi-list-assignment",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetListAssignmentShortKeyMultiListAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "31de2c30c3a349fd630fb55d228bbca2fa57ff41d4ed5dbc8c2b19c2d1677104",
+      "original_case_source_sha256": "31de2c30c3a349fd630fb55d228bbca2fa57ff41d4ed5dbc8c2b19c2d1677104",
+      "gtest_body_sha256": "887036890eab9704d41115d7e018e7c4a9f98a03187892f985329c17943a417d"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-list-assignment-unique-list-assignment-keeps-buckets-and-load-factor",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{-2, -4, -6, -8};\n  values.rehash(31);\n  values.max_load_factor(2.0f);\n  const auto buckets = values.bucket_count();\n  auto& result = (values = {3, 34, 3, 7, 34, 5});\n  return &result != &values || values.size() != 4 || values.count(-2) != 0 ||\n         values.count(3) != 1 || values.count(34) != 1 || values.count(5) != 1 ||\n         values.bucket_count() != buckets || values.max_load_factor() != 2.0f;\n}\n",
+      "source_sha256": "91dc9d15824d6b94eac4e9cdceb42cbd2881d26f95febf04333cce3e80153804",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-list-assignment-multi-list-assignment-groups-colliding-duplicates",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{-1, -3};\n  values.rehash(2);\n  values.max_load_factor(4.0f);\n  values = {9, 7, 9, 5, 7, 9};\n  auto group = values.equal_range(9);\n  int count = 0;\n  for (auto it = group.first; it != group.second; ++it) {\n    if (*it != 9) return 1;\n    ++count;\n  }\n  return values.size() != 6 || values.count(7) != 2 || values.count(-1) != 0 ||\n         values.count(5) != 1 || count != 3 || values.bucket_count() != 2;\n}\n",
+      "source_sha256": "5d2b07da71613296ad42fd1fb758136220a364275daa824f2643e75c7868869f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-list-assignment-explicit-empty-list-assignment-clears-reserved-storage",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <initializer_list>\n#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{11, 23};\n  values.rehash(31);\n  auto* receiver = &values;\n  auto& result = receiver->operator=(std::initializer_list<int>{});\n  return &result != &values || !values.empty() || values.bucket_count() != 31;\n}\n",
+      "source_sha256": "4cf8a1f1ec227eb105a377da51a9ea93868f5e5c526fa62a5804c5371d5ae13f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-list-assignment-list-assignment-evaluates-braced-input-before-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nint trace;\nint input(int n) { trace = trace * 10 + n; return n; }\nSet& receiver(Set& set) { trace = trace * 10 + 3; return set; }\nint main() {\n  Set values;\n  receiver(values) = {input(1), input(2)};\n  return trace != 123 || values.size() != 2 || values.count(1) != 1 || values.count(2) != 1;\n}\n",
+      "source_sha256": "91dcecc82ae300a47ee39a1c9df518bb7eb4d44565cefe51fe1d8e88459ea048",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-list-assignment-custom-hash-list-assignment",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int value) const { return static_cast<unsigned>(value); } };\nint main() {\n  std::unordered_set<int, Hash> values;\n  values = {2, 2};\n  return values.empty();\n}\n",
+      "source_sha256": "f353ede623d7a4b2a7ed18ee70ecbf8336452278ca5aec4e78144c3d0eba014c",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-list-assignment-custom-equality-multi-list-assignment",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  std::unordered_multiset<int, std::hash<int>, Equal> values;\n  values = {3, 3};\n  return values.empty();\n}\n",
+      "source_sha256": "7341d9d164e6d24b6a9fd56b05f8f18bdb68863bfe2ef25d1420c281471148cf",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-list-assignment-long-key-list-assignment",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<long> values;\n  values = {4L, 4L};\n  return values.empty();\n}\n",
+      "source_sha256": "10739e48bbf08e0dcf723b1de679266feb7457417180590ef41cc07c7bda901b",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-list-assignment-short-key-multi-list-assignment",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<short> values;\n  values = {5, 5};\n  return values.empty();\n}\n",
+      "source_sha256": "31de2c30c3a349fd630fb55d228bbca2fa57ff41d4ed5dbc8c2b19c2d1677104",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetListAssignmentUniqueListAssignmentKeepsBucketsAndLoadFactorRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetListAssignmentMultiListAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetListAssignmentExplicitEmptyListAssignmentClearsReservedStorageRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetListAssignmentListAssignmentEvaluatesBracedInputBeforeReceiverRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetListAssignmentCustomHashListAssignmentRejected",
+    "TranslateTest.CoreV2UnorderedSetListAssignmentCustomEqualityMultiListAssignmentRejected",
+    "TranslateTest.CoreV2UnorderedSetListAssignmentLongKeyListAssignmentRejected",
+    "TranslateTest.CoreV2UnorderedSetListAssignmentShortKeyMultiListAssignmentRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "0a3e74d58b7b14a41049e2a8ad8f513413e5ef6b2426a30625103d46c6befdf6",
+  "maintained_original_sha256": "376aa6cafedc4544350af55c4762116affe6ffb8a1e3283ac406b8c9db064275",
+  "previous_registered_source_sha256": "54aaee4bebce2af63c700ce4c26fc46b08f3e84bc307853ac6083e08fbe2e4ce",
+  "previous_maintained_original_sha256": "59f5c6dc6377471051c60a473bcf81661b95045dc16b598e1c5d0fa55d2ddf79",
+  "restorer_sha256": "9cb023a0b8f3ae40446c9de2bce76067aec18e6d894e088acc9e3d9202b7bf9f",
+  "extractor_sha256": "c02cd5f2ca4fa7bd43bdd499c00c2c52d062c80a175ec6f38f67e9920d640d15",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8552,
+  "current_python_registry_tests": 224,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-list-assignment": "417e16b2a23f14a8ac96419b416b0e3ae29a9a44b6faf4881379bb1869f57bc1"
+  },
+  "native_reference_authentication_sha256": "fe283c105163f96892eabef45cb5fca18bcdc02e5e651205775611557c06837d",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
+}

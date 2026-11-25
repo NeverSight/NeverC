@@ -1,0 +1,164 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-observers-set-allocator-allocates-and-releases-integer-storage",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetObserversSetAllocatorAllocatesAndReleasesIntegerStorageRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a78f2758c5f17a0a83555b582472ba74f2cd25ffd5666fe468847c24ad08c9ee",
+      "original_case_source_sha256": "a78f2758c5f17a0a83555b582472ba74f2cd25ffd5666fe468847c24ad08c9ee",
+      "gtest_body_sha256": "56827178a7fa09aa2af0a38b24d87b6e49a0e08e506ac2131733829cb8016b1d"
+    },
+    {
+      "name": "unordered-set-observers-multiset-allocator-evaluates-arrow-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetObserversMultisetAllocatorEvaluatesArrowReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1230975ba65a31a1ff247cb2e17ede931bd219c162b87e37ada4a4e91c2fe092",
+      "original_case_source_sha256": "1230975ba65a31a1ff247cb2e17ede931bd219c162b87e37ada4a4e91c2fe092",
+      "gtest_body_sha256": "5097d056e959b1defdafb950e3b86acc3178153efdb4b5f2fbe45ddd30a05b77"
+    },
+    {
+      "name": "unordered-set-observers-hash-function-on-arrow-receiver-uses-pinned-signed-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetObserversHashFunctionOnArrowReceiverUsesPinnedSignedHashRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e4c5deef4b4099f47b32a6827fe13d35762827e12ef476cffd7c34b9f00244d7",
+      "original_case_source_sha256": "e4c5deef4b4099f47b32a6827fe13d35762827e12ef476cffd7c34b9f00244d7",
+      "gtest_body_sha256": "8b47355ed008b5b1992acbea515c748b943c21b9c760b223f27fbe8da3182290"
+    },
+    {
+      "name": "unordered-set-observers-key-equality-on-arrow-receiver-compares-default-integer-keys",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetObserversKeyEqualityOnArrowReceiverComparesDefaultIntegerKeysRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "de372121265841defb79d343629e4b961d22bd2cd9f76a2b0957fc206602af7d",
+      "original_case_source_sha256": "de372121265841defb79d343629e4b961d22bd2cd9f76a2b0957fc206602af7d",
+      "gtest_body_sha256": "875bbdbe25664066d5300b341d43f11baa7817eb7e498a68b26c6b024b87c723"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-observers-custom-hash-arrow-observer",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetObserversCustomHashArrowObserverRejected",
+      "expected": "reject",
+      "source_sha256": "a644615b6ebdbaddd340f4be8f6774164208127adf3125ba456fb50f2dfaa82d",
+      "original_case_source_sha256": "a644615b6ebdbaddd340f4be8f6774164208127adf3125ba456fb50f2dfaa82d",
+      "gtest_body_sha256": "eae08125613ca952fa29c74a9cb4248bfea2d2a7de0f6aba8d8025de30c571f0"
+    },
+    {
+      "name": "unordered-set-observers-custom-equality-arrow-observer",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetObserversCustomEqualityArrowObserverRejected",
+      "expected": "reject",
+      "source_sha256": "4b68b530809b13f9c0523bc061bf81d067b2dab2e261a4f4d1b1ed7a4416db48",
+      "original_case_source_sha256": "4b68b530809b13f9c0523bc061bf81d067b2dab2e261a4f4d1b1ed7a4416db48",
+      "gtest_body_sha256": "4dc9dd47b054fbd8181fa74c1d541cc79c01986df1aecb07df7273173e201013"
+    },
+    {
+      "name": "unordered-set-observers-different-key-allocator-observer",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetObserversDifferentKeyAllocatorObserverRejected",
+      "expected": "reject",
+      "source_sha256": "9c42f658cf35691c655b12895192318e5769bac35e3a5dde7cb0f3c4646ac930",
+      "original_case_source_sha256": "9c42f658cf35691c655b12895192318e5769bac35e3a5dde7cb0f3c4646ac930",
+      "gtest_body_sha256": "3370cea0dd693bcdd148f41918d8425df155c71676ae13833f7fefc4b83ad601"
+    },
+    {
+      "name": "unordered-set-observers-custom-hash-allocator-observer",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetObserversCustomHashAllocatorObserverRejected",
+      "expected": "reject",
+      "source_sha256": "a9e619e7ce8a24abf4dcdaa0a1dfbf04445fe105200ccb3c31acfad27f990d04",
+      "original_case_source_sha256": "a9e619e7ce8a24abf4dcdaa0a1dfbf04445fe105200ccb3c31acfad27f990d04",
+      "gtest_body_sha256": "1c83596d8fe2dbb426764a1312e389b185536e52dc86b8551ae17e573b2625a3"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-observers-set-allocator-allocates-and-releases-integer-storage",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values{9, 17};\n  auto allocator = values.get_allocator();\n  auto* storage = allocator.allocate(1);\n  const bool allocated = storage != nullptr;\n  allocator.deallocate(storage, 1);\n  return !allocated || values.count(9) != 1;\n}\n",
+      "source_sha256": "a78f2758c5f17a0a83555b582472ba74f2cd25ffd5666fe468847c24ad08c9ee",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-observers-multiset-allocator-evaluates-arrow-receiver-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_multiset<int>;\nconst Set* observe(const Set& values, int& calls) { ++calls; return &values; }\nint main() {\n  const Set values{5, 5};\n  int calls = 0;\n  auto allocator = observe(values, calls)->get_allocator();\n  auto* storage = allocator.allocate(2);\n  const bool allocated = storage != nullptr;\n  allocator.deallocate(storage, 2);\n  return !allocated || calls != 1 || values.count(5) != 2;\n}\n",
+      "source_sha256": "1230975ba65a31a1ff247cb2e17ede931bd219c162b87e37ada4a4e91c2fe092",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-observers-hash-function-on-arrow-receiver-uses-pinned-signed-hash",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <cstddef>\n#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values{-9, 7};\n  const auto* receiver = &values;\n  const auto hash = receiver->hash_function();\n  return hash(-9) != static_cast<std::size_t>(-9) || hash(7) != 7u || values.count(-9) != 1;\n}\n",
+      "source_sha256": "e4c5deef4b4099f47b32a6827fe13d35762827e12ef476cffd7c34b9f00244d7",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-observers-key-equality-on-arrow-receiver-compares-default-integer-keys",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3, -1};\n  const auto* receiver = &values;\n  const auto equal = receiver->key_eq();\n  return !equal(-1, -1) || equal(-1, 3) || values.count(3) != 2;\n}\n",
+      "source_sha256": "de372121265841defb79d343629e4b961d22bd2cd9f76a2b0957fc206602af7d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-observers-custom-hash-arrow-observer",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  const std::unordered_set<int, Hash> values;\n  const auto* receiver = &values;\n  return receiver->hash_function()(7) != 7u;\n}\n",
+      "source_sha256": "a644615b6ebdbaddd340f4be8f6774164208127adf3125ba456fb50f2dfaa82d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-observers-custom-equality-arrow-observer",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  const std::unordered_multiset<int, std::hash<int>, Equal> values;\n  const auto* receiver = &values;\n  return receiver->key_eq()(1, 2);\n}\n",
+      "source_sha256": "4b68b530809b13f9c0523bc061bf81d067b2dab2e261a4f4d1b1ed7a4416db48",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-observers-different-key-allocator-observer",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<long> values;\n  auto allocator = values.get_allocator();\n  auto* storage = allocator.allocate(1);\n  allocator.deallocate(storage, 1);\n}\n",
+      "source_sha256": "9c42f658cf35691c655b12895192318e5769bac35e3a5dde7cb0f3c4646ac930",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-observers-custom-hash-allocator-observer",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  const std::unordered_multiset<int, Hash> values;\n  auto allocator = values.get_allocator();\n  auto* storage = allocator.allocate(1);\n  allocator.deallocate(storage, 1);\n}\n",
+      "source_sha256": "a9e619e7ce8a24abf4dcdaa0a1dfbf04445fe105200ccb3c31acfad27f990d04",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetObserversSetAllocatorAllocatesAndReleasesIntegerStorageRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetObserversMultisetAllocatorEvaluatesArrowReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetObserversHashFunctionOnArrowReceiverUsesPinnedSignedHashRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetObserversKeyEqualityOnArrowReceiverComparesDefaultIntegerKeysRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetObserversCustomHashArrowObserverRejected",
+    "TranslateTest.CoreV2UnorderedSetObserversCustomEqualityArrowObserverRejected",
+    "TranslateTest.CoreV2UnorderedSetObserversDifferentKeyAllocatorObserverRejected",
+    "TranslateTest.CoreV2UnorderedSetObserversCustomHashAllocatorObserverRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "1e10f7c7f4c2d93d41b5887a77f1541a19d4db26ee6cd9109456360b22156161",
+  "maintained_original_sha256": "600ae75bd4b6ceaa0e9a445adcf96712e00f83a9b504fee7d470953c3aa95f47",
+  "previous_registered_source_sha256": "0dcef4d73fc664809450ee55b14a93869663ba24d56f9c87350e5353882e736c",
+  "previous_maintained_original_sha256": "856be15f1897ef27455fdd7d98857ddb130215430a02e637bc383507a3f1e382",
+  "restorer_sha256": "e19b40912a52c58d07c237f7be2efc543736f3a839f8a81e3b0f28bb09f0a2be",
+  "extractor_sha256": "b70bf1cfa2302f698a6c7e0745f5424f31637d7a2442f5083ad01be302b35b0d",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8578,
+  "current_python_registry_tests": 230,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "unordered-set-observers": "a93e369e9d2f8cb54124b54338a0bf8171892b19d76140656f1e015db976896e"
+  },
+  "native_reference_authentication_sha256": "3b57c288af20ead359dc0402d2a6f10123636354f7a4bc1903cecfb2b368efea",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
+}
