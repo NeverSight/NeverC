@@ -27102,7 +27102,7 @@ class FunctionLowering {
     return Node;
   }
   struct ForwardListInput {
-    enum Kind { Nodes, CountedArray, RepeatedValue, PointerRange };
+    enum Kind { Nodes, CountedArray, RepeatedValue, PointerRange, IteratorRange };
     Expression Current;
     std::optional<Expression> Limit;
     Kind Mode = Nodes;
@@ -27125,16 +27125,16 @@ class FunctionLowering {
   }
   Expression forwardListHasInput(const ForwardListInput &Input, SourceLocation L) {
     if (Input.Mode == ForwardListInput::Nodes) return cast(Input.Current, "bool", L);
-    if (Input.Mode == ForwardListInput::PointerRange)
+    if (Input.Mode == ForwardListInput::PointerRange || Input.Mode == ForwardListInput::IteratorRange)
       return binary("!=", Input.Current, *Input.Limit, "bool", L);
     return cast(*Input.Limit, "bool", L);
   }
   Expression forwardListInputReference(const ForwardListInput &Input, SourceLocation L) {
-    if (Input.Mode != ForwardListInput::Nodes) return Input.Current;
+    if (Input.Mode != ForwardListInput::Nodes && Input.Mode != ForwardListInput::IteratorRange) return Input.Current;
     return address(forwardListValue(Input.Current, true, L), A.Context.IntTy.withConst(), L);
   }
   void advanceForwardListInput(const ForwardListInput &Input, SourceLocation L) {
-    if (Input.Mode == ForwardListInput::Nodes) {
+    if (Input.Mode == ForwardListInput::Nodes || Input.Mode == ForwardListInput::IteratorRange) {
       assign(Input.Current, forwardListNext(Input.Current, L), L);
       return;
     }
@@ -41225,6 +41225,13 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return;
       }
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
+      if (*Kind == UtilityForwardListConstruction::IteratorRange) {
+        auto Current = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
+        auto Last = snapshot(forwardListMember(dereference(Operands[1], L), true, L), L);
+        const ForwardListInput Input{std::move(Current), std::move(Last), ForwardListInput::IteratorRange};
+        insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);
+        return;
+      }
       if (*Kind == UtilityForwardListConstruction::PointerRange) {
         auto Input = forwardListPointerInput(Operands[0], Operands[1], L);
         insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);

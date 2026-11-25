@@ -54355,6 +54355,19 @@ bool forwardListPointerInputSignature(const CXXMethodDecl *M, unsigned First,
           Context.hasSameType(Type, Context.getPointerType(Context.IntTy.withConst())));
 }
 
+bool forwardListIteratorInputSignature(const State &S, const SourceManager &SM, const CXXMethodDecl *M,
+    unsigned First, const UtilityForwardListNodeRecord &Node, const ASTContext &Context, unsigned Trailing = 0) {
+  if (M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation || M->getNumParams() != First + 2 + Trailing)
+    return false;
+  const auto Type = M->getParamDecl(First)->getType();
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  return Arguments && Arguments->size() == 2 && Arguments->get(0).getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
+         Context.hasSameType(M->getParamDecl(First + 1)->getType(), Type) &&
+         (forwardListIteratorType(S, SM, Type, Node, false, Context) ||
+          forwardListIteratorType(S, SM, Type, Node, true, Context));
+}
+
 std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
     const State &S, const SourceManager &SM, const CXXConstructorDecl *C,
     const ASTContext &Context) {
@@ -54366,6 +54379,10 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
           (C->getNumParams() == 3 && forwardListPointerInputSignature(C, 0, Context, 1) &&
            forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(2)->getType(), Context)))
         return UtilityForwardListConstruction::PointerRange;
+      if (forwardListIteratorInputSignature(S, SM, C, 0, Owner->Node, Context) ||
+          (C->getNumParams() == 3 && forwardListIteratorInputSignature(S, SM, C, 0, Owner->Node, Context, 1) &&
+           forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(2)->getType(), Context)))
+        return UtilityForwardListConstruction::IteratorRange;
       return std::nullopt;
     }
     if (!C->getNumParams()) return UtilityForwardListConstruction::Default;
@@ -55018,7 +55035,19 @@ bool forwardListInsertRangeBody(const State &S, const SourceManager &SM,
   return true;
 }
 
-bool forwardListPointerConstructionBody(const CXXConstructorDecl *Constructor, const ASTContext &Context) {
+bool forwardListBoundParameter(const Expr *Operand, const ParmVarDecl *Parameter, bool Iterator,
+                               const ASTContext &Context) {
+  if (variantParameter(Operand, Parameter)) return true;
+  const auto *Copy = Iterator ? dyn_cast<CXXConstructExpr>(Operand->IgnoreParenImpCasts()) : nullptr;
+  return Copy && Copy->getNumArgs() == 1 && Copy->getConstructor()->isCopyOrMoveConstructor() &&
+         Copy->getConstructor()->isTrivial() && Context.hasSameType(Copy->getType(), Parameter->getType()) &&
+         variantParameter(Copy->getArg(0), Parameter);
+}
+
+bool forwardListRangeConstructionBody(const State &S, const SourceManager &SM,
+    const CXXConstructorDecl *Constructor, const UtilityForwardListNodeRecord &Node,
+    UtilityForwardListConstruction Kind, const ASTContext &Context) {
+  const bool Iterator = Kind == UtilityForwardListConstruction::IteratorRange;
   const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(Constructor->getDefinition());
   const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
   const auto *Expression = Body && Body->size() == 1 ? dyn_cast<Expr>(Body->body_front()) : nullptr;
@@ -55026,11 +55055,13 @@ bool forwardListPointerConstructionBody(const CXXConstructorDecl *Constructor, c
   const auto *Selected = Insert ? Insert->getMethodDecl() : nullptr;
   const auto *Receiver = Insert ? Insert->getImplicitObjectArgument() : nullptr;
   if (!Selected || !Selected->getIdentifier() || Selected->getName() != "insert_after" ||
-      !Selected->getPrimaryTemplate() || !forwardListPointerInputSignature(Selected, 1, Context) ||
+      !Selected->getPrimaryTemplate() || !forwardListFunctionDeclarations(S, SM, Selected) ||
+      !(Iterator ? forwardListIteratorInputSignature(S, SM, Selected, 1, Node, Context)
+                 : forwardListPointerInputSignature(Selected, 1, Context)) ||
       Insert->getNumArgs() != 3 || !Receiver || !isa<CXXThisExpr>(Receiver->IgnoreParenImpCasts()) ||
       Selected->getParent()->getCanonicalDecl() != Definition->getParent()->getCanonicalDecl() ||
-      !variantParameter(Insert->getArg(1), Definition->getParamDecl(0)) ||
-      !variantParameter(Insert->getArg(2), Definition->getParamDecl(1)))
+      !forwardListBoundParameter(Insert->getArg(1), Definition->getParamDecl(0), Iterator, Context) ||
+      !forwardListBoundParameter(Insert->getArg(2), Definition->getParamDecl(1), Iterator, Context))
     return false;
   const auto *Position = dyn_cast<CXXMemberCallExpr>(Insert->getArg(0)->IgnoreUnlessSpelledInSource());
   const auto *Before = Position ? Position->getMethodDecl() : nullptr;
@@ -55169,8 +55200,8 @@ std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruc
       !forwardListSourceGraph(S, SM, C, Context, *Node) ||
       (*Kind == UtilityForwardListConstruction::Move && !forwardListMoveBody(S, SM, C, *Node, Context)))
     return std::nullopt;
-  if (*Kind == UtilityForwardListConstruction::PointerRange &&
-      !forwardListPointerConstructionBody(C, Context))
+  if ((*Kind == UtilityForwardListConstruction::PointerRange || *Kind == UtilityForwardListConstruction::IteratorRange) &&
+      !forwardListRangeConstructionBody(S, SM, C, *Node, *Kind, Context))
     return std::nullopt;
   if (*Kind == UtilityForwardListConstruction::Copy) {
     const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(C->getDefinition());
