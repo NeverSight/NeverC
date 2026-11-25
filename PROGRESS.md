@@ -1,5 +1,13 @@
 # NeverC Progress
 
+## Current snapshot — 2026-11-25T01:01:00Z
+
+- Reviewed [61fceebd to 26127e48](https://github.com/NeverSight/NeverC/compare/61fceebd499465a97c74ba3bfe46345b3d86e3e5...26127e4871f70f15172dfcab22fedd463a227a35): 18 commits ahead; changed paths not totaled. Checked selected Translate/Cpp Frontend and MathSDK changes, fixture source, and registry metadata for temporary variant visits and scalar any reference casts. Owned operands must be unextended full-expression temporaries; their payloads are not admitted through visitor lvalue-reference parameters. Mutable any references are rejected from const owners and keep the bounded use check on mutable locals. Registry extraction records new and historical fixture digests separately.
+- Activity: 10 open issues and 0 open PRs, unchanged. GitHub indexed no issue openings/closures or product PR openings, merges, or unmerged closures since 2026-11-24T00:58:16Z; [previous report #36](https://github.com/NeverSight/NeverC/pull/36) is excluded. The range includes direct dev commits. No open product review was pending at the snapshot.
+- No new confirmed source defect or source change. No Actions run returned for the exact dev SHA in the sampled listing; runs with other heads were not treated as dev evidence. No build, test, benchmark, or workflow dispatch. Other translator branches and native runtime behavior were not audited.
+- Suggested priorities: (1) Run accepted and rejected temporary visit cases, requiring by-value visitor behavior and rejection of borrowed references. (2) Verify mutable and const any reference controls and O0/O2 parity with the existing fixture set. (3) Keep production-size Windows COFF and native-width toolchain parity separate until exact-head native evidence is available.
+
+
 ## Current snapshot — 2026-11-24T00:58:16Z
 
 - Reviewed source: [52787bfb…61fceebd](https://github.com/NeverSight/NeverC/compare/52787bfb3902fc8a5caf8896cf4c17a3a5021ca1...61fceebd499465a97c74ba3bfe46345b3d86e3e5) (27 commits ahead, 112 changed paths; only a selected slice reviewed). Read default unordered set/multiset unsigned-key translation and workflow trust/pinned action changes. The canonical key type is used in node store, extraction and bucket lookup; static inspection covered high-bit key, range/copy and node-transfer fixture source and the rejection boundary for unsupported types.
@@ -1678,3 +1686,11 @@ Bounded static review of unordered multiset modifier lowering and documented sup
 - The reviewed product change includes the unsigned-key translation merge [61fceebd](https://github.com/NeverSight/NeverC/commit/61fceebd499465a97c74ba3bfe46345b3d86e3e5). No open product PR was waiting for review at the snapshot.
 - No new confirmed source defect or code change in this report. No exact-tip check run returned. No build, test, benchmark, or workflow dispatch; native toolchain/parity, full translation and runtime paths unverified.
 - Suggested validation: (1) Run unsigned-key translation at O0/O2 with high-bit bucket, range/copy, node transfer and rejection controls; (2) confirm workflow trust for the reviewed paths, including immutable action pins and default-branch provenance, through authorized existing checks; (3) qualify production-size Windows x64 COFF with LTO disabled and the Python lifecycle, then run native-width type-identity fixtures.
+
+
+## 2026-11-25 — static review
+
+- Reviewed [61fceebd to 26127e48](https://github.com/NeverSight/NeverC/compare/61fceebd499465a97c74ba3bfe46345b3d86e3e5...26127e4871f70f15172dfcab22fedd463a227a35): 18 commits ahead; changed paths not totaled. Checked selected Translate/Cpp Frontend and MathSDK changes, fixture source, and registry metadata for temporary variant visits and scalar any reference casts. Owned operands must be unextended full-expression temporaries; their payloads are not admitted through visitor lvalue-reference parameters. Mutable any references are rejected from const owners and keep the bounded use check on mutable locals. Registry extraction records new and historical fixture digests separately.
+- Activity: 10 open issues and 0 open PRs, unchanged. GitHub indexed no issue openings/closures or product PR openings, merges, or unmerged closures since 2026-11-24T00:58:16Z; [previous report #36](https://github.com/NeverSight/NeverC/pull/36) is excluded. The range includes direct dev commits. No open product review was pending at the snapshot.
+- No new confirmed source defect or source change. No Actions run returned for the exact dev SHA in the sampled listing; runs with other heads were not treated as dev evidence. No build, test, benchmark, or workflow dispatch. Other translator branches and native runtime behavior were not audited.
+- Suggested priorities: (1) Run accepted and rejected temporary visit cases, requiring by-value visitor behavior and rejection of borrowed references. (2) Verify mutable and const any reference controls and O0/O2 parity with the existing fixture set. (3) Keep production-size Windows COFF and native-width toolchain parity separate until exact-head native evidence is available.
