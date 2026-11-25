@@ -29088,6 +29088,32 @@ class FunctionLowering {
     Install(Right, LeftFirst, LeftLast, LeftSize, RightEnd);
   }
 
+  void reverseListStorage(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Start = labelName(), SwapLinks = labelName(), SwapSentinel = labelName(), Done = labelName();
+    branch(binary(">", listMember(Place, "nct_list_size", L), quantity(1, Size, L), "bool", L),
+           Start, Done, L);
+    label(Start, L);
+    auto Sentinel = snapshot(listSentinel(Place, L), L);
+    auto Node = temporary("ptr:void", L);
+    assign(Node, listMember(Place, "nct_list_next", L), L);
+    jump(SwapLinks, L);
+    label(SwapLinks, L);
+    auto Previous = snapshot(listLink(Node, true, L), L);
+    auto Next = snapshot(listLink(Node, false, L), L);
+    assign(listLink(Node, true, L), Next, L);
+    assign(listLink(Node, false, L), Previous, L);
+    assign(Node, Next, L);
+    branch(binary("!=", Node, Sentinel, "bool", L), SwapLinks, SwapSentinel, L);
+    label(SwapSentinel, L);
+    auto Last = snapshot(listMember(Place, "nct_list_prev", L), L);
+    auto First = snapshot(listMember(Place, "nct_list_next", L), L);
+    assign(listMember(Place, "nct_list_prev", L), First, L);
+    assign(listMember(Place, "nct_list_next", L), Last, L);
+    jump(Done, L);
+    label(Done, L);
+  }
+
   void listAssignValueStorage(Expression Place, Expression Source,
       const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
@@ -29226,6 +29252,10 @@ class FunctionLowering {
     if (Operation == UtilityListOperation::Front || Operation == UtilityListOperation::Back)
       return listValue(snapshot(listMember(Place,
           Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Method->isConst(), L);
+    if (Operation == UtilityListOperation::Reverse) {
+      reverseListStorage(Place, L);
+      return Expression{};
+    }
     if (Operation == UtilityListOperation::Clear) {
       destroyListStorage(Place, Owner->Node, L);
       return Expression{};

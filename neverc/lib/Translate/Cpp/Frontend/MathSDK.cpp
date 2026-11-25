@@ -56241,6 +56241,8 @@ std::optional<UtilityListOperation> listMethodSignature(
         return Name == "front" ? UtilityListOperation::Front : UtilityListOperation::Back;
       if (!M->isConst() && M->getReturnType()->isVoidType()) {
         if (Name == "clear") return UtilityListOperation::Clear;
+        if (Name == "reverse" && M->getRefQualifier() == RQ_None)
+          return UtilityListOperation::Reverse;
         if (Name == "pop_front") return UtilityListOperation::PopFront;
         if (Name == "pop_back") return UtilityListOperation::PopBack;
       }
