@@ -1,0 +1,167 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-modifiers-erase-collisions",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetModifiersEraseCollisionsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d96d4b8d9e0d51044846e6d47c61833b7c36f30a6a287facbfcee493f53cf038",
+      "original_case_source_sha256": "d96d4b8d9e0d51044846e6d47c61833b7c36f30a6a287facbfcee493f53cf038",
+      "gtest_body_sha256": "77d19df7c6156f7c742a254c2e4d965bf6c4a24c1529546ec004f4e30335c9b6"
+    },
+    {
+      "name": "unordered-set-modifiers-receiver-before-modifier-arguments",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetModifiersReceiverBeforeModifierArgumentsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ded639f2852ca192ea5719aa3999e84ed0973b26c502a90fd515d9960d3f0813",
+      "original_case_source_sha256": "ded639f2852ca192ea5719aa3999e84ed0973b26c502a90fd515d9960d3f0813",
+      "gtest_body_sha256": "21a3ab60807c47c1c1b6685a379e78ec554de4c9a516e5e75c4d5ea8394359d8"
+    },
+    {
+      "name": "unordered-set-modifiers-insert-after-clear",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetModifiersInsertAfterClearRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "da1e88b3363f27133788526dc874c57b05a882395fbafd89fb9c7f5e8179eef6",
+      "original_case_source_sha256": "da1e88b3363f27133788526dc874c57b05a882395fbafd89fb9c7f5e8179eef6",
+      "gtest_body_sha256": "84bf981bb400fac54ee8a38d22139351e6f480c39368b98d9f4cae5612f83073"
+    },
+    {
+      "name": "unordered-set-modifiers-erase-releases-one-node",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetModifiersEraseReleasesOneNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7a2d31f3fdccd86229e195c6416243f1d72f7894dfd348cb8386b3cc56d49de8",
+      "original_case_source_sha256": "7a2d31f3fdccd86229e195c6416243f1d72f7894dfd348cb8386b3cc56d49de8",
+      "gtest_body_sha256": "a297817b16ef52b031d47b5a98469fc32c57d848f768dec68063c3766805ea26"
+    },
+    {
+      "name": "unordered-set-modifiers-multi-key-erase",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
+      "original_case_source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
+      "gtest_body_sha256": "864e2141bdc825305279d684c7e238ea27aa73fc25a94a5882be286e6ed051ff"
+    },
+    {
+      "name": "unordered-set-modifiers-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerSetListInsertAndEraseRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "01085bcc977bf72e8dc2eb29370e187b6ce9b8253ee9c751b4d12026e67adedc",
+      "original_case_source_sha256": "01085bcc977bf72e8dc2eb29370e187b6ce9b8253ee9c751b4d12026e67adedc",
+      "gtest_body_sha256": "c6ef6fb273d004628e0e3e3593922320f8727de79d37bc45a0577e6dbeb12b1b",
+      "expected_exit_code": 1
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-modifiers-different-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetModifiersDifferentKeyRejected",
+      "expected": "reject",
+      "source_sha256": "a580ae37d4c60d9ada6eec2418fbdcf86f31171c274785eb8c5c76bc30b57467",
+      "original_case_source_sha256": "a580ae37d4c60d9ada6eec2418fbdcf86f31171c274785eb8c5c76bc30b57467",
+      "gtest_body_sha256": "0988a3cc739e5d52d5df1daf99fa9b425fc667a600b5653e8b35a08bab61ab8f"
+    },
+    {
+      "name": "unordered-set-modifiers-alternate-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetModifiersAlternateHashRejected",
+      "expected": "reject",
+      "source_sha256": "9c4f74de3efccd319e2decba3d43fe7088732cdf4f7b0859d944aec7d2a951e3",
+      "original_case_source_sha256": "9c4f74de3efccd319e2decba3d43fe7088732cdf4f7b0859d944aec7d2a951e3",
+      "gtest_body_sha256": "e75a992b14f7bcc8134b4d76f24c9c11ebde4f056654dc53374da0858fb9d084"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-modifiers-erase-collisions",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.rehash(8);\n  values.insert({2, 10, 18, 3});\n  if (values.erase(10) != 1 || values.erase(10) != 0) return 1;\n  if (values.bucket_size(values.bucket(2)) != 2 || values.count(18) != 1) return 2;\n  if (values.erase(2) != 1 || values.erase(18) != 1 || values.bucket_size(2) != 0) return 3;\n  return values.bucket_count() != 8 || values.size() != 1 || values.count(3) != 1;\n}\n",
+      "source_sha256": "d96d4b8d9e0d51044846e6d47c61833b7c36f30a6a287facbfcee493f53cf038",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-modifiers-receiver-before-modifier-arguments",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nint trace;\nSet& receiver(Set& values) { trace = 10 * trace + 1; return values; }\nint key(int digit) { trace = 10 * trace + digit; return -digit; }\nint main() {\n  Set values;\n  receiver(values).insert({key(2), key(3), key(4)});\n  if (trace != 1234 || values.size() != 3) return 1;\n  trace = 0;\n  if (receiver(values).erase(key(3)) != 1 || trace != 13) return 2;\n  return values.count(-3) != 0 || values.count(-4) != 1;\n}\n",
+      "source_sha256": "ded639f2852ca192ea5719aa3999e84ed0973b26c502a90fd515d9960d3f0813",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-modifiers-insert-after-clear",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{4, 9, 12};\n  values.rehash(16);\n  values.clear();\n  std::initializer_list<int> input{5, -2, 5};\n  values.insert(input);\n  values.insert({});\n  return values.size() != 2 || values.count(5) != 1 || values.count(-2) != 1 ||\n      values.count(4) != 0 || values.bucket_count() != 16;\n}\n",
+      "source_sha256": "da1e88b3363f27133788526dc874c57b05a882395fbafd89fb9c7f5e8179eef6",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-modifiers-erase-releases-one-node",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <unordered_set>\nint armed, releases, allocations;\nvoid* operator new(Size bytes) { if (armed) ++allocations; return malloc(bytes); }\nvoid operator delete(void* pointer) noexcept { if (armed && pointer) ++releases; free(pointer); }\nvoid operator delete(void* pointer, Size) noexcept { if (armed && pointer) ++releases; free(pointer); }\nint main() {\n  std::unordered_set<int> values{4, 8};\n  armed = 1;\n  values.insert({4, 8, 4});\n  if (values.erase(9) || releases || allocations) return 1;\n  if (values.erase(4) != 1 || values.erase(4) || releases != 1 || allocations) return 2;\n  armed = 0;\n  return values.size() != 1 || values.count(8) != 1;\n}\n",
+      "source_sha256": "7a2d31f3fdccd86229e195c6416243f1d72f7894dfd348cb8386b3cc56d49de8",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-modifiers-multi-key-erase",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n",
+      "source_sha256": "b8895dd2b686c3329b7a67d2a84426af80eea6f2c5fdedbf1e432029e0b9bcc9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-modifiers-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->insert({1, 2}); return ptr->erase(2); }\n",
+      "source_sha256": "01085bcc977bf72e8dc2eb29370e187b6ce9b8253ee9c751b4d12026e67adedc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-modifiers-different-key",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<long> values; values.insert({1, 2}); return values.erase(2); }\n",
+      "source_sha256": "a580ae37d4c60d9ada6eec2418fbdcf86f31171c274785eb8c5c76bc30b57467",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-modifiers-alternate-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { using Size = decltype(sizeof(0)); Size operator()(int value) const { return Size(value); } };\nint main() { std::unordered_set<int, Hash> values; values.insert({1, 2}); return values.erase(2); }\n",
+      "source_sha256": "9c4f74de3efccd319e2decba3d43fe7088732cdf4f7b0859d944aec7d2a951e3",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetModifiersEraseCollisionsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetModifiersReceiverBeforeModifierArgumentsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetModifiersInsertAfterClearRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetModifiersEraseReleasesOneNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerSetListInsertAndEraseRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetModifiersDifferentKeyRejected",
+    "TranslateTest.CoreV2UnorderedSetModifiersAlternateHashRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "8fca807d05848ed6283028b3d950abab65aef92ca1275e35c6a8a62d0e59dbff",
+  "maintained_original_sha256": "cd98c424f8e06373e80d1dc167574d4a61c2e2a23934bdd4e8987316cc6bf647",
+  "previous_registered_source_sha256": "e9da8191611d0215f09b996e8c05fcf447898711abc672233f3b3225586bb3e1",
+  "previous_maintained_original_sha256": "484fbd59e4e3d7eac40f457d31331f446f1e9e29d217bc4d262945e25b091f7a",
+  "restorer_sha256": "8c9587ece721992d830e9736a0975f3e3fdc07717fdbcf77fb8c254be43c22de",
+  "extractor_sha256": "31ead5db2c5ca9319ffc25decee13b8b10c76114d293ef8e6fd79b72da1ece52",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8408,
+  "current_python_registry_tests": 188,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-multiset-modifiers": "87f5a2245acb0d951864f9f620aff7b28a13afd5df682e759791b30e75b19fc5",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
+    "unordered-set-modifiers": "b89c96549b850abe840ee118aa25f35ccb2fc963833469caebf4a1e34d10cf63"
+  },
+  "native_reference_authentication_sha256": "a745bf58c6a62f9980124d27f55fb37da78153483b0d6aa096aa16f86cdff3ef",
+  "source_proof_sha256": "31a87939471fe67288bbb8ef91184b3d92f42288abd33e3961878eb1477f904b"
+}

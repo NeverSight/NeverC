@@ -621,6 +621,2446 @@ def restore_variant_metadata_layout_history(source):
     return restored
 
 
+R19_VARIANT_SCALAR_REGISTERED_SHA256 = '08b0ce98b80e83b85d6aea6acc547f7e087c561d69d1c97c5d6fc9ed2aee3abc'
+R19_VARIANT_SCALAR_MAINTAINED_SHA256 = '2a750a4f20ba6f0674466279aa069b55d0dc71afd4062fc701b22cf286e7c49b'
+R19_VARIANT_SCALAR_PREVIOUS_REGISTERED_SHA256 = '37e42c15db2bcd9a9d39b25b1ee8af5407e13fe5419eb392fb2672120813a706'
+R19_VARIANT_SCALAR_PREVIOUS_MAINTAINED_SHA256 = 'e51b392c0556e228dc98fa264fa5fc80232273c8bf68b4645b4f1c78b9cd1951'
+_R19_VARIANT_SCALAR_ADDITIONS = b'TEST_F(TranslateTest, CoreV2VariantObjectsDefaultRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-default.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> value;\n  return value.index() != 0 || value.valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-default.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-default" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsSecondRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-second.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> value = 2.5;\n  return value.index() != 1 || value.valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-second.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-second" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsThirdLvalueRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-third-lvalue.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  int value = 7;\n  const std::variant<char, double, int> item = value;\n  return item.index() != 2 || item.valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-third-lvalue.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-third-lvalue" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsCopyRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-copy.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> source = 3.0;\n  const std::variant<int, double> copy = source;\n  return copy.index() != 1 || copy.valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsDefaultPointerRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-default-pointer.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int*, bool> value{};\n  return (&value)->index() != 0 || (&value)->valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-default-pointer.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-default-pointer" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsRefAndSideEffectRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-ref-and-side-effect.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nusing Choice = std::variant<int, double>;\nint attempts;\nconst Choice& once(const Choice& choice) { ++attempts; return choice; }\nextern "C" int check() {\n  Choice choice = 4.0;\n  return once(choice).index() != 1 || attempts != 1 ||\n         once(choice).valueless_by_exception() || attempts != 2;\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-ref-and-side-effect.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-ref-and-side-effect" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsTemporaryRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-temporary.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  return std::variant<int, double>(1).index() != 0 ||\n         std::variant<int, double>(2.5).valueless_by_exception();\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-temporary.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-temporary" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfAliasRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-get-if-alias.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> value = 3;\n  auto *first = std::get_if<0>(&value);\n  if (!first || std::get_if<1>(&value) || *first != 3) return 1;\n  *first = 11;\n  auto *again = std::get_if<int>(&value);\n  return again != first || *again != 11;\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-get-if-alias.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-get-if-alias" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfConstRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-get-if-const.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  using Choice = std::variant<int, double>;\n  const Choice value = 2.5;\n  const auto *p = std::get_if<double>(&value);\n  const Choice *empty = nullptr;\n  return !p || *p != 2.5 || std::get_if<0>(&value) ||\n         std::get_if<1>(empty) || std::get_if<int>(empty);\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-get-if-const.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-get-if-const" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfDuplicateRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-get-if-duplicate.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, int> value;\n  const auto *p = std::get_if<0>(&value);\n  return !p || *p != 0 || std::get_if<1>(&value);\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-get-if-duplicate.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-get-if-duplicate" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfCopyAndEvaluateOnceRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-get-if-copy-and-evaluate-once.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nusing Choice = std::variant<char, double, int>;\nint attempts;\nChoice *once(Choice *owner) { ++attempts; return owner; }\nextern "C" int check() {\n  Choice value = 42;\n  Choice copy = value;\n  auto *p = std::get_if<2>(once(&copy));\n  if (!p || *p != 42 || attempts != 1) return 2;\n  *p = 19;\n  auto *original = std::get_if<2>(&value);\n  return !original || original == p || *original != 42 || *p != 19;\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-get-if-copy-and-evaluate-once.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-get-if-copy-and-evaluate-once" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsClassAlternativeRejected) {\n  const auto Source = tmpFile("variant-objects-class-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nstruct Payload { int field; };\nextern "C" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstAlternativeRejected) {\n  const auto Source = tmpFile("variant-objects-const-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<const int, double> value;\n  return int(value.index());\n}\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsAlteredDiscriminantRejected) {\n  const auto Source = tmpFile("variant-objects-altered-discriminant.cpp");\n  writeFile(Source, R"r19variantsclr(#define __index renamed_variant_discriminant\n#include <variant>\n#undef __index\nextern "C" int check() { std::variant<int, double> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsUnprovedConversionRejected) {\n  const auto Source = tmpFile("variant-objects-unproved-conversion.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  short original = 7;\n  std::variant<int, double> value = original;\n  return int(value.index());\n}\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsUncheckedGetRejected) {\n  const auto Source = tmpFile("variant-objects-unchecked-get.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  std::variant<int, double> value;\n  return std::get<0>(value);\n}\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsHoldsConstRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-holds-const.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  const std::variant<int, double> value = 3.0;\n  return !std::holds_alternative<double>(value) || std::holds_alternative<int>(value);\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-holds-const.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-holds-const" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsCopyChangingAlternativeRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-copy-changing-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  std::variant<int, double> first = 3;\n  const std::variant<int, double> second = 9.0;\n  auto& receiver = (first = second);\n  auto* payload = std::get_if<1>(&first);\n  return &receiver != &first || !payload || *payload != 9.0 || std::get_if<0>(&first);\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-copy-changing-alternative.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-copy-changing-alternative" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsMoveAndSelfAssignmentRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-move-and-self-assignment.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  using V = std::variant<int, double>;\n  V original = 6;\n  V copy = 3.0;\n  copy = static_cast<V&&>(original);\n  copy = copy;\n  auto* result = std::get_if<int>(&copy);\n  return !result || *result != 6 || !std::holds_alternative<int>(original);\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-move-and-self-assignment.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-move-and-self-assignment" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetByIndexRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-const-get-by-index.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  const std::variant<int, double> value{5};\n  const auto &item = std::get<0>(value);\n  return item != 5;\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-const-get-by-index.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-const-get-by-index" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetByTypeRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-const-get-by-type.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  const std::variant<int, double> value{2.5};\n  return std::get<double>(value) != 2.5;\n}\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-const-get-by-type.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-const-get-by-type" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetInactiveRejected) {\n  const auto Source = tmpFile("variant-objects-const-get-inactive.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  const std::variant<int, double> value{2.5};\n  return std::get<0>(value);\n}\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetMutableAliasRejected) {\n  const auto Source = tmpFile("variant-objects-const-get-mutable-alias.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nint main() {\n  std::variant<int, double> value{3};\n  const auto &alias = value;\n  value = std::variant<int, double>{2.5};\n  return std::get<0>(alias);\n}\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsConstGetAlteredHelperRejected) {\n  const auto Source = tmpFile("variant-objects-const-get-altered-helper.cpp");\n  writeFile(Source, R"r19variantsclr(#define __generic_get replaced_generic_get\n#include <variant>\n#undef __generic_get\nint main() {\n  const std::variant<int, double> value{7};\n  return std::get<int>(value);\n}\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\nTEST_F(TranslateTest, CoreV2VariantObjectsGetIfReplacedAddressBodyRejected) {\n  const auto Source = tmpFile("variant-objects-get-if-replaced-address-body.cpp");\n  writeFile(Source, R"r19variantsclr(#define __builtin_addressof(x) (&(x))\n#include <variant>\n#undef __builtin_addressof\nint main() {\n  std::variant<int, double> value = 3;\n  const int *item = std::get_if<0>(&value);\n  return !item || *item != 3;\n}\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n'
+
+_R19_VARIANT_SCALAR_HISTORICAL_CONSTRUCTION_CHECK = b'TEST_F(TranslateTest, CoreV2VariantMetadataRuntimeValueRejected) {\n  const auto Source = tmpFile("variant-metadata-runtime-value.cpp");\n  writeFile(Source, R"r19variant(#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n)r19variant");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_VARIANT_SCALAR_CURRENT_CONSTRUCTION_CHECK = b'TEST_F(TranslateTest, CoreV2VariantMetadataRuntimeValueRunAtBothOptimizations) {\n  const auto Source = tmpFile("variant-metadata-runtime-value.cpp");\n  writeFile(Source, R"r19variant(#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n)r19variant");\n  const auto Output = tmpFile("variant-metadata-runtime-value.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-metadata-runtime-value" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_variant_scalar_history(source):
+    """Remove only the exact variant scalar variant layer for historical checks."""
+    digest = hashlib.sha256(source).hexdigest()
+    assert digest in {R19_VARIANT_SCALAR_REGISTERED_SHA256,R19_VARIANT_SCALAR_MAINTAINED_SHA256}
+    assert source.count(_R19_VARIANT_SCALAR_ADDITIONS) == 1
+    restored = source.replace(_R19_VARIANT_SCALAR_ADDITIONS,b'',1)
+    assert restored.count(_R19_VARIANT_SCALAR_CURRENT_CONSTRUCTION_CHECK) == 1
+    restored = restored.replace(_R19_VARIANT_SCALAR_CURRENT_CONSTRUCTION_CHECK,
+                                _R19_VARIANT_SCALAR_HISTORICAL_CONSTRUCTION_CHECK,1)
+    expected = (R19_VARIANT_SCALAR_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_SCALAR_REGISTERED_SHA256
+                else R19_VARIANT_SCALAR_PREVIOUS_MAINTAINED_SHA256)
+    assert hashlib.sha256(restored).hexdigest() == expected
+    return restored
+
+
+R19_LAYOUT_IN_PLACE_REGISTERED_SHA256 = '8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29'
+R19_LAYOUT_IN_PLACE_MAINTAINED_SHA256 = '71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947'
+R19_LAYOUT_IN_PLACE_PREVIOUS_REGISTERED_SHA256 = '08b0ce98b80e83b85d6aea6acc547f7e087c561d69d1c97c5d6fc9ed2aee3abc'
+R19_LAYOUT_IN_PLACE_PREVIOUS_MAINTAINED_SHA256 = '2a750a4f20ba6f0674466279aa069b55d0dc71afd4062fc701b22cf286e7c49b'
+R19_LAYOUT_IN_PLACE_ADDITIONS_SHA256 = '153c055616258a5ba3fb04530d323b35a6c56ccf8f999b5da19b89ece90a7906'
+R19_LAYOUT_IN_PLACE_MAINTAINED_SIZE = 19749773
+R19_LAYOUT_IN_PLACE_ADDITIONS_SIZE = 46892
+
+
+def restore_layout_in_place_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_IN_PLACE_REGISTERED_SHA256, R19_LAYOUT_IN_PLACE_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_IN_PLACE_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_IN_PLACE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_IN_PLACE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_IN_PLACE_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_IN_PLACE_REGISTERED_SHA256
+             else R19_LAYOUT_IN_PLACE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_IN_PLACE_ANY_REGISTERED_SHA256 = 'f92c06c48a9fad4a28afc4a157985a18624fd4ddfb17d0869e3e925d8dfa908a'
+R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SHA256 = '20c9f075f5b6d3a2f1394438f689368c7f2da1a75286dce1704b219e87e6d5df'
+R19_LAYOUT_IN_PLACE_ANY_PREVIOUS_REGISTERED_SHA256 = '8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29'
+R19_LAYOUT_IN_PLACE_ANY_PREVIOUS_MAINTAINED_SHA256 = '71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947'
+R19_LAYOUT_IN_PLACE_ANY_ADDITIONS_SHA256 = '74fc845c2634683190671c621230d151f225588420254e57c08558248b746b9b'
+R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SIZE = 19770200
+R19_LAYOUT_IN_PLACE_ANY_ADDITIONS_SIZE = 20427
+
+
+def restore_layout_in_place_any_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_IN_PLACE_ANY_REGISTERED_SHA256, R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_IN_PLACE_ANY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_IN_PLACE_ANY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_IN_PLACE_ANY_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_IN_PLACE_ANY_REGISTERED_SHA256
+             else R19_LAYOUT_IN_PLACE_ANY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_OPERATIONS_REGISTERED_SHA256 = '1bcc99ed140d9088d8457efa5df774a84d4ef7c58dc4032b7d3a555e187f2c8d'
+R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SHA256 = '8cb9ba423920483c71e8c728341a619b5661dfe1bf808c84d11b68f378ec7d66'
+R19_LAYOUT_VARIANT_OPERATIONS_PREVIOUS_REGISTERED_SHA256 = 'f92c06c48a9fad4a28afc4a157985a18624fd4ddfb17d0869e3e925d8dfa908a'
+R19_LAYOUT_VARIANT_OPERATIONS_PREVIOUS_MAINTAINED_SHA256 = '20c9f075f5b6d3a2f1394438f689368c7f2da1a75286dce1704b219e87e6d5df'
+R19_LAYOUT_VARIANT_OPERATIONS_ADDITIONS_SHA256 = 'de48477b214c90cbd8a0c25eaa30e4843e7ca89159952fc5f358b73d4113f47e'
+R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SIZE = 19781676
+R19_LAYOUT_VARIANT_OPERATIONS_ADDITIONS_SIZE = 11476
+
+
+def restore_layout_variant_operations_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_OPERATIONS_REGISTERED_SHA256, R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_OPERATIONS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_OPERATIONS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_OPERATIONS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_OPERATIONS_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_OPERATIONS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_ADAPTER_REGISTERED_SHA256 = 'd9e5439542354d4ab90c5d134fc6ff826c42b0870d915cc42218f328f931621e'
+R19_LAYOUT_ADAPTER_MAINTAINED_SHA256 = '2d1d01058bae252d865258eddeecdba869624a3ef3d75fef98d09054936dd508'
+R19_LAYOUT_ADAPTER_PREVIOUS_REGISTERED_SHA256 = '1bcc99ed140d9088d8457efa5df774a84d4ef7c58dc4032b7d3a555e187f2c8d'
+R19_LAYOUT_ADAPTER_PREVIOUS_MAINTAINED_SHA256 = '8cb9ba423920483c71e8c728341a619b5661dfe1bf808c84d11b68f378ec7d66'
+R19_LAYOUT_ADAPTER_ADDITIONS_SHA256 = 'e84cc8a750c5e4a8757838321ae0a0b9c2bb5346cc86604450c10a949eeeb997'
+R19_LAYOUT_ADAPTER_MAINTAINED_SIZE = 19806142
+R19_LAYOUT_ADAPTER_ADDITIONS_SIZE = 24466
+
+
+def restore_layout_adapter_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_ADAPTER_REGISTERED_SHA256, R19_LAYOUT_ADAPTER_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_ADAPTER_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_ADAPTER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_ADAPTER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_ADAPTER_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_ADAPTER_REGISTERED_SHA256
+             else R19_LAYOUT_ADAPTER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256 = 'c0ece43741e31ff8cf62cfcd5e14dcc65196029af1ea9517cd73376f05be7d2a'
+R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256 = 'cb1e66caf89902b5ff655e287f1bc206b3dfee1f5e39c0c2a62c306577373851'
+R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_REGISTERED_SHA256 = 'd9e5439542354d4ab90c5d134fc6ff826c42b0870d915cc42218f328f931621e'
+R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_MAINTAINED_SHA256 = '2d1d01058bae252d865258eddeecdba869624a3ef3d75fef98d09054936dd508'
+R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SHA256 = 'ab6e3a1624ab304fe9399cb343784529b5f5eef9e7591b52bf6b190c7062a0c0'
+R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SIZE = 19819964
+R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SIZE = 13822
+
+
+def restore_layout_assignment_visit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256, R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_ASSIGNMENT_VISIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256
+             else R19_LAYOUT_ASSIGNMENT_VISIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256 = 'fcbc81253fb41e0c9b020802fd03dc380d00ff8ea776fcfeb60ee4df2eb1e280'
+R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256 = '76e71d65563703e0372a79fc12bfa65883aea738411972f16dc3d06ba863072f'
+R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_REGISTERED_SHA256 = 'c0ece43741e31ff8cf62cfcd5e14dcc65196029af1ea9517cd73376f05be7d2a'
+R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_MAINTAINED_SHA256 = 'cb1e66caf89902b5ff655e287f1bc206b3dfee1f5e39c0c2a62c306577373851'
+R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SHA256 = '4bb2809b6b9a90c600dea7ca2c5281496393cd3614b38015158baa19c0e58702'
+R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SIZE = 19826922
+R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SIZE = 6958
+
+
+def restore_layout_integral_visit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256, R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_INTEGRAL_VISIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256
+             else R19_LAYOUT_INTEGRAL_VISIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_ANY_INTEGER_REGISTERED_SHA256 = 'e1d1a69ba0d36883041061e29d4f6b1a52580f9c20e28da26728138c17b24bb4'
+R19_LAYOUT_ANY_INTEGER_MAINTAINED_SHA256 = 'a440054763014f0dc34b4964cfd525447e5a4df69d6ba2ca69f9eab19e5c8346'
+R19_LAYOUT_ANY_INTEGER_PREVIOUS_REGISTERED_SHA256 = 'fcbc81253fb41e0c9b020802fd03dc380d00ff8ea776fcfeb60ee4df2eb1e280'
+R19_LAYOUT_ANY_INTEGER_PREVIOUS_MAINTAINED_SHA256 = '76e71d65563703e0372a79fc12bfa65883aea738411972f16dc3d06ba863072f'
+R19_LAYOUT_ANY_INTEGER_ADDITIONS_SHA256 = '522e821c64dcd228dc7ffe85abd21e78478e89a4c94b772e12d57b6caa1cb0a5'
+R19_LAYOUT_ANY_INTEGER_MAINTAINED_SIZE = 19833335
+R19_LAYOUT_ANY_INTEGER_ADDITIONS_SIZE = 6040
+_R19_LAYOUT_ANY_INTEGER_HISTORICAL_ANY = b'TEST_F(TranslateTest, CoreV2AnyLayoutRuntimeConstructionRejected) {\n  const auto Source = tmpFile("any-layout-runtime-construction.cpp");\n  writeFile(Source, R"r19any(#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n)r19any");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_LAYOUT_ANY_INTEGER_ACTIVE_ANY = b'TEST_F(TranslateTest, CoreV2AnyLayoutRuntimeConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("any-layout-runtime-construction.cpp");\n  writeFile(Source, R"r19any(#include <any>\nint main() { std::any value{7}; return !value.has_value(); }\n)r19any");\n  const auto Output = tmpFile("any-layout-runtime-construction.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-layout-runtime-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_layout_any_integer_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_ANY_INTEGER_REGISTERED_SHA256, R19_LAYOUT_ANY_INTEGER_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_ANY_INTEGER_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_ANY_INTEGER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_ANY_INTEGER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(_R19_LAYOUT_ANY_INTEGER_ACTIVE_ANY) == 1
+    restored = restored.replace(_R19_LAYOUT_ANY_INTEGER_ACTIVE_ANY, _R19_LAYOUT_ANY_INTEGER_HISTORICAL_ANY, 1)
+    prior = (R19_LAYOUT_ANY_INTEGER_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_ANY_INTEGER_REGISTERED_SHA256
+             else R19_LAYOUT_ANY_INTEGER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_TWO_VARIANT_ANY_REGISTERED_SHA256 = 'db4b815bb0310f32f1577df59ad0601008e7339bc4805d1c7b2cedf55bf554f0'
+R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SHA256 = '5ea4dd16eb081c1ae850c9041998ca7c81b9520eb9e68cdfd75b76fe06c7c215'
+R19_LAYOUT_TWO_VARIANT_ANY_PREVIOUS_REGISTERED_SHA256 = 'e1d1a69ba0d36883041061e29d4f6b1a52580f9c20e28da26728138c17b24bb4'
+R19_LAYOUT_TWO_VARIANT_ANY_PREVIOUS_MAINTAINED_SHA256 = 'a440054763014f0dc34b4964cfd525447e5a4df69d6ba2ca69f9eab19e5c8346'
+R19_LAYOUT_TWO_VARIANT_ANY_ADDITIONS_SHA256 = 'eca518f72471b4562df3760a8ead2c92fd95171581d1456f87ebc348fa684f9c'
+R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SIZE = 19839470
+R19_LAYOUT_TWO_VARIANT_ANY_ADDITIONS_SIZE = 6135
+
+
+def restore_layout_two_variant_any_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_TWO_VARIANT_ANY_REGISTERED_SHA256, R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_TWO_VARIANT_ANY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_TWO_VARIANT_ANY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_TWO_VARIANT_ANY_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_TWO_VARIANT_ANY_REGISTERED_SHA256
+             else R19_LAYOUT_TWO_VARIANT_ANY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_REGISTERED_SHA256 = '6a2d17db32fb8ea7bfa8f228b1403969b32513e75ccc20158e3413f0026fad27'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256 = 'b41ccc064da285dc98be686407bd95e978596261c5baf6b23b57afb6f9716dd4'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_PREVIOUS_REGISTERED_SHA256 = 'db4b815bb0310f32f1577df59ad0601008e7339bc4805d1c7b2cedf55bf554f0'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_PREVIOUS_MAINTAINED_SHA256 = '5ea4dd16eb081c1ae850c9041998ca7c81b9520eb9e68cdfd75b76fe06c7c215'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_ADDITIONS_SHA256 = '71dfdfbd9a5edc195c4d8c51ea52571adef15d2d0105c3a8398e87954486876e'
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SIZE = 19844611
+R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_ADDITIONS_SIZE = 5141
+
+
+def restore_layout_two_variant_any_tuple_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_REGISTERED_SHA256, R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_REGISTERED_SHA256
+             else R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256 = 'deabe4c6550212f7d333e33ed273465783a9844e1e11013128dfea59982657cf'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256 = '91d19f5afd022ffacdcb11a0d764e6bb0e308db2d969cc51cf1cd3156953bba3'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_REGISTERED_SHA256 = '6a2d17db32fb8ea7bfa8f228b1403969b32513e75ccc20158e3413f0026fad27'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_MAINTAINED_SHA256 = 'b41ccc064da285dc98be686407bd95e978596261c5baf6b23b57afb6f9716dd4'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SHA256 = 'abb41738dce4328b7ae6d722da943fdac67229ec64f7275066781737069b3611'
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SIZE = 19857124
+R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SIZE = 12513
+
+
+def restore_layout_variant_any_tuple_visitor_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_REGISTERED_SHA256 = '561406c89101beb582fd1d4cc65016e90c9ce40fa582d1ca2380e9ce49526a29'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256 = 'bb50602a198d000bfebf68c70354d6deac438fcee8db75a6e2c28e12703fc1d0'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_PREVIOUS_REGISTERED_SHA256 = 'deabe4c6550212f7d333e33ed273465783a9844e1e11013128dfea59982657cf'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_PREVIOUS_MAINTAINED_SHA256 = '91d19f5afd022ffacdcb11a0d764e6bb0e308db2d969cc51cf1cd3156953bba3'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_ADDITIONS_SHA256 = 'c2e977d87f34ff6cd2ebb3941147efb169acd4db1e120f73b5471c3994ccd8e6'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SIZE = 19879102
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_ADDITIONS_SIZE = 21978
+
+
+def restore_layout_variant_any_allocator_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ANY_ALLOCATOR_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ANY_ALLOCATOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ANY_ALLOCATOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ANY_ALLOCATOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256 = '7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256 = 'bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_REGISTERED_SHA256 = '561406c89101beb582fd1d4cc65016e90c9ce40fa582d1ca2380e9ce49526a29'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_MAINTAINED_SHA256 = 'bb50602a198d000bfebf68c70354d6deac438fcee8db75a6e2c28e12703fc1d0'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SHA256 = '967b37256a428da51b8f210d856f4a71dcb56f7b1f3f055631b7da48a7c594c5'
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SIZE = 19884957
+R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SIZE = 5855
+
+
+def restore_layout_variant_any_allocator_equality_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_ORDERING_REGISTERED_SHA256 = 'f4438c626036d992e46581f28d2eb2660ec440254ae2e7e70a3badcc0a478224'
+R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256 = 'd46e00876290437ca25e5bb20bee825ac7fefe03bd6447d02e060695381d35f9'
+R19_LAYOUT_VARIANT_ORDERING_PREVIOUS_REGISTERED_SHA256 = '7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a'
+R19_LAYOUT_VARIANT_ORDERING_PREVIOUS_MAINTAINED_SHA256 = 'bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e'
+R19_LAYOUT_VARIANT_ORDERING_ADDITIONS_SHA256 = '749bfbc5f17e080532ba5de1f382fad8ec68ccae1f91e10483e3a3dfe995c34f'
+R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SIZE = 19890723
+R19_LAYOUT_VARIANT_ORDERING_ADDITIONS_SIZE = 5766
+
+
+def restore_layout_variant_ordering_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_ORDERING_REGISTERED_SHA256, R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_ORDERING_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_ORDERING_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_ORDERING_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_ORDERING_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_ORDERING_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256 = 'a3158aff714f9c7210acd778f40955583603c761d9a34cd95890a2cf28b231e4'
+R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256 = '079938a41465897ea07a93d6707738c9173278fee37980e4ee3757da699028eb'
+R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_REGISTERED_SHA256 = 'f4438c626036d992e46581f28d2eb2660ec440254ae2e7e70a3badcc0a478224'
+R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_MAINTAINED_SHA256 = 'd46e00876290437ca25e5bb20bee825ac7fefe03bd6447d02e060695381d35f9'
+R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SHA256 = '6af947ba58429524c02e6522bc0ee513f361e4dcbe4f32c304ef4ddea760d1cb'
+R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SIZE = 19894941
+R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SIZE = 4218
+
+
+def restore_layout_variant_monostate_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256, R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_MONOSTATE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_MONOSTATE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_REGISTERED_SHA256 = '531796afa63bd5b199baacccad91f1fb86b4a0c16a7e182437a6d779b75b5dbc'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SHA256 = '044375f31196b86b6225261c611c6f8100a8ec7ab0219709cfffe35e44d6daed'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_PREVIOUS_REGISTERED_SHA256 = 'a3158aff714f9c7210acd778f40955583603c761d9a34cd95890a2cf28b231e4'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_PREVIOUS_MAINTAINED_SHA256 = '079938a41465897ea07a93d6707738c9173278fee37980e4ee3757da699028eb'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_ADDITIONS_SHA256 = '3a8eb2e50273b9ac5b233d00aeaa8ec9219f8597de40e6400441441f6ea2e31f'
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SIZE = 19898549
+R19_LAYOUT_VARIANT_MONOSTATE_HASH_ADDITIONS_SIZE = 3608
+
+
+def restore_layout_variant_monostate_hash_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_MONOSTATE_HASH_REGISTERED_SHA256, R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_MONOSTATE_HASH_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_MONOSTATE_HASH_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_MONOSTATE_HASH_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_MONOSTATE_HASH_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_MONOSTATE_HASH_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_REGISTERED_SHA256 = '4cf479ebbca2e01ad687d823ed65a5638d39ea7b27eb4cafd53442c3fea7b77c'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SHA256 = '4ebe1755104459f128be4ab723a1898ac57af93ceffb33a885f9cbd46f924d69'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_PREVIOUS_REGISTERED_SHA256 = '531796afa63bd5b199baacccad91f1fb86b4a0c16a7e182437a6d779b75b5dbc'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_PREVIOUS_MAINTAINED_SHA256 = '044375f31196b86b6225261c611c6f8100a8ec7ab0219709cfffe35e44d6daed'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_ADDITIONS_SHA256 = 'eddb200f2cf44fa31e5d0947ac2c6fc9863b00a496e014cb53744108d4dbd1fe'
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SIZE = 19907420
+R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_ADDITIONS_SIZE = 8871
+
+
+def restore_layout_variant_visit_alternatives_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_REGISTERED_SHA256, R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SHA256}
+    stop = R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SIZE
+    start = stop - R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_PREVIOUS_REGISTERED_SHA256 if digest == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_REGISTERED_SHA256
+             else R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_OBSERVER_QUERY_REGISTERED_SHA256 = 'f4e563671fa504ae4b0530dc0fa5cd213df7ad32c8965cc6b0d7119c555a4854'
+R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256 = '1a39c3d2d7c96ed5470131a21ef92d8b098fe9d56ecb012ed91cd0ecc9d540d7'
+R19_ORDERED_OBSERVER_QUERY_PREVIOUS_REGISTERED_SHA256 = '4cf479ebbca2e01ad687d823ed65a5638d39ea7b27eb4cafd53442c3fea7b77c'
+R19_ORDERED_OBSERVER_QUERY_PREVIOUS_MAINTAINED_SHA256 = '4ebe1755104459f128be4ab723a1898ac57af93ceffb33a885f9cbd46f924d69'
+R19_ORDERED_OBSERVER_QUERY_ADDITIONS_SHA256 = '4332d277eac4376ad035adda4f95a1e43ca83fa09310bbf1154ed14f2b0980d2'
+R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SIZE = 19915570
+R19_ORDERED_OBSERVER_QUERY_ADDITIONS_SIZE = 8150
+
+
+def restore_ordered_observer_query_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_OBSERVER_QUERY_REGISTERED_SHA256, R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256}
+    stop = R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_OBSERVER_QUERY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_OBSERVER_QUERY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_OBSERVER_QUERY_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_OBSERVER_QUERY_REGISTERED_SHA256
+             else R19_ORDERED_OBSERVER_QUERY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256 = '06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a'
+R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256 = '1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462'
+R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_REGISTERED_SHA256 = 'f4e563671fa504ae4b0530dc0fa5cd213df7ad32c8965cc6b0d7119c555a4854'
+R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_MAINTAINED_SHA256 = '1a39c3d2d7c96ed5470131a21ef92d8b098fe9d56ecb012ed91cd0ecc9d540d7'
+R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SHA256 = '7b84537fdbfae74175a05adb404d77b1bd74229952fd93d0d837ef0c7af92af3'
+R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SIZE = 19922676
+R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SIZE = 7106
+
+
+def restore_monostate_adapter_hash_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256, R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256}
+    stop = R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SIZE
+    start = stop - R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_MONOSTATE_ADAPTER_HASH_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_REGISTERED_SHA256 if digest == R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256
+             else R19_MONOSTATE_ADAPTER_HASH_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_GUARDED_GET_REGISTERED_SHA256 = '065f3f97fb865e13adcd83f37c7fa7bf47223329894a5fce7da802cbe9f00dc7'
+R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256 = '428d544caff0c79322d8d0a239a9680dc0c01a016e357f8506aebf19a683b702'
+R19_VARIANT_GUARDED_GET_PREVIOUS_REGISTERED_SHA256 = '06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a'
+R19_VARIANT_GUARDED_GET_PREVIOUS_MAINTAINED_SHA256 = '1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462'
+R19_VARIANT_GUARDED_GET_ADDITIONS_SHA256 = '1ee917f25698730b46d72bc1ac21c6d1f1d52429e192e84781668d25fb9291ec'
+R19_VARIANT_GUARDED_GET_MAINTAINED_SIZE = 19930438
+R19_VARIANT_GUARDED_GET_ADDITIONS_SIZE = 7762
+
+
+def restore_variant_guarded_get_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_GUARDED_GET_REGISTERED_SHA256, R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256}
+    stop = R19_VARIANT_GUARDED_GET_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_GUARDED_GET_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_GUARDED_GET_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_GUARDED_GET_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_GUARDED_GET_REGISTERED_SHA256
+             else R19_VARIANT_GUARDED_GET_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256 = '769b880fef30544e4680b9908080551b995f36369ba080d1e5fa14a733b0502c'
+R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256 = 'f19e1177591283d289bfd01e07fb890c63cb715e9c631b27490566f78912a0cc'
+R19_ANY_UNSIGNED_INLINE_PREVIOUS_REGISTERED_SHA256 = '065f3f97fb865e13adcd83f37c7fa7bf47223329894a5fce7da802cbe9f00dc7'
+R19_ANY_UNSIGNED_INLINE_PREVIOUS_MAINTAINED_SHA256 = '428d544caff0c79322d8d0a239a9680dc0c01a016e357f8506aebf19a683b702'
+R19_ANY_UNSIGNED_INLINE_ADDITIONS_SHA256 = '4986068945b6c7858b9d56fb3943596f4ed0fafecbcfffb58521f811ea41f4ca'
+R19_ANY_UNSIGNED_INLINE_MAINTAINED_SIZE = 19938098
+R19_ANY_UNSIGNED_INLINE_ADDITIONS_SIZE = 7660
+
+
+def restore_any_unsigned_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256, R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_UNSIGNED_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_UNSIGNED_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_UNSIGNED_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_UNSIGNED_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256
+             else R19_ANY_UNSIGNED_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256 = 'ca10fe2c6d399699f3abde240483e99e62650288e7eacdaede4afd89e0f4ad16'
+R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256 = '1df1f37351188954c2cd051342565e4e2ee0ec53ede1404d9eeb971f05c29ae4'
+R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_REGISTERED_SHA256 = '769b880fef30544e4680b9908080551b995f36369ba080d1e5fa14a733b0502c'
+R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_MAINTAINED_SHA256 = 'f19e1177591283d289bfd01e07fb890c63cb715e9c631b27490566f78912a0cc'
+R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SHA256 = 'c0f87fd09a818f1c5de6ea9dd292f8f72da942bfb1060fad1b58546b2f541f2f'
+R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SIZE = 19945660
+R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SIZE = 7562
+
+
+def restore_variant_get_early_return_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256, R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256}
+    stop = R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_GET_EARLY_RETURN_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256
+             else R19_VARIANT_GET_EARLY_RETURN_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256 = 'e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e'
+R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256 = 'b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d'
+R19_ORDERED_EMPTY_OWNER_PREVIOUS_REGISTERED_SHA256 = 'ca10fe2c6d399699f3abde240483e99e62650288e7eacdaede4afd89e0f4ad16'
+R19_ORDERED_EMPTY_OWNER_PREVIOUS_MAINTAINED_SHA256 = '1df1f37351188954c2cd051342565e4e2ee0ec53ede1404d9eeb971f05c29ae4'
+R19_ORDERED_EMPTY_OWNER_ADDITIONS_SHA256 = '27fe7a7bdc1b6488c945fe9e0ab6a2d58547e178610c87e20d3c7766c4362a74'
+R19_ORDERED_EMPTY_OWNER_MAINTAINED_SIZE = 19952811
+R19_ORDERED_EMPTY_OWNER_ADDITIONS_SIZE = 6750
+_R19_ORDERED_EMPTY_OWNER_HISTORICAL_ANY = b'TEST_F(TranslateTest, CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected) {\n  const auto Source = tmpFile("ordered-observer-query-observer-does-not-admit-storage.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY = b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-observer-query-observer-does-not-admit-storage.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n)r19containers");\n  const auto Output = tmpFile("ordered-observer-query-observer-does-not-admit-storage.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-observer-query-observer-does-not-admit-storage" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_ordered_empty_owner_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256, R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256}
+    stop = R19_ORDERED_EMPTY_OWNER_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_EMPTY_OWNER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_EMPTY_OWNER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY) == 1
+    restored = restored.replace(_R19_ORDERED_EMPTY_OWNER_ACTIVE_ANY, _R19_ORDERED_EMPTY_OWNER_HISTORICAL_ANY, 1)
+    prior = (R19_ORDERED_EMPTY_OWNER_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256
+             else R19_ORDERED_EMPTY_OWNER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_MAX_SIZE_REGISTERED_SHA256 = '9e9ba754f81959ca9b377627825515a8be2f0ad69242ce21ad0b6fa792afed14'
+R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256 = '0a33208d656054ec6265c968c1c3c9ed504da77d0709bb325cc0ecdd9bded1a5'
+R19_ORDERED_MAX_SIZE_PREVIOUS_REGISTERED_SHA256 = 'e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e'
+R19_ORDERED_MAX_SIZE_PREVIOUS_MAINTAINED_SHA256 = 'b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d'
+R19_ORDERED_MAX_SIZE_ADDITIONS_SHA256 = '024aefb7378f8c3b8f7add085e06de5b606304121d2410204d7e0ffd6cbd6171'
+R19_ORDERED_MAX_SIZE_MAINTAINED_SIZE = 19959336
+R19_ORDERED_MAX_SIZE_ADDITIONS_SIZE = 6525
+
+
+def restore_ordered_max_size_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MAX_SIZE_REGISTERED_SHA256, R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MAX_SIZE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MAX_SIZE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MAX_SIZE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_MAX_SIZE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MAX_SIZE_REGISTERED_SHA256
+             else R19_ORDERED_MAX_SIZE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_BOOL_INLINE_REGISTERED_SHA256 = '4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf'
+R19_ANY_BOOL_INLINE_MAINTAINED_SHA256 = 'bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e'
+R19_ANY_BOOL_INLINE_PREVIOUS_REGISTERED_SHA256 = '9e9ba754f81959ca9b377627825515a8be2f0ad69242ce21ad0b6fa792afed14'
+R19_ANY_BOOL_INLINE_PREVIOUS_MAINTAINED_SHA256 = '0a33208d656054ec6265c968c1c3c9ed504da77d0709bb325cc0ecdd9bded1a5'
+R19_ANY_BOOL_INLINE_ADDITIONS_SHA256 = '7e566a52d4f168b19b4146880cac674a0a154b8fdb4622dd043bf2110f5094e8'
+R19_ANY_BOOL_INLINE_MAINTAINED_SIZE = 19966426
+R19_ANY_BOOL_INLINE_ADDITIONS_SIZE = 7090
+
+
+def restore_any_bool_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_BOOL_INLINE_REGISTERED_SHA256, R19_ANY_BOOL_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_BOOL_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_BOOL_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_BOOL_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_BOOL_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_BOOL_INLINE_REGISTERED_SHA256
+             else R19_ANY_BOOL_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_EMPTY_HASH_SET_REGISTERED_SHA256 = '5a11ec42863f8163b0bbc9ccd2394433bff0c33ae95e5d66534a82c224916271'
+R19_EMPTY_HASH_SET_MAINTAINED_SHA256 = '4ea24098e82989877d78a96781e0fcd959889139da7c31491c27a2eceb946f60'
+R19_EMPTY_HASH_SET_PREVIOUS_REGISTERED_SHA256 = '4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf'
+R19_EMPTY_HASH_SET_PREVIOUS_MAINTAINED_SHA256 = 'bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e'
+R19_EMPTY_HASH_SET_ADDITIONS_SHA256 = 'e9b2eb4bf538e2b99d4bcab6ed4891d5832cefc7a5b279968bf8ee2e25f714f4'
+R19_EMPTY_HASH_SET_MAINTAINED_SIZE = 19973147
+R19_EMPTY_HASH_SET_ADDITIONS_SIZE = 6721
+
+
+def restore_empty_hash_set_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_EMPTY_HASH_SET_REGISTERED_SHA256, R19_EMPTY_HASH_SET_MAINTAINED_SHA256}
+    stop = R19_EMPTY_HASH_SET_MAINTAINED_SIZE
+    start = stop - R19_EMPTY_HASH_SET_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_EMPTY_HASH_SET_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_EMPTY_HASH_SET_PREVIOUS_REGISTERED_SHA256 if digest == R19_EMPTY_HASH_SET_REGISTERED_SHA256
+             else R19_EMPTY_HASH_SET_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_FLOAT_INLINE_REGISTERED_SHA256 = 'c36266a7928342a5d83595fd908886b67fb1cbb2748be1f9299b981d25b866b2'
+R19_ANY_FLOAT_INLINE_MAINTAINED_SHA256 = '5ef4d0491c68e82841467b5fd534a89ec5330e0220fc1c33babab7cf342c9e37'
+R19_ANY_FLOAT_INLINE_PREVIOUS_REGISTERED_SHA256 = '5a11ec42863f8163b0bbc9ccd2394433bff0c33ae95e5d66534a82c224916271'
+R19_ANY_FLOAT_INLINE_PREVIOUS_MAINTAINED_SHA256 = '4ea24098e82989877d78a96781e0fcd959889139da7c31491c27a2eceb946f60'
+R19_ANY_FLOAT_INLINE_ADDITIONS_SHA256 = 'd9d9cb8318a61a232cb4b02b3d64bcc29e0ef7c8bdb9d421fd73c78bf5433ebf'
+R19_ANY_FLOAT_INLINE_MAINTAINED_SIZE = 19980381
+R19_ANY_FLOAT_INLINE_ADDITIONS_SIZE = 7234
+
+
+def restore_any_float_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_FLOAT_INLINE_REGISTERED_SHA256, R19_ANY_FLOAT_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_FLOAT_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_FLOAT_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_FLOAT_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_FLOAT_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_FLOAT_INLINE_REGISTERED_SHA256
+             else R19_ANY_FLOAT_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_EMPTY_LOAD_FACTOR_REGISTERED_SHA256 = 'e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256 = 'b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_PREVIOUS_REGISTERED_SHA256 = 'c36266a7928342a5d83595fd908886b67fb1cbb2748be1f9299b981d25b866b2'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_PREVIOUS_MAINTAINED_SHA256 = '5ef4d0491c68e82841467b5fd534a89ec5330e0220fc1c33babab7cf342c9e37'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_ADDITIONS_SHA256 = '8556474470e194113489e4a96a761aed378a62ccc644cde59062ded1b70de0a0'
+R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SIZE = 19987535
+R19_UNORDERED_EMPTY_LOAD_FACTOR_ADDITIONS_SIZE = 7154
+
+
+def restore_unordered_empty_load_factor_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_EMPTY_LOAD_FACTOR_REGISTERED_SHA256, R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_EMPTY_LOAD_FACTOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_EMPTY_LOAD_FACTOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_EMPTY_LOAD_FACTOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_EMPTY_LOAD_FACTOR_REGISTERED_SHA256
+             else R19_UNORDERED_EMPTY_LOAD_FACTOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256 = '98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96'
+R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256 = '97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6'
+R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_REGISTERED_SHA256 = 'e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931'
+R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_MAINTAINED_SHA256 = 'b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5'
+R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SHA256 = '4cbc0afbfab57e80bc5e3707156418dcd63f336ec689b9edc9ce2c007a6d2c55'
+R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SIZE = 19994747
+R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SIZE = 7212
+
+
+def restore_unordered_empty_capacity_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256, R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_EMPTY_CAPACITY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256
+             else R19_UNORDERED_EMPTY_CAPACITY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_LOOKUP_POLICIES_REGISTERED_SHA256 = 'e543cb1c290298ca024848985498bb44c08cfa2e81e4738ba83e05d7b89c65e2'
+R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256 = 'b4a0dd37f0dde5f034dd8c52c3474b2bd571f0766befa55fbe257312e8ccb2a5'
+R19_UNORDERED_LOOKUP_POLICIES_PREVIOUS_REGISTERED_SHA256 = '98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96'
+R19_UNORDERED_LOOKUP_POLICIES_PREVIOUS_MAINTAINED_SHA256 = '97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6'
+R19_UNORDERED_LOOKUP_POLICIES_ADDITIONS_SHA256 = '959986011e3a3f3efd5dbe566207077ac0f9e387a75064c61d598172ae284abd'
+R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SIZE = 20001916
+R19_UNORDERED_LOOKUP_POLICIES_ADDITIONS_SIZE = 7169
+
+
+def restore_unordered_lookup_policies_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_LOOKUP_POLICIES_REGISTERED_SHA256, R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_LOOKUP_POLICIES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_LOOKUP_POLICIES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_LOOKUP_POLICIES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_LOOKUP_POLICIES_REGISTERED_SHA256
+             else R19_UNORDERED_LOOKUP_POLICIES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256 = 'e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b'
+R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256 = 'fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da'
+R19_UNORDERED_LOAD_LIMIT_PREVIOUS_REGISTERED_SHA256 = 'e543cb1c290298ca024848985498bb44c08cfa2e81e4738ba83e05d7b89c65e2'
+R19_UNORDERED_LOAD_LIMIT_PREVIOUS_MAINTAINED_SHA256 = 'b4a0dd37f0dde5f034dd8c52c3474b2bd571f0766befa55fbe257312e8ccb2a5'
+R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SHA256 = '05c22dee8bbe32346ff946746f00d569136678472bc66fe4b33539eef12ef324'
+R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SIZE = 20009494
+R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SIZE = 7201
+
+
+def restore_unordered_load_limit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256, R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_LOAD_LIMIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-load-factor-setter.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-load-factor-setter" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-load-factor-setter.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-load-factor-setter" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n', b'TEST_F(TranslateTest, CoreV2EmptyHashSetLoadFactorSetterRejected) {\n  const auto Source = tmpFile("empty-hash-set-load-factor-setter.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.max_load_factor(2.0f);\n  return values.max_load_factor() != 2.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    prior = (R19_UNORDERED_LOAD_LIMIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256
+             else R19_UNORDERED_LOAD_LIMIT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_WIDE_INLINE_REGISTERED_SHA256 = '4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13'
+R19_ANY_WIDE_INLINE_MAINTAINED_SHA256 = '92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896'
+R19_ANY_WIDE_INLINE_PREVIOUS_REGISTERED_SHA256 = 'e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b'
+R19_ANY_WIDE_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da'
+R19_ANY_WIDE_INLINE_ADDITIONS_SHA256 = '14dc9f69750cee57d516c6014a3e0a9eddf84c7058db8c81ee893ac0149c1a45'
+R19_ANY_WIDE_INLINE_MAINTAINED_SIZE = 20019248
+R19_ANY_WIDE_INLINE_ADDITIONS_SIZE = 10027
+
+
+def restore_any_wide_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_WIDE_INLINE_REGISTERED_SHA256, R19_ANY_WIDE_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_WIDE_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_WIDE_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_WIDE_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyDoubleConstructionAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyDoubleConstructionAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n', b'TEST_F(TranslateTest, CoreV2AnyIntUnsupportedFloatingValueRejected) {\n  const auto Source = tmpFile("any-int-unsupported-floating-value.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint f() {\n  std::any value(1.0);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}\n\n', b'TEST_F(TranslateTest, CoreV2AnyInPlaceOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-in-place-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    prior = (R19_ANY_WIDE_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_WIDE_INLINE_REGISTERED_SHA256
+             else R19_ANY_WIDE_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_COMPARATOR_REGISTERED_SHA256 = '53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6'
+R19_ORDERED_COMPARATOR_MAINTAINED_SHA256 = 'e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9'
+R19_ORDERED_COMPARATOR_PREVIOUS_REGISTERED_SHA256 = '4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13'
+R19_ORDERED_COMPARATOR_PREVIOUS_MAINTAINED_SHA256 = '92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896'
+R19_ORDERED_COMPARATOR_ADDITIONS_SHA256 = 'b6da59ba68d60123ecf7251d0ff0e694abee2b2919d81bb49dc50b2e8a42a596'
+R19_ORDERED_COMPARATOR_MAINTAINED_SIZE = 20026002
+R19_ORDERED_COMPARATOR_ADDITIONS_SIZE = 6754
+
+
+def restore_ordered_comparator_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_COMPARATOR_REGISTERED_SHA256, R19_ORDERED_COMPARATOR_MAINTAINED_SHA256}
+    stop = R19_ORDERED_COMPARATOR_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_COMPARATOR_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_COMPARATOR_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_COMPARATOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_COMPARATOR_REGISTERED_SHA256
+             else R19_ORDERED_COMPARATOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_BUCKET_STORAGE_REGISTERED_SHA256 = '5d4e1f88637adc033ff73d27435f3bf5030c1be26f50b17a2e6b3b1047d615a8'
+R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256 = '7d57c282e737021daad1b73c5869c5a3658f65dbded610460e5e703148810ffc'
+R19_UNORDERED_BUCKET_STORAGE_PREVIOUS_REGISTERED_SHA256 = '53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6'
+R19_UNORDERED_BUCKET_STORAGE_PREVIOUS_MAINTAINED_SHA256 = 'e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9'
+R19_UNORDERED_BUCKET_STORAGE_ADDITIONS_SHA256 = 'c9296557b1f70f181f3c4443ab4789d05e10806a6883a217b6be691a0c8d6455'
+R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SIZE = 20034570
+R19_UNORDERED_BUCKET_STORAGE_ADDITIONS_SIZE = 8189
+
+
+def restore_unordered_bucket_storage_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_BUCKET_STORAGE_REGISTERED_SHA256, R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_BUCKET_STORAGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_BUCKET_STORAGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-load-factor-rehash.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-load-factor-rehash.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-load-factor-rehash" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-load-factor-rehash.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-load-factor-rehash.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-load-factor-rehash" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}\n\n', b'TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorRehashRejected) {\n  const auto Source = tmpFile("unordered-empty-load-factor-rehash.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}\n\n', 1)
+    prior = (R19_UNORDERED_BUCKET_STORAGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_BUCKET_STORAGE_REGISTERED_SHA256
+             else R19_UNORDERED_BUCKET_STORAGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_VALUES_REGISTERED_SHA256 = 'e9da8191611d0215f09b996e8c05fcf447898711abc672233f3b3225586bb3e1'
+R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256 = '484fbd59e4e3d7eac40f457d31331f446f1e9e29d217bc4d262945e25b091f7a'
+R19_UNORDERED_SET_VALUES_PREVIOUS_REGISTERED_SHA256 = '5d4e1f88637adc033ff73d27435f3bf5030c1be26f50b17a2e6b3b1047d615a8'
+R19_UNORDERED_SET_VALUES_PREVIOUS_MAINTAINED_SHA256 = '7d57c282e737021daad1b73c5869c5a3658f65dbded610460e5e703148810ffc'
+R19_UNORDERED_SET_VALUES_ADDITIONS_SHA256 = '444877a2d5a8628c9c877a9207e0eb83e28b682065c958dfd6120857202fd270'
+R19_UNORDERED_SET_VALUES_MAINTAINED_SIZE = 20041878
+R19_UNORDERED_SET_VALUES_ADDITIONS_SIZE = 7308
+
+
+def restore_unordered_set_values_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_VALUES_REGISTERED_SHA256, R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_VALUES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_VALUES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_VALUES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_VALUES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_VALUES_REGISTERED_SHA256
+             else R19_UNORDERED_SET_VALUES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_MODIFIERS_REGISTERED_SHA256 = '8fca807d05848ed6283028b3d950abab65aef92ca1275e35c6a8a62d0e59dbff'
+R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256 = 'cd98c424f8e06373e80d1dc167574d4a61c2e2a23934bdd4e8987316cc6bf647'
+R19_UNORDERED_SET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 = 'e9da8191611d0215f09b996e8c05fcf447898711abc672233f3b3225586bb3e1'
+R19_UNORDERED_SET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256 = '484fbd59e4e3d7eac40f457d31331f446f1e9e29d217bc4d262945e25b091f7a'
+R19_UNORDERED_SET_MODIFIERS_ADDITIONS_SHA256 = '84f64570ee3e524d6f9d9f0cb9339398e80028692a6c2463f598f20de941c2e9'
+R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SIZE = 20050077
+R19_UNORDERED_SET_MODIFIERS_ADDITIONS_SIZE = 8199
+
+
+def restore_unordered_set_modifiers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_MODIFIERS_REGISTERED_SHA256, R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_MODIFIERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_MODIFIERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_MODIFIERS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_NARROW_INLINE_REGISTERED_SHA256 = 'ef55f1aa18a14070806d8cde459ca4e9427c524342219dba308bf6426224817d'
+R19_ANY_NARROW_INLINE_MAINTAINED_SHA256 = 'd54d1ec315de5daf79db5c01d8e1dbd53a914fd11baf2c5b4388ee32201de29f'
+R19_ANY_NARROW_INLINE_PREVIOUS_REGISTERED_SHA256 = '8fca807d05848ed6283028b3d950abab65aef92ca1275e35c6a8a62d0e59dbff'
+R19_ANY_NARROW_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'cd98c424f8e06373e80d1dc167574d4a61c2e2a23934bdd4e8987316cc6bf647'
+R19_ANY_NARROW_INLINE_ADDITIONS_SHA256 = '9312425fba7830689e0d339cd2bf3229727956f09d6ddd42d2756087c7361934'
+R19_ANY_NARROW_INLINE_MAINTAINED_SIZE = 20057859
+R19_ANY_NARROW_INLINE_ADDITIONS_SIZE = 7782
+
+
+def restore_any_narrow_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_NARROW_INLINE_REGISTERED_SHA256, R19_ANY_NARROW_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_NARROW_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_NARROW_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_NARROW_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ANY_NARROW_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_NARROW_INLINE_REGISTERED_SHA256
+             else R19_ANY_NARROW_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_LONG_INLINE_REGISTERED_SHA256 = '53e99dffe80159aa038982885bbfee7f1754826e1bdee52379334e31896f7e8b'
+R19_ANY_LONG_INLINE_MAINTAINED_SHA256 = 'af6ac408f8952c76df507ba8cd681bc37e8caac5a6d4929a123187b498967475'
+R19_ANY_LONG_INLINE_PREVIOUS_REGISTERED_SHA256 = 'ef55f1aa18a14070806d8cde459ca4e9427c524342219dba308bf6426224817d'
+R19_ANY_LONG_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'd54d1ec315de5daf79db5c01d8e1dbd53a914fd11baf2c5b4388ee32201de29f'
+R19_ANY_LONG_INLINE_ADDITIONS_SHA256 = '310b7fbda9aa36467d8cf73495c2ea0283679083ad8978fe9e0f68d0c52b83a4'
+R19_ANY_LONG_INLINE_MAINTAINED_SIZE = 20065545
+R19_ANY_LONG_INLINE_ADDITIONS_SIZE = 7575
+
+
+def restore_any_long_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_LONG_INLINE_REGISTERED_SHA256, R19_ANY_LONG_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_LONG_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_LONG_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_LONG_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyUnsignedLongMakeRetainsValueAtBothOptimizations) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  const auto Output = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyUnsignedLongMakeRetainsValueAtBothOptimizations) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  const auto Output = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyUnsignedInlineUnsignedLongIsNotUnsignedIntRejected) {\n  const auto Source = tmpFile("any-unsigned-inline-unsigned-long-is-not-unsigned-int.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  auto value = std::make_any<unsigned long>(17ul);\n  return value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyAssignLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyAssignLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyIntAssignOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-int-assign-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a, long n) { a = n; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyEmplaceLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyEmplaceLongAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyEmplaceOtherPayloadGuardRejected) {\n  const auto Source = tmpFile("any-emplace-other-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ANY_LONG_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_LONG_INLINE_REGISTERED_SHA256
+             else R19_ANY_LONG_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_MULTISET_VALUES_REGISTERED_SHA256 = '24bb1e294e6faaee5194ef7e04ca3ead5b385fc723756b36c9d6b1c7ca383c2d'
+R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256 = 'f59b6b5c51fc70f851268ca84fd1accdf137b796b27c95213ac5e10418af5741'
+R19_UNORDERED_MULTISET_VALUES_PREVIOUS_REGISTERED_SHA256 = '53e99dffe80159aa038982885bbfee7f1754826e1bdee52379334e31896f7e8b'
+R19_UNORDERED_MULTISET_VALUES_PREVIOUS_MAINTAINED_SHA256 = 'af6ac408f8952c76df507ba8cd681bc37e8caac5a6d4929a123187b498967475'
+R19_UNORDERED_MULTISET_VALUES_ADDITIONS_SHA256 = 'da93212cae6c988316a65856b0b0cf01175634ed6e404b813616262408d8ad93'
+R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SIZE = 20075552
+R19_UNORDERED_MULTISET_VALUES_ADDITIONS_SIZE = 8072
+
+
+def restore_unordered_multiset_values_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTISET_VALUES_REGISTERED_SHA256, R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTISET_VALUES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTISET_VALUES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetRetainsDuplicateKeysRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-values-multiple-key-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; return values.size() != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-values-multiple-key-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-values-multiple-key-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetRetainsDuplicateKeysRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-values-multiple-key-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; return values.size() != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-values-multiple-key-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-values-multiple-key-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetValuesMultipleKeyOwnerRejected) {\n  const auto Source = tmpFile("unordered-set-values-multiple-key-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; return values.size() != 2; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyRehashRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-bucket-storage-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 3}; values.rehash(4); return values.size(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-bucket-storage-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-bucket-storage-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 2) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyRehashRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-bucket-storage-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 3}; values.rehash(4); return values.size(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-bucket-storage-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-bucket-storage-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 2) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedBucketStorageNonemptyOwnerRejected) {\n  const auto Source = tmpFile("unordered-bucket-storage-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 3}; values.rehash(4); return values.size(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyLoadLimitRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-load-limit-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3};\n  values.max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-load-limit-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-load-limit-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyLoadLimitRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-load-limit-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3};\n  values.max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-load-limit-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-load-limit-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedLoadLimitNonemptyOwnerRejected) {\n  const auto Source = tmpFile("unordered-load-limit-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3};\n  values.max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyEqualityRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-lookup-policies-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-lookup-policies-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-lookup-policies-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyEqualityRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-lookup-policies-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-lookup-policies-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-lookup-policies-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesNonemptyOwnerRejected) {\n  const auto Source = tmpFile("unordered-lookup-policies-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyMaxSizeRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-capacity-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-capacity-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-capacity-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetNonemptyMaxSizeRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-capacity-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-capacity-nonempty-owner.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-capacity-nonempty-owner" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityNonemptyOwnerRejected) {\n  const auto Source = tmpFile("unordered-empty-capacity-nonempty-owner.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_MULTISET_VALUES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTISET_VALUES_REGISTERED_SHA256
+             else R19_UNORDERED_MULTISET_VALUES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256 = '5ba3080e5918927829a030a7f3cb2dd589f335815d504ac9fec0e7a0f41b0163'
+R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256 = '77b784892333c39f8a9d1f795615d22e645480038b1ffaefc9e900856402aad2'
+R19_ANY_CHARACTER_INLINE_PREVIOUS_REGISTERED_SHA256 = '24bb1e294e6faaee5194ef7e04ca3ead5b385fc723756b36c9d6b1c7ca383c2d'
+R19_ANY_CHARACTER_INLINE_PREVIOUS_MAINTAINED_SHA256 = 'f59b6b5c51fc70f851268ca84fd1accdf137b796b27c95213ac5e10418af5741'
+R19_ANY_CHARACTER_INLINE_ADDITIONS_SHA256 = '700dc6061ae5b7b89620910958d37a8cb1029581e59ba7bb27e4d044e3dce52f'
+R19_ANY_CHARACTER_INLINE_MAINTAINED_SIZE = 20083154
+R19_ANY_CHARACTER_INLINE_ADDITIONS_SIZE = 7225
+
+
+def restore_any_character_inline_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256, R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256}
+    stop = R19_ANY_CHARACTER_INLINE_MAINTAINED_SIZE
+    start = stop - R19_ANY_CHARACTER_INLINE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ANY_CHARACTER_INLINE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  const auto Output = tmpFile("any-narrow-inline-unicode-payload.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-narrow-inline-unicode-payload" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyChar16OriginalConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  const auto Output = tmpFile("any-narrow-inline-unicode-payload.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-narrow-inline-unicode-payload" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyNarrowInlineUnicodePayloadRejected) {\n  const auto Source = tmpFile("any-narrow-inline-unicode-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'x\'; return !value.has_value(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ANY_CHARACTER_INLINE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256
+             else R19_ANY_CHARACTER_INLINE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256 = 'c13d9870eab687c556a18fcda21b3a45f9d89f3b23965ef64e714acc0b549c44'
+R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256 = 'f891e8b10a7cd8b1272be7479bd65840ddbc3b601441bb84318e260497b7cdad'
+R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 = '5ba3080e5918927829a030a7f3cb2dd589f335815d504ac9fec0e7a0f41b0163'
+R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256 = '77b784892333c39f8a9d1f795615d22e645480038b1ffaefc9e900856402aad2'
+R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SHA256 = 'a14efab83449d7b9371a24014a5872d22cacb40b79826b08572b27cb78c9617c'
+R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SIZE = 20093077
+R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SIZE = 9533
+
+
+def restore_unordered_multiset_modifiers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256, R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTISET_MODIFIERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-modifiers-multi-key-erase.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-modifiers-multi-key-erase" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetEraseOriginalEmptyRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-modifiers-multi-key-erase.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-modifiers-multi-key-erase" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetModifiersMultiKeyEraseRejected) {\n  const auto Source = tmpFile("unordered-set-modifiers-multi-key-erase.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; return values.erase(2); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256
+             else R19_UNORDERED_MULTISET_MODIFIERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_GLOBAL_ITERATORS_REGISTERED_SHA256 = '2e9d95851ee84e83c378685f8e976bd2b1e10f762966d0ab2ef61c0ebf78d182'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SHA256 = 'ba8bed2d85cd298d5366b5b93516e4f955509abde146b71335c934aa9c50bc87'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_PREVIOUS_REGISTERED_SHA256 = 'c13d9870eab687c556a18fcda21b3a45f9d89f3b23965ef64e714acc0b549c44'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_PREVIOUS_MAINTAINED_SHA256 = 'f891e8b10a7cd8b1272be7479bd65840ddbc3b601441bb84318e260497b7cdad'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_ADDITIONS_SHA256 = 'e1ccc3fefe3572034c2d35c4f979529d7355b6c91c670434c21fac00bf57f7be'
+R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SIZE = 20100525
+R19_UNORDERED_SET_GLOBAL_ITERATORS_ADDITIONS_SIZE = 7448
+
+
+def restore_unordered_set_global_iterators_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_GLOBAL_ITERATORS_REGISTERED_SHA256, R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_GLOBAL_ITERATORS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_GLOBAL_ITERATORS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_GLOBAL_ITERATORS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_GLOBAL_ITERATORS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_GLOBAL_ITERATORS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_SCALAR_INSERTION_REGISTERED_SHA256 = '8ce9d74ac0d9d4d1810ff9e409a535692b199d5e8c705fa190c864aa4448adff'
+R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SHA256 = 'c5ff82c8dc13eb2e50d661a576629adc82e54a54d6485bf6441f491dacaeac06'
+R19_UNORDERED_SET_SCALAR_INSERTION_PREVIOUS_REGISTERED_SHA256 = '2e9d95851ee84e83c378685f8e976bd2b1e10f762966d0ab2ef61c0ebf78d182'
+R19_UNORDERED_SET_SCALAR_INSERTION_PREVIOUS_MAINTAINED_SHA256 = 'ba8bed2d85cd298d5366b5b93516e4f955509abde146b71335c934aa9c50bc87'
+R19_UNORDERED_SET_SCALAR_INSERTION_ADDITIONS_SHA256 = '21f97636ebd5af52db6513e7af8924f2caacc569828f3cbc67157c9d892a27d7'
+R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SIZE = 20109153
+R19_UNORDERED_SET_SCALAR_INSERTION_ADDITIONS_SIZE = 7870
+
+
+def restore_unordered_set_scalar_insertion_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_SCALAR_INSERTION_REGISTERED_SHA256, R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_SCALAR_INSERTION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_SCALAR_INSERTION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalScalarInsertRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multiset-values-scalar-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; values.insert(2); return values.size() != 3; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-values-scalar-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-values-scalar-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalScalarInsertRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multiset-values-scalar-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; values.insert(2); return values.size() != 3; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-values-scalar-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-values-scalar-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesScalarInsertRejected) {\n  const auto Source = tmpFile("unordered-multiset-values-scalar-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; values.insert(2); return values.size() != 3; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalScalarInsertRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.insert(1);\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalScalarInsertRunAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.insert(1);\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2EmptyHashSetInsertRejected) {\n  const auto Source = tmpFile("empty-hash-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.insert(1);\n  return values.size() != 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_SCALAR_INSERTION_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_SCALAR_INSERTION_REGISTERED_SHA256
+             else R19_UNORDERED_SET_SCALAR_INSERTION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_ITERATOR_ERASE_REGISTERED_SHA256 = '724deef07eb49b8fd2a84f1c9a9e074ca4bffafa652bcd041dcf0cfebc1a8217'
+R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SHA256 = '6d3886e9bdf1e29f2b9152a585312e5875beb45ef1616cf7c519cba7e76ae0b2'
+R19_UNORDERED_SET_ITERATOR_ERASE_PREVIOUS_REGISTERED_SHA256 = '8ce9d74ac0d9d4d1810ff9e409a535692b199d5e8c705fa190c864aa4448adff'
+R19_UNORDERED_SET_ITERATOR_ERASE_PREVIOUS_MAINTAINED_SHA256 = 'c5ff82c8dc13eb2e50d661a576629adc82e54a54d6485bf6441f491dacaeac06'
+R19_UNORDERED_SET_ITERATOR_ERASE_ADDITIONS_SHA256 = '2aac7ca5ebcbca7fc518c757b5df71aaa592dfbf4bbe87fde30b1aa6553b9e70'
+R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SIZE = 20117155
+R19_UNORDERED_SET_ITERATOR_ERASE_ADDITIONS_SIZE = 8002
+
+
+def restore_unordered_set_iterator_erase_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_ITERATOR_ERASE_REGISTERED_SHA256, R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_ITERATOR_ERASE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_ITERATOR_ERASE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_ITERATOR_ERASE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_ITERATOR_ERASE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_ITERATOR_ERASE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_EQUAL_RANGE_REGISTERED_SHA256 = 'fc919f87ffd1377e6fd0ec40841c2af74e64e685ab55f68163b58e3e78a1e9c9'
+R19_UNORDERED_SET_EQUAL_RANGE_MAINTAINED_SHA256 = '44fc110f1f40d86b7d188fe484d1a166c7da73e98f76edcd001d249395538cbf'
+R19_UNORDERED_SET_EQUAL_RANGE_PREVIOUS_REGISTERED_SHA256 = '724deef07eb49b8fd2a84f1c9a9e074ca4bffafa652bcd041dcf0cfebc1a8217'
+R19_UNORDERED_SET_EQUAL_RANGE_PREVIOUS_MAINTAINED_SHA256 = '6d3886e9bdf1e29f2b9152a585312e5875beb45ef1616cf7c519cba7e76ae0b2'
+R19_UNORDERED_SET_EQUAL_RANGE_ADDITIONS_SHA256 = 'ae663838de4fefd1d13e18dda5bd21ef2291ca5766cde770a29fcb7765306d4d'
+R19_UNORDERED_SET_EQUAL_RANGE_MAINTAINED_SIZE = 20125167
+R19_UNORDERED_SET_EQUAL_RANGE_ADDITIONS_SIZE = 8012
+
+
+def restore_unordered_set_equal_range_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_EQUAL_RANGE_REGISTERED_SHA256, R19_UNORDERED_SET_EQUAL_RANGE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_EQUAL_RANGE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_EQUAL_RANGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_EQUAL_RANGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_EQUAL_RANGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_EQUAL_RANGE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_EQUAL_RANGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_LOCAL_ITERATORS_REGISTERED_SHA256 = '0ef88a0571d525b7d64559b6af9a40ca1b7c8753b94cf130f6ec3397ed438b62'
+R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256 = '7103b1330261f496dad389a54d80f8d6be1864a02ae967b62c2fb4e32b06340a'
+R19_UNORDERED_SET_LOCAL_ITERATORS_PREVIOUS_REGISTERED_SHA256 = 'fc919f87ffd1377e6fd0ec40841c2af74e64e685ab55f68163b58e3e78a1e9c9'
+R19_UNORDERED_SET_LOCAL_ITERATORS_PREVIOUS_MAINTAINED_SHA256 = '44fc110f1f40d86b7d188fe484d1a166c7da73e98f76edcd001d249395538cbf'
+R19_UNORDERED_SET_LOCAL_ITERATORS_ADDITIONS_SHA256 = 'cb09a16ca3f68f32fe3448ce3b4baa38d45a5b6fea6bf33dcc2b985dc21ed7e1'
+R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SIZE = 20133580
+R19_UNORDERED_SET_LOCAL_ITERATORS_ADDITIONS_SIZE = 8012
+
+
+def restore_unordered_set_local_iterators_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_LOCAL_ITERATORS_REGISTERED_SHA256, R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_LOCAL_ITERATORS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_LOCAL_ITERATORS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-global-iterators-local-bucket-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-global-iterators-local-bucket-iterator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-global-iterators-local-bucket-iterator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalLocalBucketRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-global-iterators-local-bucket-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-global-iterators-local-bucket-iterator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-global-iterators-local-bucket-iterator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsLocalBucketIteratorRejected) {\n  const auto Source = tmpFile("unordered-set-global-iterators-local-bucket-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; return values.begin(0) == values.end(0); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_LOCAL_ITERATORS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_LOCAL_ITERATORS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_LOCAL_ITERATORS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_EMPLACEMENT_REGISTERED_SHA256 = '83641ab21afe299e1102dbfcb7aa665e4bacb76903a037642188a6d31ba3c089'
+R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256 = '5755793b0747f53c69ae511749f7e732123906f01e4b86cf93288415cb2fa7a9'
+R19_UNORDERED_SET_EMPLACEMENT_PREVIOUS_REGISTERED_SHA256 = '0ef88a0571d525b7d64559b6af9a40ca1b7c8753b94cf130f6ec3397ed438b62'
+R19_UNORDERED_SET_EMPLACEMENT_PREVIOUS_MAINTAINED_SHA256 = '7103b1330261f496dad389a54d80f8d6be1864a02ae967b62c2fb4e32b06340a'
+R19_UNORDERED_SET_EMPLACEMENT_ADDITIONS_SHA256 = '9ccb1a700fe19a05ef2b6db31666173b49a518ddb177fd66a18fc761757c5881'
+R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SIZE = 20142498
+R19_UNORDERED_SET_EMPLACEMENT_ADDITIONS_SIZE = 8521
+
+
+def restore_unordered_set_emplacement_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_EMPLACEMENT_REGISTERED_SHA256, R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_EMPLACEMENT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_EMPLACEMENT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalHintedInsertRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-insert-with-hint.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-scalar-insertion-insert-with-hint.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-scalar-insertion-insert-with-hint" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalHintedInsertRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-insert-with-hint.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-scalar-insertion-insert-with-hint.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-scalar-insertion-insert-with-hint" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionInsertWithHintRejected) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-insert-with-hint.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; return *values.insert(values.cend(), 2) != 2; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_EMPLACEMENT_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_EMPLACEMENT_REGISTERED_SHA256
+             else R19_UNORDERED_SET_EMPLACEMENT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_EQUALITY_SWAP_REGISTERED_SHA256 = '2614bbc404b932230aeb5f74db66e01f5b8cda8797e86e17b714d84395165ea3'
+R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256 = 'a57a30b29ed03d9a47ce06015d225f01c1b486230d130ab63fc8ec3d3b1116a0'
+R19_UNORDERED_SET_EQUALITY_SWAP_PREVIOUS_REGISTERED_SHA256 = '83641ab21afe299e1102dbfcb7aa665e4bacb76903a037642188a6d31ba3c089'
+R19_UNORDERED_SET_EQUALITY_SWAP_PREVIOUS_MAINTAINED_SHA256 = '5755793b0747f53c69ae511749f7e732123906f01e4b86cf93288415cb2fa7a9'
+R19_UNORDERED_SET_EQUALITY_SWAP_ADDITIONS_SHA256 = 'b776e2103715c8f8b9f4dd615d86e2788a60ea9324ce168d969ce72c5a3a332d'
+R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SIZE = 20150555
+R19_UNORDERED_SET_EQUALITY_SWAP_ADDITIONS_SIZE = 8057
+
+
+def restore_unordered_set_equality_swap_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_EQUALITY_SWAP_REGISTERED_SHA256, R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_EQUALITY_SWAP_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_EQUALITY_SWAP_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_EQUALITY_SWAP_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_EQUALITY_SWAP_REGISTERED_SHA256
+             else R19_UNORDERED_SET_EQUALITY_SWAP_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_POINTER_RANGE_REGISTERED_SHA256 = '47d55896696dc2a7f80d29c0cf075f63e4e251eef3aab7eacad4ef14e1358fbb'
+R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256 = '0a65cf385c60ea9997fa815565a9cb56465fffddae54c41396bf63707b83fc46'
+R19_UNORDERED_SET_POINTER_RANGE_PREVIOUS_REGISTERED_SHA256 = '2614bbc404b932230aeb5f74db66e01f5b8cda8797e86e17b714d84395165ea3'
+R19_UNORDERED_SET_POINTER_RANGE_PREVIOUS_MAINTAINED_SHA256 = 'a57a30b29ed03d9a47ce06015d225f01c1b486230d130ab63fc8ec3d3b1116a0'
+R19_UNORDERED_SET_POINTER_RANGE_ADDITIONS_SHA256 = 'da56487e6c10494a4d57396ffc33d90a1f179c4f798f4a76c9d0088e332f8696'
+R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SIZE = 20158451
+R19_UNORDERED_SET_POINTER_RANGE_ADDITIONS_SIZE = 7896
+
+
+def restore_unordered_set_pointer_range_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_POINTER_RANGE_REGISTERED_SHA256, R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_POINTER_RANGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_POINTER_RANGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_POINTER_RANGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_POINTER_RANGE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_POINTER_RANGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_REGISTERED_SHA256 = '9cb7ceb21565984eeb74ecb04de81d829a7d4044e642eac1474b7bf9eb3196da'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256 = '83193b7e67658eecd8f05e1f39207b4c07eea93fabaf11c3fdfaa4259719510a'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_PREVIOUS_REGISTERED_SHA256 = '47d55896696dc2a7f80d29c0cf075f63e4e251eef3aab7eacad4ef14e1358fbb'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_PREVIOUS_MAINTAINED_SHA256 = '0a65cf385c60ea9997fa815565a9cb56465fffddae54c41396bf63707b83fc46'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_ADDITIONS_SHA256 = '1b53c7878d8a6dc1923865ed46ea4be8faafd4fdb1d81130854324174c175a2c'
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SIZE = 20166319
+R19_UNORDERED_SET_POINTER_CONSTRUCTION_ADDITIONS_SIZE = 7868
+
+
+def restore_unordered_set_pointer_construction_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_POINTER_CONSTRUCTION_REGISTERED_SHA256, R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_POINTER_CONSTRUCTION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_POINTER_CONSTRUCTION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_POINTER_CONSTRUCTION_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_POINTER_CONSTRUCTION_REGISTERED_SHA256
+             else R19_UNORDERED_SET_POINTER_CONSTRUCTION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_OWNER_MOVE_REGISTERED_SHA256 = '544d50088e1e4062a33c132ff8abb4e60c2f5d88f1f9c3d498ed68d92dffdd40'
+R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256 = '91ca47fa646e424eed96bb7914230e20deb00af9f7afee5efc04af1e71492b9e'
+R19_UNORDERED_SET_OWNER_MOVE_PREVIOUS_REGISTERED_SHA256 = '9cb7ceb21565984eeb74ecb04de81d829a7d4044e642eac1474b7bf9eb3196da'
+R19_UNORDERED_SET_OWNER_MOVE_PREVIOUS_MAINTAINED_SHA256 = '83193b7e67658eecd8f05e1f39207b4c07eea93fabaf11c3fdfaa4259719510a'
+R19_UNORDERED_SET_OWNER_MOVE_ADDITIONS_SHA256 = '8f3355132d7a0e4f7f46d7b0be509f8db706f648e8f11c66b34098ada0c02813'
+R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SIZE = 20175243
+R19_UNORDERED_SET_OWNER_MOVE_ADDITIONS_SIZE = 8924
+
+
+def restore_unordered_set_owner_move_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_OWNER_MOVE_REGISTERED_SHA256, R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_OWNER_MOVE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_OWNER_MOVE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_OWNER_MOVE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_OWNER_MOVE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_OWNER_MOVE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_OWNER_COPY_REGISTERED_SHA256 = '9d45502a38f1ee189fb816f0ffaa6f9a83d66b4c2e00792e08094a09ebf71090'
+R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SHA256 = 'b5861e602fe2e117514cbc02fbff1737609071bd6aa6d4452161039c5c032491'
+R19_UNORDERED_SET_OWNER_COPY_PREVIOUS_REGISTERED_SHA256 = '544d50088e1e4062a33c132ff8abb4e60c2f5d88f1f9c3d498ed68d92dffdd40'
+R19_UNORDERED_SET_OWNER_COPY_PREVIOUS_MAINTAINED_SHA256 = '91ca47fa646e424eed96bb7914230e20deb00af9f7afee5efc04af1e71492b9e'
+R19_UNORDERED_SET_OWNER_COPY_ADDITIONS_SHA256 = '55d07c1030c870815058551aa354e120a1f54c6209e054c870f24fc702bdb188'
+R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SIZE = 20183772
+R19_UNORDERED_SET_OWNER_COPY_ADDITIONS_SIZE = 8166
+
+
+def restore_unordered_set_owner_copy_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_OWNER_COPY_REGISTERED_SHA256, R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_OWNER_COPY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_OWNER_COPY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalEmptyCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source;\n  std::unordered_multiset<int> copy(source);\n  return copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalEmptyCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("empty-hash-set-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source;\n  std::unordered_multiset<int> copy(source);\n  return copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("empty-hash-set-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("empty-hash-set-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2EmptyHashSetCopyRejected) {\n  const auto Source = tmpFile("empty-hash-set-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source;\n  std::unordered_multiset<int> copy(source);\n  return copy.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_OWNER_COPY_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_OWNER_COPY_REGISTERED_SHA256
+             else R19_UNORDERED_SET_OWNER_COPY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_COPY_ASSIGNMENT_REGISTERED_SHA256 = '54aaee4bebce2af63c700ce4c26fc46b08f3e84bc307853ac6083e08fbe2e4ce'
+R19_UNORDERED_SET_COPY_ASSIGNMENT_MAINTAINED_SHA256 = '59f5c6dc6377471051c60a473bcf81661b95045dc16b598e1c5d0fa55d2ddf79'
+R19_UNORDERED_SET_COPY_ASSIGNMENT_PREVIOUS_REGISTERED_SHA256 = '9d45502a38f1ee189fb816f0ffaa6f9a83d66b4c2e00792e08094a09ebf71090'
+R19_UNORDERED_SET_COPY_ASSIGNMENT_PREVIOUS_MAINTAINED_SHA256 = 'b5861e602fe2e117514cbc02fbff1737609071bd6aa6d4452161039c5c032491'
+R19_UNORDERED_SET_COPY_ASSIGNMENT_ADDITIONS_SHA256 = 'ce895295e8e94a4ed87f13b982ae870ab9a1f41c25629254ff7e9857af1c6602'
+R19_UNORDERED_SET_COPY_ASSIGNMENT_MAINTAINED_SIZE = 20192690
+R19_UNORDERED_SET_COPY_ASSIGNMENT_ADDITIONS_SIZE = 8918
+
+
+def restore_unordered_set_copy_assignment_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_COPY_ASSIGNMENT_REGISTERED_SHA256, R19_UNORDERED_SET_COPY_ASSIGNMENT_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_COPY_ASSIGNMENT_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_COPY_ASSIGNMENT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_COPY_ASSIGNMENT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_COPY_ASSIGNMENT_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_COPY_ASSIGNMENT_REGISTERED_SHA256
+             else R19_UNORDERED_SET_COPY_ASSIGNMENT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_LIST_ASSIGNMENT_REGISTERED_SHA256 = '0a3e74d58b7b14a41049e2a8ad8f513413e5ef6b2426a30625103d46c6befdf6'
+R19_UNORDERED_SET_LIST_ASSIGNMENT_MAINTAINED_SHA256 = '376aa6cafedc4544350af55c4762116affe6ffb8a1e3283ac406b8c9db064275'
+R19_UNORDERED_SET_LIST_ASSIGNMENT_PREVIOUS_REGISTERED_SHA256 = '54aaee4bebce2af63c700ce4c26fc46b08f3e84bc307853ac6083e08fbe2e4ce'
+R19_UNORDERED_SET_LIST_ASSIGNMENT_PREVIOUS_MAINTAINED_SHA256 = '59f5c6dc6377471051c60a473bcf81661b95045dc16b598e1c5d0fa55d2ddf79'
+R19_UNORDERED_SET_LIST_ASSIGNMENT_ADDITIONS_SHA256 = 'b02316fcfeead3fa2f36af795cbc70ae84f4526870183851ab1e583c7963b833'
+R19_UNORDERED_SET_LIST_ASSIGNMENT_MAINTAINED_SIZE = 20201297
+R19_UNORDERED_SET_LIST_ASSIGNMENT_ADDITIONS_SIZE = 8607
+
+
+def restore_unordered_set_list_assignment_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_LIST_ASSIGNMENT_REGISTERED_SHA256, R19_UNORDERED_SET_LIST_ASSIGNMENT_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_LIST_ASSIGNMENT_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_LIST_ASSIGNMENT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_LIST_ASSIGNMENT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_LIST_ASSIGNMENT_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_LIST_ASSIGNMENT_REGISTERED_SHA256
+             else R19_UNORDERED_SET_LIST_ASSIGNMENT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_ITERATOR_RANGE_REGISTERED_SHA256 = '9b7d4cac8fbb215fad4d796e7e7cfd7cfcecc7d84384cff249ccbb08f68d9621'
+R19_UNORDERED_SET_ITERATOR_RANGE_MAINTAINED_SHA256 = '128ff7799af546d360def0abcb3e0ba34a382cd3629da0794750c8e444e5434c'
+R19_UNORDERED_SET_ITERATOR_RANGE_PREVIOUS_REGISTERED_SHA256 = '0a3e74d58b7b14a41049e2a8ad8f513413e5ef6b2426a30625103d46c6befdf6'
+R19_UNORDERED_SET_ITERATOR_RANGE_PREVIOUS_MAINTAINED_SHA256 = '376aa6cafedc4544350af55c4762116affe6ffb8a1e3283ac406b8c9db064275'
+R19_UNORDERED_SET_ITERATOR_RANGE_ADDITIONS_SHA256 = '60b567a41804e317fecc47b35cb29986ea285e8e6256a79e4c114a332ded0af0'
+R19_UNORDERED_SET_ITERATOR_RANGE_MAINTAINED_SIZE = 20212642
+R19_UNORDERED_SET_ITERATOR_RANGE_ADDITIONS_SIZE = 11345
+
+
+def restore_unordered_set_iterator_range_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_ITERATOR_RANGE_REGISTERED_SHA256, R19_UNORDERED_SET_ITERATOR_RANGE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_ITERATOR_RANGE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_ITERATOR_RANGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_ITERATOR_RANGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_ITERATOR_RANGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_ITERATOR_RANGE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_ITERATOR_RANGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_MERGE_REGISTERED_SHA256 = '0dcef4d73fc664809450ee55b14a93869663ba24d56f9c87350e5353882e736c'
+R19_UNORDERED_SET_MERGE_MAINTAINED_SHA256 = '856be15f1897ef27455fdd7d98857ddb130215430a02e637bc383507a3f1e382'
+R19_UNORDERED_SET_MERGE_PREVIOUS_REGISTERED_SHA256 = '9b7d4cac8fbb215fad4d796e7e7cfd7cfcecc7d84384cff249ccbb08f68d9621'
+R19_UNORDERED_SET_MERGE_PREVIOUS_MAINTAINED_SHA256 = '128ff7799af546d360def0abcb3e0ba34a382cd3629da0794750c8e444e5434c'
+R19_UNORDERED_SET_MERGE_ADDITIONS_SHA256 = '1f220769bc7394f40e8e1286ec14f262020e8e814f99ddf522bf7031b16dbf1e'
+R19_UNORDERED_SET_MERGE_MAINTAINED_SIZE = 20221345
+R19_UNORDERED_SET_MERGE_ADDITIONS_SIZE = 8703
+
+
+def restore_unordered_set_merge_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_MERGE_REGISTERED_SHA256, R19_UNORDERED_SET_MERGE_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_MERGE_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_MERGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_MERGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_MERGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_MERGE_REGISTERED_SHA256
+             else R19_UNORDERED_SET_MERGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_OBSERVERS_REGISTERED_SHA256 = '1e10f7c7f4c2d93d41b5887a77f1541a19d4db26ee6cd9109456360b22156161'
+R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SHA256 = '600ae75bd4b6ceaa0e9a445adcf96712e00f83a9b504fee7d470953c3aa95f47'
+R19_UNORDERED_SET_OBSERVERS_PREVIOUS_REGISTERED_SHA256 = '0dcef4d73fc664809450ee55b14a93869663ba24d56f9c87350e5353882e736c'
+R19_UNORDERED_SET_OBSERVERS_PREVIOUS_MAINTAINED_SHA256 = '856be15f1897ef27455fdd7d98857ddb130215430a02e637bc383507a3f1e382'
+R19_UNORDERED_SET_OBSERVERS_ADDITIONS_SHA256 = '69419c8aaa9cf3523ee4cf4743b7051fcdeed68456a6c3346beaeaf100244c57'
+R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SIZE = 20230189
+R19_UNORDERED_SET_OBSERVERS_ADDITIONS_SIZE = 8455
+
+
+def restore_unordered_set_observers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_OBSERVERS_REGISTERED_SHA256, R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_OBSERVERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_OBSERVERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalArrowObserverRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-lookup-policies-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return !pointer->key_eq()(2, 2);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-lookup-policies-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-lookup-policies-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalArrowObserverRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-lookup-policies-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return !pointer->key_eq()(2, 2);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-lookup-policies-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-lookup-policies-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedLookupPoliciesArrowReceiverRejected) {\n  const auto Source = tmpFile("unordered-lookup-policies-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return !pointer->key_eq()(2, 2);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_OBSERVERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_OBSERVERS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_OBSERVERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_STORAGE_CONSTRUCTION_REGISTERED_SHA256 = 'f5e26a202434cdb9bd8355501131c4a429f332a1562877587e07556f9f6a48d4'
+R19_UNORDERED_SET_STORAGE_CONSTRUCTION_MAINTAINED_SHA256 = '8ee172c3bf7dae6f0e65cce5d6c44e5bfda3406278f19ccffadfbdeacbc69edc'
+R19_UNORDERED_SET_STORAGE_CONSTRUCTION_PREVIOUS_REGISTERED_SHA256 = '1e10f7c7f4c2d93d41b5887a77f1541a19d4db26ee6cd9109456360b22156161'
+R19_UNORDERED_SET_STORAGE_CONSTRUCTION_PREVIOUS_MAINTAINED_SHA256 = '600ae75bd4b6ceaa0e9a445adcf96712e00f83a9b504fee7d470953c3aa95f47'
+R19_UNORDERED_SET_STORAGE_CONSTRUCTION_ADDITIONS_SHA256 = '92b446560325c451a8c0c2f3bb0cde0b3f049d1fa7105bb44578b7d5084568af'
+R19_UNORDERED_SET_STORAGE_CONSTRUCTION_MAINTAINED_SIZE = 20243106
+R19_UNORDERED_SET_STORAGE_CONSTRUCTION_ADDITIONS_SIZE = 11277
+
+
+def restore_unordered_set_storage_construction_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_STORAGE_CONSTRUCTION_REGISTERED_SHA256, R19_UNORDERED_SET_STORAGE_CONSTRUCTION_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_STORAGE_CONSTRUCTION_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_STORAGE_CONSTRUCTION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_STORAGE_CONSTRUCTION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalAllocatorCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{8, 8};\n  std::unordered_multiset<int> copy(source, std::allocator<int>{});\n  return copy.count(8) != 2;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalAllocatorCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{8, 8};\n  std::unordered_multiset<int> copy(source, std::allocator<int>{});\n  return copy.count(8) != 2;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetOwnerCopyExplicitAllocatorMultisetCopyRejected) {\n  const auto Source = tmpFile("unordered-set-owner-copy-explicit-allocator-multiset-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{8, 8};\n  std::unordered_multiset<int> copy(source, std::allocator<int>{});\n  return copy.count(8) != 2;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalAllocatorCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-owner-copy-explicit-allocator-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> source{1};\n  std::unordered_set<int> copy(source, std::allocator<int>{});\n  return copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-copy-explicit-allocator-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-copy-explicit-allocator-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalAllocatorCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-owner-copy-explicit-allocator-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> source{1};\n  std::unordered_set<int> copy(source, std::allocator<int>{});\n  return copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-copy-explicit-allocator-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-copy-explicit-allocator-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetOwnerCopyExplicitAllocatorCopyRejected) {\n  const auto Source = tmpFile("unordered-set-owner-copy-explicit-allocator-copy.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> source{1};\n  std::unordered_set<int> copy(source, std::allocator<int>{});\n  return copy.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalAllocatorMoveRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<int> a{8, 8};\n  std::unordered_multiset<int> b(std::move(a), std::allocator<int>{});\n  return b.size() != 2;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalAllocatorMoveRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<int> a{8, 8};\n  std::unordered_multiset<int> b(std::move(a), std::allocator<int>{});\n  return b.size() != 2;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveMultisetMoveWithExplicitAllocatorRejected) {\n  const auto Source = tmpFile("unordered-set-owner-move-multiset-move-with-explicit-allocator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<int> a{8, 8};\n  std::unordered_multiset<int> b(std::move(a), std::allocator<int>{});\n  return b.size() != 2;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalAllocatorMoveRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-owner-move-explicit-allocator-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_set<int> source{1};\n  std::unordered_set<int> target(std::move(source), std::allocator<int>{});\n  return target.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-move-explicit-allocator-construction.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-move-explicit-allocator-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalAllocatorMoveRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-owner-move-explicit-allocator-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_set<int> source{1};\n  std::unordered_set<int> target(std::move(source), std::allocator<int>{});\n  return target.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-move-explicit-allocator-construction.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-move-explicit-allocator-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveExplicitAllocatorConstructionRejected) {\n  const auto Source = tmpFile("unordered-set-owner-move-explicit-allocator-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_set<int> source{1};\n  std::unordered_set<int> target(std::move(source), std::allocator<int>{});\n  return target.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_STORAGE_CONSTRUCTION_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_STORAGE_CONSTRUCTION_REGISTERED_SHA256
+             else R19_UNORDERED_SET_STORAGE_CONSTRUCTION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_NODE_HANDLES_REGISTERED_SHA256 = 'b0308b64ace4efb64a2604478a35fe72ff13fa010ae2441d52038ecf5cca67c0'
+R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SHA256 = '40a07a2f7ba2b85c8d134ae3d3d3a2ae1a52479182df85070c11a53307d580bc'
+R19_UNORDERED_SET_NODE_HANDLES_PREVIOUS_REGISTERED_SHA256 = 'f5e26a202434cdb9bd8355501131c4a429f332a1562877587e07556f9f6a48d4'
+R19_UNORDERED_SET_NODE_HANDLES_PREVIOUS_MAINTAINED_SHA256 = '8ee172c3bf7dae6f0e65cce5d6c44e5bfda3406278f19ccffadfbdeacbc69edc'
+R19_UNORDERED_SET_NODE_HANDLES_ADDITIONS_SHA256 = 'cbe8fde1964c90033069e7da5587fe2b8e64cde9c005cc6b01af6ea20781bf09'
+R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SIZE = 20261007
+R19_UNORDERED_SET_NODE_HANDLES_ADDITIONS_SIZE = 17901
+
+
+def restore_unordered_set_node_handles_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_NODE_HANDLES_REGISTERED_SHA256, R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_NODE_HANDLES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_NODE_HANDLES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_SET_NODE_HANDLES_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_NODE_HANDLES_REGISTERED_SHA256
+             else R19_UNORDERED_SET_NODE_HANDLES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_BUCKET_RECEIVERS_REGISTERED_SHA256 = '62811ae5debb7c6f1f25657823242ba217dafe1d84cfeb3bc6d3c495da26fcb0'
+R19_UNORDERED_SET_BUCKET_RECEIVERS_MAINTAINED_SHA256 = '965da4c3ce1920bcf0f371fa02e17f56e8fcade8a67b7bbcef60058040053f16'
+R19_UNORDERED_SET_BUCKET_RECEIVERS_PREVIOUS_REGISTERED_SHA256 = 'b0308b64ace4efb64a2604478a35fe72ff13fa010ae2441d52038ecf5cca67c0'
+R19_UNORDERED_SET_BUCKET_RECEIVERS_PREVIOUS_MAINTAINED_SHA256 = '40a07a2f7ba2b85c8d134ae3d3d3a2ae1a52479182df85070c11a53307d580bc'
+R19_UNORDERED_SET_BUCKET_RECEIVERS_ADDITIONS_SHA256 = 'e56c74abc7d905d9188831be5928a5aca4405c0073ba3dcbc1b108c5d1620f25'
+R19_UNORDERED_SET_BUCKET_RECEIVERS_MAINTAINED_SIZE = 20271677
+R19_UNORDERED_SET_BUCKET_RECEIVERS_ADDITIONS_SIZE = 9101
+
+
+def restore_unordered_set_bucket_receivers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_BUCKET_RECEIVERS_REGISTERED_SHA256, R19_UNORDERED_SET_BUCKET_RECEIVERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_BUCKET_RECEIVERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_BUCKET_RECEIVERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_BUCKET_RECEIVERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerReserveRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-bucket-storage-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->reserve(4); return values.size(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-bucket-storage-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-bucket-storage-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerReserveRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-bucket-storage-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->reserve(4); return values.size(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-bucket-storage-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-bucket-storage-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedBucketStoragePointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-bucket-storage-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->reserve(4); return values.size(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerLoadSetterRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-load-limit-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  auto* pointer = &values;\n  pointer->max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-load-limit-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-load-limit-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerLoadSetterRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-load-limit-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  auto* pointer = &values;\n  pointer->max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-load-limit-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-load-limit-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedLoadLimitArrowReceiverRejected) {\n  const auto Source = tmpFile("unordered-load-limit-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  auto* pointer = &values;\n  pointer->max_load_factor(3.0f);\n  return values.max_load_factor() != 3.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerMaxBucketsRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-capacity-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return pointer->max_bucket_count() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-capacity-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-capacity-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerMaxBucketsRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-capacity-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return pointer->max_bucket_count() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-capacity-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-capacity-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedEmptyCapacityArrowReceiverRejected) {\n  const auto Source = tmpFile("unordered-empty-capacity-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return pointer->max_bucket_count() == 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerLoadFactorRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-load-factor-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> value;\n  const auto* pointer = &value;\n  return pointer->load_factor() != 0.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-load-factor-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-load-factor-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerLoadFactorRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-empty-load-factor-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> value;\n  const auto* pointer = &value;\n  return pointer->load_factor() != 0.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-load-factor-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-load-factor-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorPointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-empty-load-factor-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> value;\n  const auto* pointer = &value;\n  return pointer->load_factor() != 0.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_BUCKET_RECEIVERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_BUCKET_RECEIVERS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_BUCKET_RECEIVERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_MEMBER_RECEIVERS_REGISTERED_SHA256 = 'af259a5994e7dedc5dedb4eef6e5ebc2abbe2266e62574ce2498fc3edc51ae8e'
+R19_UNORDERED_SET_MEMBER_RECEIVERS_MAINTAINED_SHA256 = '518897789c68d3c75c2040ed9f914fde53c7dee14830d0891ba1f5c465b1ac89'
+R19_UNORDERED_SET_MEMBER_RECEIVERS_PREVIOUS_REGISTERED_SHA256 = '62811ae5debb7c6f1f25657823242ba217dafe1d84cfeb3bc6d3c495da26fcb0'
+R19_UNORDERED_SET_MEMBER_RECEIVERS_PREVIOUS_MAINTAINED_SHA256 = '965da4c3ce1920bcf0f371fa02e17f56e8fcade8a67b7bbcef60058040053f16'
+R19_UNORDERED_SET_MEMBER_RECEIVERS_ADDITIONS_SHA256 = '044cd226249afbd783e420c799373ba1722ca61c714250f6bb243839e823066d'
+R19_UNORDERED_SET_MEMBER_RECEIVERS_MAINTAINED_SIZE = 20291977
+R19_UNORDERED_SET_MEMBER_RECEIVERS_ADDITIONS_SIZE = 15066
+
+
+def restore_unordered_set_member_receivers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_MEMBER_RECEIVERS_REGISTERED_SHA256, R19_UNORDERED_SET_MEMBER_RECEIVERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_MEMBER_RECEIVERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_MEMBER_RECEIVERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_MEMBER_RECEIVERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalBucketedPointerRangeConstructionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-pointer-construction-explicit-bucket-count-and-policies.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  int data[] = {1, 2};\n  std::unordered_set<int> set(data, data + 2, 31, std::hash<int>{}, std::equal_to<int>{});\n  return set.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-pointer-construction-explicit-bucket-count-and-policies.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-pointer-construction-explicit-bucket-count-and-policies" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalBucketedPointerRangeConstructionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-pointer-construction-explicit-bucket-count-and-policies.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  int data[] = {1, 2};\n  std::unordered_set<int> set(data, data + 2, 31, std::hash<int>{}, std::equal_to<int>{});\n  return set.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-pointer-construction-explicit-bucket-count-and-policies.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-pointer-construction-explicit-bucket-count-and-policies" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionExplicitBucketCountAndPoliciesRejected) {\n  const auto Source = tmpFile("unordered-set-pointer-construction-explicit-bucket-count-and-policies.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  int data[] = {1, 2};\n  std::unordered_set<int> set(data, data + 2, 31, std::hash<int>{}, std::equal_to<int>{});\n  return set.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerRangeInsertionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-pointer-range-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { const int data[] = {3, 3}; std::unordered_multiset<int> bag; auto* ptr=&bag; ptr->insert(data, data + 2); return bag.empty(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-pointer-range-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-pointer-range-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerRangeInsertionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-pointer-range-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { const int data[] = {3, 3}; std::unordered_multiset<int> bag; auto* ptr=&bag; ptr->insert(data, data + 2); return bag.empty(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-pointer-range-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-pointer-range-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetPointerRangePointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-set-pointer-range-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { const int data[] = {3, 3}; std::unordered_multiset<int> bag; auto* ptr=&bag; ptr->insert(data, data + 2); return bag.empty(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerSwapRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-equality-swap-pointer-member-swap.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> a{1}, b{2}; auto* p = &a; p->swap(b); return 0; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-equality-swap-pointer-member-swap.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-equality-swap-pointer-member-swap" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerSwapRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-equality-swap-pointer-member-swap.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> a{1}, b{2}; auto* p = &a; p->swap(b); return 0; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-equality-swap-pointer-member-swap.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-equality-swap-pointer-member-swap" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetEqualitySwapPointerMemberSwapRejected) {\n  const auto Source = tmpFile("unordered-set-equality-swap-pointer-member-swap.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> a{1}, b{2}; auto* p = &a; p->swap(b); return 0; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerEmplaceRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-emplacement-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* p=&values; return !p->emplace(3).second; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-emplacement-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-emplacement-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerEmplaceRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-emplacement-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* p=&values; return !p->emplace(3).second; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-emplacement-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-emplacement-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetEmplacementPointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-set-emplacement-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* p=&values; return !p->emplace(3).second; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerLocalIterationRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-local-iterators-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{3}; auto* p = &values; return p->begin(0) != p->end(0); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-local-iterators-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-local-iterators-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerLocalIterationRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-local-iterators-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{3}; auto* p = &values; return p->begin(0) != p->end(0); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-local-iterators-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-local-iterators-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetLocalIteratorsPointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-set-local-iterators-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{3}; auto* p = &values; return p->begin(0) != p->end(0); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerEqualRangeRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-equal-range-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{2, 2}; auto* p=&values; return p->equal_range(2).first == values.end(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-equal-range-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-equal-range-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerEqualRangeRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-equal-range-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{2, 2}; auto* p=&values; return p->equal_range(2).first == values.end(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-equal-range-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-equal-range-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetEqualRangePointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-set-equal-range-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{2, 2}; auto* p=&values; return p->equal_range(2).first == values.end(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerErasePositionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-iterator-erase-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p=&values; return p->erase(values.cbegin()) != values.end(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-iterator-erase-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-iterator-erase-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerErasePositionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-iterator-erase-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p=&values; return p->erase(values.cbegin()) != values.end(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-iterator-erase-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-iterator-erase-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetIteratorErasePointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-set-iterator-erase-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p=&values; return p->erase(values.cbegin()) != values.end(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerScalarInsertionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* p = &values; return !p->insert(2).second; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-scalar-insertion-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-scalar-insertion-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerScalarInsertionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* p = &values; return !p->insert(2).second; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-scalar-insertion-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-scalar-insertion-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetScalarInsertionPointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-set-scalar-insertion-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* p = &values; return !p->insert(2).second; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerFindRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-global-iterators-find-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p = &values; return *p->find(5) != 5; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-global-iterators-find-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-global-iterators-find-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerFindRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-global-iterators-find-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p = &values; return *p->find(5) != 5; }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-global-iterators-find-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-global-iterators-find-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetGlobalIteratorsFindPointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-set-global-iterators-find-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p = &values; return *p->find(5) != 5; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerMultisetListInsertAndEraseRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multiset-modifiers-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; auto* p = &values; p->insert({1, 1}); return p->erase(1) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-modifiers-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-modifiers-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerMultisetListInsertAndEraseRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multiset-modifiers-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; auto* p = &values; p->insert({1, 1}); return p->erase(1) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-modifiers-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-modifiers-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedMultisetModifiersPointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-multiset-modifiers-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values; auto* p = &values; p->insert({1, 1}); return p->erase(1) != 2; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerMultisetCountRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multiset-values-arrow-count.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; auto* p = &values; return p->count(1) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-values-arrow-count.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-values-arrow-count" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerMultisetCountRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multiset-values-arrow-count.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; auto* p = &values; return p->count(1) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-values-arrow-count.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-values-arrow-count" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesArrowCountRejected) {\n  const auto Source = tmpFile("unordered-multiset-values-arrow-count.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 1}; auto* p = &values; return p->count(1) != 2; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerSetListInsertAndEraseRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-modifiers-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->insert({1, 2}); return ptr->erase(2); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-modifiers-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-modifiers-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerSetListInsertAndEraseRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-modifiers-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->insert({1, 2}); return ptr->erase(2); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-modifiers-pointer-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-modifiers-pointer-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetModifiersPointerReceiverRejected) {\n  const auto Source = tmpFile("unordered-set-modifiers-pointer-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->insert({1, 2}); return ptr->erase(2); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerSetCountRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-values-arrow-count.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values{3};\n  auto* owner = &values;\n  return owner->count(3) != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-values-arrow-count.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-values-arrow-count" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalPointerSetCountRunsAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-set-values-arrow-count.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values{3};\n  auto* owner = &values;\n  return owner->count(3) != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-values-arrow-count.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-values-arrow-count" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetValuesArrowCountRejected) {\n  const auto Source = tmpFile("unordered-set-values-arrow-count.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values{3};\n  auto* owner = &values;\n  return owner->count(3) != 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_MEMBER_RECEIVERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_MEMBER_RECEIVERS_REGISTERED_SHA256
+             else R19_UNORDERED_SET_MEMBER_RECEIVERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_MULTIMAP_OWNERS_REGISTERED_SHA256 = '1e0bbf4c8f5a577626fcbd4167012527fe20826396391e8d4a58c24c8f278168'
+R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256 = 'a302000f528d3c79c9d2169d56f19ecc664d4c5245e897a333bb2f561a1c0f64'
+R19_UNORDERED_MULTIMAP_OWNERS_PREVIOUS_REGISTERED_SHA256 = 'af259a5994e7dedc5dedb4eef6e5ebc2abbe2266e62574ce2498fc3edc51ae8e'
+R19_UNORDERED_MULTIMAP_OWNERS_PREVIOUS_MAINTAINED_SHA256 = '518897789c68d3c75c2040ed9f914fde53c7dee14830d0891ba1f5c465b1ac89'
+R19_UNORDERED_MULTIMAP_OWNERS_ADDITIONS_SHA256 = '2d60d7ffbed36f66fd2cc10b078e8d311bb6435db11f502d534d198ae517ac6b'
+R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SIZE = 20299838
+R19_UNORDERED_MULTIMAP_OWNERS_ADDITIONS_SIZE = 7861
+
+
+def restore_unordered_multimap_owners_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTIMAP_OWNERS_REGISTERED_SHA256, R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTIMAP_OWNERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTIMAP_OWNERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_MULTIMAP_OWNERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTIMAP_OWNERS_REGISTERED_SHA256
+             else R19_UNORDERED_MULTIMAP_OWNERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_REGISTERED_SHA256 = '5154f39ad36ff5cf9458d53e32b1e84016330df198e3af32b5efdac45ec7d06b'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256 = 'ad6cdfb5806a10416b5bec0e8a1c2d7f4e700c8a7bd317d057ae676eb7e52e68'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_PREVIOUS_REGISTERED_SHA256 = '1e0bbf4c8f5a577626fcbd4167012527fe20826396391e8d4a58c24c8f278168'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_PREVIOUS_MAINTAINED_SHA256 = 'a302000f528d3c79c9d2169d56f19ecc664d4c5245e897a333bb2f561a1c0f64'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_ADDITIONS_SHA256 = 'd78e0499107254043987dd063506ed8ddaf05b64bb10ffbf48a8b54f595adc67'
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SIZE = 20315890
+R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_ADDITIONS_SIZE = 16052
+
+
+def restore_unordered_multimap_iteration_and_transfer_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_REGISTERED_SHA256, R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_REGISTERED_SHA256
+             else R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_REGISTERED_SHA256 = 'a2e8418b1982b3a0c7696e11137caf0e7a8aa7e01dbb12bd86f4bb35d003ee49'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SHA256 = '92b5b5e9b171ff0c9f887fe4669f900809ff206624fc5e08df2c516d5dd33175'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_PREVIOUS_REGISTERED_SHA256 = '5154f39ad36ff5cf9458d53e32b1e84016330df198e3af32b5efdac45ec7d06b'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_PREVIOUS_MAINTAINED_SHA256 = 'ad6cdfb5806a10416b5bec0e8a1c2d7f4e700c8a7bd317d057ae676eb7e52e68'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_ADDITIONS_SHA256 = 'bb67d9eb2555bffb133700ef2df17da6e4aa706e54ee93e965ca98915f71be3f'
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SIZE = 20326000
+R19_ASSOCIATIVE_NODE_AND_OBSERVER_ADDITIONS_SIZE = 9724
+
+
+def restore_associative_node_and_observer_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ASSOCIATIVE_NODE_AND_OBSERVER_REGISTERED_SHA256, R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SHA256}
+    stop = R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SIZE
+    start = stop - R19_ASSOCIATIVE_NODE_AND_OBSERVER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ASSOCIATIVE_NODE_AND_OBSERVER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-comparator-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-comparator-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-comparator-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedComparatorOriginalArrowReceiverRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-comparator-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-comparator-arrow-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-comparator-arrow-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedComparatorArrowReceiverRejected) {\n  const auto Source = tmpFile("ordered-comparator-arrow-receiver.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  const auto* pointer = &values;\n  auto cmp = pointer->key_comp();\n  return !cmp(1, 2);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ASSOCIATIVE_NODE_AND_OBSERVER_PREVIOUS_REGISTERED_SHA256 if digest == R19_ASSOCIATIVE_NODE_AND_OBSERVER_REGISTERED_SHA256
+             else R19_ASSOCIATIVE_NODE_AND_OBSERVER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_UNORDERED_SET_UNSIGNED_KEY_REGISTERED_SHA256 = 'a5ddd1fe6e53f82facecbd1237242b0926e8170a3a5aa4c6dae75302b9027724'
+R19_UNORDERED_SET_UNSIGNED_KEY_MAINTAINED_SHA256 = 'b537c8295007d1c8b9bef82c985bc3b7db2f5701d9b9b24e3650c6a0d456962e'
+R19_UNORDERED_SET_UNSIGNED_KEY_PREVIOUS_REGISTERED_SHA256 = 'a2e8418b1982b3a0c7696e11137caf0e7a8aa7e01dbb12bd86f4bb35d003ee49'
+R19_UNORDERED_SET_UNSIGNED_KEY_PREVIOUS_MAINTAINED_SHA256 = '92b5b5e9b171ff0c9f887fe4669f900809ff206624fc5e08df2c516d5dd33175'
+R19_UNORDERED_SET_UNSIGNED_KEY_ADDITIONS_SHA256 = '932b41957191daeffed294f5fa1d00bfb85dd3cb004ce668d3da1c49cf832b8f'
+R19_UNORDERED_SET_UNSIGNED_KEY_MAINTAINED_SIZE = 20333654
+R19_UNORDERED_SET_UNSIGNED_KEY_ADDITIONS_SIZE = 5321
+
+
+def restore_unordered_set_unsigned_key_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_UNORDERED_SET_UNSIGNED_KEY_REGISTERED_SHA256, R19_UNORDERED_SET_UNSIGNED_KEY_MAINTAINED_SHA256}
+    stop = R19_UNORDERED_SET_UNSIGNED_KEY_MAINTAINED_SIZE
+    start = stop - R19_UNORDERED_SET_UNSIGNED_KEY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_UNORDERED_SET_UNSIGNED_KEY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedEmptyNodeHandle) {\n  const auto Source = tmpFile("unordered-set-node-handles-other-key-default-node-handle.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<unsigned>::node_type empty;\n  return empty.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-node-handles-other-key-default-node-handle.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-node-handles-other-key-default-node-handle" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedEmptyNodeHandle) {\n  const auto Source = tmpFile("unordered-set-node-handles-other-key-default-node-handle.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<unsigned>::node_type empty;\n  return empty.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-node-handles-other-key-default-node-handle.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-node-handles-other-key-default-node-handle" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetNodeHandlesOtherKeyDefaultNodeHandleRejected) {\n  const auto Source = tmpFile("unordered-set-node-handles-other-key-default-node-handle.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<unsigned>::node_type empty;\n  return empty.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedBucketConstruction) {\n  const auto Source = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<unsigned> values(7u, std::hash<unsigned>{}, std::equal_to<unsigned>{});\n  return values.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedBucketConstruction) {\n  const auto Source = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<unsigned> values(7u, std::hash<unsigned>{}, std::equal_to<unsigned>{});\n  return values.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetStorageConstructionUnapprovedKeyBucketConstructionRejected) {\n  const auto Source = tmpFile("unordered-set-storage-construction-unapproved-key-bucket-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_multiset<unsigned> values(7u, std::hash<unsigned>{}, std::equal_to<unsigned>{});\n  return values.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedCopyAssignment) {\n  const auto Source = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<unsigned> source, target;\n  target = source;\n  return target.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedCopyAssignment) {\n  const auto Source = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<unsigned> source, target;\n  target = source;\n  return target.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetCopyAssignmentUnsignedKeyCopyAssignmentRejected) {\n  const auto Source = tmpFile("unordered-set-copy-assignment-unsigned-key-copy-assignment.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  std::unordered_set<unsigned> source, target;\n  target = source;\n  return target.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedMoveConstruction) {\n  const auto Source = tmpFile("unordered-set-owner-move-other-key-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<unsigned> source;\n  std::unordered_multiset<unsigned> target(std::move(source));\n  return target.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-move-other-key-construction.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-move-other-key-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedMoveConstruction) {\n  const auto Source = tmpFile("unordered-set-owner-move-other-key-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<unsigned> source;\n  std::unordered_multiset<unsigned> target(std::move(source));\n  return target.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-set-owner-move-other-key-construction.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-owner-move-other-key-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetOwnerMoveOtherKeyConstructionRejected) {\n  const auto Source = tmpFile("unordered-set-owner-move-other-key-construction.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\n#include <utility>\nint main() {\n  std::unordered_multiset<unsigned> source;\n  std::unordered_multiset<unsigned> target(std::move(source));\n  return target.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalUnsignedValues) {\n  const auto Source = tmpFile("unordered-multiset-values-different-key.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<unsigned> values{1u, 1u}; return values.count(1u) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-values-different-key.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-values-different-key" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetOriginalUnsignedValues) {\n  const auto Source = tmpFile("unordered-multiset-values-different-key.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<unsigned> values{1u, 1u}; return values.count(1u) != 2; }\n)r19containers");\n  const auto Output = tmpFile("unordered-multiset-values-different-key.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multiset-values-different-key" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedMultisetValuesDifferentKeyRejected) {\n  const auto Source = tmpFile("unordered-multiset-values-different-key.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { std::unordered_multiset<unsigned> values{1u, 1u}; return values.count(1u) != 2; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedLoadFactor) {\n  const auto Source = tmpFile("unordered-empty-load-factor-different-key.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<unsigned int> value;\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-load-factor-different-key.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-load-factor-different-key" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetOriginalUnsignedLoadFactor) {\n  const auto Source = tmpFile("unordered-empty-load-factor-different-key.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<unsigned int> value;\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-empty-load-factor-different-key.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-empty-load-factor-different-key" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedEmptyLoadFactorDifferentKeyRejected) {\n  const auto Source = tmpFile("unordered-empty-load-factor-different-key.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() {\n  const std::unordered_multiset<unsigned int> value;\n  return value.load_factor() != 0.0f;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_UNORDERED_SET_UNSIGNED_KEY_PREVIOUS_REGISTERED_SHA256 if digest == R19_UNORDERED_SET_UNSIGNED_KEY_REGISTERED_SHA256
+             else R19_UNORDERED_SET_UNSIGNED_KEY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_SET_CORE_REGISTERED_SHA256 = 'ec78979a7b483ff52b14ef27db1472a179c41c7649741f7a166ce73b0e62cfaa'
+R19_ORDERED_SET_CORE_MAINTAINED_SHA256 = 'b0ebfd804a188b3740667ec710c8b116ed96e8924a57a6f66882051165586f48'
+R19_ORDERED_SET_CORE_PREVIOUS_REGISTERED_SHA256 = 'a5ddd1fe6e53f82facecbd1237242b0926e8170a3a5aa4c6dae75302b9027724'
+R19_ORDERED_SET_CORE_PREVIOUS_MAINTAINED_SHA256 = 'b537c8295007d1c8b9bef82c985bc3b7db2f5701d9b9b24e3650c6a0d456962e'
+R19_ORDERED_SET_CORE_ADDITIONS_SHA256 = 'e6e6e0d53b880a0392f28b388572e58a944edb5df05935115613200ff9c0a39e'
+R19_ORDERED_SET_CORE_MAINTAINED_SIZE = 20351673
+R19_ORDERED_SET_CORE_ADDITIONS_SIZE = 17646
+
+
+def restore_ordered_set_core_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_SET_CORE_REGISTERED_SHA256, R19_ORDERED_SET_CORE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_SET_CORE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_SET_CORE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_SET_CORE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedSetOriginalInsertionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-empty-owner-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-empty-owner-set-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-empty-owner-set-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedSetOriginalInsertionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-empty-owner-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-empty-owner-set-insert.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-empty-owner-set-insert" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerSetInsertRejected) {\n  const auto Source = tmpFile("ordered-empty-owner-set-insert.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_SET_CORE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_SET_CORE_REGISTERED_SHA256
+             else R19_ORDERED_SET_CORE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_OWNER_OPERATIONS_REGISTERED_SHA256 = '643ddb45cd6010873abc4cd9d0c3d804173e062a6310a96347abffd990ec2068'
+R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SHA256 = '44d47c10a82a3d2ef973db9f9a87c2b5cce5389141a648093a5939e4bcf1d926'
+R19_ORDERED_OWNER_OPERATIONS_PREVIOUS_REGISTERED_SHA256 = 'ec78979a7b483ff52b14ef27db1472a179c41c7649741f7a166ce73b0e62cfaa'
+R19_ORDERED_OWNER_OPERATIONS_PREVIOUS_MAINTAINED_SHA256 = 'b0ebfd804a188b3740667ec710c8b116ed96e8924a57a6f66882051165586f48'
+R19_ORDERED_OWNER_OPERATIONS_ADDITIONS_SHA256 = '42c627a0239a0964e72923ac0a93b2975ad065ec9327d8f952161efe6a2bec77'
+R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SIZE = 20382548
+R19_ORDERED_OWNER_OPERATIONS_ADDITIONS_SIZE = 30875
+
+
+def restore_ordered_owner_operations_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_OWNER_OPERATIONS_REGISTERED_SHA256, R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SHA256}
+    stop = R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_OWNER_OPERATIONS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_OWNER_OPERATIONS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_OWNER_OPERATIONS_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_OWNER_OPERATIONS_REGISTERED_SHA256
+             else R19_ORDERED_OWNER_OPERATIONS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_REGISTERED_SHA256 = '32075ed5590611d862e4bd001e979b72fd0989115ffd0a18586f2ba71a590624'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256 = '2780fb91a65d18cf4059ff79ac2436884aa57f420b42296c99f3f0b80b69ebd7'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_PREVIOUS_REGISTERED_SHA256 = '643ddb45cd6010873abc4cd9d0c3d804173e062a6310a96347abffd990ec2068'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_PREVIOUS_MAINTAINED_SHA256 = '44d47c10a82a3d2ef973db9f9a87c2b5cce5389141a648093a5939e4bcf1d926'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_ADDITIONS_SHA256 = '7d9ce184d756319a175036b324e06417fcf24f85a105e028ea39573ac76a9223'
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SIZE = 20432448
+R19_ORDERED_MAPS_WITH_MIXED_CURSORS_ADDITIONS_SIZE = 49532
+
+
+def restore_ordered_maps_with_mixed_cursors_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MAPS_WITH_MIXED_CURSORS_REGISTERED_SHA256, R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MAPS_WITH_MIXED_CURSORS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMapCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-empty-owner-map-copy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-empty-owner-map-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-empty-owner-map-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMapCopyRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-empty-owner-map-copy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-empty-owner-map-copy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-empty-owner-map-copy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedEmptyOwnerMapCopyRejected) {\n  const auto Source = tmpFile("ordered-empty-owner-map-copy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_MAPS_WITH_MIXED_CURSORS_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_REGISTERED_SHA256
+             else R19_ORDERED_MAPS_WITH_MIXED_CURSORS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_MOVE_LIST_RANGE_REGISTERED_SHA256 = 'bb12ea1163040adf934b63874bf20669b3cbaee8e970fcf8ccf2c56e8ccb723a'
+R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256 = '7ba291b819182fba645dd7581f92b0a6629deabd4d7da9975b1a7b2da83c7abd'
+R19_ORDERED_MOVE_LIST_RANGE_PREVIOUS_REGISTERED_SHA256 = '32075ed5590611d862e4bd001e979b72fd0989115ffd0a18586f2ba71a590624'
+R19_ORDERED_MOVE_LIST_RANGE_PREVIOUS_MAINTAINED_SHA256 = '2780fb91a65d18cf4059ff79ac2436884aa57f420b42296c99f3f0b80b69ebd7'
+R19_ORDERED_MOVE_LIST_RANGE_ADDITIONS_SHA256 = 'db863c686754c1857449180de0977e6e61ed6ee450786aba94ac68394ff580da'
+R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SIZE = 20449763
+R19_ORDERED_MOVE_LIST_RANGE_ADDITIONS_SIZE = 17315
+
+
+def restore_ordered_move_list_range_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MOVE_LIST_RANGE_REGISTERED_SHA256, R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MOVE_LIST_RANGE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MOVE_LIST_RANGE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_MOVE_LIST_RANGE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MOVE_LIST_RANGE_REGISTERED_SHA256
+             else R19_ORDERED_MOVE_LIST_RANGE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_REGISTERED_SHA256 = '045b8bf332dc81fa11c018ca5e0360fe683be8e2808d3e61e89dac547bce4905'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256 = '7f999b85b761decd27f7e336a4ae778552062c84936b797d0d834c864a31f26a'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_PREVIOUS_REGISTERED_SHA256 = 'bb12ea1163040adf934b63874bf20669b3cbaee8e970fcf8ccf2c56e8ccb723a'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_PREVIOUS_MAINTAINED_SHA256 = '7ba291b819182fba645dd7581f92b0a6629deabd4d7da9975b1a7b2da83c7abd'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_ADDITIONS_SHA256 = 'fc420c72f89f33c6222ae46a66d457de5d5ae0c2f96377998d993948be5ff9c2'
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SIZE = 20462171
+R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_ADDITIONS_SIZE = 12408
+
+
+def restore_ordered_list_assignment_and_emplace_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_REGISTERED_SHA256, R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_REGISTERED_SHA256
+             else R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_REGISTERED_SHA256 = '87d62b8ae6d3cd26907c1cb089fed8be44025c7a302565fd0aa4e15ec2e58955'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SHA256 = '8807f2fc6c47f571b715521d18d1c2f1aca6885e38b2de6260559ec67831e18d'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_PREVIOUS_REGISTERED_SHA256 = '045b8bf332dc81fa11c018ca5e0360fe683be8e2808d3e61e89dac547bce4905'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_PREVIOUS_MAINTAINED_SHA256 = '7f999b85b761decd27f7e336a4ae778552062c84936b797d0d834c864a31f26a'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_ADDITIONS_SHA256 = '5bc9f315ea4f3e09d788d00ff29b6fcf44d2c8fdb849a7602114b156a321301e'
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SIZE = 20478958
+R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_ADDITIONS_SIZE = 16416
+
+
+def restore_ordered_merge_comparison_and_map_emplace_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_REGISTERED_SHA256, R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMaxSizeMutableTreesRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-max-size-mutable-trees.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-max-size-mutable-trees.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-max-size-mutable-trees" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMaxSizeMutableTreesRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-max-size-mutable-trees.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-max-size-mutable-trees.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-max-size-mutable-trees" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMaxSizeMutableTreesRejected) {\n  const auto Source = tmpFile("ordered-max-size-mutable-trees.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_REGISTERED_SHA256
+             else R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_REGISTERED_SHA256 = '17da38c2da417df36c10d23081658af9f94798cdf66f91fffd1eb0a07b8f5fd9'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SHA256 = '615020e719791e665aa2823bf4bd2e007176c2aebf65ab55c8ff693bff2f3d00'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_PREVIOUS_REGISTERED_SHA256 = '87d62b8ae6d3cd26907c1cb089fed8be44025c7a302565fd0aa4e15ec2e58955'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_PREVIOUS_MAINTAINED_SHA256 = '8807f2fc6c47f571b715521d18d1c2f1aca6885e38b2de6260559ec67831e18d'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_ADDITIONS_SHA256 = 'e7bdd1e062a543d219e47fedab9c131eaf1662addf569984ae208d35ad8468c9'
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SIZE = 20499724
+R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_ADDITIONS_SIZE = 20766
+
+
+def restore_ordered_policies_and_iterator_ranges_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_REGISTERED_SHA256, R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SHA256}
+    stop = R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_REGISTERED_SHA256
+             else R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_NODE_AND_VALUE_COMPARE_REGISTERED_SHA256 = '11794ebcf2e0af2b1fca673c0549041f72c3bd56634cccc8dd8f3912cab9ace2'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SHA256 = '4e44a789e4a9597fca5fb62d252ce9290b7d018e019bda016525ba9641f98da5'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_PREVIOUS_REGISTERED_SHA256 = '17da38c2da417df36c10d23081658af9f94798cdf66f91fffd1eb0a07b8f5fd9'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_PREVIOUS_MAINTAINED_SHA256 = '615020e719791e665aa2823bf4bd2e007176c2aebf65ab55c8ff693bff2f3d00'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_ADDITIONS_SHA256 = 'dbe80d7b0d7468c4088238a76a76c3fef8420176a9cf1a64cc00251829f61975'
+R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SIZE = 20520119
+R19_ORDERED_NODE_AND_VALUE_COMPARE_ADDITIONS_SIZE = 20006
+
+
+def restore_ordered_node_and_value_compare_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_NODE_AND_VALUE_COMPARE_REGISTERED_SHA256, R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_NODE_AND_VALUE_COMPARE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_NODE_AND_VALUE_COMPARE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedComparatorMapValueComparatorRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-comparator-map-value-comparator.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  auto cmp = values.value_comp();\n  return !cmp({1, 4}, {2, 3});\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-comparator-map-value-comparator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-comparator-map-value-comparator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedComparatorMapValueComparatorRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-comparator-map-value-comparator.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  auto cmp = values.value_comp();\n  return !cmp({1, 4}, {2, 3});\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-comparator-map-value-comparator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-comparator-map-value-comparator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedComparatorMapValueComparatorRejected) {\n  const auto Source = tmpFile("ordered-comparator-map-value-comparator.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  auto cmp = values.value_comp();\n  return !cmp({1, 4}, {2, 3});\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_NODE_AND_VALUE_COMPARE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_NODE_AND_VALUE_COMPARE_REGISTERED_SHA256
+             else R19_ORDERED_NODE_AND_VALUE_COMPARE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_REGISTERED_SHA256 = 'a2e809fc19bef83ca9c2c6534bacccc64ec0ecba8d0349098f54e78129ece6af'
+R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_MAINTAINED_SHA256 = 'b18ee73fa062befcb4f029a8c1e076be476d306a8567dc8f01e56b7386944094'
+R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_PREVIOUS_REGISTERED_SHA256 = '11794ebcf2e0af2b1fca673c0549041f72c3bd56634cccc8dd8f3912cab9ace2'
+R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_PREVIOUS_MAINTAINED_SHA256 = '4e44a789e4a9597fca5fb62d252ce9290b7d018e019bda016525ba9641f98da5'
+R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_ADDITIONS_SHA256 = 'add9bff60a238f81b612d9ece94a2528d5df9a16127b7abebddae05bb6c415c2'
+R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_MAINTAINED_SIZE = 20541936
+R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_ADDITIONS_SIZE = 21053
+
+
+def restore_ordered_hints_allocator_ownership_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_REGISTERED_SHA256, R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_MAINTAINED_SHA256}
+    stop = R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedAllocatorCopyConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-allocator-copy-construction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map source;\n  source[2] = 1;\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-allocator-copy-construction-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-allocator-copy-construction-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedAllocatorCopyConstructionRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-allocator-copy-construction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map source;\n  source[2] = 1;\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-allocator-copy-construction-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-allocator-copy-construction-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedAllocatorCopyConstructionGuardRejected) {\n  const auto Source = tmpFile("ordered-allocator-copy-construction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map source;\n  source[2] = 1;\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedNodeHintedInsertionRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-node-hinted-insertion-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> source{{2, 10}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto inserted = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-node-hinted-insertion-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-node-hinted-insertion-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedNodeHintedInsertionRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-node-hinted-insertion-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> source{{2, 10}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto inserted = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-node-hinted-insertion-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-node-hinted-insertion-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedNodeHintedInsertionGuardRejected) {\n  const auto Source = tmpFile("ordered-node-hinted-insertion-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <utility>\nint main() {\n  std::multimap<int, int> source{{2, 10}}, destination{{2, 20}};\n  auto node = source.extract(2);\n  auto inserted = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && inserted == destination.begin() && inserted->second == 10 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_REGISTERED_SHA256
+             else R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_REVERSE_REGISTERED_SHA256 = '88d1667c3c35a1a79ea0af997d34035ba7434b3f6fc53fd0b36ab02cd847edd1'
+R19_ORDERED_REVERSE_MAINTAINED_SHA256 = '71f05eab5c997e801174b09b261db0752041dcd4a7a19e10b805af00a9568b0f'
+R19_ORDERED_REVERSE_PREVIOUS_REGISTERED_SHA256 = 'a2e809fc19bef83ca9c2c6534bacccc64ec0ecba8d0349098f54e78129ece6af'
+R19_ORDERED_REVERSE_PREVIOUS_MAINTAINED_SHA256 = 'b18ee73fa062befcb4f029a8c1e076be476d306a8567dc8f01e56b7386944094'
+R19_ORDERED_REVERSE_ADDITIONS_SHA256 = '2968c1f8d4645947b344b9a6d9340082a721116c2ab8992dae70b72b79998ffe'
+R19_ORDERED_REVERSE_MAINTAINED_SIZE = 20561150
+R19_ORDERED_REVERSE_ADDITIONS_SIZE = 18836
+
+
+def restore_ordered_reverse_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_REVERSE_REGISTERED_SHA256, R19_ORDERED_REVERSE_MAINTAINED_SHA256}
+    stop = R19_ORDERED_REVERSE_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_REVERSE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_REVERSE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedRangeReverseIteratorRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-range-reverse-iterator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-range-reverse-iterator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-range-reverse-iterator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedRangeReverseIteratorRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-range-reverse-iterator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-range-reverse-iterator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-range-reverse-iterator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedRangeReverseIteratorGuardRejected) {\n  const auto Source = tmpFile("ordered-range-reverse-iterator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nint main() {\n  const std::set<int> input{1, 2, 3};\n  std::set<int> result(input.rbegin(), input.rend());\n  return result.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_REVERSE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_REVERSE_REGISTERED_SHA256
+             else R19_ORDERED_REVERSE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_VALUE_INPUT_REGISTERED_SHA256 = 'c5db0e72676a6713cfc15e29904c4e2efba396e97047ac2e1f82de58f009e30f'
+R19_ORDERED_VALUE_INPUT_MAINTAINED_SHA256 = '095817b19e138f070eeba1f668ef2853c45e25ae7a2936c0216a4710c6f7a0ee'
+R19_ORDERED_VALUE_INPUT_PREVIOUS_REGISTERED_SHA256 = '88d1667c3c35a1a79ea0af997d34035ba7434b3f6fc53fd0b36ab02cd847edd1'
+R19_ORDERED_VALUE_INPUT_PREVIOUS_MAINTAINED_SHA256 = '71f05eab5c997e801174b09b261db0752041dcd4a7a19e10b805af00a9568b0f'
+R19_ORDERED_VALUE_INPUT_ADDITIONS_SHA256 = '3eb97366e09605254abbc3dbec2d834c8e8a5c5543223bbb9353da16084b61e9'
+R19_ORDERED_VALUE_INPUT_MAINTAINED_SIZE = 20570526
+R19_ORDERED_VALUE_INPUT_ADDITIONS_SIZE = 9371
+
+
+def restore_ordered_value_input_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_VALUE_INPUT_REGISTERED_SHA256, R19_ORDERED_VALUE_INPUT_MAINTAINED_SHA256}
+    stop = R19_ORDERED_VALUE_INPUT_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_VALUE_INPUT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_VALUE_INPUT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapScalarEmplacementMappedConversionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  short value = 41;\n  return !values.try_emplace(5, value).second;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapScalarEmplacementMappedConversionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  short value = 41;\n  return !values.try_emplace(5, value).second;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapScalarEmplacementMappedForwardingConversionsRequireTheirOwnProofRejected) {\n  const auto Source = tmpFile("ordered-map-scalar-emplacement-mapped-forwarding-conversions-require-their-own-proof.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, int> values;\n  short value = 41;\n  return !values.try_emplace(5, value).second;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapEmplaceConvertingMappedArgumentAcceptsFunctionBody) {\n  const auto Source = tmpFile("ordered-map-emplace-converting-mapped-argument-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nvoid insert(std::map<int, int> &values) {\n  short converted = 3;\n  values.emplace(1, converted);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapEmplaceConvertingMappedArgumentAcceptsFunctionBody) {\n  const auto Source = tmpFile("ordered-map-emplace-converting-mapped-argument-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nvoid insert(std::map<int, int> &values) {\n  short converted = 3;\n  values.emplace(1, converted);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapEmplaceConvertingMappedArgumentRemainsUnsupportedRejected) {\n  const auto Source = tmpFile("ordered-map-emplace-converting-mapped-argument-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nvoid insert(std::map<int, int> &values) {\n  short converted = 3;\n  values.emplace(1, converted);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedSetEmplaceConvertingKeyAcceptsFunctionBody) {\n  const auto Source = tmpFile("ordered-set-emplace-converting-key-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nauto append(std::set<int> &values, short key) { return values.emplace(key); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedSetEmplaceConvertingKeyAcceptsFunctionBody) {\n  const auto Source = tmpFile("ordered-set-emplace-converting-key-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nauto append(std::set<int> &values, short key) { return values.emplace(key); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2OrderedSetEmplaceConvertingKeyRemainsUnsupportedRejected) {\n  const auto Source = tmpFile("ordered-set-emplace-converting-key-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <set>\nauto append(std::set<int> &values, short key) { return values.emplace(key); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapPointerRangeConvertingPairAcceptsFunctionBody) {\n  const auto Source = tmpFile("ordered-map-pointer-range-converting-pair-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nvoid insert(std::map<int, int> &values, const std::pair<int, int> *first,\n            const std::pair<int, int> *last) { values.insert(first, last); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapPointerRangeConvertingPairAcceptsFunctionBody) {\n  const auto Source = tmpFile("ordered-map-pointer-range-converting-pair-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nvoid insert(std::map<int, int> &values, const std::pair<int, int> *first,\n            const std::pair<int, int> *last) { values.insert(first, last); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapPointerRangeConvertingPairRemainsUnsupportedRejected) {\n  const auto Source = tmpFile("ordered-map-pointer-range-converting-pair-remains-unsupported.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nvoid insert(std::map<int, int> &values, const std::pair<int, int> *first,\n            const std::pair<int, int> *last) { values.insert(first, last); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_VALUE_INPUT_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_VALUE_INPUT_REGISTERED_SHA256
+             else R19_ORDERED_VALUE_INPUT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_MAP_AND_ITERATION_REGISTERED_SHA256 = 'c56b904bdc2f1b794604a1ef4e32ab755dae67fffd60dabc2c5e581a559ea4e4'
+R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SHA256 = '139a357bf63dab6ffce3c8565795ace71921a79fb4d0acafe8fad37cd3765127'
+R19_ORDERED_MAP_AND_ITERATION_PREVIOUS_REGISTERED_SHA256 = 'c5db0e72676a6713cfc15e29904c4e2efba396e97047ac2e1f82de58f009e30f'
+R19_ORDERED_MAP_AND_ITERATION_PREVIOUS_MAINTAINED_SHA256 = '095817b19e138f070eeba1f668ef2853c45e25ae7a2936c0216a4710c6f7a0ee'
+R19_ORDERED_MAP_AND_ITERATION_ADDITIONS_SHA256 = '6558007d48c30cc6bc9552481111308417d02ff822809295abf76b474bd584d0'
+R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SIZE = 20622756
+R19_ORDERED_MAP_AND_ITERATION_ADDITIONS_SIZE = 52230
+
+
+def restore_ordered_map_and_iteration_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MAP_AND_ITERATION_REGISTERED_SHA256, R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MAP_AND_ITERATION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MAP_AND_ITERATION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_ORDERED_MAP_AND_ITERATION_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MAP_AND_ITERATION_REGISTERED_SHA256
+             else R19_ORDERED_MAP_AND_ITERATION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_REGISTERED_SHA256 = 'dda90aa52bb9d02f2257863826aa5451ceab4a59fb15d0ba585d94651a2c1bf3'
+R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_MAINTAINED_SHA256 = '9a95c101b8902270e68741a842e565bf4bab4f74737a45b32a5f13d16859812b'
+R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_PREVIOUS_REGISTERED_SHA256 = 'c56b904bdc2f1b794604a1ef4e32ab755dae67fffd60dabc2c5e581a559ea4e4'
+R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_PREVIOUS_MAINTAINED_SHA256 = '139a357bf63dab6ffce3c8565795ace71921a79fb4d0acafe8fad37cd3765127'
+R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_ADDITIONS_SHA256 = 'a26179b03eb0b86eb990c2d036dd719adbbcd2ad012aff2d7cb53fd2b5a23648'
+R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_MAINTAINED_SIZE = 20656761
+R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_ADDITIONS_SIZE = 29345
+
+
+def restore_ordered_map_scalar_and_checked_at_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_REGISTERED_SHA256, R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_MAINTAINED_SHA256}
+    stop = R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_MAINTAINED_SIZE
+    start = stop - R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapStoresDoubleMappedValues) {\n  const auto Source = tmpFile("ordered-wide-mapped-floating-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, double> values{{1, 2.0}};\n  return values[1] == 2.0 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-wide-mapped-floating-storage-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-wide-mapped-floating-storage-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapStoresDoubleMappedValues) {\n  const auto Source = tmpFile("ordered-wide-mapped-floating-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, double> values{{1, 2.0}};\n  return values[1] == 2.0 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-wide-mapped-floating-storage-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-wide-mapped-floating-storage-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedWideMappedFloatingStorageGuardRejected) {\n  const auto Source = tmpFile("ordered-wide-mapped-floating-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, double> values{{1, 2.0}};\n  return values[1] == 2.0 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMultimapStoresFloatMappedValues) {\n  const auto Source = tmpFile("associative-multimap-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <type_traits>\nusing Container = std::multimap<int, double>;\nint main() { return sizeof(Container) == 0; }\n)r19containers");\n  const auto Output = tmpFile("associative-multimap-custom-type-or-policy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("associative-multimap-custom-type-or-policy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMultimapStoresFloatMappedValues) {\n  const auto Source = tmpFile("associative-multimap-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <type_traits>\nusing Container = std::multimap<int, double>;\nint main() { return sizeof(Container) == 0; }\n)r19containers");\n  const auto Output = tmpFile("associative-multimap-custom-type-or-policy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("associative-multimap-custom-type-or-policy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AssociativeMultimapCustomTypeOrPolicyRejected) {\n  const auto Source = tmpFile("associative-multimap-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <type_traits>\nusing Container = std::multimap<int, double>;\nint main() { return sizeof(Container) == 0; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapStoresFloatMappedValues) {\n  const auto Source = tmpFile("associative-map-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19assoc(#include <map>\n#include <type_traits>\nusing Container = std::map<int, double>;\nint main() { return sizeof(Container) == 0; }\n)r19assoc");\n  const auto Output = tmpFile("associative-map-custom-type-or-policy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("associative-map-custom-type-or-policy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapStoresFloatMappedValues) {\n  const auto Source = tmpFile("associative-map-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19assoc(#include <map>\n#include <type_traits>\nusing Container = std::map<int, double>;\nint main() { return sizeof(Container) == 0; }\n)r19assoc");\n  const auto Output = tmpFile("associative-map-custom-type-or-policy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("associative-map-custom-type-or-policy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AssociativeMapCustomTypeOrPolicyRejected) {\n  const auto Source = tmpFile("associative-map-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19assoc(#include <map>\n#include <type_traits>\nusing Container = std::map<int, double>;\nint main() { return sizeof(Container) == 0; }\n)r19assoc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapReverseDistanceWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-reverse-navigation-different-mapped-layout-guard.cpp");\n  writeFile(Source, R"r19containers(#include <iterator>\n#include <map>\nint main() {\n  std::map<int, long> values{{1, 10}, {2, 20}};\n  return std::distance(values.rbegin(), values.rend()) == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-reverse-navigation-different-mapped-layout-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-reverse-navigation-different-mapped-layout-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapReverseDistanceWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-reverse-navigation-different-mapped-layout-guard.cpp");\n  writeFile(Source, R"r19containers(#include <iterator>\n#include <map>\nint main() {\n  std::map<int, long> values{{1, 10}, {2, 20}};\n  return std::distance(values.rbegin(), values.rend()) == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-reverse-navigation-different-mapped-layout-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-reverse-navigation-different-mapped-layout-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedReverseNavigationDifferentMappedLayoutGuardRejected) {\n  const auto Source = tmpFile("ordered-reverse-navigation-different-mapped-layout-guard.cpp");\n  writeFile(Source, R"r19containers(#include <iterator>\n#include <map>\nint main() {\n  std::map<int, long> values{{1, 10}, {2, 20}};\n  return std::distance(values.rbegin(), values.rend()) == 2 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapFreeSizeWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-free-access-other-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> map{{1, 10}};\n  return std::size(map) == 1 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-free-access-other-mapped-storage-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-free-access-other-mapped-storage-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapFreeSizeWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-free-access-other-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> map{{1, 10}};\n  return std::size(map) == 1 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-free-access-other-mapped-storage-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-free-access-other-mapped-storage-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedFreeAccessOtherMappedStorageGuardRejected) {\n  const auto Source = tmpFile("ordered-free-access-other-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> map{{1, 10}};\n  return std::size(map) == 1 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapForwardDistanceWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-iterator-navigation-different-mapped-layout-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> values{{2, 20}, {3, 30}};\n  return std::distance(values.begin(), values.end()) == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-iterator-navigation-different-mapped-layout-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-iterator-navigation-different-mapped-layout-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapForwardDistanceWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-iterator-navigation-different-mapped-layout-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> values{{2, 20}, {3, 30}};\n  return std::distance(values.begin(), values.end()) == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-iterator-navigation-different-mapped-layout-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-iterator-navigation-different-mapped-layout-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedIteratorNavigationDifferentMappedLayoutGuardRejected) {\n  const auto Source = tmpFile("ordered-iterator-navigation-different-mapped-layout-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <iterator>\nint main() {\n  std::map<int, long> values{{2, 20}, {3, 30}};\n  return std::distance(values.begin(), values.end()) == 2 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapConvertsReverseIteratorWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-mapped-reverse-conversion-other-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  Map values{{1, 10}, {5, 50}};\n  auto it = values.rbegin();\n  Map::const_reverse_iterator read = it;\n  return read == it && read->second == 50 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-mapped-reverse-conversion-other-mapped-storage-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-mapped-reverse-conversion-other-mapped-storage-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapConvertsReverseIteratorWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-mapped-reverse-conversion-other-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  Map values{{1, 10}, {5, 50}};\n  auto it = values.rbegin();\n  Map::const_reverse_iterator read = it;\n  return read == it && read->second == 50 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-mapped-reverse-conversion-other-mapped-storage-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-mapped-reverse-conversion-other-mapped-storage-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMappedReverseConversionOtherMappedStorageGuardRejected) {\n  const auto Source = tmpFile("ordered-mapped-reverse-conversion-other-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  Map values{{1, 10}, {5, 50}};\n  auto it = values.rbegin();\n  Map::const_reverse_iterator read = it;\n  return read == it && read->second == 50 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapTraversesInReverseWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-map-reverse-cursor-different-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-reverse-cursor-different-mapped-storage-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-reverse-cursor-different-mapped-storage-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapTraversesInReverseWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-map-reverse-cursor-different-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-reverse-cursor-different-mapped-storage-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-reverse-cursor-different-mapped-storage-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapReverseCursorDifferentMappedStorageGuardRejected) {\n  const auto Source = tmpFile("ordered-map-reverse-cursor-different-mapped-storage-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapValueComparatorAcceptsLongMappedValues) {\n  const auto Source = tmpFile("ordered-map-value-compare-other-mapped-type-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values;\n  return values.value_comp()(Map::value_type{1, 100L}, Map::value_type{2, -100L}) ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-value-compare-other-mapped-type-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-value-compare-other-mapped-type-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapValueComparatorAcceptsLongMappedValues) {\n  const auto Source = tmpFile("ordered-map-value-compare-other-mapped-type-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values;\n  return values.value_comp()(Map::value_type{1, 100L}, Map::value_type{2, -100L}) ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-value-compare-other-mapped-type-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-value-compare-other-mapped-type-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapValueCompareOtherMappedTypeGuardRejected) {\n  const auto Source = tmpFile("ordered-map-value-compare-other-mapped-type-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values;\n  return values.value_comp()(Map::value_type{1, 100L}, Map::value_type{2, -100L}) ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapGetsAllocatorWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-allocator-observer-other-mapped-type-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values{{1, 7}};\n  return values.get_allocator() == Map::allocator_type{} && values.begin()->second == 7 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-allocator-observer-other-mapped-type-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-allocator-observer-other-mapped-type-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapGetsAllocatorWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-allocator-observer-other-mapped-type-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values{{1, 7}};\n  return values.get_allocator() == Map::allocator_type{} && values.begin()->second == 7 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-allocator-observer-other-mapped-type-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-allocator-observer-other-mapped-type-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedAllocatorObserverOtherMappedTypeGuardRejected) {\n  const auto Source = tmpFile("ordered-allocator-observer-other-mapped-type-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  const Map values{{1, 7}};\n  return values.get_allocator() == Map::allocator_type{} && values.begin()->second == 7 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapErasesWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, long> values;\n  values.clear();\n  return values.erase(7) != 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapErasesWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, long> values;\n  values.clear();\n  return values.erase(7) != 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapErasureUnsupportedMappedStorageKeepsMutationGuardRejected) {\n  const auto Source = tmpFile("ordered-map-erasure-unsupported-mapped-storage-keeps-mutation-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, long> values;\n  values.clear();\n  return values.erase(7) != 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapCountsWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-map-unsupported-mapped-type-does-not-admit-count.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, long> map;\n  return map.count(7) != 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-unsupported-mapped-type-does-not-admit-count.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-unsupported-mapped-type-does-not-admit-count" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapCountsWithLongMappedValues) {\n  const auto Source = tmpFile("ordered-map-unsupported-mapped-type-does-not-admit-count.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, long> map;\n  return map.count(7) != 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-unsupported-mapped-type-does-not-admit-count.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-unsupported-mapped-type-does-not-admit-count" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapUnsupportedMappedTypeDoesNotAdmitCountRejected) {\n  const auto Source = tmpFile("ordered-map-unsupported-mapped-type-does-not-admit-count.cpp");\n  writeFile(Source, R"r19containers(#include <map>\nint main() {\n  std::map<int, long> map;\n  return map.count(7) != 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_PREVIOUS_REGISTERED_SHA256 if digest == R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_REGISTERED_SHA256
+             else R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ASSOCIATIVE_SIGNED_WIDE_REGISTERED_SHA256 = '761303846e426d5bbefc5a1c38824d52c024d59eb2ad50c9d287766008c5d648'
+R19_ASSOCIATIVE_SIGNED_WIDE_MAINTAINED_SHA256 = '5d9c5fe9375bb0ede15a85f8f32304c2b6a8695de38d1eb85b85738d0d8f8ab4'
+R19_ASSOCIATIVE_SIGNED_WIDE_PREVIOUS_REGISTERED_SHA256 = 'dda90aa52bb9d02f2257863826aa5451ceab4a59fb15d0ba585d94651a2c1bf3'
+R19_ASSOCIATIVE_SIGNED_WIDE_PREVIOUS_MAINTAINED_SHA256 = '9a95c101b8902270e68741a842e565bf4bab4f74737a45b32a5f13d16859812b'
+R19_ASSOCIATIVE_SIGNED_WIDE_ADDITIONS_SHA256 = '3f55fbd7c1e8b841f5e2c7c10a4f7c35d1744265c00029a3c346596472815d14'
+R19_ASSOCIATIVE_SIGNED_WIDE_MAINTAINED_SIZE = 20695622
+R19_ASSOCIATIVE_SIGNED_WIDE_ADDITIONS_SIZE = 29715
+
+
+def restore_associative_signed_wide_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ASSOCIATIVE_SIGNED_WIDE_REGISTERED_SHA256, R19_ASSOCIATIVE_SIGNED_WIDE_MAINTAINED_SHA256}
+    stop = R19_ASSOCIATIVE_SIGNED_WIDE_MAINTAINED_SIZE
+    start = stop - R19_ASSOCIATIVE_SIGNED_WIDE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ASSOCIATIVE_SIGNED_WIDE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-double-comparison-advances-past-unordered-pair.cpp");\n  writeFile(Source, R"r19containers(#include <limits>\n#include <map>\nint main() {\n  const auto quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-double-comparison-advances-past-unordered-pair.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-double-comparison-advances-past-unordered-pair" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-double-comparison-advances-past-unordered-pair.cpp");\n  writeFile(Source, R"r19containers(#include <limits>\n#include <map>\nint main() {\n  const auto quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-double-comparison-advances-past-unordered-pair.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-double-comparison-advances-past-unordered-pair" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapDoubleComparisonAdvancesPastUnorderedPairRejected) {\n  const auto Source = tmpFile("ordered-map-double-comparison-advances-past-unordered-pair.cpp");\n  writeFile(Source, R"r19containers(#include <limits>\n#include <map>\nint main() {\n  const auto quiet = std::numeric_limits<double>::quiet_NaN();\n  const std::map<int, double> left{{1, quiet}, {2, -3.0}};\n  const std::map<int, double> right{{1, 1.0}, {2, 4.0}};\n  if (left == right || !(left < right) || right < left)\n    return 1;\n  auto copy = left;\n  return copy == left ? 2 : 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-hinted-piecewise-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace_hint(values.cend(), std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(7))->second == 7 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-hinted-piecewise-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-hinted-piecewise-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-hinted-piecewise-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace_hint(values.cend(), std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(7))->second == 7 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-hinted-piecewise-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-hinted-piecewise-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapHintedPiecewiseCustomPolicyGuardRejected) {\n  const auto Source = tmpFile("ordered-map-hinted-piecewise-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace_hint(values.cend(), std::piecewise_construct,\n      std::forward_as_tuple(2), std::forward_as_tuple(7))->second == 7 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedReverseNavigationCustomComparatorGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-reverse-navigation-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3};\n  return *std::next(values.rbegin()) == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-reverse-navigation-custom-comparator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-reverse-navigation-custom-comparator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedReverseNavigationCustomComparatorGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-reverse-navigation-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3};\n  return *std::next(values.rbegin()) == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-reverse-navigation-custom-comparator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-reverse-navigation-custom-comparator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedReverseNavigationCustomComparatorGuardRejected) {\n  const auto Source = tmpFile("ordered-reverse-navigation-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3};\n  return *std::next(values.rbegin()) == 3 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedFreeAccessCustomComparatorGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-free-access-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 2};\n  return *std::begin(values) == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-free-access-custom-comparator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-free-access-custom-comparator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedFreeAccessCustomComparatorGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-free-access-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 2};\n  return *std::begin(values) == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-free-access-custom-comparator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-free-access-custom-comparator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedFreeAccessCustomComparatorGuardRejected) {\n  const auto Source = tmpFile("ordered-free-access-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{1, 2};\n  return *std::begin(values) == 2 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedIteratorNavigationCustomComparatorGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-iterator-navigation-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{2, 3};\n  return *std::next(values.begin()) == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-iterator-navigation-custom-comparator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-iterator-navigation-custom-comparator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedIteratorNavigationCustomComparatorGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-iterator-navigation-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{2, 3};\n  return *std::next(values.begin()) == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-iterator-navigation-custom-comparator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-iterator-navigation-custom-comparator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedIteratorNavigationCustomComparatorGuardRejected) {\n  const auto Source = tmpFile("ordered-iterator-navigation-custom-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\n#include <iterator>\nint main() {\n  std::set<int, std::greater<int>> values{2, 3};\n  return *std::next(values.begin()) == 2 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapPiecewiseCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-piecewise-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1}, std::tuple<int>{2}).second ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-piecewise-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-piecewise-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapPiecewiseCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-piecewise-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1}, std::tuple<int>{2}).second ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-piecewise-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-piecewise-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapPiecewiseCustomPolicyGuardRejected) {\n  const auto Source = tmpFile("ordered-map-piecewise-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <tuple>\nint main() {\n  std::map<int, int, std::greater<int>> map;\n  return map.emplace(std::piecewise_construct, std::tuple<int>{1}, std::tuple<int>{2}).second ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapPairEmplacementCustomOrderGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-pair-emplacement-custom-order-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace(std::make_pair(2, 7)).second ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-pair-emplacement-custom-order-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-pair-emplacement-custom-order-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapPairEmplacementCustomOrderGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-pair-emplacement-custom-order-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace(std::make_pair(2, 7)).second ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-pair-emplacement-custom-order-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-pair-emplacement-custom-order-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapPairEmplacementCustomOrderGuardRejected) {\n  const auto Source = tmpFile("ordered-map-pair-emplacement-custom-order-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> values;\n  return values.emplace(std::make_pair(2, 7)).second ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMappedReverseConversionCustomOrderGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-mapped-reverse-conversion-custom-order-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map values{{1, 10}, {5, 50}};\n  Map::const_reverse_iterator it = values.rbegin();\n  return it->first == 1 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-mapped-reverse-conversion-custom-order-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-mapped-reverse-conversion-custom-order-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMappedReverseConversionCustomOrderGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-mapped-reverse-conversion-custom-order-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map values{{1, 10}, {5, 50}};\n  Map::const_reverse_iterator it = values.rbegin();\n  return it->first == 1 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-mapped-reverse-conversion-custom-order-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-mapped-reverse-conversion-custom-order-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMappedReverseConversionCustomOrderGuardRejected) {\n  const auto Source = tmpFile("ordered-mapped-reverse-conversion-custom-order-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map values{{1, 10}, {5, 50}};\n  Map::const_reverse_iterator it = values.rbegin();\n  return it->first == 1 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedReverseCursorCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-reverse-cursor-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-reverse-cursor-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-reverse-cursor-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedReverseCursorCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-reverse-cursor-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-reverse-cursor-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-reverse-cursor-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedReverseCursorCustomPolicyGuardRejected) {\n  const auto Source = tmpFile("ordered-reverse-cursor-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-allocator-extended-constructor-custom-compare-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map source{{2, 20}};\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-allocator-extended-constructor-custom-compare-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-allocator-extended-constructor-custom-compare-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-allocator-extended-constructor-custom-compare-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map source{{2, 20}};\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-allocator-extended-constructor-custom-compare-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-allocator-extended-constructor-custom-compare-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRejected) {\n  const auto Source = tmpFile("ordered-allocator-extended-constructor-custom-compare-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map source{{2, 20}};\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedSetHintedInsertCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-set-hinted-insert-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values{2};\n  auto inserted = values.insert(values.cbegin(), 3);\n  return inserted == values.begin() && *inserted == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-set-hinted-insert-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-set-hinted-insert-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedSetHintedInsertCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-set-hinted-insert-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values{2};\n  auto inserted = values.insert(values.cbegin(), 3);\n  return inserted == values.begin() && *inserted == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-set-hinted-insert-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-set-hinted-insert-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedSetHintedInsertCustomPolicyGuardRejected) {\n  const auto Source = tmpFile("ordered-set-hinted-insert-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values{2};\n  auto inserted = values.insert(values.cbegin(), 3);\n  return inserted == values.begin() && *inserted == 3 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedHintedNodeCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-hinted-node-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <utility>\nint main() {\n  std::map<int, int, std::greater<int>> source{{2, 20}}, destination{{1, 10}};\n  auto node = source.extract(2);\n  auto position = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && position->first == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-hinted-node-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-hinted-node-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedHintedNodeCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-hinted-node-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <utility>\nint main() {\n  std::map<int, int, std::greater<int>> source{{2, 20}}, destination{{1, 10}};\n  auto node = source.extract(2);\n  auto position = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && position->first == 2 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-hinted-node-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-hinted-node-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedHintedNodeCustomPolicyGuardRejected) {\n  const auto Source = tmpFile("ordered-hinted-node-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <map>\n#include <utility>\nint main() {\n  std::map<int, int, std::greater<int>> source{{2, 20}}, destination{{1, 10}};\n  auto node = source.extract(2);\n  auto position = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && position->first == 2 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedMapValueCompareCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-value-compare-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <functional>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  const Map values;\n  auto compare = values.value_comp();\n  return compare(Map::value_type{2, 10}, Map::value_type{1, 20}) ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-value-compare-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-value-compare-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedMapValueCompareCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-map-value-compare-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <functional>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  const Map values;\n  auto compare = values.value_comp();\n  return compare(Map::value_type{2, 10}, Map::value_type{1, 20}) ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-map-value-compare-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-map-value-compare-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedMapValueCompareCustomPolicyGuardRejected) {\n  const auto Source = tmpFile("ordered-map-value-compare-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <map>\n#include <functional>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  const Map values;\n  auto compare = values.value_comp();\n  return compare(Map::value_type{2, 10}, Map::value_type{1, 20}) ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedAllocatorObserverCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-allocator-observer-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\nint main() {\n  const std::set<int, std::greater<int>> values{1, 2, 3};\n  return values.get_allocator() == std::allocator<int>{} && *values.begin() == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-allocator-observer-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-allocator-observer-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedAllocatorObserverCustomPolicyGuardRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-allocator-observer-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\nint main() {\n  const std::set<int, std::greater<int>> values{1, 2, 3};\n  return values.get_allocator() == std::allocator<int>{} && *values.begin() == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-allocator-observer-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-allocator-observer-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedAllocatorObserverCustomPolicyGuardRejected) {\n  const auto Source = tmpFile("ordered-allocator-observer-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <functional>\nint main() {\n  const std::set<int, std::greater<int>> values{1, 2, 3};\n  return values.get_allocator() == std::allocator<int>{} && *values.begin() == 3 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedSetEqualRangeTransparentComparatorOverloadRemainsGuardedRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-set-equal-range-transparent-comparator-overload-remains-guarded.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::less<>> keys;\n  const long query = 3;\n  auto range = keys.equal_range(query);\n  return range.first == range.second ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-set-equal-range-transparent-comparator-overload-remains-guarded.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-set-equal-range-transparent-comparator-overload-remains-guarded" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedSetEqualRangeTransparentComparatorOverloadRemainsGuardedRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-set-equal-range-transparent-comparator-overload-remains-guarded.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::less<>> keys;\n  const long query = 3;\n  auto range = keys.equal_range(query);\n  return range.first == range.second ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-set-equal-range-transparent-comparator-overload-remains-guarded.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-set-equal-range-transparent-comparator-overload-remains-guarded" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedSetEqualRangeTransparentComparatorOverloadRemainsGuardedRejected) {\n  const auto Source = tmpFile("ordered-set-equal-range-transparent-comparator-overload-remains-guarded.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::less<>> keys;\n  const long query = 3;\n  auto range = keys.equal_range(query);\n  return range.first == range.second ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedSetTransferTransparentComparatorDoesNotUseTheDefaultTransferRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\n#include <utility>\nint main() {\n  std::set<int, std::less<>> source;\n  std::set<int, std::less<>> target(std::move(source));\n  return target.empty() ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedSetTransferTransparentComparatorDoesNotUseTheDefaultTransferRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\n#include <utility>\nint main() {\n  std::set<int, std::less<>> source;\n  std::set<int, std::less<>> target(std::move(source));\n  return target.empty() ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedSetTransferTransparentComparatorDoesNotUseTheDefaultTransferRejected) {\n  const auto Source = tmpFile("ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\n#include <utility>\nint main() {\n  std::set<int, std::less<>> source;\n  std::set<int, std::less<>> target(std::move(source));\n  return target.empty() ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedSetErasureCustomOrderingDoesNotUseIntegerErasureRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-set-erasure-custom-ordering-does-not-use-integer-erasure.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values;\n  return values.erase(1) != 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-set-erasure-custom-ordering-does-not-use-integer-erasure.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-set-erasure-custom-ordering-does-not-use-integer-erasure" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedSetErasureCustomOrderingDoesNotUseIntegerErasureRunAtBothOptimizations) {\n  const auto Source = tmpFile("ordered-set-erasure-custom-ordering-does-not-use-integer-erasure.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values;\n  return values.erase(1) != 0;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-set-erasure-custom-ordering-does-not-use-integer-erasure.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-set-erasure-custom-ordering-does-not-use-integer-erasure" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedSetErasureCustomOrderingDoesNotUseIntegerErasureRejected) {\n  const auto Source = tmpFile("ordered-set-erasure-custom-ordering-does-not-use-integer-erasure.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values;\n  return values.erase(1) != 0;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multimap-node-handles-mapped-node-with-unapproved-value-type.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> values{{3, 11L}};\n  auto node = values.extract(3);\n  return node.mapped() != 11L;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-multimap-node-handles-mapped-node-with-unapproved-value-type.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multimap-node-handles-mapped-node-with-unapproved-value-type" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multimap-node-handles-mapped-node-with-unapproved-value-type.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> values{{3, 11L}};\n  auto node = values.extract(3);\n  return node.mapped() != 11L;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-multimap-node-handles-mapped-node-with-unapproved-value-type.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multimap-node-handles-mapped-node-with-unapproved-value-type" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedMultimapNodeHandlesMappedNodeWithUnapprovedValueTypeRejected) {\n  const auto Source = tmpFile("unordered-multimap-node-handles-mapped-node-with-unapproved-value-type.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> values{{3, 11L}};\n  auto node = values.extract(3);\n  return node.mapped() != 11L;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorOtherMappedTypeIteratorRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, long> values{{3, 5L}};\n  return values.begin()->second == 5L;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorOtherMappedTypeIteratorRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, long> values{{3, 5L}};\n  return values.begin()->second == 5L;\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 1) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedMultimapIterationAndTransferIteratorOtherMappedTypeIteratorRejected) {\n  const auto Source = tmpFile("unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, long> values{{3, 5L}};\n  return values.begin()->second == 5L;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multimap-owners-unapproved-mapped-type.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> pairs;\n  return pairs.count(1);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-multimap-owners-unapproved-mapped-type.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multimap-owners-unapproved-mapped-type" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRunAtBothOptimizations) {\n  const auto Source = tmpFile("unordered-multimap-owners-unapproved-mapped-type.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> pairs;\n  return pairs.count(1);\n}\n)r19containers");\n  const auto Output = tmpFile("unordered-multimap-owners-unapproved-mapped-type.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-multimap-owners-unapproved-mapped-type" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedMultimapOwnersUnapprovedMappedTypeRejected) {\n  const auto Source = tmpFile("unordered-multimap-owners-unapproved-mapped-type.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_map>\nint main() {\n  std::unordered_multimap<int, long> pairs;\n  return pairs.count(1);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AssociativeMultisetCustomTypeOrPolicyRunAtBothOptimizations) {\n  const auto Source = tmpFile("associative-multiset-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <type_traits>\nusing Container = std::multiset<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n)r19containers");\n  const auto Output = tmpFile("associative-multiset-custom-type-or-policy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("associative-multiset-custom-type-or-policy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AssociativeMultisetCustomTypeOrPolicyRunAtBothOptimizations) {\n  const auto Source = tmpFile("associative-multiset-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <type_traits>\nusing Container = std::multiset<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n)r19containers");\n  const auto Output = tmpFile("associative-multiset-custom-type-or-policy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("associative-multiset-custom-type-or-policy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AssociativeMultisetCustomTypeOrPolicyRejected) {\n  const auto Source = tmpFile("associative-multiset-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19containers(#include <set>\n#include <type_traits>\nusing Container = std::multiset<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AssociativeSetCustomTypeOrPolicyRunAtBothOptimizations) {\n  const auto Source = tmpFile("associative-set-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19assoc(#include <set>\n#include <type_traits>\nusing Container = std::set<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n)r19assoc");\n  const auto Output = tmpFile("associative-set-custom-type-or-policy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("associative-set-custom-type-or-policy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AssociativeSetCustomTypeOrPolicyRunAtBothOptimizations) {\n  const auto Source = tmpFile("associative-set-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19assoc(#include <set>\n#include <type_traits>\nusing Container = std::set<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n)r19assoc");\n  const auto Output = tmpFile("associative-set-custom-type-or-policy.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("associative-set-custom-type-or-policy" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AssociativeSetCustomTypeOrPolicyRejected) {\n  const auto Source = tmpFile("associative-set-custom-type-or-policy.cpp");\n  writeFile(Source, R"r19assoc(#include <set>\n#include <type_traits>\nusing Container = std::set<int, std::greater<int>>;\nint main() { return sizeof(Container) == 0; }\n)r19assoc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ASSOCIATIVE_SIGNED_WIDE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ASSOCIATIVE_SIGNED_WIDE_REGISTERED_SHA256
+             else R19_ASSOCIATIVE_SIGNED_WIDE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_ASSOCIATIVE_CURSOR_AND_VALUE_REGISTERED_SHA256 = '9a53740d79d62df82fe3fd1efbb81b4e479555d5c6c41815036f82a5e4e844d3'
+R19_ASSOCIATIVE_CURSOR_AND_VALUE_MAINTAINED_SHA256 = 'fd6daaebffdceb8456e0d0ad6a42e754ac6e98c4a9fa9ec310991260f1f13a61'
+R19_ASSOCIATIVE_CURSOR_AND_VALUE_PREVIOUS_REGISTERED_SHA256 = '761303846e426d5bbefc5a1c38824d52c024d59eb2ad50c9d287766008c5d648'
+R19_ASSOCIATIVE_CURSOR_AND_VALUE_PREVIOUS_MAINTAINED_SHA256 = '5d9c5fe9375bb0ede15a85f8f32304c2b6a8695de38d1eb85b85738d0d8f8ab4'
+R19_ASSOCIATIVE_CURSOR_AND_VALUE_ADDITIONS_SHA256 = '36b9923a76fee71cccb13dd646f601b6f6c7d134477cf1732e5cbdcc8bcea2f1'
+R19_ASSOCIATIVE_CURSOR_AND_VALUE_MAINTAINED_SIZE = 20710404
+R19_ASSOCIATIVE_CURSOR_AND_VALUE_ADDITIONS_SIZE = 13627
+
+
+def restore_associative_cursor_and_value_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_ASSOCIATIVE_CURSOR_AND_VALUE_REGISTERED_SHA256, R19_ASSOCIATIVE_CURSOR_AND_VALUE_MAINTAINED_SHA256}
+    stop = R19_ASSOCIATIVE_CURSOR_AND_VALUE_MAINTAINED_SIZE
+    start = stop - R19_ASSOCIATIVE_CURSOR_AND_VALUE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_ASSOCIATIVE_CURSOR_AND_VALUE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetConvertsShortConstructionRange) {\n  const auto Source = tmpFile("unordered-set-pointer-construction-converted-short-range.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { short data[] = {1, 2}; std::unordered_multiset<int> bag(data, data + 2); return bag.empty(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-pointer-construction-converted-short-range.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-pointer-construction-converted-short-range" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedMultisetConvertsShortConstructionRange) {\n  const auto Source = tmpFile("unordered-set-pointer-construction-converted-short-range.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { short data[] = {1, 2}; std::unordered_multiset<int> bag(data, data + 2); return bag.empty(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-pointer-construction-converted-short-range.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-pointer-construction-converted-short-range" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetPointerConstructionConvertedShortRangeRejected) {\n  const auto Source = tmpFile("unordered-set-pointer-construction-converted-short-range.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { short data[] = {1, 2}; std::unordered_multiset<int> bag(data, data + 2); return bag.empty(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2UnorderedSetConvertsLongRangeValues) {\n  const auto Source = tmpFile("unordered-set-pointer-range-converted-long-range.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { long data[] = {1L, 2L}; std::unordered_set<int> set; set.insert(data, data + 2); return set.empty(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-pointer-range-converted-long-range.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-pointer-range-converted-long-range" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2UnorderedSetConvertsLongRangeValues) {\n  const auto Source = tmpFile("unordered-set-pointer-range-converted-long-range.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { long data[] = {1L, 2L}; std::unordered_set<int> set; set.insert(data, data + 2); return set.empty(); }\n)r19containers");\n  const auto Output = tmpFile("unordered-set-pointer-range-converted-long-range.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("unordered-set-pointer-range-converted-long-range" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2UnorderedSetPointerRangeConvertedLongRangeRejected) {\n  const auto Source = tmpFile("unordered-set-pointer-range-converted-long-range.cpp");\n  writeFile(Source, R"r19containers(#include <unordered_set>\nint main() { long data[] = {1L, 2L}; std::unordered_set<int> set; set.insert(data, data + 2); return set.empty(); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2OrderedReverseRangeAcrossStandardComparators) {\n  const auto Source = tmpFile("ordered-reverse-range-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-reverse-range-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-reverse-range-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2OrderedReverseRangeAcrossStandardComparators) {\n  const auto Source = tmpFile("ordered-reverse-range-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("ordered-reverse-range-custom-policy-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("ordered-reverse-range-custom-policy-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2OrderedReverseRangeCustomPolicyGuardRejected) {\n  const auto Source = tmpFile("ordered-reverse-range-custom-policy-guard.cpp");\n  writeFile(Source, R"r19containers(#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_ASSOCIATIVE_CURSOR_AND_VALUE_PREVIOUS_REGISTERED_SHA256 if digest == R19_ASSOCIATIVE_CURSOR_AND_VALUE_REGISTERED_SHA256
+             else R19_ASSOCIATIVE_CURSOR_AND_VALUE_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_COMPARISONS_REGISTERED_SHA256 = 'f5b5204fe9f8d1cd6a7c799247f7d597f7d5f0b2b359777fdb734b5d2d3a533e'
+R19_VARIANT_COMPARISONS_MAINTAINED_SHA256 = '285343a6f104bdf7b274c691d605bf033b80e13d36a5e2e937536cff7aa2fa9e'
+R19_VARIANT_COMPARISONS_PREVIOUS_REGISTERED_SHA256 = '9a53740d79d62df82fe3fd1efbb81b4e479555d5c6c41815036f82a5e4e844d3'
+R19_VARIANT_COMPARISONS_PREVIOUS_MAINTAINED_SHA256 = 'fd6daaebffdceb8456e0d0ad6a42e754ac6e98c4a9fa9ec310991260f1f13a61'
+R19_VARIANT_COMPARISONS_ADDITIONS_SHA256 = '3592bcebc7d0fe558bb5d8538032dcf0bf4beda31a7d40b1efaae330e820a090'
+R19_VARIANT_COMPARISONS_MAINTAINED_SIZE = 20722709
+R19_VARIANT_COMPARISONS_ADDITIONS_SIZE = 12731
+
+
+def restore_variant_comparisons_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_COMPARISONS_REGISTERED_SHA256, R19_VARIANT_COMPARISONS_MAINTAINED_SHA256}
+    stop = R19_VARIANT_COMPARISONS_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_COMPARISONS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_COMPARISONS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantOrderingAcceptsTemporaryOperand) {\n  const auto Source = tmpFile("variant-ordering-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nbool compare(const Value& a) { return a <= Value(3); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantOrderingAcceptsTemporaryOperand) {\n  const auto Source = tmpFile("variant-ordering-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nbool compare(const Value& a) { return a <= Value(3); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantOrderingTemporaryOperandRejected) {\n  const auto Source = tmpFile("variant-ordering-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nbool compare(const Value& a) { return a <= Value(3); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantOrderingAcceptsFloatingAlternative) {\n  const auto Source = tmpFile("variant-ordering-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantOrderingAcceptsFloatingAlternative) {\n  const auto Source = tmpFile("variant-ordering-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantOrderingFloatingAlternativeRejected) {\n  const auto Source = tmpFile("variant-ordering-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantEqualityAcceptsFloatingAlternative) {\n  const auto Source = tmpFile("variant-equality-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantEqualityAcceptsFloatingAlternative) {\n  const auto Source = tmpFile("variant-equality-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantEqualityFloatingAlternativeRejected) {\n  const auto Source = tmpFile("variant-equality-floating-alternative.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int, double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_COMPARISONS_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_COMPARISONS_REGISTERED_SHA256
+             else R19_VARIANT_COMPARISONS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_ASSIGNMENT_AND_POINTER_REGISTERED_SHA256 = '5a2f3407ce162e8376d700ba842774a69134f621dea7e5182d44d82ef176a443'
+R19_VARIANT_ASSIGNMENT_AND_POINTER_MAINTAINED_SHA256 = '1d18ba863fcaff673fc35427a1d69732c4f6ec4c833bdb34774f2e70ce4a9414'
+R19_VARIANT_ASSIGNMENT_AND_POINTER_PREVIOUS_REGISTERED_SHA256 = 'f5b5204fe9f8d1cd6a7c799247f7d597f7d5f0b2b359777fdb734b5d2d3a533e'
+R19_VARIANT_ASSIGNMENT_AND_POINTER_PREVIOUS_MAINTAINED_SHA256 = '285343a6f104bdf7b274c691d605bf033b80e13d36a5e2e937536cff7aa2fa9e'
+R19_VARIANT_ASSIGNMENT_AND_POINTER_ADDITIONS_SHA256 = '0e99da8ffbd8418dc484f53a003ff0f34f3331d09524f7df7a721c8768c5bbc1'
+R19_VARIANT_ASSIGNMENT_AND_POINTER_MAINTAINED_SIZE = 20733366
+R19_VARIANT_ASSIGNMENT_AND_POINTER_ADDITIONS_SIZE = 10657
+
+
+def restore_variant_assignment_and_pointer_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_ASSIGNMENT_AND_POINTER_REGISTERED_SHA256, R19_VARIANT_ASSIGNMENT_AND_POINTER_MAINTAINED_SHA256}
+    stop = R19_VARIANT_ASSIGNMENT_AND_POINTER_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_ASSIGNMENT_AND_POINTER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_ASSIGNMENT_AND_POINTER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_ASSIGNMENT_AND_POINTER_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_ASSIGNMENT_AND_POINTER_REGISTERED_SHA256
+             else R19_VARIANT_ASSIGNMENT_AND_POINTER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_SWAP_VISIT_AND_ANY_REGISTERED_SHA256 = 'ab307d4382c7141bfefc6a90ff79c6b2262d0ee0c30bd8609c21853d384f9041'
+R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SHA256 = 'e83883bf27998e02e5d2916ccf055f341aec21a540bfcb6f9296597fa9cad1b4'
+R19_VARIANT_SWAP_VISIT_AND_ANY_PREVIOUS_REGISTERED_SHA256 = '5a2f3407ce162e8376d700ba842774a69134f621dea7e5182d44d82ef176a443'
+R19_VARIANT_SWAP_VISIT_AND_ANY_PREVIOUS_MAINTAINED_SHA256 = '1d18ba863fcaff673fc35427a1d69732c4f6ec4c833bdb34774f2e70ce4a9414'
+R19_VARIANT_SWAP_VISIT_AND_ANY_ADDITIONS_SHA256 = 'fbb8928fd6afe2932808bd62e798bc03ce809fe2b52372c905204cbbef69f141'
+R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SIZE = 20750549
+R19_VARIANT_SWAP_VISIT_AND_ANY_ADDITIONS_SIZE = 17330
+
+
+def restore_variant_swap_visit_and_any_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_SWAP_VISIT_AND_ANY_REGISTERED_SHA256, R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SHA256}
+    stop = R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_SWAP_VISIT_AND_ANY_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_SWAP_VISIT_AND_ANY_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantVisitAcceptsFourOperands) {\n  const auto Source = tmpFile("variant-three-visit-four-operands.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c, int d) { return a + b + c + d; }\nint f(Value& a, Value& b, Value& c, Value& d) { return std::visit(combine, a, b, c, d); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantVisitAcceptsFourOperands) {\n  const auto Source = tmpFile("variant-three-visit-four-operands.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c, int d) { return a + b + c + d; }\nint f(Value& a, Value& b, Value& c, Value& d) { return std::visit(combine, a, b, c, d); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantThreeVisitFourOperandsRejected) {\n  const auto Source = tmpFile("variant-three-visit-four-operands.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c, int d) { return a + b + c + d; }\nint f(Value& a, Value& b, Value& c, Value& d) { return std::visit(combine, a, b, c, d); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_SWAP_VISIT_AND_ANY_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_SWAP_VISIT_AND_ANY_REGISTERED_SHA256
+             else R19_VARIANT_SWAP_VISIT_AND_ANY_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_REGISTERED_SHA256 = 'f77b76b823c42a24ca3a2cb9a60a3badfee0ac9ccce5d120234d1ffe55d959cd'
+R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_MAINTAINED_SHA256 = '95cf9aef09bac395384e711aebe3775ea05f12f467f09c9123abab6b0e8aee35'
+R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_PREVIOUS_REGISTERED_SHA256 = 'ab307d4382c7141bfefc6a90ff79c6b2262d0ee0c30bd8609c21853d384f9041'
+R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_PREVIOUS_MAINTAINED_SHA256 = 'e83883bf27998e02e5d2916ccf055f341aec21a540bfcb6f9296597fa9cad1b4'
+R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_ADDITIONS_SHA256 = 'de2f04371e22f835d2fe8df4d137c0a9ea4ee3bd7265a79a3cf77c2d62f9d1ce'
+R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_MAINTAINED_SIZE = 20761016
+R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_ADDITIONS_SIZE = 10243
+
+
+def restore_variant_swap_and_any_typed_pointers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_REGISTERED_SHA256, R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_MAINTAINED_SHA256}
+    stop = R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyIntPointerPayloadAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-unchecked-object-pointer-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid hold(int* input) { std::any value{input}; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyIntPointerPayloadAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-unchecked-object-pointer-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid hold(int* input) { std::any value{input}; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyUncheckedObjectPointerPayloadGuardRejected) {\n  const auto Source = tmpFile("any-unchecked-object-pointer-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nvoid hold(int* input) { std::any value{input}; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyBooleanPointerPayloadRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-bool-inline-pointer-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  bool truth = true;\n  const std::any value{&truth};\n  return !value.has_value();\n}\n)r19containers");\n  const auto Output = tmpFile("any-bool-inline-pointer-payload.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-bool-inline-pointer-payload" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyBooleanPointerPayloadRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-bool-inline-pointer-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  bool truth = true;\n  const std::any value{&truth};\n  return !value.has_value();\n}\n)r19containers");\n  const auto Output = tmpFile("any-bool-inline-pointer-payload.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-bool-inline-pointer-payload" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyBoolInlinePointerPayloadRejected) {\n  const auto Source = tmpFile("any-bool-inline-pointer-payload.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  bool truth = true;\n  const std::any value{&truth};\n  return !value.has_value();\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_REGISTERED_SHA256
+             else R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_REGISTERED_SHA256 = '79ff43760d160576bec03ce6e60d3037c02f7455c8c2bfa9c2595d185e0e99e4'
+R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_MAINTAINED_SHA256 = '537f4693223fffb776096f73b1fe10a33f2e97eeebf84a4301dffe9cf4af64dd'
+R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_PREVIOUS_REGISTERED_SHA256 = 'f77b76b823c42a24ca3a2cb9a60a3badfee0ac9ccce5d120234d1ffe55d959cd'
+R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_PREVIOUS_MAINTAINED_SHA256 = '95cf9aef09bac395384e711aebe3775ea05f12f467f09c9123abab6b0e8aee35'
+R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_ADDITIONS_SHA256 = '364435eb68c02909e4cc3cc9137397d573db8acb7091774c3136bb0ea904bba5'
+R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_MAINTAINED_SIZE = 20772602
+R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_ADDITIONS_SIZE = 10474
+
+
+def restore_variant_temporaries_and_any_references_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_REGISTERED_SHA256, R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_MAINTAINED_SHA256}
+    stop = R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyUtfMutableReferenceRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-character-inline-mutable-utf-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'A\'; return std::any_cast<char16_t&>(value) != u\'A\'; }\n)r19containers");\n  const auto Output = tmpFile("any-character-inline-mutable-utf-reference.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-character-inline-mutable-utf-reference" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyUtfMutableReferenceRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-character-inline-mutable-utf-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'A\'; return std::any_cast<char16_t&>(value) != u\'A\'; }\n)r19containers");\n  const auto Output = tmpFile("any-character-inline-mutable-utf-reference.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-character-inline-mutable-utf-reference" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyCharacterInlineMutableUtfReferenceRejected) {\n  const auto Source = tmpFile("any-character-inline-mutable-utf-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = u\'A\'; return std::any_cast<char16_t&>(value) != u\'A\'; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyWideMutableReferenceAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-wide-inline-mutable-wide-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nlong long edit() {\n  std::any value{5LL};\n  return ++std::any_cast<long long&>(value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyWideMutableReferenceAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-wide-inline-mutable-wide-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nlong long edit() {\n  std::any value{5LL};\n  return ++std::any_cast<long long&>(value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyWideInlineMutableWideReferenceRejected) {\n  const auto Source = tmpFile("any-wide-inline-mutable-wide-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nlong long edit() {\n  std::any value{5LL};\n  return ++std::any_cast<long long&>(value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyFloatMutableReferenceAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-float-inline-mutable-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nfloat edit() {\n  std::any value{1.5f};\n  return ++std::any_cast<float&>(value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyFloatMutableReferenceAcceptsFunctionBody) {\n  const auto Source = tmpFile("any-float-inline-mutable-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nfloat edit() {\n  std::any value{1.5f};\n  return ++std::any_cast<float&>(value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2AnyFloatInlineMutableReferenceRejected) {\n  const auto Source = tmpFile("any-float-inline-mutable-reference.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nfloat edit() {\n  std::any value{1.5f};\n  return ++std::any_cast<float&>(value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyLongMutableReferenceRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-long-inline-mutable-long-reference-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  std::any value = 7L;\n  return std::any_cast<long&>(value) != 7L;\n}\n)r19containers");\n  const auto Output = tmpFile("any-long-inline-mutable-long-reference-cast.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-long-inline-mutable-long-reference-cast" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyLongMutableReferenceRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-long-inline-mutable-long-reference-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  std::any value = 7L;\n  return std::any_cast<long&>(value) != 7L;\n}\n)r19containers");\n  const auto Output = tmpFile("any-long-inline-mutable-long-reference-cast.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-long-inline-mutable-long-reference-cast" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyLongInlineMutableLongReferenceCastRejected) {\n  const auto Source = tmpFile("any-long-inline-mutable-long-reference-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  std::any value = 7L;\n  return std::any_cast<long&>(value) != 7L;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyNarrowMutableReferenceKeepsOriginalExitCode) {\n  const auto Source = tmpFile("any-narrow-inline-mutable-narrow-value-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = static_cast<short>(7); return std::any_cast<short&>(value); }\n)r19containers");\n  const auto Output = tmpFile("any-narrow-inline-mutable-narrow-value-cast.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-narrow-inline-mutable-narrow-value-cast" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 7) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyNarrowMutableReferenceKeepsOriginalExitCode) {\n  const auto Source = tmpFile("any-narrow-inline-mutable-narrow-value-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = static_cast<short>(7); return std::any_cast<short&>(value); }\n)r19containers");\n  const auto Output = tmpFile("any-narrow-inline-mutable-narrow-value-cast.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-narrow-inline-mutable-narrow-value-cast" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 7) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyNarrowInlineMutableNarrowValueCastRejected) {\n  const auto Source = tmpFile("any-narrow-inline-mutable-narrow-value-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() { std::any value = static_cast<short>(7); return std::any_cast<short&>(value); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnyBooleanMutableReferenceRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-bool-inline-mutable-reference-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  std::any value{true};\n  bool& result = std::any_cast<bool&>(value);\n  return result ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("any-bool-inline-mutable-reference-cast.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-bool-inline-mutable-reference-cast" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnyBooleanMutableReferenceRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-bool-inline-mutable-reference-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  std::any value{true};\n  bool& result = std::any_cast<bool&>(value);\n  return result ? 0 : 1;\n}\n)r19containers");\n  const auto Output = tmpFile("any-bool-inline-mutable-reference-cast.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-bool-inline-mutable-reference-cast" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyBoolInlineMutableReferenceCastRejected) {\n  const auto Source = tmpFile("any-bool-inline-mutable-reference-cast.cpp");\n  writeFile(Source, R"r19containers(#include <any>\nint main() {\n  std::any value{true};\n  bool& result = std::any_cast<bool&>(value);\n  return result ? 0 : 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantVisitAcceptsOwnedTemporaryOperand) {\n  const auto Source = tmpFile("variant-three-visit-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c) { return a + b + c; }\nint f(Value& a, Value& b) { return std::visit(combine, a, b, Value(2)); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantVisitAcceptsOwnedTemporaryOperand) {\n  const auto Source = tmpFile("variant-three-visit-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c) { return a + b + c; }\nint f(Value& a, Value& b) { return std::visit(combine, a, b, Value(2)); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantThreeVisitTemporaryOperandRejected) {\n  const auto Source = tmpFile("variant-three-visit-temporary-operand.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c) { return a + b + c; }\nint f(Value& a, Value& b) { return std::visit(combine, a, b, Value(2)); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_REGISTERED_SHA256
+             else R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_AND_ANY_OBJECTS_REGISTERED_SHA256 = '6c8f8fdd9fad8c417eb6fbb85441efde19d2baab6c1dce99ddd405a58986abc1'
+R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SHA256 = '0900451648aa61cc024f0d051071bdc8b7afb25c758ce6884588c79c65402be2'
+R19_VARIANT_AND_ANY_OBJECTS_PREVIOUS_REGISTERED_SHA256 = '79ff43760d160576bec03ce6e60d3037c02f7455c8c2bfa9c2595d185e0e99e4'
+R19_VARIANT_AND_ANY_OBJECTS_PREVIOUS_MAINTAINED_SHA256 = '537f4693223fffb776096f73b1fe10a33f2e97eeebf84a4301dffe9cf4af64dd'
+R19_VARIANT_AND_ANY_OBJECTS_ADDITIONS_SHA256 = 'b4430f6396c7dbe04f4c5e217fce5d6a985683438bb0dc66b93ef2f76f70faae'
+R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SIZE = 20796754
+R19_VARIANT_AND_ANY_OBJECTS_ADDITIONS_SIZE = 24049
+
+
+def restore_variant_and_any_objects_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_AND_ANY_OBJECTS_REGISTERED_SHA256, R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SHA256}
+    stop = R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_AND_ANY_OBJECTS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_AND_ANY_OBJECTS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody) {\n  const auto Source = tmpFile("variant-emplace-source-owned-record.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody) {\n  const auto Source = tmpFile("variant-emplace-source-owned-record.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantEmplaceSourceOwnedRecordRejected) {\n  const auto Source = tmpFile("variant-emplace-source-owned-record.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantAggregateAlternativeRunsAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-class-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nstruct Payload { int field; };\nextern "C" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-class-alternative.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-class-alternative" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantAggregateAlternativeRunsAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-class-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nstruct Payload { int field; };\nextern "C" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-class-alternative.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-class-alternative" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2VariantObjectsClassAlternativeRejected) {\n  const auto Source = tmpFile("variant-objects-class-alternative.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nstruct Payload { int field; };\nextern "C" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantVisitReferenceResultAcceptsFunctionBody) {\n  const auto Source = tmpFile("variant-visit-alternatives-reference-result.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantVisitReferenceResultAcceptsFunctionBody) {\n  const auto Source = tmpFile("variant-visit-alternatives-reference-result.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantVisitAlternativesReferenceResultRejected) {\n  const auto Source = tmpFile("variant-visit-alternatives-reference-result.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_AND_ANY_OBJECTS_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_AND_ANY_OBJECTS_REGISTERED_SHA256
+             else R19_VARIANT_AND_ANY_OBJECTS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_AND_ANY_VALUE_CATEGORIES_REGISTERED_SHA256 = '8dd2c7054ddf9f1f4365d54e7600c39f9214dd6f6f24b7c2962cbfbad1719409'
+R19_VARIANT_AND_ANY_VALUE_CATEGORIES_MAINTAINED_SHA256 = 'cdcab2839c2508cdd7656a81b5fb658e683cb8d6d4adbb32abb007ee62df3941'
+R19_VARIANT_AND_ANY_VALUE_CATEGORIES_PREVIOUS_REGISTERED_SHA256 = '6c8f8fdd9fad8c417eb6fbb85441efde19d2baab6c1dce99ddd405a58986abc1'
+R19_VARIANT_AND_ANY_VALUE_CATEGORIES_PREVIOUS_MAINTAINED_SHA256 = '0900451648aa61cc024f0d051071bdc8b7afb25c758ce6884588c79c65402be2'
+R19_VARIANT_AND_ANY_VALUE_CATEGORIES_ADDITIONS_SHA256 = 'ba6acf818777a37f82f3a215fe1b32f1df0cc0b901d8f76d0502b0b634f8a41c'
+R19_VARIANT_AND_ANY_VALUE_CATEGORIES_MAINTAINED_SIZE = 20812760
+R19_VARIANT_AND_ANY_VALUE_CATEGORIES_ADDITIONS_SIZE = 15031
+
+
+def restore_variant_and_any_value_categories_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_AND_ANY_VALUE_CATEGORIES_REGISTERED_SHA256, R19_VARIANT_AND_ANY_VALUE_CATEGORIES_MAINTAINED_SHA256}
+    stop = R19_VARIANT_AND_ANY_VALUE_CATEGORIES_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_AND_ANY_VALUE_CATEGORIES_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_AND_ANY_VALUE_CATEGORIES_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2AnySizeofExpressionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-layout-unevaluated-object.cpp");\n  writeFile(Source, R"r19any(#include <any>\nint main() { return sizeof(std::any{}) == 0; }\n)r19any");\n  const auto Output = tmpFile("any-layout-unevaluated-object.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-layout-unevaluated-object" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2AnySizeofExpressionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("any-layout-unevaluated-object.cpp");\n  writeFile(Source, R"r19any(#include <any>\nint main() { return sizeof(std::any{}) == 0; }\n)r19any");\n  const auto Output = tmpFile("any-layout-unevaluated-object.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("any-layout-unevaluated-object" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2AnyLayoutUnevaluatedObjectRejected) {\n  const auto Source = tmpFile("any-layout-unevaluated-object.cpp");\n  writeFile(Source, R"r19any(#include <any>\nint main() { return sizeof(std::any{}) == 0; }\n)r19any");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantSizeofRuntimeRecordRunsAtBothOptimizations) {\n  const auto Source = tmpFile("variant-layout-runtime-record.cpp");\n  writeFile(Source, R"r19variantlayout(#include <variant>\nusing V = std::variant<int, double>;\nint main() { V value{9}; return sizeof(value) == 0; }\n)r19variantlayout");\n  const auto Output = tmpFile("variant-layout-runtime-record.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-layout-runtime-record" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantSizeofRuntimeRecordRunsAtBothOptimizations) {\n  const auto Source = tmpFile("variant-layout-runtime-record.cpp");\n  writeFile(Source, R"r19variantlayout(#include <variant>\nusing V = std::variant<int, double>;\nint main() { V value{9}; return sizeof(value) == 0; }\n)r19variantlayout");\n  const auto Output = tmpFile("variant-layout-runtime-record.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-layout-runtime-record" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2VariantLayoutRuntimeRecordRejected) {\n  const auto Source = tmpFile("variant-layout-runtime-record.cpp");\n  writeFile(Source, R"r19variantlayout(#include <variant>\nusing V = std::variant<int, double>;\nint main() { V value{9}; return sizeof(value) == 0; }\n)r19variantlayout");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantEmplaceAcceptsIntegerWidening) {\n  const auto Source = tmpFile("variant-emplace-widening-operand.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nint f() {\n  std::variant<int, long> value;\n  return value.emplace<1>(11);\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantEmplaceAcceptsIntegerWidening) {\n  const auto Source = tmpFile("variant-emplace-widening-operand.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nint f() {\n  std::variant<int, long> value;\n  return value.emplace<1>(11);\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantEmplaceWideningOperandRejected) {\n  const auto Source = tmpFile("variant-emplace-widening-operand.cpp");\n  writeFile(Source, R"r19emplace(#include <variant>\nint f() {\n  std::variant<int, long> value;\n  return value.emplace<1>(11);\n}\n)r19emplace");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantPromotedIntegerConstructionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-unproved-conversion.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  short original = 7;\n  std::variant<int, double> value = original;\n  return int(value.index());\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-unproved-conversion.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-unproved-conversion" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantPromotedIntegerConstructionRunsAtBothOptimizations) {\n  const auto Source = tmpFile("variant-objects-unproved-conversion.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  short original = 7;\n  std::variant<int, double> value = original;\n  return int(value.index());\n}\nint main() { return check(); }\n)r19variantsclr");\n  const auto Output = tmpFile("variant-objects-unproved-conversion.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("variant-objects-unproved-conversion" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2VariantObjectsUnprovedConversionRejected) {\n  const auto Source = tmpFile("variant-objects-unproved-conversion.cpp");\n  writeFile(Source, R"r19variantsclr(#include <variant>\nextern "C" int check() {\n  short original = 7;\n  std::variant<int, double> value = original;\n  return int(value.index());\n}\nint main() { return check(); }\n)r19variantsclr");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_AND_ANY_VALUE_CATEGORIES_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_AND_ANY_VALUE_CATEGORIES_REGISTERED_SHA256
+             else R19_VARIANT_AND_ANY_VALUE_CATEGORIES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_AND_BITSET_RECEIVERS_REGISTERED_SHA256 = '4e25448c3737b6d941a9fd6c8361f4a8da049914fe631fbb789dd0f91e117959'
+R19_VARIANT_AND_BITSET_RECEIVERS_MAINTAINED_SHA256 = '7a62958b4afb394c3c67940a01e9b0d679bd505b74c5610b01df523e304f1137'
+R19_VARIANT_AND_BITSET_RECEIVERS_PREVIOUS_REGISTERED_SHA256 = '8dd2c7054ddf9f1f4365d54e7600c39f9214dd6f6f24b7c2962cbfbad1719409'
+R19_VARIANT_AND_BITSET_RECEIVERS_PREVIOUS_MAINTAINED_SHA256 = 'cdcab2839c2508cdd7656a81b5fb658e683cb8d6d4adbb32abb007ee62df3941'
+R19_VARIANT_AND_BITSET_RECEIVERS_ADDITIONS_SHA256 = '7ebb441b678bc044996a92f1932b918bb73b16be7f3b3c283e0f893dc5de181f'
+R19_VARIANT_AND_BITSET_RECEIVERS_MAINTAINED_SIZE = 20820100
+R19_VARIANT_AND_BITSET_RECEIVERS_ADDITIONS_SIZE = 6719
+
+
+def restore_variant_and_bitset_receivers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_VARIANT_AND_BITSET_RECEIVERS_REGISTERED_SHA256, R19_VARIANT_AND_BITSET_RECEIVERS_MAINTAINED_SHA256}
+    stop = R19_VARIANT_AND_BITSET_RECEIVERS_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_AND_BITSET_RECEIVERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_AND_BITSET_RECEIVERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantVisitAcceptsTheBoundReferenceCast) {\n  const auto Source = tmpFile("variant-visit-nonowning-xvalue-operand-guard.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int>;\nint read(int value) { return value; }\nint test(Value& input) { return std::visit(read, static_cast<Value&&>(input)); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantVisitAcceptsTheBoundReferenceCast) {\n  const auto Source = tmpFile("variant-visit-nonowning-xvalue-operand-guard.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int>;\nint read(int value) { return value; }\nint test(Value& input) { return std::visit(read, static_cast<Value&&>(input)); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantVisitNonowningXvalueOperandGuardRejected) {\n  const auto Source = tmpFile("variant-visit-nonowning-xvalue-operand-guard.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nusing Value = std::variant<int>;\nint read(int value) { return value; }\nint test(Value& input) { return std::visit(read, static_cast<Value&&>(input)); }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionSelectsImmutableReceiver) {\n  const auto Source = tmpFile("bitset-const-local-guard-conditional-receiver.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nunsigned long long convert(bool select){const Bits a(1),b(2);return (select?a:b).to_ullong();}\nint main(){return convert(true)!=1||convert(false)!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-conditional-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-conditional-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionSelectsImmutableReceiver) {\n  const auto Source = tmpFile("bitset-const-local-guard-conditional-receiver.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nunsigned long long convert(bool select){const Bits a(1),b(2);return (select?a:b).to_ullong();}\nint main(){return convert(true)!=1||convert(false)!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-conditional-receiver.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-conditional-receiver" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConditionalReceiverRejected) {\n  const auto Source = tmpFile("bitset-const-local-guard-conditional-receiver.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nunsigned long long convert(bool select){const Bits a(1),b(2);return (select?a:b).to_ullong();}\nint main(){return convert(true)!=1||convert(false)!=2;}\n)r19bitlocal");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsExtendedTemporary) {\n  const auto Source = tmpFile("bitset-const-local-guard-const-reference.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){const Bits& bits=Bits(2);return bits.to_ullong()!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-const-reference.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-const-reference" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsExtendedTemporary) {\n  const auto Source = tmpFile("bitset-const-local-guard-const-reference.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){const Bits& bits=Bits(2);return bits.to_ullong()!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-const-reference.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-const-reference" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConstReferenceRejected) {\n  const auto Source = tmpFile("bitset-const-local-guard-const-reference.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){const Bits& bits=Bits(2);return bits.to_ullong()!=2;}\n)r19bitlocal");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_AND_BITSET_RECEIVERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_AND_BITSET_RECEIVERS_REGISTERED_SHA256
+             else R19_VARIANT_AND_BITSET_RECEIVERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_BITSET_LOCAL_OWNERS_REGISTERED_SHA256 = '841a079cfa207ab9e62cca16bfc1575d14f1021f1cd3a4166965319a45070628'
+R19_BITSET_LOCAL_OWNERS_MAINTAINED_SHA256 = '48e1f05751a00c512de0c0f78c9ca29ea059b41c927fcdfa468a1e76891e52f9'
+R19_BITSET_LOCAL_OWNERS_PREVIOUS_REGISTERED_SHA256 = '4e25448c3737b6d941a9fd6c8361f4a8da049914fe631fbb789dd0f91e117959'
+R19_BITSET_LOCAL_OWNERS_PREVIOUS_MAINTAINED_SHA256 = '7a62958b4afb394c3c67940a01e9b0d679bd505b74c5610b01df523e304f1137'
+R19_BITSET_LOCAL_OWNERS_ADDITIONS_SHA256 = '4907ae100c43db36128b841a0aad5235a2842a7634c168d7d69f8484c3407a58'
+R19_BITSET_LOCAL_OWNERS_MAINTAINED_SIZE = 20828207
+R19_BITSET_LOCAL_OWNERS_ADDITIONS_SIZE = 7352
+
+
+def restore_bitset_local_owners_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_BITSET_LOCAL_OWNERS_REGISTERED_SHA256, R19_BITSET_LOCAL_OWNERS_MAINTAINED_SHA256}
+    stop = R19_BITSET_LOCAL_OWNERS_MAINTAINED_SIZE
+    start = stop - R19_BITSET_LOCAL_OWNERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_BITSET_LOCAL_OWNERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsStaticConstant) {\n  const auto Source = tmpFile("bitset-const-local-guard-static-const.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){static const Bits bits(2);return bits.to_ullong()!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-static-const.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-static-const" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsStaticConstant) {\n  const auto Source = tmpFile("bitset-const-local-guard-static-const.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){static const Bits bits(2);return bits.to_ullong()!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-static-const.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-static-const" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardStaticConstRejected) {\n  const auto Source = tmpFile("bitset-const-local-guard-static-const.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){static const Bits bits(2);return bits.to_ullong()!=2;}\n)r19bitlocal");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionCopiesSingleUseLocal) {\n  const auto Source = tmpFile("bitset-const-local-guard-copy-initialized.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){Bits a(3);const Bits b=a;return b.to_ullong()!=3;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-copy-initialized.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-copy-initialized" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionCopiesSingleUseLocal) {\n  const auto Source = tmpFile("bitset-const-local-guard-copy-initialized.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){Bits a(3);const Bits b=a;return b.to_ullong()!=3;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-copy-initialized.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-copy-initialized" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardCopyInitializedRejected) {\n  const auto Source = tmpFile("bitset-const-local-guard-copy-initialized.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){Bits a(3);const Bits b=a;return b.to_ullong()!=3;}\n)r19bitlocal");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_BITSET_LOCAL_OWNERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_BITSET_LOCAL_OWNERS_REGISTERED_SHA256
+             else R19_BITSET_LOCAL_OWNERS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_BITSET_CONST_MEMBER_REGISTERED_SHA256 = 'd24f407c3db94555b36bf6d240d2f5d86b909f8c3ca657586b036d717284fae6'
+R19_BITSET_CONST_MEMBER_MAINTAINED_SHA256 = '21710e5055cb1257bdf09df7aac3c1a08bfd230586e1bd0a3bba5cbf054b1a5b'
+R19_BITSET_CONST_MEMBER_PREVIOUS_REGISTERED_SHA256 = '841a079cfa207ab9e62cca16bfc1575d14f1021f1cd3a4166965319a45070628'
+R19_BITSET_CONST_MEMBER_PREVIOUS_MAINTAINED_SHA256 = '48e1f05751a00c512de0c0f78c9ca29ea059b41c927fcdfa468a1e76891e52f9'
+R19_BITSET_CONST_MEMBER_ADDITIONS_SHA256 = 'e4f4a047ebf5d37f3ac5cb6ab8a6ad1da24369a1351adab41b4e06d3c4146575'
+R19_BITSET_CONST_MEMBER_MAINTAINED_SIZE = 20832382
+R19_BITSET_CONST_MEMBER_ADDITIONS_SIZE = 3798
+
+
+def restore_bitset_const_member_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_BITSET_CONST_MEMBER_REGISTERED_SHA256, R19_BITSET_CONST_MEMBER_MAINTAINED_SHA256}
+    stop = R19_BITSET_CONST_MEMBER_MAINTAINED_SIZE
+    start = stop - R19_BITSET_CONST_MEMBER_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_BITSET_CONST_MEMBER_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsConstDataMember) {\n  const auto Source = tmpFile("bitset-const-local-guard-const-member.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-const-member.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-const-member" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsConstDataMember) {\n  const auto Source = tmpFile("bitset-const-local-guard-const-member.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n)r19bitlocal");\n  const auto Output = tmpFile("bitset-const-local-guard-const-member.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-const-local-guard-const-member" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConstMemberRejected) {\n  const auto Source = tmpFile("bitset-const-local-guard-const-member.cpp");\n  writeFile(Source, R"r19bitlocal(#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n)r19bitlocal");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_BITSET_CONST_MEMBER_PREVIOUS_REGISTERED_SHA256 if digest == R19_BITSET_CONST_MEMBER_REGISTERED_SHA256
+             else R19_BITSET_CONST_MEMBER_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_REGISTERED_SHA256 = '67a66f70e5adb5a9455ea4ee4801e73256e6d488aab8f386a4069565e08fb6af'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SHA256 = 'bcb628bf52b6a9c1a3ae33ff8235e9112668e9ea0a2b1b6b98f828725d28e7c7'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_PREVIOUS_REGISTERED_SHA256 = 'd24f407c3db94555b36bf6d240d2f5d86b909f8c3ca657586b036d717284fae6'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_PREVIOUS_MAINTAINED_SHA256 = '21710e5055cb1257bdf09df7aac3c1a08bfd230586e1bd0a3bba5cbf054b1a5b'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_ADDITIONS_SHA256 = '07a8da9a9651d8d292116a53f21bd703fce15e57017b4ef4555be537bb7659ad'
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SIZE = 20836755
+R19_VARIANT_TEMPORARY_VISITOR_BINDING_ADDITIONS_SIZE = 4373
+
+
+def restore_variant_temporary_visitor_binding_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
+        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    digest = sha(source)
+    assert digest in {R19_VARIANT_TEMPORARY_VISITOR_BINDING_REGISTERED_SHA256, R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SHA256}
+    stop = R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_TEMPORARY_VISITOR_BINDING_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_TEMPORARY_VISITOR_BINDING_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_VARIANT_TEMPORARY_VISITOR_BINDING_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_TEMPORARY_VISITOR_BINDING_REGISTERED_SHA256
+             else R19_VARIANT_TEMPORARY_VISITOR_BINDING_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -663,6 +3103,650 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == '0bfd0f954e8d11fc3f8b0a151dc79f9422fb2e904d6a72a8159575e6edb172ac':
+        return source
+    if source_digest == 'f38bce991a0f66c4af8475a3238785b19356a9d8a4264600794afb89e03ac417':
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        current = source[:-len(additions)]
+        assert digest(current) == '0bfd0f954e8d11fc3f8b0a151dc79f9422fb2e904d6a72a8159575e6edb172ac'
+        return current
+    if source_digest == R19_VARIANT_SCALAR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_SCALAR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_SCALAR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_IN_PLACE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_IN_PLACE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_IN_PLACE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_IN_PLACE_ANY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_IN_PLACE_ANY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_OPERATIONS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_OPERATIONS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_ADAPTER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_ADAPTER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_ADAPTER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_ASSIGNMENT_VISIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_ASSIGNMENT_VISIT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_INTEGRAL_VISIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_INTEGRAL_VISIT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_ANY_INTEGER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_ANY_INTEGER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_ANY_INTEGER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_TWO_VARIANT_ANY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_TWO_VARIANT_ANY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_TWO_VARIANT_ANY_TUPLE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ANY_TUPLE_VISITOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ANY_ALLOCATOR_EQUALITY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_ORDERING_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_ORDERING_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_MONOSTATE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_MONOSTATE_HASH_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_MONOSTATE_HASH_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LAYOUT_VARIANT_VISIT_ALTERNATIVES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_OBSERVER_QUERY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_OBSERVER_QUERY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_MONOSTATE_ADAPTER_HASH_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_MONOSTATE_ADAPTER_HASH_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_GUARDED_GET_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_GUARDED_GET_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_UNSIGNED_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_UNSIGNED_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_GET_EARLY_RETURN_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_GET_EARLY_RETURN_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_EMPTY_OWNER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_EMPTY_OWNER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MAX_SIZE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MAX_SIZE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_BOOL_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_BOOL_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_BOOL_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_EMPTY_HASH_SET_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_EMPTY_HASH_SET_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_EMPTY_HASH_SET_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_FLOAT_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_FLOAT_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_FLOAT_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_EMPTY_LOAD_FACTOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_EMPTY_LOAD_FACTOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_EMPTY_CAPACITY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_EMPTY_CAPACITY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_LOOKUP_POLICIES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_LOOKUP_POLICIES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_LOAD_LIMIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_LOAD_LIMIT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_WIDE_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_WIDE_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_WIDE_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_COMPARATOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_COMPARATOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_COMPARATOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_BUCKET_STORAGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_BUCKET_STORAGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_VALUES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_VALUES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_MODIFIERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_MODIFIERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_NARROW_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_NARROW_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_NARROW_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_LONG_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_LONG_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_LONG_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTISET_VALUES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTISET_VALUES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ANY_CHARACTER_INLINE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ANY_CHARACTER_INLINE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTISET_MODIFIERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTISET_MODIFIERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_GLOBAL_ITERATORS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_GLOBAL_ITERATORS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_SCALAR_INSERTION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_SCALAR_INSERTION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_ITERATOR_ERASE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_ITERATOR_ERASE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_EQUAL_RANGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_EQUAL_RANGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_EQUAL_RANGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_LOCAL_ITERATORS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_LOCAL_ITERATORS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_EMPLACEMENT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_EMPLACEMENT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_EQUALITY_SWAP_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_EQUALITY_SWAP_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_POINTER_RANGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_POINTER_RANGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_POINTER_CONSTRUCTION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_POINTER_CONSTRUCTION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_OWNER_MOVE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_OWNER_MOVE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_OWNER_COPY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_OWNER_COPY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_COPY_ASSIGNMENT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_COPY_ASSIGNMENT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_COPY_ASSIGNMENT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_LIST_ASSIGNMENT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_LIST_ASSIGNMENT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_LIST_ASSIGNMENT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_ITERATOR_RANGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_ITERATOR_RANGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_ITERATOR_RANGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_MERGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_MERGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_MERGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_OBSERVERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_OBSERVERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_STORAGE_CONSTRUCTION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_STORAGE_CONSTRUCTION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_STORAGE_CONSTRUCTION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_NODE_HANDLES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_NODE_HANDLES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_BUCKET_RECEIVERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_BUCKET_RECEIVERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_BUCKET_RECEIVERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_MEMBER_RECEIVERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_MEMBER_RECEIVERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_MEMBER_RECEIVERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTIMAP_OWNERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTIMAP_OWNERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_MULTIMAP_ITERATION_AND_TRANSFER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ASSOCIATIVE_NODE_AND_OBSERVER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ASSOCIATIVE_NODE_AND_OBSERVER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_UNORDERED_SET_UNSIGNED_KEY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_UNORDERED_SET_UNSIGNED_KEY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_UNORDERED_SET_UNSIGNED_KEY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_SET_CORE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_SET_CORE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_SET_CORE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_OWNER_OPERATIONS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_OWNER_OPERATIONS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MAPS_WITH_MIXED_CURSORS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MOVE_LIST_RANGE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MOVE_LIST_RANGE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_LIST_ASSIGNMENT_AND_EMPLACE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MERGE_COMPARISON_AND_MAP_EMPLACE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_POLICIES_AND_ITERATOR_RANGES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_NODE_AND_VALUE_COMPARE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_NODE_AND_VALUE_COMPARE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_HINTS_ALLOCATOR_OWNERSHIP_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_REVERSE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_REVERSE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_REVERSE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_VALUE_INPUT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_VALUE_INPUT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_VALUE_INPUT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MAP_AND_ITERATION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MAP_AND_ITERATION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ORDERED_MAP_SCALAR_AND_CHECKED_AT_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ASSOCIATIVE_SIGNED_WIDE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ASSOCIATIVE_SIGNED_WIDE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ASSOCIATIVE_SIGNED_WIDE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_ASSOCIATIVE_CURSOR_AND_VALUE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_ASSOCIATIVE_CURSOR_AND_VALUE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_ASSOCIATIVE_CURSOR_AND_VALUE_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_COMPARISONS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_COMPARISONS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_COMPARISONS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_ASSIGNMENT_AND_POINTER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_ASSIGNMENT_AND_POINTER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_ASSIGNMENT_AND_POINTER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_SWAP_VISIT_AND_ANY_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_SWAP_VISIT_AND_ANY_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_SWAP_AND_ANY_TYPED_POINTERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_TEMPORARIES_AND_ANY_REFERENCES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_AND_ANY_OBJECTS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_AND_ANY_OBJECTS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_AND_ANY_VALUE_CATEGORIES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_AND_ANY_VALUE_CATEGORIES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_AND_ANY_VALUE_CATEGORIES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_AND_BITSET_RECEIVERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_AND_BITSET_RECEIVERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_AND_BITSET_RECEIVERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_BITSET_LOCAL_OWNERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_BITSET_LOCAL_OWNERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_BITSET_LOCAL_OWNERS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_BITSET_CONST_MEMBER_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_BITSET_CONST_MEMBER_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_BITSET_CONST_MEMBER_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_TEMPORARY_VISITOR_BINDING_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_TEMPORARY_VISITOR_BINDING_MAINTAINED_SHA256
+        return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
     if source_digest == R19_VARIANT_METADATA_LAYOUT_REGISTERED_SHA256:
