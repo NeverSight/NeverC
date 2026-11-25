@@ -41240,7 +41240,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "forward-list construction", "The checked integer owner layout is required.");
-      if (*Kind == UtilityForwardListConstruction::Move) {
+      if (*Kind == UtilityForwardListConstruction::Move || *Kind == UtilityForwardListConstruction::AllocatorMove) {
         auto Source = dereference(Operands.front(), L);
         transferForwardListStorage(Place, Source, L);
         return;

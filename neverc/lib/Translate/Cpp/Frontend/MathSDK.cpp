@@ -54349,6 +54349,15 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
     return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, C->getParent(), Context)) {
     if (!C->getNumParams()) return UtilityForwardListConstruction::Default;
+    if (C->getNumParams() == 2 &&
+        forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(1)->getType(), Context)) {
+      const auto Type = Context.getRecordType(Owner->Record);
+      const auto Argument = C->getParamDecl(0)->getType();
+      if (Context.hasSameType(Argument, Context.getLValueReferenceType(Type.withConst())))
+        return UtilityForwardListConstruction::Copy;
+      if (Context.hasSameType(Argument, Context.getRValueReferenceType(Type)))
+        return UtilityForwardListConstruction::AllocatorMove;
+    }
     if (C->getNumParams() == 1 && C->isCopyConstructor() &&
         Context.hasSameType(C->getParamDecl(0)->getType(),
           Context.getLValueReferenceType(Context.getRecordType(Owner->Record).withConst())))
@@ -54994,6 +55003,85 @@ const CallExpr *forwardListMoveCall(const State &S, const SourceManager &SM,
       ? Call : nullptr;
 }
 
+bool forwardListAllocatorCondition(const State &S, const SourceManager &SM, const Expr *Condition,
+    const CXXRecordDecl *Base, const ParmVarDecl *Source, const UtilityForwardListNodeRecord &Node,
+    OverloadedOperatorKind Kind, const ASTContext &Context) {
+  const auto *Compare = Condition ? dyn_cast<CXXOperatorCallExpr>(Condition->IgnoreParenImpCasts()) : nullptr;
+  if (!Compare || Compare->getOperator() != Kind || Compare->getNumArgs() != 2) return false;
+  const auto *Function = Compare->getDirectCallee();
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *Value = Return ? dyn_cast_or_null<CXXBoolLiteralExpr>(Return->getRetValue()) : nullptr;
+  if (!Function || !forwardListStd(Function->getDeclContext()) || !Function->getPrimaryTemplate() ||
+      !Value || Value->getValue() != (Kind == OO_EqualEqual))
+    return false;
+  for (const auto *D : Function->redecls())
+    if (!forwardListPinned(S, SM, D, "__memory/allocator.h")) return false;
+  for (unsigned I = 0; I != 2; ++I) {
+    const auto *Operand = dyn_cast<MemberExpr>(Compare->getArg(I)->IgnoreParenImpCasts());
+    const auto *Field = Operand ? dyn_cast<FieldDecl>(Operand->getMemberDecl()) : nullptr;
+    if (!Field || !Field->getIdentifier() || Field->getName() != "__alloc_" ||
+        Field->getParent()->getCanonicalDecl() != Base->getCanonicalDecl() ||
+        (I ? !variantParameter(Operand->getBase(), Source) : !isa<CXXThisExpr>(Operand->getBase()->IgnoreParenImpCasts())))
+      return false;
+    const auto Allocator = approvedUtilityAllocatorRecord(S, SM, forwardListRecordType(Field->getType()), Context);
+    if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.getRecordType(Node.Record))) return false;
+  }
+  return true;
+}
+
+bool forwardListAllocatorMoveLink(const State &S, const SourceManager &SM, const Expr *Expression,
+    const CXXRecordDecl *Base, const ParmVarDecl *Source, const UtilityForwardListNodeRecord &Node) {
+  const auto *Link = Expression ? dyn_cast<MemberExpr>(Expression->IgnoreParenImpCasts()) : nullptr;
+  if (!Link || !Link->isArrow() || Link->getMemberDecl() != Node.Next) return false;
+  const auto *Call = dyn_cast<CXXMemberCallExpr>(Link->getBase()->IgnoreParenImpCasts());
+  const auto *Accessor = Call ? Call->getMethodDecl() : nullptr;
+  if (!Accessor || !Accessor->getIdentifier() || Accessor->getName() != "__before_begin" ||
+      Accessor->isConst() || Call->getNumArgs() ||
+      Accessor->getParent()->getCanonicalDecl() != Base->getCanonicalDecl() ||
+      !forwardListFunctionDeclarations(S, SM, Accessor)) return false;
+  const auto *Object = Call->getImplicitObjectArgument();
+  return Object && (Source ? variantParameter(Object, Source) : isa<CXXThisExpr>(Object->IgnoreParenImpCasts()));
+}
+
+bool forwardListAllocatorMoveBody(const State &S, const SourceManager &SM, const CXXConstructorDecl *C,
+    const UtilityForwardListNodeRecord &Node, const ASTContext &Context) {
+  const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(C->getDefinition());
+  const auto *Outer = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  if (!Outer || Outer->size() != 1 || Definition->getNumCtorInitializers() != 1) return false;
+  const auto *Init = *Definition->init_begin();
+  const auto *Selected = Init->isBaseInitializer() && !Init->isBaseVirtual()
+      ? dyn_cast<CXXConstructExpr>(Init->getInit()->IgnoreParens()) : nullptr;
+  const auto *Base = Selected ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getConstructor()->getDefinition()) : nullptr;
+  if (!Base || Base->getNumParams() != 2 || Selected->getNumArgs() != 2 ||
+      !forwardListFunctionDeclarations(S, SM, Base) ||
+      !forwardListIntegerAllocatorParameter(S, SM, Base->getParamDecl(1)->getType(), Context) ||
+      !variantParameter(Selected->getArg(1), Definition->getParamDecl(1))) return false;
+  const auto *Moved = forwardListMoveCall(S, SM, Selected->getArg(0), Context);
+  if (!Moved || !variantParameter(Moved->getArg(0), Definition->getParamDecl(0))) return false;
+  const auto *BaseRecord = Base->getParent();
+  const auto *Different = dyn_cast<IfStmt>(Outer->body_front());
+  if (!Different || Different->getElse() ||
+      !forwardListAllocatorCondition(S, SM, Different->getCond(), BaseRecord, Definition->getParamDecl(0),
+                                     Node, OO_ExclaimEqual, Context)) return false;
+  const auto *Inner = dyn_cast_or_null<CompoundStmt>(Base->getBody());
+  const auto *Equal = Inner && Inner->size() == 1 ? dyn_cast<IfStmt>(Inner->body_front()) : nullptr;
+  const auto *Input = Base->getParamDecl(0);
+  if (!Equal || Equal->getElse() ||
+      !forwardListAllocatorCondition(S, SM, Equal->getCond(), BaseRecord, Input, Node, OO_EqualEqual, Context))
+    return false;
+  const auto *Updates = dyn_cast<CompoundStmt>(Equal->getThen());
+  if (!Updates || Updates->size() != 2) return false;
+  const auto *Transfer = dyn_cast<BinaryOperator>(Updates->body_front());
+  const auto *Clear = dyn_cast<BinaryOperator>(Updates->body_back());
+  return Transfer && Transfer->getOpcode() == BO_Assign && Clear && Clear->getOpcode() == BO_Assign &&
+         forwardListAllocatorMoveLink(S, SM, Transfer->getLHS(), BaseRecord, nullptr, Node) &&
+         forwardListAllocatorMoveLink(S, SM, Transfer->getRHS(), BaseRecord, Input, Node) &&
+         forwardListAllocatorMoveLink(S, SM, Clear->getLHS(), BaseRecord, Input, Node) &&
+         isa<CXXNullPtrLiteralExpr>(Clear->getRHS()->IgnoreParenImpCasts());
+}
+
 bool forwardListMoveBody(const State &S, const SourceManager &SM,
     const CXXConstructorDecl *C, const UtilityForwardListNodeRecord &Node,
     const ASTContext &Context) {
@@ -55094,6 +55182,9 @@ std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruc
       !Context.hasSameUnqualifiedType(Construction->getType(), Context.getRecordType(C->getParent())) ||
       !forwardListSourceGraph(S, SM, C, Context, *Node) ||
       (*Kind == UtilityForwardListConstruction::Move && !forwardListMoveBody(S, SM, C, *Node, Context)))
+    return std::nullopt;
+  if (*Kind == UtilityForwardListConstruction::AllocatorMove &&
+      !forwardListAllocatorMoveBody(S, SM, C, *Node, Context))
     return std::nullopt;
   if (*Kind == UtilityForwardListConstruction::Copy) {
     const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(C->getDefinition());
