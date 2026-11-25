@@ -221,22 +221,6 @@
       "source_sha256": "e5e1be6ff9d00f5de1421057ede4f628a4852f48b5890efb32d0ce39e1777874"
     },
     {
-      "name": "variant-visit-reference-result-borrows-temporary-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nconst int& identity(const int& value) { return value; }\nconst int& bad() {\n  using Value = std::variant<int>;\n  return std::visit(identity, static_cast<const Value&>(Value{5}));\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "f8806f1ad36f8f0092cea884d08fedd448d7d4a64e92eb7c9adeb1bc3b38f741"
-    },
-    {
-      "name": "variant-visit-volatile-reference-result-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nvolatile int& borrow(int& value) { return value; }\nvolatile int& bad(std::variant<int>& value) { return std::visit(borrow, value); }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "16ae164f7cf91142e5bd40ce2e5512ddd824c15abdea3141dcc7f3aa228f28fb"
-    },
-    {
       "name": "any-repeated-active-value-and-reference-casts",
       "public_header": "any",
       "expected": "accept",
@@ -259,30 +243,6 @@
       "source": "#include <any>\nint main() {\n  std::any value{3L};\n  for (int index = 0; index < 2; ++index) ++std::any_cast<long&>(value);\n  return std::any_cast<long>(value) != 5L;\n}\n",
       "kind": "cpp17-operation",
       "source_sha256": "1627efd1cd2ab7463a267c22ca659adbe5780e31bd8e9fc4c92a0fc16845eea5"
-    },
-    {
-      "name": "any-repeated-active-casts-with-reset-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int before = std::any_cast<int>(value);\n  value.reset();\n  return before + std::any_cast<int>(value);\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "a39a9e55caf6b27cd28a83d377fb39be3139e5b6f6b6eeeb2d04366aaa6dcbe1"
-    },
-    {
-      "name": "any-repeated-active-casts-with-retagging-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int before = std::any_cast<int>(value);\n  value = std::any{true};\n  return before + std::any_cast<int>(value);\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "688d40f2694069ec2561900c0326618b411dac70dec577fe44419d19dc0a3a0b"
-    },
-    {
-      "name": "any-repeated-active-casts-with-wrong-sibling-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int first = std::any_cast<int>(value);\n  return first + std::any_cast<bool>(value);\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "1666cdd8e63feb97377fa21f05a11348a97718ee41a44f58f8cffe195461e5af"
     },
     {
       "name": "variant-trivial-aggregate-default-initializes-members",
@@ -309,22 +269,6 @@
       "source_sha256": "1abdc4ea811f9cae16d512fb7daa5b68fe4c72d67fc3efa7aacfe6b445a52cc4"
     },
     {
-      "name": "variant-unchecked-bit-field-record-alternative-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nstruct Payload { unsigned code : 3; };\nint test() { std::variant<Payload, int> value; return int(value.index()); }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "ff2d885af0302822f5214183b7876f25f9e31b0a3779af17582bfdbd8918f94a"
-    },
-    {
-      "name": "variant-nontrivial-record-initialization-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nstruct Payload {\n  int code;\n  Payload() noexcept : code(17) {}\n};\nint test() { std::variant<Payload, int> value; return int(value.index()); }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "f5358972cd1a2593aab341c93154b6854dd7c10f01cfb559ddf0f7d8cf86870e"
-    },
-    {
       "name": "variant-visit-aggregate-mutable-payload",
       "public_header": "variant",
       "expected": "accept",
@@ -349,6 +293,78 @@
       "source_sha256": "2c5e69b4c30e58cb180d4be71a2c5f6dcf89e6cb9efaaff1e6d4e534189992fb"
     },
     {
+      "name": "variant-aggregate-emplace-default-payload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { int count; double mark; };\nint main() {\n  std::variant<int, Payload> value{8};\n  Payload& active = value.emplace<Payload>();\n  if (active.count != 0 || active.mark != 0.0) return 1;\n  active.count = 4;\n  auto* checked = std::get_if<1>(&value);\n  return !checked || &active != checked || checked->count != 4 || value.index() != 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "2e066f7779f217f00f19349434e68569129fa1c8c49782bcab74dd59f4050822"
+    },
+    {
+      "name": "variant-aggregate-emplace-copies-payload",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { short code; int amount; };\nint main() {\n  Payload initial{5, 11};\n  std::variant<int, Payload> value{8};\n  Payload& active = value.emplace<1>(initial);\n  initial.amount = 20;\n  const auto* checked = std::get_if<Payload>(&value);\n  return !checked || checked != &active || checked->code != 5 || checked->amount != 11;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "ef04abece465e46c65a5c17adb510c6444c522bec58fd906b2385f1ffdfb1173"
+    },
+    {
+      "name": "variant-visit-reference-result-borrows-temporary-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nconst int& identity(const int& value) { return value; }\nconst int& bad() {\n  using Value = std::variant<int>;\n  return std::visit(identity, static_cast<const Value&>(Value{5}));\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "f8806f1ad36f8f0092cea884d08fedd448d7d4a64e92eb7c9adeb1bc3b38f741"
+    },
+    {
+      "name": "variant-visit-volatile-reference-result-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nvolatile int& borrow(int& value) { return value; }\nvolatile int& bad(std::variant<int>& value) { return std::visit(borrow, value); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "16ae164f7cf91142e5bd40ce2e5512ddd824c15abdea3141dcc7f3aa228f28fb"
+    },
+    {
+      "name": "any-repeated-active-casts-with-reset-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int before = std::any_cast<int>(value);\n  value.reset();\n  return before + std::any_cast<int>(value);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "a39a9e55caf6b27cd28a83d377fb39be3139e5b6f6b6eeeb2d04366aaa6dcbe1"
+    },
+    {
+      "name": "any-repeated-active-casts-with-retagging-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int before = std::any_cast<int>(value);\n  value = std::any{true};\n  return before + std::any_cast<int>(value);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "688d40f2694069ec2561900c0326618b411dac70dec577fe44419d19dc0a3a0b"
+    },
+    {
+      "name": "any-repeated-active-casts-with-wrong-sibling-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint read() {\n  std::any value{3};\n  int first = std::any_cast<int>(value);\n  return first + std::any_cast<bool>(value);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "1666cdd8e63feb97377fa21f05a11348a97718ee41a44f58f8cffe195461e5af"
+    },
+    {
+      "name": "variant-unchecked-bit-field-record-alternative-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload { unsigned code : 3; };\nint test() { std::variant<Payload, int> value; return int(value.index()); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "ff2d885af0302822f5214183b7876f25f9e31b0a3779af17582bfdbd8918f94a"
+    },
+    {
+      "name": "variant-nontrivial-record-initialization-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload {\n  int code;\n  Payload() noexcept : code(17) {}\n};\nint test() { std::variant<Payload, int> value; return int(value.index()); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "f5358972cd1a2593aab341c93154b6854dd7c10f01cfb559ddf0f7d8cf86870e"
+    },
+    {
       "name": "variant-visit-aggregate-temporary-reference-guard",
       "public_header": "variant",
       "expected": "reject",
@@ -371,22 +387,6 @@
       "source": "#include <variant>\nstruct Payload { int count; };\nint read(volatile Payload& value) { return value.count; }\nint test(std::variant<Payload>& value) { return std::visit(read, value); }\n",
       "kind": "source-body-guard",
       "source_sha256": "0e998ef488753ee2ef1f001de7eb2c7acc9d7da9d65bfff1f31efcc21cb8cfc9"
-    },
-    {
-      "name": "variant-aggregate-emplace-default-payload",
-      "public_header": "variant",
-      "expected": "accept",
-      "source": "#include <variant>\nstruct Payload { int count; double mark; };\nint main() {\n  std::variant<int, Payload> value{8};\n  Payload& active = value.emplace<Payload>();\n  if (active.count != 0 || active.mark != 0.0) return 1;\n  active.count = 4;\n  auto* checked = std::get_if<1>(&value);\n  return !checked || &active != checked || checked->count != 4 || value.index() != 1;\n}\n",
-      "kind": "cpp17-operation",
-      "source_sha256": "2e066f7779f217f00f19349434e68569129fa1c8c49782bcab74dd59f4050822"
-    },
-    {
-      "name": "variant-aggregate-emplace-copies-payload",
-      "public_header": "variant",
-      "expected": "accept",
-      "source": "#include <variant>\nstruct Payload { short code; int amount; };\nint main() {\n  Payload initial{5, 11};\n  std::variant<int, Payload> value{8};\n  Payload& active = value.emplace<1>(initial);\n  initial.amount = 20;\n  const auto* checked = std::get_if<Payload>(&value);\n  return !checked || checked != &active || checked->code != 5 || checked->amount != 11;\n}\n",
-      "kind": "cpp17-operation",
-      "source_sha256": "ef04abece465e46c65a5c17adb510c6444c522bec58fd906b2385f1ffdfb1173"
     }
   ],
   "new_gtest_names": [
@@ -415,7 +415,7 @@
     "TranslateTest.CoreV2VariantVisitAggregateImplicitCopyGuardRejected",
     "TranslateTest.CoreV2VariantVisitVolatileAggregateReferenceGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "6c8f8fdd9fad8c417eb6fbb85441efde19d2baab6c1dce99ddd405a58986abc1",
   "maintained_original_sha256": "0900451648aa61cc024f0d051071bdc8b7afb25c758ce6884588c79c65402be2",
@@ -427,5 +427,14 @@
   "current_registry_count": 9043,
   "current_python_registry_tests": 288,
   "native_reference_selected_executions": 28,
-  "planned_generated_c23_executions": 28
+  "planned_generated_c23_executions": 28,
+  "native_reference_proofs": {
+    "any-repeated-active-cast": "f9948a7ad6f69232afca2f4886b5251e1ad181cf95aa37073370b6d3568bec32",
+    "variant-aggregate-emplace": "36f561f6699a515d56c55bc495e5684d5b4fee54ad21c969e72791445eea2ddb",
+    "variant-trivial-aggregate": "171f91b042bcb654e07f2b9b81d48d75ca2539963b11755e24601b71d3317a94",
+    "variant-visit-aggregate-reference": "0d106e0264415398a1cebc103c5d738206aa97be91ac0a1d209592a16b5b23c5",
+    "variant-visit-reference-result-replay": "5eebfdc22c751c5e76a7f3630043abfb602e2b756a0bf26b536fb145da59ae75"
+  },
+  "native_reference_authentication_sha256": "3bcd53baeb90a1a8a7d927ee70ee645aa101c7c0692d64ffc4ec41a6f407a0d3",
+  "source_proof_sha256": "9cb6bafffe5978d749c1e2531e122de008a3906892056a005cf8b3bb6b0b01af"
 }

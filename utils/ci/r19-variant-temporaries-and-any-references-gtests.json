@@ -118,44 +118,12 @@
       "source_sha256": "53da0121ba8020f1a3245cce43cb6b28c9b42427eca74b74d19f23a4d2785537"
     },
     {
-      "name": "variant-visit-temporary-reference-parameter-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nint read(const int& value) { return value; }\nint test() { return std::visit(read, std::variant<int>{7}); }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "def3b4e36f6dce6f74e7c64442fbcec7ecbdfc8d506b6d08b124e280e5059669"
-    },
-    {
-      "name": "variant-visit-nonowning-xvalue-operand-guard",
-      "public_header": "variant",
-      "expected": "accept",
-      "source": "#include <variant>\nusing Value = std::variant<int>;\nint read(int value) { return value; }\nint test(Value& input) { return std::visit(read, static_cast<Value&&>(input)); }\n",
-      "kind": "cpp17-operation",
-      "source_sha256": "cd8d8712344ef67abf42a19a288dd04cad1f2bdf4edebdba535fc456f01e9a83"
-    },
-    {
       "name": "any-active-mutable-reference-writes-its-slot",
       "public_header": "any",
       "expected": "accept",
       "source": "#include <any>\nint main() {\n  std::any value{true};\n  bool& active = std::any_cast<bool&>(value);\n  bool* address = &active;\n  active = false;\n  return *address ? 1 : 0;\n}\n",
       "kind": "cpp17-operation",
       "source_sha256": "bf31816adde2862f7f0fc3f1964a867ba13c821683c43781d77a97630b19e5b9"
-    },
-    {
-      "name": "any-active-mutable-reference-wrong-type-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\nint read() {\n  std::any value{false};\n  return std::any_cast<int&>(value);\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "eefa32129830e6848f4495e98f7c34e8893c012a9ac6d17f0699083dccd0f1fc"
-    },
-    {
-      "name": "any-active-mutable-reference-aliased-reset-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\nint read() {\n  std::any value{true};\n  std::any& alias = value;\n  alias.reset();\n  return std::any_cast<bool&>(value);\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "400e69c0a3a7fad0acc76961b34cbb3c70563f1530f12055a09466c2bbe4a22b"
     },
     {
       "name": "any-active-float-reference-increments-payload",
@@ -180,6 +148,38 @@
       "source": "#include <any>\nint main() {\n  std::any value = u'A';\n  char16_t& active = std::any_cast<char16_t&>(value);\n  auto* address = &active;\n  active = u'Z';\n  return *address != u'Z';\n}\n",
       "kind": "cpp17-operation",
       "source_sha256": "c3506a0cc6a0da917d90aa32e0f2015ff6c1d8cbf94749371972d67a0eae1653"
+    },
+    {
+      "name": "variant-visit-nonowning-xvalue-operand-guard",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Value = std::variant<int>;\nint read(int value) { return value; }\nint test(Value& input) { return std::visit(read, static_cast<Value&&>(input)); }\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "cd8d8712344ef67abf42a19a288dd04cad1f2bdf4edebdba535fc456f01e9a83"
+    },
+    {
+      "name": "variant-visit-temporary-reference-parameter-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nint read(const int& value) { return value; }\nint test() { return std::visit(read, std::variant<int>{7}); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "def3b4e36f6dce6f74e7c64442fbcec7ecbdfc8d506b6d08b124e280e5059669"
+    },
+    {
+      "name": "any-active-mutable-reference-wrong-type-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint read() {\n  std::any value{false};\n  return std::any_cast<int&>(value);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "eefa32129830e6848f4495e98f7c34e8893c012a9ac6d17f0699083dccd0f1fc"
+    },
+    {
+      "name": "any-active-mutable-reference-aliased-reset-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint read() {\n  std::any value{true};\n  std::any& alias = value;\n  alias.reset();\n  return std::any_cast<bool&>(value);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "400e69c0a3a7fad0acc76961b34cbb3c70563f1530f12055a09466c2bbe4a22b"
     }
   ],
   "new_gtest_names": [
@@ -195,7 +195,7 @@
     "TranslateTest.CoreV2AnyActiveMutableReferenceWrongTypeGuardRejected",
     "TranslateTest.CoreV2AnyActiveMutableReferenceAliasedResetGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "79ff43760d160576bec03ce6e60d3037c02f7455c8c2bfa9c2595d185e0e99e4",
   "maintained_original_sha256": "537f4693223fffb776096f73b1fe10a33f2e97eeebf84a4301dffe9cf4af64dd",
@@ -207,5 +207,12 @@
   "current_registry_count": 9019,
   "current_python_registry_tests": 286,
   "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "any-active-mutable-reference": "48c5bf01bc62c9cc06f7956355c46a38b033a773d095c14cffbf7ba449c26bc1",
+    "any-mutable-reference-numeric": "f5af51d5c778c2e0e49b9d5a0efd34ab654fde1d7001773a3a4fbfe72f9eef0b",
+    "variant-visit-temporaries-move-replay": "16173b5001c6df4af7a1559a7292422bb5a9eb0f52715e8150a72e2e429da42f"
+  },
+  "native_reference_authentication_sha256": "674cb78602ef3d695aabbf4c5625231ee4b2e2b1a94ccc849d2ba05d9a599156",
+  "source_proof_sha256": "9cb6bafffe5978d749c1e2531e122de008a3906892056a005cf8b3bb6b0b01af"
 }

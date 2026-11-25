@@ -165,14 +165,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-hinted-node-custom-policy-guard",
-      "expected": "accept",
-      "public_header": "map",
-      "source": "#include <functional>\n#include <map>\n#include <utility>\nint main() {\n  std::map<int, int, std::greater<int>> source{{2, 20}}, destination{{1, 10}};\n  auto node = source.extract(2);\n  auto position = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && position->first == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "25d209ba904c42b686428bc73508f71397648b5752105cc11d430a511d731d0d",
-      "kind": "cpp17-operation"
-    },
-    {
       "name": "ordered-set-hinted-value-insertion-and-emplacement",
       "expected": "accept",
       "public_header": "set",
@@ -202,22 +194,6 @@
       "public_header": "map",
       "source": "#include <map>\nint main() {\n  using Map = std::multimap<int, int>;\n  Map values{{1, 10}, {2, 20}, {2, 21}, {4, 40}};\n  Map::value_type written{2, 19};\n  auto first = values.insert(values.cbegin(), written);\n  auto last = values.emplace_hint(values.cend(), 2, 22);\n  auto cursor = values.lower_bound(2);\n  if (cursor != first || cursor->second != 19)\n    return 1;\n  if ((++cursor)->second != 20 || (++cursor)->second != 21)\n    return 2;\n  return ++cursor == last && cursor->second == 22 && values.count(2) == 4 ? 0 : 3;\n}\n",
       "source_sha256": "5300f5dc94343f5418b108d84370250056df8efcb6b82e308b01658c55483df1",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-map-hinted-emplace-converting-value-guard",
-      "expected": "reject",
-      "public_header": "map",
-      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  short mapped = 14;\n  auto inserted = values.emplace_hint(values.cend(), 1, mapped);\n  return inserted->second == 14 ? 0 : 1;\n}\n",
-      "source_sha256": "c86a80e440840731b13171e9c28c52bf904e08fcf51465eb509ef8486a27c7bf",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "ordered-set-hinted-insert-custom-policy-guard",
-      "expected": "accept",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values{2};\n  auto inserted = values.insert(values.cbegin(), 3);\n  return inserted == values.begin() && *inserted == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "9b35c0b9edfd43ae1a21cc4c6bfe6e364dca86778be84fab053ac00549daf614",
       "kind": "cpp17-operation"
     },
     {
@@ -253,12 +229,36 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "ordered-hinted-node-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\n#include <utility>\nint main() {\n  std::map<int, int, std::greater<int>> source{{2, 20}}, destination{{1, 10}};\n  auto node = source.extract(2);\n  auto position = destination.insert(destination.cbegin(), std::move(node));\n  return node.empty() && position->first == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "25d209ba904c42b686428bc73508f71397648b5752105cc11d430a511d731d0d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-hinted-insert-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values{2};\n  auto inserted = values.insert(values.cbegin(), 3);\n  return inserted == values.begin() && *inserted == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "9b35c0b9edfd43ae1a21cc4c6bfe6e364dca86778be84fab053ac00549daf614",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "ordered-allocator-extended-constructor-custom-compare-guard",
       "expected": "accept",
       "public_header": "map",
       "source": "#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map source{{2, 20}};\n  Map copy(source, Map::allocator_type{});\n  return copy.size() == 1 ? 0 : 1;\n}\n",
       "source_sha256": "c324d92525b5fdaf2acb7aca5c61d689d2752bd8c3becc7c7e71e43632e9c5ac",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-hinted-emplace-converting-value-guard",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  short mapped = 14;\n  auto inserted = values.emplace_hint(values.cend(), 1, mapped);\n  return inserted->second == 14 ? 0 : 1;\n}\n",
+      "source_sha256": "c86a80e440840731b13171e9c28c52bf904e08fcf51465eb509ef8486a27c7bf",
+      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -279,7 +279,7 @@
     "TranslateTest.CoreV2OrderedAllocatorExtendedConstructorCustomCompareGuardRunAtBothOptimizations",
     "TranslateTest.CoreV2OrderedMapHintedEmplaceConvertingValueGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "a2e809fc19bef83ca9c2c6534bacccc64ec0ecba8d0349098f54e78129ece6af",
   "maintained_original_sha256": "b18ee73fa062befcb4f029a8c1e076be476d306a8567dc8f01e56b7386944094",
@@ -291,5 +291,11 @@
   "current_registry_count": 8820,
   "current_python_registry_tests": 264,
   "native_reference_selected_executions": 30,
-  "planned_generated_c23_executions": 30
+  "planned_generated_c23_executions": 30,
+  "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
+    "ordered-hints-allocator-ownership": "6aef3920c9ae5231116dfd47acdf0b416632972657ba44793cfa67d90ebda04c"
+  },
+  "native_reference_authentication_sha256": "773fb9fcc046a46d803b346c0fef485d899ad63228e3e68646f0f1f9735a8fce",
+  "source_proof_sha256": "9cb6bafffe5978d749c1e2531e122de008a3906892056a005cf8b3bb6b0b01af"
 }

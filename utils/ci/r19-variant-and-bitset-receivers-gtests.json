@@ -109,7 +109,7 @@
     "TranslateTest.CoreV2VariantVisitMixedBoundAndXvalueOperandsRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantVisitUnverifiedXvalueReturningCallRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "4e25448c3737b6d941a9fd6c8361f4a8da049914fe631fbb789dd0f91e117959",
   "maintained_original_sha256": "7a62958b4afb394c3c67940a01e9b0d679bd505b74c5610b01df523e304f1137",
@@ -121,5 +121,11 @@
   "current_registry_count": 9064,
   "current_python_registry_tests": 292,
   "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "bitset-reference-materialization": "81867ed88acbf1edd6052562dfe20dfc33a45dd67a18ddb7aaf31e6913b7b521",
+    "variant-visit-borrowed-xvalues": "1f94b16e7ffb3dda60d1960bc273f71d0cca5052c5a28ff8c69cbe9c51c465a5"
+  },
+  "native_reference_authentication_sha256": "137766e9577c839cbc0399c97d8693c158fe7fe9693ffea9b27f96f984f6d6f6",
+  "source_proof_sha256": "9cb6bafffe5978d749c1e2531e122de008a3906892056a005cf8b3bb6b0b01af"
 }
