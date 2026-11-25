@@ -27117,6 +27117,12 @@ class FunctionLowering {
     auto Remaining = snapshot(cast(fieldStorage(std::move(Carrier), List->Size, L), "u64", L), L);
     return {std::move(Current), std::move(Remaining), ForwardListInput::CountedArray};
   }
+  ForwardListInput forwardListPointerInput(Expression First, Expression End, SourceLocation L) {
+    const auto Pointer = type(A.Context.getPointerType(A.Context.IntTy.withConst()), L);
+    auto Current = snapshot(cast(std::move(First), Pointer, L), L);
+    auto Last = snapshot(cast(std::move(End), Pointer, L), L);
+    return {std::move(Current), std::move(Last), ForwardListInput::PointerRange};
+  }
   Expression forwardListHasInput(const ForwardListInput &Input, SourceLocation L) {
     if (Input.Mode == ForwardListInput::Nodes) return cast(Input.Current, "bool", L);
     if (Input.Mode == ForwardListInput::PointerRange)
@@ -27141,7 +27147,8 @@ class FunctionLowering {
       assign(*Input.Limit, binary("-", *Input.Limit, quantity(1, "u64", L), "u64", L), L);
   }
   void insertForwardListChain(Expression Link, const ForwardListInput &Input,
-                              const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+                              const UtilityForwardListNodeRecord &Info, SourceLocation L,
+                              std::optional<Expression> LastInserted = std::nullopt) {
     auto First = temporary("ptr:void", L);
     auto LastLink = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
     initializeZero(First, A.Context.VoidPtrTy, L);
@@ -27154,6 +27161,7 @@ class FunctionLowering {
     auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Info, L);
     assign(dereference(LastLink, L), Node, L);
     assign(LastLink, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
+    if (LastInserted) assign(*LastInserted, Node, L);
     advanceForwardListInput(Input, L);
     jump(Check, L); label(Done, L);
     // The range insertion attaches the detached chain after construction.
@@ -27302,10 +27310,8 @@ class FunctionLowering {
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::AssignPointerRange) {
-      const auto Pointer = type(A.Context.getPointerType(A.Context.IntTy.withConst()), L);
-      auto Current = snapshot(cast(Operands[0], Pointer, L), L);
-      auto End = snapshot(cast(Operands[1], Pointer, L), L);
-      assignForwardListStorage(Place, {std::move(Current), std::move(End), ForwardListInput::PointerRange}, Owner->Node, L);
+      auto Input = forwardListPointerInput(Operands[0], Operands[1], L);
+      assignForwardListStorage(Place, Input, Owner->Node, L);
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::MoveAssign) {
@@ -27331,6 +27337,24 @@ class FunctionLowering {
     if (Operation == UtilityForwardListOperation::Clear) {
       destroyForwardListStorage(Place, Owner->Node, L);
       return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::InsertAfterCount ||
+        Operation == UtilityForwardListOperation::InsertAfterInitializerList ||
+        Operation == UtilityForwardListOperation::InsertAfterPointerRange) {
+      auto Position = snapshot(forwardListMember(dereference(Operands.front(), L), true, L), L);
+      auto LastInserted = snapshot(Position, L);
+      auto Input = [&]() -> ForwardListInput {
+        if (Operation == UtilityForwardListOperation::InsertAfterCount) {
+          auto Count = snapshot(cast(Operands[1], "u64", L), L);
+          return {Operands[2], std::move(Count), ForwardListInput::RepeatedValue};
+        }
+        if (Operation == UtilityForwardListOperation::InsertAfterPointerRange)
+          return forwardListPointerInput(Operands[1], Operands[2], L);
+        const auto *Record = Method->getParamDecl(1)->getType()->getAsCXXRecordDecl();
+        return forwardListInitializerInput(dereference(Operands[1], L), Record, L);
+      }();
+      insertForwardListChain(forwardListNext(Position, L), Input, Owner->Node, L, LastInserted);
+      return forwardListIterator(Method->getReturnType(), std::move(LastInserted), L);
     }
     const bool Insert = Operation == UtilityForwardListOperation::InsertAfter;
     const bool Erase = Operation == UtilityForwardListOperation::EraseAfter;
