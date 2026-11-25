@@ -54399,12 +54399,55 @@ bool forwardListPointerAssignmentSignature(const CXXMethodDecl *M, const ASTCont
           Context.hasSameType(Type, Context.getPointerType(Context.IntTy.withConst())));
 }
 
+bool forwardListFilterPointer(QualType Type, unsigned Arity, const ASTContext &Context) {
+  const auto *Prototype = Type->isFunctionPointerType()
+      ? Type->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Prototype || Prototype->isVariadic() || Prototype->getCallConv() != CC_C ||
+      Prototype->hasExtParameterInfos() || Prototype->getNumParams() != Arity ||
+      !Context.hasSameType(Prototype->getReturnType(), Context.BoolTy)) return false;
+  for (auto Parameter : Prototype->param_types())
+    if (!Context.hasSameType(Parameter, Context.IntTy)) return false;
+  return true;
+}
+
+std::optional<UtilityForwardListOperation> forwardListPredicateSignature(
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  if (!Method->getIdentifier() || Method->isConst() || !Method->getReturnType()->isVoidType() ||
+      Method->getNumParams() != 1 || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return std::nullopt;
+  const bool Remove = Method->getName() == "remove_if";
+  if (!Remove && Method->getName() != "unique") return std::nullopt;
+  const auto Type = Method->getParamDecl(0)->getType();
+  const auto *Arguments = Method->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
+      !forwardListFilterPointer(Type, Remove ? 1 : 2, Context)) return std::nullopt;
+  return Remove ? UtilityForwardListOperation::RemoveIf : UtilityForwardListOperation::UniqueWithPredicate;
+}
+
+bool forwardListSDKFilterCall(const CallExpr *Call, const FunctionDecl *Root, const ASTContext &Context) {
+  if (Call->getDirectCallee() || !Root || Root->getNumParams() != 1 ||
+      !isa<CXXMethodDecl>(Root) || !Root->getIdentifier()) return false;
+  const auto Name = Root->getName();
+  const unsigned Arity = Name == "remove_if" ? 1 : Name == "unique" ? 2 : 0;
+  const auto *Definition = Root->getDefinition();
+  if (!Arity || Call->getNumArgs() != Arity || !Definition ||
+      !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      !variantParameter(Call->getCallee(), Definition->getParamDecl(0)) ||
+      !forwardListFilterPointer(Definition->getParamDecl(0)->getType(), Arity, Context)) return false;
+  for (const auto *Argument : Call->arguments())
+    if (!Context.hasSameType(Argument->getType(), Context.IntTy)) return false;
+  return true;
+}
+
 std::optional<UtilityForwardListOperation> forwardListMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
   if (!M || M->isStatic() || M->isVolatile() ||
       !forwardListFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, M->getParent(), Context)) {
+    if (M->getPrimaryTemplate())
+      if (const auto Filter = forwardListPredicateSignature(M, Context)) return Filter;
     if (M->getPrimaryTemplate() && forwardListPointerAssignmentSignature(M, Context))
       return UtilityForwardListOperation::AssignPointerRange;
     if (!M->isConst() && M->getIdentifier() && M->getName() == "assign" &&
@@ -54644,7 +54687,7 @@ bool forwardListBuiltinLibraryCast(const State &S, const SourceManager &SM,
 
 bool forwardListSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context,
-                         const UtilityForwardListNodeRecord &Owner) {
+                         const UtilityForwardListNodeRecord &Owner, bool DirectFilter = false) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -54736,6 +54779,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!forwardListScalarDestruction(S, SM, Call, Context, Owner) &&
+          !(DirectFilter && forwardListSDKFilterCall(Call, Root, Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
@@ -54928,9 +54972,12 @@ bool forwardListFilterBody(const State &S, const SourceManager &SM,
   const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
   const auto *Return = Body && !Body->body_empty() ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
   if (!Return || !Return->getRetValue()) return false;
-  if (Operation == UtilityForwardListOperation::RemoveValue) {
+  if (Operation == UtilityForwardListOperation::RemoveValue ||
+      Operation == UtilityForwardListOperation::RemoveIf ||
+      Operation == UtilityForwardListOperation::UniqueWithPredicate) {
+    const unsigned Statements = Operation == UtilityForwardListOperation::UniqueWithPredicate ? 4 : 5;
     const auto *Count = dyn_cast<CStyleCastExpr>(Return->getRetValue()->IgnoreParens());
-    return Body->size() == 5 && isa<ForStmt>(*(Body->body_begin() + 3)) &&
+    return Body->size() == Statements && isa<ForStmt>(*(Body->body_begin() + Statements - 2)) &&
            Count && Count->getCastKind() == CK_ToVoid;
   }
   const auto *Delegate = Body->size() == 1
@@ -55126,7 +55173,10 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
   const auto Operation = forwardListMethodSignature(S, SM, Method, Context);
   const auto Node = Method ? forwardListReceiverNode(S, SM, Method->getParent(), Context) : std::nullopt;
-  if (!Operation || !Node || !forwardListSourceGraph(S, SM, Method, Context, *Node)) return std::nullopt;
+  if (!Operation || !Node) return std::nullopt;
+  const bool DirectFilter = *Operation == UtilityForwardListOperation::RemoveIf ||
+                            *Operation == UtilityForwardListOperation::UniqueWithPredicate;
+  if (!forwardListSourceGraph(S, SM, Method, Context, *Node, DirectFilter)) return std::nullopt;
   if (*Operation == UtilityForwardListOperation::MoveAssign &&
       !forwardListMoveAssignmentBody(S, SM, Method, Context))
     return std::nullopt;
@@ -55141,7 +55191,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
        *Operation == UtilityForwardListOperation::AssignPointerRange) &&
       !forwardListInputAssignmentBody(Method, *Operation))
     return std::nullopt;
-  if ((*Operation == UtilityForwardListOperation::RemoveValue || *Operation == UtilityForwardListOperation::Unique) &&
+  if ((*Operation == UtilityForwardListOperation::RemoveValue || *Operation == UtilityForwardListOperation::Unique ||
+       DirectFilter) &&
       !forwardListFilterBody(S, SM, Method, *Operation))
     return std::nullopt;
   const Expr *Receiver = nullptr;
