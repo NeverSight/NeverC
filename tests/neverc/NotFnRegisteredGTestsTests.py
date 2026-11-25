@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.forward_list_long_element_operations_registered = cls.registered
+        cls.forward_list_long_element_operations_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_long_element_operations_original = cls.adapter.restore_original_gtests(cls.forward_list_long_element_operations_registered,
+                                                                        cls.forward_list_long_element_operations_suffix)
+        cls.registered = cls.adapter.restore_forward_list_long_element_operations_history(cls.forward_list_long_element_operations_registered)
         cls.forward_list_function_comparisons_and_predicates_registered = cls.registered
         cls.forward_list_function_comparisons_and_predicates_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.forward_list_function_comparisons_and_predicates_original = cls.adapter.restore_original_gtests(cls.forward_list_function_comparisons_and_predicates_registered,
@@ -4119,6 +4124,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_forward_list_function_comparisons_and_predicates_history(self.forward_list_function_comparisons_and_predicates_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.forward_list_function_comparisons_and_predicates_registered, self.forward_list_function_comparisons_and_predicates_suffix + b' ')
+
+
+    def test_forward_list_long_element_operations_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_long_element_operations_original + self.forward_list_long_element_operations_suffix, self.forward_list_long_element_operations_registered)
+        self.assertEqual(self.adapter.restore_forward_list_long_element_operations_history(self.forward_list_long_element_operations_original),
+                         self.forward_list_function_comparisons_and_predicates_original)
+        output, evidence = self.extractor.extract(self.forward_list_long_element_operations_original, ['TranslateTest.CoreV2ForwardListLongKeepsFullWidthThroughIteratorsAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListLongAssignAndInsertExactRangesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListLongSortMergeRemoveAndCompareRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUnsignedElementGuardRejected', 'TranslateTest.CoreV2ForwardListLongSourceAllocatorGuardRejected', 'TranslateTest.CoreV2ForwardListLongConvertingPointerRangeGuardRejected', 'TranslateTest.CoreV2ForwardListLongNarrowingOrderFunctionGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9236)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-long-assign-and-insert-exact-ranges', output)
+        self.assertIn(b'forward-list-long-narrowing-order-function-guard', output)
+
+    def test_forward_list_long_element_operations_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_long_element_operations_history(self.forward_list_long_element_operations_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_long_element_operations_registered, self.forward_list_long_element_operations_suffix + b' ')
 
 
 if __name__ == '__main__':

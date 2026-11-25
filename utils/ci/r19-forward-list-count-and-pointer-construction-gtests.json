@@ -63,25 +63,25 @@
       "source_sha256": "9340678afc699c534d13ab2e3505fc82a5d43660542de230c2a1b81e2ca91c09",
       "original_case_source_sha256": "9340678afc699c534d13ab2e3505fc82a5d43660542de230c2a1b81e2ca91c09",
       "gtest_body_sha256": "712710dcf9c55dcf7f271f603f300e52833b33761f4ddcc9e7d9486da95c3b15"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "forward-list-count-construction-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListCountConstructionOtherElementGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongConstructsZeros",
+      "expected": "accept",
       "source_sha256": "8fe49119addb13cc50d1edc6a560270f00bd5847247b0f2e16a8f0a413ac60be",
       "original_case_source_sha256": "8fe49119addb13cc50d1edc6a560270f00bd5847247b0f2e16a8f0a413ac60be",
-      "gtest_body_sha256": "f81b19165f0da9b106098c1bc75ecc7c4028d5338277de203050e4eff702fcf5"
+      "gtest_body_sha256": "3002e7739cf231b38a054d2eba0bec10015844a5d5869d2b09c26943855b8a9b"
     },
     {
       "name": "forward-list-fill-construction-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListFillConstructionOtherElementGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongConstructsRepeatedValues",
+      "expected": "accept",
       "source_sha256": "25fe828e2759546dc39b0305a5e321b15a8244c052c7c128ff1ac65a4dd531e1",
       "original_case_source_sha256": "25fe828e2759546dc39b0305a5e321b15a8244c052c7c128ff1ac65a4dd531e1",
-      "gtest_body_sha256": "943fab7b44d42e05bbb222379a42176964d4cf8981051c48f246e544ebcb144e"
-    },
+      "gtest_body_sha256": "82e7682abb82e077fcef40a10b790c53d69301b0c08d62f618c1b68cd9075254"
+    }
+  ],
+  "negative_cases": [
     {
       "name": "forward-list-pointer-construction-converting-elements-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListPointerConstructionConvertingElementsGuardRejected",
@@ -158,19 +158,19 @@
     },
     {
       "name": "forward-list-count-construction-other-element-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> list(3);\n  return list.front() != 0L;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "8fe49119addb13cc50d1edc6a560270f00bd5847247b0f2e16a8f0a413ac60be",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-fill-construction-other-element-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> list(2, 7L);\n  return list.front() != 7L;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "25fe828e2759546dc39b0305a5e321b15a8244c052c7c128ff1ac65a4dd531e1",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-pointer-construction-converting-elements-guard",
@@ -190,8 +190,8 @@
     "TranslateTest.CoreV2ForwardListPointerConstructionWithDefaultAllocatorRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListPointerConstructionAcceptsEmptyRangeRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListConstructsFromCheckedIteratorRange",
-    "TranslateTest.CoreV2ForwardListCountConstructionOtherElementGuardRejected",
-    "TranslateTest.CoreV2ForwardListFillConstructionOtherElementGuardRejected",
+    "TranslateTest.CoreV2ForwardListLongConstructsZeros",
+    "TranslateTest.CoreV2ForwardListLongConstructsRepeatedValues",
     "TranslateTest.CoreV2ForwardListPointerConstructionConvertingElementsGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -205,13 +205,14 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9192,
   "current_python_registry_tests": 316,
-  "native_reference_selected_executions": 16,
-  "planned_generated_c23_executions": 16,
+  "native_reference_selected_executions": 20,
+  "planned_generated_c23_executions": 20,
   "native_reference_proofs": {
     "forward-list-count-construction": "2357750e8e9324ae1c8898081f8584fc3b2ff4577c75f337fb06c85f9c2926db",
     "forward-list-iterator-construction": "44617d8c0b6a767a822607ad1939df3b64cf063de81fe6cbfeb530a135783d36",
+    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
     "forward-list-pointer-construction": "fb20eb3887f7fe34bc625fdd0f881996456650e22bcf3b00f0ab998bb44af6d8"
   },
-  "native_reference_authentication_sha256": "2a7cca4d204ad3d09822912cc4e0f446218cd00fa033eea83b0fa2024ab01f7e",
-  "source_proof_sha256": "747c7fc5a065650287ccf63eb447b9b2bc34bee8bb820b2c815b9911dfbad0b1"
+  "native_reference_authentication_sha256": "094944e8704fcbb9c5d9679454ccddc617bffa43ba14425147d342d94fbcdf68",
+  "source_proof_sha256": "252c9f0793c0e0eb08d32e81522cc701f687507843d82547937f65d3d7ebd127"
 }

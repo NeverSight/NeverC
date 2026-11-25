@@ -71,17 +71,25 @@
       "source_sha256": "dec26c7510edf43e1c6a8cebd20befa7065648a12e83d52d0b1d16ace0f4c1fa",
       "original_case_source_sha256": "dec26c7510edf43e1c6a8cebd20befa7065648a12e83d52d0b1d16ace0f4c1fa",
       "gtest_body_sha256": "ee59fbeb5074327661303c4374d2abb34901497039cf3e30449594b6f4e991dd"
+    },
+    {
+      "name": "forward-list-merge-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongMergesNodes",
+      "expected": "accept",
+      "source_sha256": "8b9ae5798e0f8d405f938ba083e710e20ce052729db45eae0bf954a726a6d798",
+      "original_case_source_sha256": "8b9ae5798e0f8d405f938ba083e710e20ce052729db45eae0bf954a726a6d798",
+      "gtest_body_sha256": "80619a7276f7d70de995caed54882b9998843da9ea496145eb8b54201b978132"
+    },
+    {
+      "name": "forward-list-sort-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongSortsNodes",
+      "expected": "accept",
+      "source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
+      "original_case_source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
+      "gtest_body_sha256": "d5e907584970825bb751c8f2ee83dee70fbc096bdae6fc0c2b94558177fce367"
     }
   ],
   "negative_cases": [
-    {
-      "name": "forward-list-merge-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListMergeOtherElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "8b9ae5798e0f8d405f938ba083e710e20ce052729db45eae0bf954a726a6d798",
-      "original_case_source_sha256": "8b9ae5798e0f8d405f938ba083e710e20ce052729db45eae0bf954a726a6d798",
-      "gtest_body_sha256": "8708da79fc43d93a1955dfa696528d61b00ab0817fed371fd21390bbce840477"
-    },
     {
       "name": "forward-list-sort-custom-object-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListSortCustomObjectGuardRejected",
@@ -89,14 +97,6 @@
       "source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
       "original_case_source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
       "gtest_body_sha256": "7f163ca4ef9f42808691e12432b5707258726ce9fc81b6537774c4be00aeced6"
-    },
-    {
-      "name": "forward-list-sort-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListSortOtherElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
-      "original_case_source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
-      "gtest_body_sha256": "24d0617b9d575286c1004d78c63a75a6c33d120387b64ef332d4e97c6f2b1688"
     }
   ],
   "source_cases": [
@@ -174,11 +174,19 @@
     },
     {
       "name": "forward-list-merge-other-element-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> left{1L};\n  std::forward_list<long> right{2L};\n  left.merge(right);\n  return left.front() != 1L;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "8b9ae5798e0f8d405f938ba083e710e20ce052729db45eae0bf954a726a6d798",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-sort-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> list{2L, 1L};\n  list.sort();\n  return list.front() != 1L;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-sort-custom-object-guard",
@@ -186,14 +194,6 @@
       "source": "#include <forward_list>\nstruct Greater {\n  bool operator()(int left, int right) const { return left > right; }\n};\nint main() {\n  std::forward_list<int> list{1, 2};\n  list.sort(Greater{});\n  return list.front() != 2;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "forward-list-sort-other-element-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> list{2L, 1L};\n  list.sort();\n  return list.front() != 1L;\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
       "kind": "source-body-guard"
     }
   ],
@@ -207,9 +207,9 @@
     "TranslateTest.CoreV2ForwardListSortsWithFunctionComparison",
     "TranslateTest.CoreV2ForwardListMergesWithFunctionComparison",
     "TranslateTest.CoreV2ForwardListMergesRvalueWithFunctionComparison",
-    "TranslateTest.CoreV2ForwardListMergeOtherElementGuardRejected",
-    "TranslateTest.CoreV2ForwardListSortCustomObjectGuardRejected",
-    "TranslateTest.CoreV2ForwardListSortOtherElementGuardRejected"
+    "TranslateTest.CoreV2ForwardListLongMergesNodes",
+    "TranslateTest.CoreV2ForwardListLongSortsNodes",
+    "TranslateTest.CoreV2ForwardListSortCustomObjectGuardRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -222,13 +222,14 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9181,
   "current_python_registry_tests": 314,
-  "native_reference_selected_executions": 18,
-  "planned_generated_c23_executions": 18,
+  "native_reference_selected_executions": 22,
+  "planned_generated_c23_executions": 22,
   "native_reference_proofs": {
+    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
     "forward-list-merge": "bf98bd8e05ba20330a3d24d8a1804a7fc022387f57ab3eab174daa06d7b3694e",
     "forward-list-order-function": "110db9e05085ccab8d58ac4007605516614a6f70bec3665d380865bd08c04442",
     "forward-list-sort": "a0eaf80972e814c989310c40267fa9ac1f2b88f3624e05611cf1cd6dda84152a"
   },
-  "native_reference_authentication_sha256": "1731760ae9dd7b5bfb6ff76557fa969363e76e6bac6fa6fe559ea9b27d8740e9",
-  "source_proof_sha256": "747c7fc5a065650287ccf63eb447b9b2bc34bee8bb820b2c815b9911dfbad0b1"
+  "native_reference_authentication_sha256": "8d896e9d6562bbe63f9c0db3ee021a79e752edb8cc2fe8b7bc88cb9f886b0dc0",
+  "source_proof_sha256": "252c9f0793c0e0eb08d32e81522cc701f687507843d82547937f65d3d7ebd127"
 }

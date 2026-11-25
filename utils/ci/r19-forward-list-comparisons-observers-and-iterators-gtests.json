@@ -135,17 +135,57 @@
       "source_sha256": "01438fbbc98e9d0350c880f3a2d7103014886e510a87b2fb130d32c6d2a9f6dc",
       "original_case_source_sha256": "01438fbbc98e9d0350c880f3a2d7103014886e510a87b2fb130d32c6d2a9f6dc",
       "gtest_body_sha256": "5016e586bee90294470d21ae38c1ac3e421235c42025158ad02396084845badc"
+    },
+    {
+      "name": "forward-list-equality-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongComparesEquality",
+      "expected": "accept",
+      "source_sha256": "c9189dcea7e5e9f10170c81242d88bdf67b3b11bebb9f7d90f46e956366d2ec4",
+      "original_case_source_sha256": "c9189dcea7e5e9f10170c81242d88bdf67b3b11bebb9f7d90f46e956366d2ec4",
+      "gtest_body_sha256": "21a755cd69ce617905973d40775a52fa9130f907395846dbf576a06d8292af92"
+    },
+    {
+      "name": "forward-list-order-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongComparesOrder",
+      "expected": "accept",
+      "source_sha256": "d05c6465c4220c6f1a58c0e6d19cbc1ec033d84aecd8540a4a281e144a219fd4",
+      "original_case_source_sha256": "d05c6465c4220c6f1a58c0e6d19cbc1ec033d84aecd8540a4a281e144a219fd4",
+      "gtest_body_sha256": "589e553bf00f5688470db64e36e34c80f43528b67caec359a75fa3438c5fe9da"
+    },
+    {
+      "name": "forward-list-get-allocator-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongReturnsAllocators",
+      "expected": "accept",
+      "source_sha256": "3f71027c2b1c87e470acec4dd1bb0e76d017ffcdc6659ecc083ee9c8de239b51",
+      "original_case_source_sha256": "3f71027c2b1c87e470acec4dd1bb0e76d017ffcdc6659ecc083ee9c8de239b51",
+      "gtest_body_sha256": "ac17f716a8dafa8a26f3069ae24a4b8d8b60ca99d32801318130640d76cc28c4"
+    },
+    {
+      "name": "forward-list-max-size-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongReportsMaxSize",
+      "expected": "accept",
+      "source_sha256": "153a9dea0fe1f3b6d5ae8cb965222e3d2939a160a6c59be0dabbd56c3f497760",
+      "original_case_source_sha256": "153a9dea0fe1f3b6d5ae8cb965222e3d2939a160a6c59be0dabbd56c3f497760",
+      "gtest_body_sha256": "5ac5d61dba28472ccec60b6afdbc5136f2653286b6f81ba34a17e2f03ebaddd8"
+    },
+    {
+      "name": "forward-list-allocator-copy-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongCopiesWithAllocators",
+      "expected": "accept",
+      "source_sha256": "fd150ab3908f72c00c5065504eec17d6bedf45e31b5d9e68b53daa39eced4354",
+      "original_case_source_sha256": "fd150ab3908f72c00c5065504eec17d6bedf45e31b5d9e68b53daa39eced4354",
+      "gtest_body_sha256": "e01a41e6eff382988fb33b48098599d2aba517569ed874e954c2b7f6b0be6c17"
+    },
+    {
+      "name": "forward-list-allocator-move-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongMovesWithAllocators",
+      "expected": "accept",
+      "source_sha256": "da690c8fd182374efb94af17710a59b957733c61398aee11d387ebcdc1032308",
+      "original_case_source_sha256": "da690c8fd182374efb94af17710a59b957733c61398aee11d387ebcdc1032308",
+      "gtest_body_sha256": "be7154f4f76de5b80b7e05d37386d59d250026f54d2ef609940ab44952fd8d72"
     }
   ],
   "negative_cases": [
-    {
-      "name": "forward-list-equality-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListEqualityOtherElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "c9189dcea7e5e9f10170c81242d88bdf67b3b11bebb9f7d90f46e956366d2ec4",
-      "original_case_source_sha256": "c9189dcea7e5e9f10170c81242d88bdf67b3b11bebb9f7d90f46e956366d2ec4",
-      "gtest_body_sha256": "162806dff0c1dfcc2b4255ea7115b9e4bd5ab8711957d8241f99d21347b54340"
-    },
     {
       "name": "forward-list-indirect-owner-comparison-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListIndirectOwnerComparisonGuardRejected",
@@ -153,14 +193,6 @@
       "source_sha256": "c33f68447c083b5481e31c493e230c2f505fb41c068960405ad1cc3eed54850b",
       "original_case_source_sha256": "c33f68447c083b5481e31c493e230c2f505fb41c068960405ad1cc3eed54850b",
       "gtest_body_sha256": "4ac52bfc2b287d6d82c2996404c733abfce43b6bf3516a019a0e0fbed4362d86"
-    },
-    {
-      "name": "forward-list-order-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListOrderOtherElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "d05c6465c4220c6f1a58c0e6d19cbc1ec033d84aecd8540a4a281e144a219fd4",
-      "original_case_source_sha256": "d05c6465c4220c6f1a58c0e6d19cbc1ec033d84aecd8540a4a281e144a219fd4",
-      "gtest_body_sha256": "7664860aaf6ff2e86f9a3e1793883a4238ab17dfcfbe0f852876aa5beb76c9e2"
     },
     {
       "name": "forward-list-indirect-order-guard",
@@ -171,44 +203,12 @@
       "gtest_body_sha256": "b9a5f71c04c2a156965afff38c50457144c0c346e4d7474c93d4496cdbfb7df1"
     },
     {
-      "name": "forward-list-get-allocator-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListGetAllocatorOtherElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "3f71027c2b1c87e470acec4dd1bb0e76d017ffcdc6659ecc083ee9c8de239b51",
-      "original_case_source_sha256": "3f71027c2b1c87e470acec4dd1bb0e76d017ffcdc6659ecc083ee9c8de239b51",
-      "gtest_body_sha256": "400d3555a3e61414ae1fa0017a6801541f4065a8fb2fb0139ea93928c40732c0"
-    },
-    {
-      "name": "forward-list-max-size-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListMaxSizeOtherElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "153a9dea0fe1f3b6d5ae8cb965222e3d2939a160a6c59be0dabbd56c3f497760",
-      "original_case_source_sha256": "153a9dea0fe1f3b6d5ae8cb965222e3d2939a160a6c59be0dabbd56c3f497760",
-      "gtest_body_sha256": "5fde457ff75fb179abc12d5340e3faddcb62f77c81a939457ac239a5d1da90b3"
-    },
-    {
       "name": "forward-list-indirect-max-size-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListIndirectMaxSizeGuardRejected",
       "expected": "reject",
       "source_sha256": "9fa0fbb8c1cbe7166e2e620e47e3558129953f31fcb1274f8292f80b9dcc28af",
       "original_case_source_sha256": "9fa0fbb8c1cbe7166e2e620e47e3558129953f31fcb1274f8292f80b9dcc28af",
       "gtest_body_sha256": "dc9752314a183455d5b60c12b05d44daba2dfb99b7074c162b4002f6a8085895"
-    },
-    {
-      "name": "forward-list-allocator-copy-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListAllocatorCopyOtherElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "fd150ab3908f72c00c5065504eec17d6bedf45e31b5d9e68b53daa39eced4354",
-      "original_case_source_sha256": "fd150ab3908f72c00c5065504eec17d6bedf45e31b5d9e68b53daa39eced4354",
-      "gtest_body_sha256": "19c54372fae3c1a82cf188ceedb0dc1b3c4edb6ac6926667f0120a225acf92cf"
-    },
-    {
-      "name": "forward-list-allocator-move-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListAllocatorMoveOtherElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "da690c8fd182374efb94af17710a59b957733c61398aee11d387ebcdc1032308",
-      "original_case_source_sha256": "da690c8fd182374efb94af17710a59b957733c61398aee11d387ebcdc1032308",
-      "gtest_body_sha256": "f7623e97c70123c8dd24ebb17468083dcb2b7834c6b6a04540e9f710e11cc8c7"
     },
     {
       "name": "forward-list-iterator-construction-foreign-iterator-guard",
@@ -382,11 +382,51 @@
     },
     {
       "name": "forward-list-equality-other-element-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> left{3}, right{3};\n  return left != right;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "c9189dcea7e5e9f10170c81242d88bdf67b3b11bebb9f7d90f46e956366d2ec4",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-order-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> left{3}, right{5};\n  return !(left < right);\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "d05c6465c4220c6f1a58c0e6d19cbc1ec033d84aecd8540a4a281e144a219fd4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-get-allocator-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const std::forward_list<long> list;\n  (void)list.get_allocator();\n  return 0;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "3f71027c2b1c87e470acec4dd1bb0e76d017ffcdc6659ecc083ee9c8de239b51",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-max-size-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const std::forward_list<long> list;\n  return list.max_size() < 2;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "153a9dea0fe1f3b6d5ae8cb965222e3d2939a160a6c59be0dabbd56c3f497760",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-allocator-copy-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <memory>\nint main() {\n  const std::forward_list<long> source{3};\n  std::forward_list<long> copy(source, std::allocator<long>{});\n  return copy.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "fd150ab3908f72c00c5065504eec17d6bedf45e31b5d9e68b53daa39eced4354",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-allocator-move-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <memory>\n#include <utility>\nint main() {\n  std::forward_list<long> source{3};\n  std::forward_list<long> target(std::move(source), std::allocator<long>{});\n  return target.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "da690c8fd182374efb94af17710a59b957733c61398aee11d387ebcdc1032308",
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-indirect-owner-comparison-guard",
@@ -394,14 +434,6 @@
       "source": "#include <forward_list>\n#include <memory>\nint main() {\n  using List = std::forward_list<int>;\n  List left{3}, right{3};\n  auto equal = static_cast<bool (*)(const List &, const List &)>(&std::operator==<int, std::allocator<int>>);\n  return !equal(left, right);\n}\n",
       "public_header": "forward_list",
       "source_sha256": "c33f68447c083b5481e31c493e230c2f505fb41c068960405ad1cc3eed54850b",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "forward-list-order-other-element-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> left{3}, right{5};\n  return !(left < right);\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "d05c6465c4220c6f1a58c0e6d19cbc1ec033d84aecd8540a4a281e144a219fd4",
       "kind": "source-body-guard"
     },
     {
@@ -413,43 +445,11 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "forward-list-get-allocator-other-element-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\nint main() {\n  const std::forward_list<long> list;\n  (void)list.get_allocator();\n  return 0;\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "3f71027c2b1c87e470acec4dd1bb0e76d017ffcdc6659ecc083ee9c8de239b51",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "forward-list-max-size-other-element-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\nint main() {\n  const std::forward_list<long> list;\n  return list.max_size() < 2;\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "153a9dea0fe1f3b6d5ae8cb965222e3d2939a160a6c59be0dabbd56c3f497760",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "forward-list-indirect-max-size-guard",
       "expected": "reject",
       "source": "#include <forward_list>\nint main() {\n  using List = std::forward_list<int>;\n  const List list;\n  auto maximum = &List::max_size;\n  return (list.*maximum)() < 2;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "9fa0fbb8c1cbe7166e2e620e47e3558129953f31fcb1274f8292f80b9dcc28af",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "forward-list-allocator-copy-other-element-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\n#include <memory>\nint main() {\n  const std::forward_list<long> source{3};\n  std::forward_list<long> copy(source, std::allocator<long>{});\n  return copy.front() != 3;\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "fd150ab3908f72c00c5065504eec17d6bedf45e31b5d9e68b53daa39eced4354",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "forward-list-allocator-move-other-element-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\n#include <memory>\n#include <utility>\nint main() {\n  std::forward_list<long> source{3};\n  std::forward_list<long> target(std::move(source), std::allocator<long>{});\n  return target.front() != 3;\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "da690c8fd182374efb94af17710a59b957733c61398aee11d387ebcdc1032308",
       "kind": "source-body-guard"
     },
     {
@@ -503,15 +503,15 @@
     "TranslateTest.CoreV2ForwardListIteratorConstructionAcceptsEmptyBoundsRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListIteratorAssignmentReusesNodesAndTruncatesRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListIteratorInsertionReturnsFinalNodeAndPositionRunAtBothOptimizations",
-    "TranslateTest.CoreV2ForwardListEqualityOtherElementGuardRejected",
+    "TranslateTest.CoreV2ForwardListLongComparesEquality",
+    "TranslateTest.CoreV2ForwardListLongComparesOrder",
+    "TranslateTest.CoreV2ForwardListLongReturnsAllocators",
+    "TranslateTest.CoreV2ForwardListLongReportsMaxSize",
+    "TranslateTest.CoreV2ForwardListLongCopiesWithAllocators",
+    "TranslateTest.CoreV2ForwardListLongMovesWithAllocators",
     "TranslateTest.CoreV2ForwardListIndirectOwnerComparisonGuardRejected",
-    "TranslateTest.CoreV2ForwardListOrderOtherElementGuardRejected",
     "TranslateTest.CoreV2ForwardListIndirectOrderGuardRejected",
-    "TranslateTest.CoreV2ForwardListGetAllocatorOtherElementGuardRejected",
-    "TranslateTest.CoreV2ForwardListMaxSizeOtherElementGuardRejected",
     "TranslateTest.CoreV2ForwardListIndirectMaxSizeGuardRejected",
-    "TranslateTest.CoreV2ForwardListAllocatorCopyOtherElementGuardRejected",
-    "TranslateTest.CoreV2ForwardListAllocatorMoveOtherElementGuardRejected",
     "TranslateTest.CoreV2ForwardListIteratorConstructionForeignIteratorGuardRejected",
     "TranslateTest.CoreV2ForwardListIteratorConstructionMoveWrapperGuardRejected",
     "TranslateTest.CoreV2ForwardListIteratorAssignmentForeignOwnerGuardRejected",
@@ -528,16 +528,17 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9222,
   "current_python_registry_tests": 318,
-  "native_reference_selected_executions": 34,
-  "planned_generated_c23_executions": 34,
+  "native_reference_selected_executions": 46,
+  "planned_generated_c23_executions": 46,
   "native_reference_proofs": {
     "forward-list-allocator-construction": "886a3b2dada00de22afd59bffe60cba8ebe4194b4763f6e232b28575807e8b21",
     "forward-list-iterator-construction": "44617d8c0b6a767a822607ad1939df3b64cf063de81fe6cbfeb530a135783d36",
     "forward-list-iterator-modifiers": "4d2d5d90d53db337242269dc8734deb38e3e5521573f96d3c4d3eebc5e45cfef",
+    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
     "forward-list-observers": "c5a50f9e4577eeaa8a7dd77f4a427d480dbab31490d93bab1b74f21d370b3c91",
     "forward-list-owner-equality": "bf6f53d6535a746b91f2fd89f61179411114848ccdfc1b2058e953873ed207d7",
     "forward-list-owner-order": "4b91f94d9da197baae82e4262879ba872d0431a461035505b59fb3734535e7ef"
   },
-  "native_reference_authentication_sha256": "85ce2db5cbd330722b98d7993e3b86eb2871c193faa9e600399a5b58dbde0db7",
-  "source_proof_sha256": "747c7fc5a065650287ccf63eb447b9b2bc34bee8bb820b2c815b9911dfbad0b1"
+  "native_reference_authentication_sha256": "5dc6d2065aa4e226d24832ccf609d0f0f47409aed66bea4865fb3ece294c6051",
+  "source_proof_sha256": "252c9f0793c0e0eb08d32e81522cc701f687507843d82547937f65d3d7ebd127"
 }

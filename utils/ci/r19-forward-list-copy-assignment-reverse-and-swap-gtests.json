@@ -55,25 +55,25 @@
       "source_sha256": "0e620e58bf566e061ed9e7c619568bc1be7abce4e09cd3b149c76df9f5c814b9",
       "original_case_source_sha256": "0e620e58bf566e061ed9e7c619568bc1be7abce4e09cd3b149c76df9f5c814b9",
       "gtest_body_sha256": "011e23dfc7a6b5741568c8d9404b1c78b1f3a3f30504561bdf162356cbad4f83"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "forward-list-copy-assignment-unapproved-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListCopyAssignmentUnapprovedElementGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongCopyAssignsOwners",
+      "expected": "accept",
       "source_sha256": "de275d39e49ee2858bc9f02dd3f6cb6c48adc6e3ef8195375daa186f020ae160",
       "original_case_source_sha256": "de275d39e49ee2858bc9f02dd3f6cb6c48adc6e3ef8195375daa186f020ae160",
-      "gtest_body_sha256": "6404838c9f886c13e0e20d4a0047796a92560fa54764d2efa67ea55cd916fbe5"
+      "gtest_body_sha256": "9bf2acbbacb4c70e00f2701ef3a514d78321a8a3c98b130a0935771798222cf5"
     },
     {
       "name": "forward-list-reverse-other-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListReverseOtherElementGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongReversesNodes",
+      "expected": "accept",
       "source_sha256": "47c4e50d4b9c7b704a87676bfcdd48b03022bcdcd6cfd6f00fd9665a3bd64e98",
       "original_case_source_sha256": "47c4e50d4b9c7b704a87676bfcdd48b03022bcdcd6cfd6f00fd9665a3bd64e98",
-      "gtest_body_sha256": "2fd02227a13097e6ad27bd31f82fa6adb66b36abc5f3484d99fee6e33ab23624"
-    },
+      "gtest_body_sha256": "ba71123b4179a55cb2e825d709bb83e32da7b9243b082583be2b19696b93c25e"
+    }
+  ],
+  "negative_cases": [
     {
       "name": "forward-list-free-swap-source-allocator-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListFreeSwapSourceAllocatorGuardRejected",
@@ -142,19 +142,19 @@
     },
     {
       "name": "forward-list-copy-assignment-unapproved-element-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> from{5};\n  std::forward_list<long> into{7};\n  into = from;\n  return into.front() != 5;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "de275d39e49ee2858bc9f02dd3f6cb6c48adc6e3ef8195375daa186f020ae160",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-reverse-other-element-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> values{3L, 5L};\n  values.reverse();\n  return values.front() != 5L;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "47c4e50d4b9c7b704a87676bfcdd48b03022bcdcd6cfd6f00fd9665a3bd64e98",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-free-swap-source-allocator-guard",
@@ -173,8 +173,8 @@
     "TranslateTest.CoreV2ForwardListReverseEmptyAndSingletonRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListMemberSwapKeepsIteratorsAndReceiverSentinelRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListFreeSwapEvaluatesTheSelectedOwnersOnceRunAtBothOptimizations",
-    "TranslateTest.CoreV2ForwardListCopyAssignmentUnapprovedElementGuardRejected",
-    "TranslateTest.CoreV2ForwardListReverseOtherElementGuardRejected",
+    "TranslateTest.CoreV2ForwardListLongCopyAssignsOwners",
+    "TranslateTest.CoreV2ForwardListLongReversesNodes",
     "TranslateTest.CoreV2ForwardListFreeSwapSourceAllocatorGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -188,12 +188,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9119,
   "current_python_registry_tests": 308,
-  "native_reference_selected_executions": 14,
-  "planned_generated_c23_executions": 14,
+  "native_reference_selected_executions": 18,
+  "planned_generated_c23_executions": 18,
   "native_reference_proofs": {
     "forward-list-copy-assignment": "66d27527a526956ff022539f3ad3da6b7abd1c1021e1d62d4ba2a025a7696bfa",
+    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
     "forward-list-reverse-and-swap": "e26be23e0770fe6b001f45f129dfeacb63e72f14b90c0f92f41bdcb7f96201a6"
   },
-  "native_reference_authentication_sha256": "2bf7ba98a33e409f2b644dca93ce2fe7e7267ae039987610d38eebb4fe12574e",
-  "source_proof_sha256": "747c7fc5a065650287ccf63eb447b9b2bc34bee8bb820b2c815b9911dfbad0b1"
+  "native_reference_authentication_sha256": "94932db6374baee6b058927a709cb708ace9eb37a739a9e1524ad59bb7c5d79a",
+  "source_proof_sha256": "252c9f0793c0e0eb08d32e81522cc701f687507843d82547937f65d3d7ebd127"
 }

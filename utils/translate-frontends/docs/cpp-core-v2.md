@@ -18667,3 +18667,9 @@ iterator ranges also support construction, assignment and insertion.
 The default-allocator forward_list<int> accepts checked function pointers for
 stable sort and merge, removal by a predicate, and adjacent duplicate
 removal by a two-argument predicate.
+
+## Forward list operations for signed long elements
+
+The default-allocator forward_list<long> uses the target's signed long
+element type for checked construction, iterators, assignment, splices,
+removal, default comparison and ordering, and range modifiers.
