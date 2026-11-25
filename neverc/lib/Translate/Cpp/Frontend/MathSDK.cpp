@@ -54499,11 +54499,55 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
   return std::nullopt;
 }
 
+std::optional<UtilityForwardListOperation> forwardListOwnerComparisonSignature(
+    const State &S, const SourceManager &SM, const FunctionDecl *F, const ASTContext &Context) {
+  const auto *Primary = F->getPrimaryTemplate();
+  const auto *Arguments = F->getTemplateSpecializationArgs();
+  if (!Primary || F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !forwardListStd(F->getDeclContext()) || !Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type || Arguments->get(1).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Context.IntTy))
+    return std::nullopt;
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM, forwardListRecordType(Arguments->get(1).getAsType()), Context);
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) return std::nullopt;
+  return F->getOverloadedOperator() == OO_EqualEqual ? UtilityForwardListOperation::OwnerEqual
+                                                    : UtilityForwardListOperation::OwnerNotEqual;
+}
+
+bool forwardListOwnerEqualityBody(const State &S, const SourceManager &SM, const FunctionDecl *F,
+                                  UtilityForwardListOperation Kind) {
+  const auto *Definition = F->getDefinition();
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Result = Body && !Body->body_empty() ? dyn_cast<ReturnStmt>(Body->body_back()) : nullptr;
+  if (!Result || !Result->getRetValue()) return false;
+  const auto *Value = Result->getRetValue()->IgnoreParenImpCasts();
+  if (Kind == UtilityForwardListOperation::OwnerEqual) {
+    if (Body->size() != 8) return false;
+    const auto *Loop = dyn_cast<ForStmt>(*(Body->body_begin() + 6));
+    const auto *Exit = Loop ? dyn_cast<IfStmt>(Loop->getBody()) : nullptr;
+    const auto *Test = Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getCond()) : nullptr;
+    const auto *Advance = Loop ? dyn_cast_or_null<BinaryOperator>(Loop->getInc()) : nullptr;
+    const auto *EndMatch = dyn_cast<BinaryOperator>(Value);
+    return Loop && !Loop->getInit() && Exit && !Exit->getElse() && isa<ReturnStmt>(Exit->getThen()) &&
+           Test && Test->getOpcode() == BO_LAnd && Advance && Advance->getOpcode() == BO_Comma &&
+           EndMatch && EndMatch->getOpcode() == BO_EQ;
+  }
+  const auto *Invert = Body->size() == 1 ? dyn_cast<UnaryOperator>(Value) : nullptr;
+  const auto *Compare = Invert && Invert->getOpcode() == UO_LNot
+      ? dyn_cast<CXXOperatorCallExpr>(Invert->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Equal = Compare ? Compare->getDirectCallee() : nullptr;
+  return Equal && Compare->getOperator() == OO_EqualEqual && Compare->getNumArgs() == 2 &&
+         Equal->getNumParams() == 2 && Equal->getPrimaryTemplate() && forwardListFunctionDeclarations(S, SM, Equal) &&
+         variantParameter(Compare->getArg(0), Definition->getParamDecl(0)) &&
+         variantParameter(Compare->getArg(1), Definition->getParamDecl(1)) &&
+         forwardListOwnerEqualityBody(S, SM, Equal, UtilityForwardListOperation::OwnerEqual);
+}
+
 std::optional<UtilityForwardListOperation> forwardListComparisonSignature(
     const State &S, const SourceManager &SM, const FunctionDecl *F,
     const ASTContext &Context) {
   if (!F || isa<CXXMethodDecl>(F) || !F->isOverloadedOperator() || F->getNumParams() != 2 ||
-      F->getPrimaryTemplate() || !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
+      !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
       !forwardListFunctionDeclarations(S, SM, F) ||
       (F->getOverloadedOperator() != OO_EqualEqual && F->getOverloadedOperator() != OO_ExclaimEqual))
     return std::nullopt;
@@ -54511,6 +54555,9 @@ std::optional<UtilityForwardListOperation> forwardListComparisonSignature(
   if (!Left->isLValueReferenceType() || !Left->getPointeeType().isConstQualified() ||
       Left->getPointeeType().isVolatileQualified() ||
       !Context.hasSameType(Left, F->getParamDecl(1)->getType())) return std::nullopt;
+  if (approvedUtilityForwardListRecord(S, SM, forwardListRecordType(Left->getPointeeType()), Context))
+    return forwardListOwnerComparisonSignature(S, SM, F, Context);
+  if (F->getPrimaryTemplate()) return std::nullopt;
   const auto I = approvedUtilityForwardListIteratorRecord(S, SM,
       forwardListRecordType(Left->getPointeeType()), Context);
   if (!I) return std::nullopt;
@@ -55139,6 +55186,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
     if (!Node || !forwardListOperandTypes(Call, Function, 0, Context) ||
         !Call->getCallee() || !S.owns(SM, Call->getCallee()->getExprLoc()) ||
         !forwardListSourceGraph(S, SM, Function, Context, *Node)) return std::nullopt;
+    if ((*Comparison == UtilityForwardListOperation::OwnerEqual || *Comparison == UtilityForwardListOperation::OwnerNotEqual) &&
+        !forwardListOwnerEqualityBody(S, SM, Function, *Comparison)) return std::nullopt;
     return UtilityForwardListCall{*Comparison, nullptr, Function, 0};
   }
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
