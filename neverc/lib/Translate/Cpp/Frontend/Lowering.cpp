@@ -27246,6 +27246,69 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
     return Head;
   }
+  Expression splitForwardListRun(Expression Head, Expression Width, SourceLocation L) {
+    auto Node = snapshot(std::move(Head), L);
+    auto Rest = temporary("ptr:void", L);
+    initializeZero(Rest, A.Context.VoidPtrTy, L);
+    auto Remaining = snapshot(binary("-", Width, quantity(1, "u64", L), "u64", L), L);
+    const auto Walk = labelName(), CheckNext = labelName(), Advance = labelName();
+    const auto Split = labelName(), Done = labelName();
+    branch(cast(Node, "bool", L), Walk, Done, L);
+    label(Walk, L);
+    branch(cast(Remaining, "bool", L), CheckNext, Split, L);
+    label(CheckNext, L);
+    auto Next = snapshot(forwardListNext(Node, L), L);
+    branch(cast(Next, "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(Node, Next, L);
+    assign(Remaining, binary("-", Remaining, quantity(1, "u64", L), "u64", L), L);
+    jump(Walk, L); label(Split, L);
+    assign(Rest, forwardListNext(Node, L), L);
+    initializeZero(forwardListNext(Node, L), A.Context.VoidPtrTy, L);
+    jump(Done, L); label(Done, L);
+    return Rest;
+  }
+  void sortForwardListStorage(Expression Place, SourceLocation L) {
+    auto Head = snapshot(forwardListMember(Place, false, L), L);
+    auto Width = snapshot(quantity(1, "u64", L), L);
+    auto Unsorted = temporary("ptr:void", L);
+    auto Output = temporary("ptr:void", L);
+    auto More = temporary("bool", L);
+    auto Link = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
+    const auto Start = labelName(), Check = labelName(), Merge = labelName(), Walk = labelName();
+    const auto Advance = labelName(), NextPair = labelName(), Pass = labelName();
+    const auto Widen = labelName(), Done = labelName();
+    jump(Start, L); label(Start, L);
+    assign(Unsorted, Head, L);
+    initializeZero(Output, A.Context.VoidPtrTy, L);
+    initializeZero(More, A.Context.BoolTy, L);
+    assign(Link, address(Output, A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Check, L);
+    branch(cast(Unsorted, "bool", L), Merge, Pass, L);
+    label(Merge, L);
+    auto Left = snapshot(Unsorted, L);
+    auto Right = splitForwardListRun(Left, Width, L);
+    auto Rest = splitForwardListRun(Right, Width, L);
+    assign(More, binary("||", More, cast(Rest, "bool", L), "bool", L), L);
+    auto Merged = mergeForwardListChains(Left, Right, L);
+    assign(dereference(Link, L), Merged, L);
+    auto Current = snapshot(Merged, L);
+    jump(Walk, L); label(Walk, L);
+    branch(cast(Current, "bool", L), Advance, NextPair, L);
+    label(Advance, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    assign(Current, dereference(Link, L), L);
+    jump(Walk, L); label(NextPair, L);
+    assign(Unsorted, Rest, L);
+    jump(Check, L); label(Pass, L);
+    assign(Head, Output, L);
+    branch(More, Widen, Done, L);
+    label(Widen, L);
+    // A following pair exists only when the list has more than twice this width.
+    assign(Width, binary("+", Width, Width, "u64", L), L);
+    jump(Start, L); label(Done, L);
+    assign(forwardListMember(Place, false, L), Head, L);
+  }
   void transferForwardListStorage(Expression Place, Expression Source, SourceLocation L) {
     auto Head = snapshot(forwardListMember(Source, false, L), L);
     assign(forwardListMember(Place, false, L), std::move(Head), L);
@@ -27338,6 +27401,10 @@ class FunctionLowering {
       auto Current = snapshot(cast(Operands[0], Pointer, L), L);
       auto End = snapshot(cast(Operands[1], Pointer, L), L);
       assignForwardListStorage(Place, {std::move(Current), std::move(End), ForwardListInput::PointerRange}, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Sort) {
+      sortForwardListStorage(Place, L);
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::Merge) {

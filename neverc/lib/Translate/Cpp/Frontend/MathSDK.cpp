@@ -54459,6 +54459,8 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
         (Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(OwnerType)) ||
          Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(OwnerType))))
       return UtilityForwardListOperation::Merge;
+    if (Name == "sort" && !M->getNumParams() && M->getReturnType()->isVoidType())
+      return UtilityForwardListOperation::Sort;
     if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
         forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return UtilityForwardListOperation::PushFront;
@@ -54967,6 +54969,22 @@ bool forwardListDefaultMergeBody(const State &S, const SourceManager &SM,
   return forwardListDefaultLess(S, SM, Selected->getParamDecl(1)->getType(), Context);
 }
 
+bool forwardListDefaultSortBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Expression = Body && Body->size() == 1 ? dyn_cast<Expr>(Body->body_front()) : nullptr;
+  const auto *Delegate = Expression ? dyn_cast<CXXMemberCallExpr>(Expression->IgnoreUnlessSpelledInSource()) : nullptr;
+  const auto *Selected = Delegate ? Delegate->getMethodDecl() : nullptr;
+  const auto *Receiver = Delegate ? Delegate->getImplicitObjectArgument() : nullptr;
+  return Selected && Selected->getIdentifier() && Selected->getName() == "sort" &&
+         Selected->getPrimaryTemplate() && Selected->getNumParams() == 1 &&
+         Selected->getReturnType()->isVoidType() && Delegate->getNumArgs() == 1 && Receiver &&
+         isa<CXXThisExpr>(Receiver->IgnoreParenImpCasts()) &&
+         Selected->getParent()->getCanonicalDecl() == Definition->getParent()->getCanonicalDecl() &&
+         forwardListDefaultLess(S, SM, Selected->getParamDecl(0)->getType(), Context);
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -55160,6 +55178,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       !forwardListInputAssignmentBody(Method, *Operation))
     return std::nullopt;
   if (*Operation == UtilityForwardListOperation::Merge && !forwardListDefaultMergeBody(S, SM, Method, Context))
+    return std::nullopt;
+  if (*Operation == UtilityForwardListOperation::Sort && !forwardListDefaultSortBody(S, SM, Method, Context))
     return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
