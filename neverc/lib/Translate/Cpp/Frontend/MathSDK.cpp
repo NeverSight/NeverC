@@ -54455,6 +54455,10 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       }
     }
     if (M->isConst()) return std::nullopt;
+    if (Name == "merge" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
+        (Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(OwnerType)) ||
+         Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(OwnerType))))
+      return UtilityForwardListOperation::Merge;
     if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
         forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return UtilityForwardListOperation::PushFront;
@@ -54917,6 +54921,52 @@ bool forwardListInputAssignmentBody(const CXXMethodDecl *Method, UtilityForwardL
          variantParameter(Insert->getArg(2), Definition->getParamDecl(1));
 }
 
+bool forwardListDefaultLess(const State &S, const SourceManager &SM,
+    QualType Type, const ASTContext &Context) {
+  constexpr llvm::StringLiteral Header = "__algorithm/comp.h";
+  const auto *Specialization = dyn_cast_or_null<ClassTemplateSpecializationDecl>(forwardListRecordType(Type));
+  const auto *Template = Specialization ? Specialization->getSpecializedTemplate() : nullptr;
+  if (!S.coreV2() || !Template || Template->getName() != "__less" ||
+      !forwardListStd(Template->getDeclContext()) || Specialization->isInvalidDecl() ||
+      Specialization->isDependentContext() || Specialization->isUnion() ||
+      Specialization->getSpecializationKind() != TSK_ExplicitSpecialization)
+    return false;
+  for (const auto *D : Template->redecls()) {
+    if (!forwardListPinned(S, SM, D, Header)) return false;
+    for (const auto *Pattern : D->getTemplatedDecl()->redecls())
+      if (!forwardListPinned(S, SM, Pattern, Header)) return false;
+  }
+  for (const auto *D : Specialization->redecls())
+    if (!forwardListPinned(S, SM, D, Header)) return false;
+  const auto *Definition = Specialization->getDefinition();
+  if (!Definition || Definition->isPolymorphic() || !Definition->isEmpty() ||
+      !forwardListPinned(S, SM, Definition, Header))
+    return false;
+  const auto &Arguments = Specialization->getTemplateArgs();
+  return Arguments.size() == 2 && Arguments[0].getKind() == TemplateArgument::Type &&
+         Arguments[1].getKind() == TemplateArgument::Type &&
+         Context.hasSameType(Arguments[0].getAsType(), Context.VoidTy) &&
+         Context.hasSameType(Arguments[1].getAsType(), Context.VoidTy);
+}
+
+bool forwardListDefaultMergeBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *Method, const ASTContext &Context) {
+  const auto *Definition = dyn_cast_or_null<CXXMethodDecl>(Method->getDefinition());
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Expression = Body && Body->size() == 1 ? dyn_cast<Expr>(Body->body_front()) : nullptr;
+  const auto *Delegate = Expression ? dyn_cast<CXXMemberCallExpr>(Expression->IgnoreUnlessSpelledInSource()) : nullptr;
+  const auto *Selected = Delegate ? Delegate->getMethodDecl() : nullptr;
+  const auto *Receiver = Delegate ? Delegate->getImplicitObjectArgument() : nullptr;
+  if (!Selected || !Selected->getIdentifier() || Selected->getName() != "merge" ||
+      !Selected->getPrimaryTemplate() || Selected->getNumParams() != 2 ||
+      !Selected->getReturnType()->isVoidType() || Delegate->getNumArgs() != 2 || !Receiver ||
+      !isa<CXXThisExpr>(Receiver->IgnoreParenImpCasts()) ||
+      Selected->getParent()->getCanonicalDecl() != Definition->getParent()->getCanonicalDecl() ||
+      !variantParameter(Delegate->getArg(0), Definition->getParamDecl(0)))
+    return false;
+  return forwardListDefaultLess(S, SM, Selected->getParamDecl(1)->getType(), Context);
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -55108,6 +55158,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   if ((*Operation == UtilityForwardListOperation::AssignCount ||
        *Operation == UtilityForwardListOperation::AssignPointerRange) &&
       !forwardListInputAssignmentBody(Method, *Operation))
+    return std::nullopt;
+  if (*Operation == UtilityForwardListOperation::Merge && !forwardListDefaultMergeBody(S, SM, Method, Context))
     return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
