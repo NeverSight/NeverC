@@ -141,14 +141,6 @@
       "source_sha256": "04e2f670c9eb024f2367f772af33d889a45af311a3f5747d301110d47a7935b6"
     },
     {
-      "name": "variant-emplace-lossy-integer-conversion-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nint narrow(int input) {\n  std::variant<int, signed char> value{1};\n  return value.emplace<1>(input);\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "7283bf0c742e26edf0066858a824fb8d968c51102e362cf3f1dc8d7f4cda318a"
-    },
-    {
       "name": "any-moved-local-cast-preserves-scalar",
       "public_header": "any",
       "expected": "accept",
@@ -171,30 +163,6 @@
       "source": "#include <any>\nint main() {\n  int first = 5;\n  int second = 8;\n  std::any local{&first};\n  int*&& pointer = std::any_cast<int*&&>(static_cast<std::any&&>(local));\n  pointer = &second;\n  return std::any_cast<int*>(local) != &second;\n}\n",
       "kind": "cpp17-operation",
       "source_sha256": "392981b11730d36821e0d32eb3d2c370d5042e329deef4b316add66079aa24bd"
-    },
-    {
-      "name": "any-moved-local-after-reset-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\n#include <utility>\nint read() {\n  std::any local{23};\n  local.reset();\n  return std::any_cast<int>(std::move(local));\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "7c66058521657bc33b9db3799f51409d2141dc221444d843eb8262c5119a5da1"
-    },
-    {
-      "name": "any-rvalue-cast-unproved-caller-owned-type-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\n#include <utility>\nint read(std::any& value) {\n  return std::any_cast<int>(std::move(value));\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "32bc3ec5b602bc6c038575d7f3ebc10a99240f6862d3438b317d29ce1c2d0482"
-    },
-    {
-      "name": "any-rvalue-cast-temporary-reference-guard",
-      "public_header": "any",
-      "expected": "reject",
-      "source": "#include <any>\nint&& read() {\n  return std::any_cast<int&&>(std::any{23});\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "b509f11b8fd7df768765e4017ffd125281d02fbb147f33eafd910a68911a09b7"
     },
     {
       "name": "variant-sizeof-expression-skips-side-effects",
@@ -243,6 +211,38 @@
       "source": "#include <any>\nint main() {\n  long input = 12;\n  std::any local;\n  long*& placed = local.emplace<long*>(&input);\n  long** pointer = std::any_cast<long*>(&local);\n  return !pointer || pointer != &placed || *pointer != &input ||\n         std::any_cast<long long*>(&local) != nullptr;\n}\n",
       "kind": "cpp17-operation",
       "source_sha256": "1d7f86bbf48639d69b0c92d1470f42db03baeaa07b6416a29e320356e64014ff"
+    },
+    {
+      "name": "variant-emplace-lossy-integer-conversion-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nint narrow(int input) {\n  std::variant<int, signed char> value{1};\n  return value.emplace<1>(input);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "7283bf0c742e26edf0066858a824fb8d968c51102e362cf3f1dc8d7f4cda318a"
+    },
+    {
+      "name": "any-moved-local-after-reset-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\n#include <utility>\nint read() {\n  std::any local{23};\n  local.reset();\n  return std::any_cast<int>(std::move(local));\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "7c66058521657bc33b9db3799f51409d2141dc221444d843eb8262c5119a5da1"
+    },
+    {
+      "name": "any-rvalue-cast-unproved-caller-owned-type-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\n#include <utility>\nint read(std::any& value) {\n  return std::any_cast<int>(std::move(value));\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "32bc3ec5b602bc6c038575d7f3ebc10a99240f6862d3438b317d29ce1c2d0482"
+    },
+    {
+      "name": "any-rvalue-cast-temporary-reference-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint&& read() {\n  return std::any_cast<int&&>(std::any{23});\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "b509f11b8fd7df768765e4017ffd125281d02fbb147f33eafd910a68911a09b7"
     }
   ],
   "new_gtest_names": [
@@ -262,7 +262,7 @@
     "TranslateTest.CoreV2AnyRvalueCastUnprovedCallerOwnedTypeGuardRejected",
     "TranslateTest.CoreV2AnyRvalueCastTemporaryReferenceGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "8dd2c7054ddf9f1f4365d54e7600c39f9214dd6f6f24b7c2962cbfbad1719409",
   "maintained_original_sha256": "cdcab2839c2508cdd7656a81b5fb658e683cb8d6d4adbb32abb007ee62df3941",
@@ -274,5 +274,13 @@
   "current_registry_count": 9058,
   "current_python_registry_tests": 290,
   "native_reference_selected_executions": 22,
-  "planned_generated_c23_executions": 22
+  "planned_generated_c23_executions": 22,
+  "native_reference_proofs": {
+    "any-fundamental-pointer-values": "f587679c435e82326d9f0553f1008edb18f4687034fd5caf1c9cba6207af8366",
+    "any-rvalue-active-cast": "7f53d0403878f852521d08e3b56002ee5d3070314a689331b4405b6d376fa4dc",
+    "variant-any-sizeof-expression-replay": "f6616e5d860e92b55d2861a53b6ab3ee778624959a0d22f9c15173122dbef208",
+    "variant-integral-forwarding": "110c2a8639d896398a8df8061e0795e2170d024994bde2fc83ed211ae6b8a244"
+  },
+  "native_reference_authentication_sha256": "9cbbf8179798a6263758b547fc2a7fe47b16640564dc51a27f51bff9a231c50c",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
 }

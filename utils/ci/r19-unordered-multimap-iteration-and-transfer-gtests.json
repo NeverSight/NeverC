@@ -134,22 +134,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "unordered-multimap-iteration-and-transfer-iterator-custom-policy-iterator",
-      "expected": "reject",
-      "public_header": "unordered_map",
-      "source": "#include <unordered_map>\nstruct Hash { unsigned operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_multimap<int, int, Hash> values{{3, 5}};\n  return values.find(3)->second;\n}\n",
-      "source_sha256": "07ae7cc725d75ad61519b549c945585eacf879721e6fc13e1406ac4f434f1375",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator",
-      "expected": "accept",
-      "public_header": "unordered_map",
-      "source": "#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, long> values{{3, 5L}};\n  return values.begin()->second == 5L;\n}\n",
-      "source_sha256": "e6b7c2618da55e93d977bb0a02c2d8357fd018fd3228ca9fe5b071e7a2571f73",
-      "kind": "cpp17-operation"
-    },
-    {
       "name": "unordered-multimap-iteration-and-transfer-modifier-emplace-and-insert-return-the-new-equivalent-node",
       "expected": "accept",
       "public_header": "unordered_map",
@@ -190,6 +174,22 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-other-mapped-type-iterator",
+      "expected": "accept",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nint main() {\n  const std::unordered_multimap<int, long> values{{3, 5L}};\n  return values.begin()->second == 5L;\n}\n",
+      "source_sha256": "e6b7c2618da55e93d977bb0a02c2d8357fd018fd3228ca9fe5b071e7a2571f73",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-multimap-iteration-and-transfer-iterator-custom-policy-iterator",
+      "expected": "reject",
+      "public_header": "unordered_map",
+      "source": "#include <unordered_map>\nstruct Hash { unsigned operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_multimap<int, int, Hash> values{{3, 5}};\n  return values.find(3)->second;\n}\n",
+      "source_sha256": "07ae7cc725d75ad61519b549c945585eacf879721e6fc13e1406ac4f434f1375",
+      "kind": "source-body-guard"
+    },
+    {
       "name": "unordered-multimap-iteration-and-transfer-modifier-merge-from-user-hash-policy",
       "expected": "reject",
       "public_header": "unordered_map",
@@ -212,7 +212,7 @@
     "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferIteratorCustomPolicyIteratorRejected",
     "TranslateTest.CoreV2UnorderedMultimapIterationAndTransferModifierMergeFromUserHashPolicyRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "5154f39ad36ff5cf9458d53e32b1e84016330df198e3af32b5efdac45ec7d06b",
   "maintained_original_sha256": "ad6cdfb5806a10416b5bec0e8a1c2d7f4e700c8a7bd317d057ae676eb7e52e68",
@@ -224,5 +224,11 @@
   "current_registry_count": 8643,
   "current_python_registry_tests": 242,
   "native_reference_selected_executions": 20,
-  "planned_generated_c23_executions": 20
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "unordered-map-wide-mapped": "a277fa7cd60cbb7628d63cec83f9dfbada19f9b3987d1d367d42072a0704e5af",
+    "unordered-multimap-iteration-and-transfer": "5e6445641c2df0eb3cd22c8082490cd1e3fb9b9926e649f64439101d271e7a5f"
+  },
+  "native_reference_authentication_sha256": "46fbf8332b6f2f9f80a082827c4a96990964c5a4dc2775455a25cbd331c1caef",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
 }

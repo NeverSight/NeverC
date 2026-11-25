@@ -178,7 +178,7 @@
     "TranslateTest.CoreV2AnyWideInlineMismatchedWideValueRejected",
     "TranslateTest.CoreV2AnyWideInlineRecordConversionRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13",
   "maintained_original_sha256": "92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896",
@@ -190,5 +190,10 @@
   "current_registry_count": 8376,
   "current_python_registry_tests": 180,
   "native_reference_selected_executions": 12,
-  "planned_generated_c23_executions": 12
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "any-wide-inline": "41b503dcf958f4c11a294a1d0d53e1f7e495cdb4f582663bfc7a93708d6a909f"
+  },
+  "native_reference_authentication_sha256": "68da5aae40de021f0af799d2193d07a5ee785322354bcbeec21610c8fe07cb40",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
 }

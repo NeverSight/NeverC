@@ -75,7 +75,7 @@
     "TranslateTest.CoreV2BitsetUnsignedConversionExplicitMemberInitializerGuardRejected",
     "TranslateTest.CoreV2BitsetUnsignedConversionAliasedMemberOwnerGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "d24f407c3db94555b36bf6d240d2f5d86b909f8c3ca657586b036d717284fae6",
   "maintained_original_sha256": "21710e5055cb1257bdf09df7aac3c1a08bfd230586e1bd0a3bba5cbf054b1a5b",
@@ -87,5 +87,10 @@
   "current_registry_count": 9076,
   "current_python_registry_tests": 296,
   "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "bitset-const-member": "f6a998ed0442766f1ef9697e02a8800fa0a70d5931683e1381bae381022a4c34"
+  },
+  "native_reference_authentication_sha256": "21e369832eca03eb0b8290b335fae89bd5fa7f80919d6dd7b23b3cc4b97df5c3",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
 }

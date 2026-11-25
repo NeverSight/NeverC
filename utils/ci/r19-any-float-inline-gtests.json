@@ -102,20 +102,20 @@
       "source_sha256": "ce4c0ed665beedd37504c72ca0dcf34cfae6698d47b782c58949497848018922"
     },
     {
-      "name": "any-float-inline-long-double-owner",
-      "expected": "reject",
-      "public_header": "any",
-      "kind": "source-body-guard",
-      "source": "#include <any>\nint main() {\n  auto value = std::make_any<long double>(1.0L);\n  return !value.has_value();\n}\n",
-      "source_sha256": "c0269975181a7672ef2c6f9eb5b110eb945cd34fc310183fd4a448f7bc9ddd99"
-    },
-    {
       "name": "any-float-inline-mutable-reference",
       "expected": "accept",
       "public_header": "any",
       "kind": "cpp17-operation",
       "source": "#include <any>\nfloat edit() {\n  std::any value{1.5f};\n  return ++std::any_cast<float&>(value);\n}\n",
       "source_sha256": "4b4b00233564c5e80269ecd507ca74c795da1b4a3cc1353766e04ada3eda79ac"
+    },
+    {
+      "name": "any-float-inline-long-double-owner",
+      "expected": "reject",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source": "#include <any>\nint main() {\n  auto value = std::make_any<long double>(1.0L);\n  return !value.has_value();\n}\n",
+      "source_sha256": "c0269975181a7672ef2c6f9eb5b110eb945cd34fc310183fd4a448f7bc9ddd99"
     },
     {
       "name": "any-float-inline-unknown-active-value",
@@ -144,7 +144,7 @@
     "TranslateTest.CoreV2AnyFloatInlineUnknownActiveValueRejected",
     "TranslateTest.CoreV2AnyFloatInlineMismatchedImmutableValueRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "c36266a7928342a5d83595fd908886b67fb1cbb2748be1f9299b981d25b866b2",
   "maintained_original_sha256": "5ef4d0491c68e82841467b5fd534a89ec5330e0220fc1c33babab7cf342c9e37",
@@ -156,5 +156,10 @@
   "current_registry_count": 8334,
   "current_python_registry_tests": 170,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "any-float-inline": "a2fa22dff59b7ddf67741d9437a84a047d379e615608ca024fa55c2d78bfcf66"
+  },
+  "native_reference_authentication_sha256": "2c8942cc7af5a4014d7d85f45df4376e75873cf53387c9874671b84082a2f315",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
 }

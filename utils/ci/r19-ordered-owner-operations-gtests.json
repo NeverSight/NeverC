@@ -221,14 +221,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-set-erasure-custom-ordering-does-not-use-integer-erasure",
-      "expected": "accept",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values;\n  return values.erase(1) != 0;\n}\n",
-      "source_sha256": "42139a40baf190c80fad2071f8626fb52376ee82b2cb294541ccf9fa2cc086c0",
-      "kind": "cpp17-operation"
-    },
-    {
       "name": "ordered-set-transfer-move-construction-reparents-the-root-and-keeps-node-addresses",
       "expected": "accept",
       "public_header": "set",
@@ -250,14 +242,6 @@
       "public_header": "set",
       "source": "#include <set>\nint main() {\n  std::set<int> left{2, 4};\n  std::set<int> right{-1, 7, 9};\n  auto two = left.begin();\n  auto minus_one = right.begin();\n  left.swap(right);\n  ++two;\n  ++minus_one;\n  return left.size() != 3 || right.size() != 2 || *two != 4 || *minus_one != 7;\n}\n",
       "source_sha256": "88525db4ec8180fd44650484c24c8a7f8c956181e062aec8f0d312354db0d003",
-      "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer",
-      "expected": "accept",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\n#include <utility>\nint main() {\n  std::set<int, std::less<>> source;\n  std::set<int, std::less<>> target(std::move(source));\n  return target.empty() ? 0 : 1;\n}\n",
-      "source_sha256": "b3029e34a2776f3ee3ac5e299aa63ca184ef1911b550f386eed1e5e531e73a42",
       "kind": "cpp17-operation"
     },
     {
@@ -285,14 +269,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-set-equal-range-transparent-comparator-overload-remains-guarded",
-      "expected": "accept",
-      "public_header": "set",
-      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::less<>> keys;\n  const long query = 3;\n  auto range = keys.equal_range(query);\n  return range.first == range.second ? 0 : 1;\n}\n",
-      "source_sha256": "b4a8bae402af513a23f347077285044f1c302e5a5247aaa1a9d4d0b9d3de53b3",
-      "kind": "cpp17-operation"
-    },
-    {
       "name": "ordered-multiset-equivalent-insertion-follows-existing-nodes",
       "expected": "accept",
       "public_header": "set",
@@ -315,14 +291,6 @@
       "source": "#include <set>\nint main() {\n  std::set<int> unique{3, 3, 6};\n  std::multiset<int> left{2, 9, 9};\n  std::multiset<int> right;\n  auto previous = left.begin();\n  left.swap(right);\n  auto edge = right.end();\n  --edge;\n  auto original = unique.begin();\n  return !left.empty() || right.size() != 3 || unique.size() != 2 ||\n         *previous != 2 || *edge != 9 || *original != 3;\n}\n",
       "source_sha256": "898fe4ee07c1ae3565fd97aff2e60cb27235977c5708861750b808af090b6895",
       "kind": "cpp17-operation"
-    },
-    {
-      "name": "ordered-multiset-custom-ordering-remains-guarded",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Descending { bool operator()(int l, int r) const { return l > r; } };\nint main() {\n  std::multiset<int, Descending> values{2, 2, 3};\n  return values.count(2) != 2;\n}\n",
-      "source_sha256": "dc5827a023dd86d39776fdef57010d885ffdde12e8cfd426a4879c7b6df59115",
-      "kind": "source-body-guard"
     },
     {
       "name": "ordered-set-copy-construction-set-independent-nodes-and-sorted-copy",
@@ -349,14 +317,6 @@
       "kind": "cpp17-operation"
     },
     {
-      "name": "ordered-set-copy-construction-custom-comparator-remains-outside-checked-copy",
-      "expected": "reject",
-      "public_header": "set",
-      "source": "#include <set>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  const std::set<int, Descending> source{1, 3, 2};\n  std::set<int, Descending> copy(source);\n  return *copy.begin() != 3;\n}\n",
-      "source_sha256": "173f86b69a7d7bd2fd6e2a07512aaaf7e4e8978ebb9daefeb9364d54ff8bc93e",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "ordered-set-copy-assignment-set-reuses-old-node-allocations-and-releases-only-surplus",
       "expected": "accept",
       "public_header": "set",
@@ -379,6 +339,46 @@
       "source": "#include <set>\nusing Set = std::set<int>;\nint trace;\nSet* select(Set& value) { trace = trace * 10 + 2; return &value; }\nconst Set& input(const Set& value) { trace = trace * 10 + 1; return value; }\nint main() {\n  Set a{1, 3, 5};\n  Set b{2, 4, 6};\n  *select(a) = input(b);\n  if (trace != 12 || a.count(4) != 1) return 1;\n  trace = 0;\n  auto& result = select(b)->operator=(input(a));\n  return trace != 21 || &result != &b || b.size() != 3 || b.count(6) != 1;\n}\n",
       "source_sha256": "72663970811d61c39dfe43510331f7b164b16aa681099865a6dbb411df9b87c8",
       "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-erasure-custom-ordering-does-not-use-integer-erasure",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::greater<int>> values;\n  return values.erase(1) != 0;\n}\n",
+      "source_sha256": "42139a40baf190c80fad2071f8626fb52376ee82b2cb294541ccf9fa2cc086c0",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-transfer-transparent-comparator-does-not-use-the-default-transfer",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\n#include <utility>\nint main() {\n  std::set<int, std::less<>> source;\n  std::set<int, std::less<>> target(std::move(source));\n  return target.empty() ? 0 : 1;\n}\n",
+      "source_sha256": "b3029e34a2776f3ee3ac5e299aa63ca184ef1911b550f386eed1e5e531e73a42",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-equal-range-transparent-comparator-overload-remains-guarded",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::less<>> keys;\n  const long query = 3;\n  auto range = keys.equal_range(query);\n  return range.first == range.second ? 0 : 1;\n}\n",
+      "source_sha256": "b4a8bae402af513a23f347077285044f1c302e5a5247aaa1a9d4d0b9d3de53b3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multiset-custom-ordering-remains-guarded",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Descending { bool operator()(int l, int r) const { return l > r; } };\nint main() {\n  std::multiset<int, Descending> values{2, 2, 3};\n  return values.count(2) != 2;\n}\n",
+      "source_sha256": "dc5827a023dd86d39776fdef57010d885ffdde12e8cfd426a4879c7b6df59115",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-set-copy-construction-custom-comparator-remains-outside-checked-copy",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  const std::set<int, Descending> source{1, 3, 2};\n  std::set<int, Descending> copy(source);\n  return *copy.begin() != 3;\n}\n",
+      "source_sha256": "173f86b69a7d7bd2fd6e2a07512aaaf7e4e8978ebb9daefeb9364d54ff8bc93e",
+      "kind": "source-body-guard"
     },
     {
       "name": "ordered-set-copy-assignment-custom-comparator-remains-outside-checked-assignment",
@@ -415,7 +415,7 @@
     "TranslateTest.CoreV2OrderedSetCopyConstructionCustomComparatorRemainsOutsideCheckedCopyRejected",
     "TranslateTest.CoreV2OrderedSetCopyAssignmentCustomComparatorRemainsOutsideCheckedAssignmentRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "643ddb45cd6010873abc4cd9d0c3d804173e062a6310a96347abffd990ec2068",
   "maintained_original_sha256": "44d47c10a82a3d2ef973db9f9a87c2b5cce5389141a648093a5939e4bcf1d926",
@@ -427,5 +427,13 @@
   "current_registry_count": 8694,
   "current_python_registry_tests": 250,
   "native_reference_selected_executions": 42,
-  "planned_generated_c23_executions": 42
+  "planned_generated_c23_executions": 42,
+  "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
+    "ordered-heterogeneous-signed": "793cbc26ee50fda717eaaac096f6714dde1a5e3598e553ba4de12c242f90e433",
+    "ordered-owner-operations": "0fc98755766edc5700f857a1f6922e73b65f1429842b51d3a19d2b0b45b1a9fd",
+    "ordered-transparent-comparator": "481eeeea1c8d8c3f5717abd7923a712e3a9a2c726b02aa58847e8628baf38dfa"
+  },
+  "native_reference_authentication_sha256": "953793bfcda7c1fe69549ba7d4f34abbe23944f6890af6770a352caec153a39f",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
 }

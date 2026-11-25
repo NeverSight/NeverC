@@ -166,22 +166,6 @@
       "source_sha256": "b65f91d899cc72c583c3849a68af5401d26d4ca6b709e948a9c65b982dc56136"
     },
     {
-      "name": "variant-swap-unsupported-custom-alternative-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nstruct Payload { int n; };\nvoid swap(Payload& lhs, Payload& rhs) noexcept {\n  lhs.n += rhs.n;\n}\nvoid exchange(std::variant<int, Payload>& lhs, std::variant<int, Payload>& rhs) {\n  lhs.swap(rhs);\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "4e9725798b7df7903ddd187422de61b38e4a17002f32a5153c8b44620fc51fdc"
-    },
-    {
-      "name": "variant-swap-standalone-sdk-address-guard",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nusing Value = std::variant<int, unsigned>;\nusing Swap = void (*)(Value&, Value&) noexcept;\nSwap get_swap() { return static_cast<Swap>(&std::swap); }\n",
-      "kind": "source-body-guard",
-      "source_sha256": "a2679576b67d3da016a3d01be3b5c621d717bd409db2202a31d61c861c3ae155"
-    },
-    {
       "name": "variant-visit-four-nonuniform-alternatives",
       "public_header": "variant",
       "expected": "accept",
@@ -204,14 +188,6 @@
       "source": "#include <variant>\nusing Value = std::variant<short, int>;\nint pack(int a, int b, int c, int d, int e, int f) {\n  return a*100000 + b*10000 + c*1000 + d*100 + e*10 + f;\n}\nint main() {\n  const Value a{static_cast<short>(9)}, b{2}, c{static_cast<short>(8)}, d{3},\n              e{static_cast<short>(7)}, f{4};\n  return std::visit(pack, a, b, c, d, e, f) != 928374;\n}\n",
       "kind": "cpp17-operation",
       "source_sha256": "244925f4874ef6dfbae91d7cc5607085e5f0a23d6b76c6d26a5330f801d806ed"
-    },
-    {
-      "name": "variant-visit-four-above-matrix-entry-limit",
-      "public_header": "variant",
-      "expected": "reject",
-      "source": "#include <variant>\nusing Value = std::variant<short, int, long>;\nlong add(long a, long b, long c, long d) { return a + b + c + d; }\nlong combined(const Value& a, const Value& b, const Value& c, const Value& d) {\n  return std::visit(add, a, b, c, d);\n}\n",
-      "kind": "source-body-guard",
-      "source_sha256": "bf445fcefbaec837d6bcb61d489d174e3c7c93c4a035320d4094c205e4dfeadc"
     },
     {
       "name": "any-void-pointer-construction-and-copy",
@@ -254,6 +230,30 @@
       "source_sha256": "17b3b8016ec687c81f548362909f5a681725d016a5cd09e20519d3ce6e32838a"
     },
     {
+      "name": "variant-swap-unsupported-custom-alternative-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Payload { int n; };\nvoid swap(Payload& lhs, Payload& rhs) noexcept {\n  lhs.n += rhs.n;\n}\nvoid exchange(std::variant<int, Payload>& lhs, std::variant<int, Payload>& rhs) {\n  lhs.swap(rhs);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "4e9725798b7df7903ddd187422de61b38e4a17002f32a5153c8b44620fc51fdc"
+    },
+    {
+      "name": "variant-swap-standalone-sdk-address-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nusing Value = std::variant<int, unsigned>;\nusing Swap = void (*)(Value&, Value&) noexcept;\nSwap get_swap() { return static_cast<Swap>(&std::swap); }\n",
+      "kind": "source-body-guard",
+      "source_sha256": "a2679576b67d3da016a3d01be3b5c621d717bd409db2202a31d61c861c3ae155"
+    },
+    {
+      "name": "variant-visit-four-above-matrix-entry-limit",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nusing Value = std::variant<short, int, long>;\nlong add(long a, long b, long c, long d) { return a + b + c + d; }\nlong combined(const Value& a, const Value& b, const Value& c, const Value& d) {\n  return std::visit(add, a, b, c, d);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "bf445fcefbaec837d6bcb61d489d174e3c7c93c4a035320d4094c205e4dfeadc"
+    },
+    {
       "name": "any-unchecked-function-pointer-payload-guard",
       "public_header": "any",
       "expected": "reject",
@@ -280,7 +280,7 @@
     "TranslateTest.CoreV2VariantVisitFourAboveMatrixEntryLimitRejected",
     "TranslateTest.CoreV2AnyUncheckedFunctionPointerPayloadGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "ab307d4382c7141bfefc6a90ff79c6b2262d0ee0c30bd8609c21853d384f9041",
   "maintained_original_sha256": "e83883bf27998e02e5d2916ccf055f341aec21a540bfcb6f9296597fa9cad1b4",
@@ -292,5 +292,12 @@
   "current_registry_count": 8998,
   "current_python_registry_tests": 282,
   "native_reference_selected_executions": 22,
-  "planned_generated_c23_executions": 22
+  "planned_generated_c23_executions": 22,
+  "native_reference_proofs": {
+    "any-erased-pointer-values": "f6255bc498d6fadf7803afa70c76162d11d07cce0c3e126841c9635234d08dab",
+    "variant-extended-visitation": "d5e44953ad4ed82bb5f74c07a6ed1682ca679e58f1b059a476d9f7c1659ea203",
+    "variant-trivial-swap-replay": "05e9985fdbb71cd096abddf95179d114fe15ef71c369bdf4562fef402c6fcfbb"
+  },
+  "native_reference_authentication_sha256": "64c284ff75a3643e5301312476f11d77a7143576828d1802b2642b58e9ce415c",
+  "source_proof_sha256": "27833435e7c207e96507911e4e6cf8a02a739ec7bc8f831c53f5bc18dc59cf1f"
 }
