@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2UnorderedSetBucketReceiversCustomHashPointerRehashRejected",
     "TranslateTest.CoreV2UnorderedSetBucketReceiversCustomEqualityPointerLoadLimitRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "62811ae5debb7c6f1f25657823242ba217dafe1d84cfeb3bc6d3c495da26fcb0",
   "maintained_original_sha256": "965da4c3ce1920bcf0f371fa02e17f56e8fcade8a67b7bbcef60058040053f16",
@@ -155,5 +155,10 @@
   "current_registry_count": 8611,
   "current_python_registry_tests": 236,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-bucket-receivers": "1a0de477baf71caf287cb98e07a1017a3c2a3df8497717c62c00fa1dfc95ed03"
+  },
+  "native_reference_authentication_sha256": "f30fe5234b62e85378acf93b69bce66837b8e2201b36fb1a2f846e6d4df2f94a",
+  "source_proof_sha256": "5d91a6a9065074b92e3ed7473b63e2d5f9fed7aba021ba3d3734017810ba7f10"
 }

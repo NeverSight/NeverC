@@ -101,6 +101,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "any-long-inline-mutable-long-reference-cast",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any value = 7L;\n  return std::any_cast<long&>(value) != 7L;\n}\n",
+      "source_sha256": "048c14105435338e7fe937f0c96fc0a95bed207ad49719b3f3d6344500f70739",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "any-long-inline-signed-long-tag-mismatch",
       "expected": "reject",
       "public_header": "any",
@@ -115,14 +123,6 @@
       "source": "#include <any>\nint main() {\n  std::any value = 7UL;\n  return std::any_cast<unsigned int>(value) != 7U;\n}\n",
       "source_sha256": "432afa3dcc2011dd41596a42402ad03a37e4e42b6f0a6607968c7705ca457071",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "any-long-inline-mutable-long-reference-cast",
-      "expected": "accept",
-      "public_header": "any",
-      "source": "#include <any>\nint main() {\n  std::any value = 7L;\n  return std::any_cast<long&>(value) != 7L;\n}\n",
-      "source_sha256": "048c14105435338e7fe937f0c96fc0a95bed207ad49719b3f3d6344500f70739",
-      "kind": "cpp17-operation"
     },
     {
       "name": "any-long-inline-volatile-native-long-access",
@@ -143,7 +143,7 @@
     "TranslateTest.CoreV2AnyLongInlineUnsignedLongTagMismatchRejected",
     "TranslateTest.CoreV2AnyLongInlineVolatileNativeLongAccessRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "53e99dffe80159aa038982885bbfee7f1754826e1bdee52379334e31896f7e8b",
   "maintained_original_sha256": "af6ac408f8952c76df507ba8cd681bc37e8caac5a6d4929a123187b498967475",
@@ -155,5 +155,11 @@
   "current_registry_count": 8424,
   "current_python_registry_tests": 192,
   "native_reference_selected_executions": 10,
-  "planned_generated_c23_executions": 10
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "any-active-mutable-reference": "48c5bf01bc62c9cc06f7956355c46a38b033a773d095c14cffbf7ba449c26bc1",
+    "any-long-inline": "2b933e9d9a0ead958777527d3c269d679640bb100e0f9d75ff780a4225fe911b"
+  },
+  "native_reference_authentication_sha256": "d4400e8050ca7c78f35abbbb77b186d3d14f151d70079d868b1017e8e923d014",
+  "source_proof_sha256": "5d91a6a9065074b92e3ed7473b63e2d5f9fed7aba021ba3d3734017810ba7f10"
 }
