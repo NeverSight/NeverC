@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-max-size-map",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeMapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fd3bb133c3f1bf3470732d98c1f023fb5afe74f7b2ba854e8f54bced40493895",
+      "original_case_source_sha256": "fd3bb133c3f1bf3470732d98c1f023fb5afe74f7b2ba854e8f54bced40493895",
+      "gtest_body_sha256": "9715c664c855b51ceaed3c92f65262ef285837b41a3d1c63b7499af873f5913e"
+    },
+    {
+      "name": "ordered-max-size-const-multimap",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeConstMultimapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d7937151301a3dd75cba3642f6e24ea1d08f01e5c9fee238bbca1005d3bfed0f",
+      "original_case_source_sha256": "d7937151301a3dd75cba3642f6e24ea1d08f01e5c9fee238bbca1005d3bfed0f",
+      "gtest_body_sha256": "59f630c11032752313ad919975e4927ffa6f60d574aacabae41ffb92c6bb27c8"
+    },
+    {
+      "name": "ordered-max-size-set-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeSetReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "051f61e342a31e076376074ffc6710bab0dae001826474b7d4e1cba7895c3413",
+      "original_case_source_sha256": "051f61e342a31e076376074ffc6710bab0dae001826474b7d4e1cba7895c3413",
+      "gtest_body_sha256": "077f70403912721c81f39a395d55faf25ab553c6b7bd68553bd25b1bb45d6a74"
+    },
+    {
+      "name": "ordered-max-size-multiset",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeMultisetRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0d95523d5d89789f636940e7a0e98cf049fe54de14283e54feb5af3e804371a8",
+      "original_case_source_sha256": "0d95523d5d89789f636940e7a0e98cf049fe54de14283e54feb5af3e804371a8",
+      "gtest_body_sha256": "d3b7c6a1e2d36eb221f18a47df108006e4091988d0254a244caea01f8f165b82"
+    },
+    {
+      "name": "ordered-max-size-mutable-trees",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeMutableTreesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3",
+      "original_case_source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3",
+      "gtest_body_sha256": "4384b406d2b2859c18ed705bf70cd4cfd2149d50150d86a88a55c1f177d5d001"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-max-size-different-element",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeDifferentElementRejected",
+      "expected": "reject",
+      "source_sha256": "82c259362183b7832820aa31eb65d085a6ee9558ad216e5c1559ca4e1bc8f66c",
+      "original_case_source_sha256": "82c259362183b7832820aa31eb65d085a6ee9558ad216e5c1559ca4e1bc8f66c",
+      "gtest_body_sha256": "b9d320ddb3c382a5f773bca0eca99438f2606ef566f5fbbaebcb79938712d8a6"
+    },
+    {
+      "name": "ordered-max-size-custom-comparator",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeCustomComparatorRejected",
+      "expected": "reject",
+      "source_sha256": "5c42275d7d059d1a784c4960a35616f2c6a915198205cdaebc53f45e4f139c00",
+      "original_case_source_sha256": "5c42275d7d059d1a784c4960a35616f2c6a915198205cdaebc53f45e4f139c00",
+      "gtest_body_sha256": "d923cd56cb7bc84eb206662655beba0cc9ab9df7573d340567e20c1515816625"
+    },
+    {
+      "name": "ordered-max-size-temporary",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMaxSizeTemporaryRejected",
+      "expected": "reject",
+      "source_sha256": "162023453e74d53e48c632b0488f35b517997a68f40f67296a38c9f0223e5cdc",
+      "original_case_source_sha256": "162023453e74d53e48c632b0488f35b517997a68f40f67296a38c9f0223e5cdc",
+      "gtest_body_sha256": "24a37ae3925739041a32f54dbfbf046f2555f2a9ab907f77b17417a173b020b3"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-max-size-map",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  auto limit = values.max_size();\n  return limit <= values.size() || limit > 9223372036854775807ULL;\n}\n",
+      "source_sha256": "fd3bb133c3f1bf3470732d98c1f023fb5afe74f7b2ba854e8f54bced40493895"
+    },
+    {
+      "name": "ordered-max-size-const-multimap",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  const std::map<int, int> unique;\n  const std::multimap<int, int> repeated;\n  return repeated.max_size() == 0 || repeated.max_size() != unique.max_size();\n}\n",
+      "source_sha256": "d7937151301a3dd75cba3642f6e24ea1d08f01e5c9fee238bbca1005d3bfed0f"
+    },
+    {
+      "name": "ordered-max-size-set-receiver-once",
+      "expected": "accept",
+      "public_header": "set",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nconst std::set<int>& select(const std::set<int>& values, int& calls) {\n  ++calls;\n  return values;\n}\nint main() {\n  std::set<int> values;\n  int calls = 0;\n  auto limit = select(values, calls).max_size();\n  return calls != 1 || limit <= values.size() || limit > 9223372036854775807ULL;\n}\n",
+      "source_sha256": "051f61e342a31e076376074ffc6710bab0dae001826474b7d4e1cba7895c3413"
+    },
+    {
+      "name": "ordered-max-size-multiset",
+      "expected": "accept",
+      "public_header": "set",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nint main() {\n  std::multiset<int> repeated;\n  std::set<int> unique;\n  return repeated.max_size() == 0 || repeated.max_size() != unique.max_size();\n}\n",
+      "source_sha256": "0d95523d5d89789f636940e7a0e98cf049fe54de14283e54feb5af3e804371a8"
+    },
+    {
+      "name": "ordered-max-size-mutable-trees",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values;\n  values.emplace(1, 2);\n  return values.max_size() == 0;\n}\n",
+      "source_sha256": "ff2d7e2130ce45afd993d953d121566e631576a46e53b7514f99c1c2555d9fd3"
+    },
+    {
+      "name": "ordered-max-size-different-element",
+      "expected": "reject",
+      "public_header": "set",
+      "kind": "source-body-guard",
+      "source": "#include <set>\nusing Values = std::set<short>;\nauto bound(const Values& values) { return values.max_size(); }\n",
+      "source_sha256": "82c259362183b7832820aa31eb65d085a6ee9558ad216e5c1559ca4e1bc8f66c"
+    },
+    {
+      "name": "ordered-max-size-custom-comparator",
+      "expected": "reject",
+      "public_header": "map",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nstruct Reverse { bool operator()(int a, int b) const { return a > b; } };\nusing Values = std::map<int, int, Reverse>;\nauto bound(const Values& values) { return values.max_size(); }\n",
+      "source_sha256": "5c42275d7d059d1a784c4960a35616f2c6a915198205cdaebc53f45e4f139c00"
+    },
+    {
+      "name": "ordered-max-size-temporary",
+      "expected": "reject",
+      "public_header": "set",
+      "kind": "source-body-guard",
+      "source": "#include <set>\nauto bound() { return std::multiset<int>{}.max_size(); }\n",
+      "source_sha256": "162023453e74d53e48c632b0488f35b517997a68f40f67296a38c9f0223e5cdc"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedMaxSizeMapRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMaxSizeConstMultimapRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMaxSizeSetReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMaxSizeMultisetRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMaxSizeMutableTreesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMaxSizeDifferentElementRejected",
+    "TranslateTest.CoreV2OrderedMaxSizeCustomComparatorRejected",
+    "TranslateTest.CoreV2OrderedMaxSizeTemporaryRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "9e9ba754f81959ca9b377627825515a8be2f0ad69242ce21ad0b6fa792afed14",
+  "maintained_original_sha256": "0a33208d656054ec6265c968c1c3c9ed504da77d0709bb325cc0ecdd9bded1a5",
+  "previous_registered_source_sha256": "e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e",
+  "previous_maintained_original_sha256": "b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d",
+  "restorer_sha256": "0117e6d83b7f167026d5848600b4e536de26a4865ac180b62218758774f14a88",
+  "extractor_sha256": "b33994a4d5cd635d3296c7e2cd58e23535da1f3b68a55faa3546b6bbc85fb804",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8310,
+  "current_python_registry_tests": 164,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "ordered-map-emplace": "455c13bdffa150a07ed7e139b48f0c20510a556dadc74d8481344537d5a058c1",
+    "ordered-max-size": "0257406ff4ac820ff77fd499e186f7b6155c6c64872fa7558815e570f890e880"
+  },
+  "native_reference_authentication_sha256": "337ec016a70ae22d1aef6677d0ea0307d5a9703f975af8165a3a7202a4619c02",
+  "source_proof_sha256": "987dc144a4247fb28b053a3f34745e13165a5d897816bf91575c0019861fd85e"
+}
