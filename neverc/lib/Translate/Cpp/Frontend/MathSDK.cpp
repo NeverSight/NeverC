@@ -10903,9 +10903,25 @@ std::optional<UtilityVariantVisit> approvedUtilityVariantVisit(
       return std::nullopt;
     if (!Operand->isLValue()) {
       const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Operand->IgnoreParens());
-      if (!Temporary || Temporary->getStorageDuration() != SD_FullExpression ||
-          Temporary->getExtendingDecl() || !Temporary->getSubExpr()->isPRValue())
-        return std::nullopt;
+      if (Temporary) {
+        if (Temporary->getStorageDuration() != SD_FullExpression ||
+            Temporary->getExtendingDecl() || !Temporary->getSubExpr()->isPRValue())
+          return std::nullopt;
+      } else {
+        // A checked reference cast borrows the existing operand for this call.
+        // The dispatch still requires value parameters for xvalue alternatives.
+        const auto *Cast = dyn_cast<CXXStaticCastExpr>(Operand->IgnoreParens());
+        const auto *Source = Cast && Cast->getCastKind() == CK_NoOp &&
+            Context.hasSameType(Cast->getTypeAsWritten(), Reference)
+            ? Cast->getSubExpr() : variantVisitMoveSource(S, SM, Operand, Context);
+        const auto *Binding = Source ? dyn_cast<DeclRefExpr>(Source->IgnoreParens()) : nullptr;
+        const auto *Variable = Binding ? dyn_cast<VarDecl>(Binding->getDecl()) : nullptr;
+        if (!Operand->isXValue() || !Variable || Variable->isImplicit() ||
+            !Variable->hasLocalStorage() || !S.owns(SM, Variable->getLocation()) ||
+            !S.owns(SM, Operand->getExprLoc()) || !Binding->isLValue() ||
+            !Context.hasSameType(Binding->getType(), Value))
+          return std::nullopt;
+      }
     }
     auto V = approvedUtilityVariantRecord(S, SM, Operand->getType(), Context);
     if (!V || V->Alternatives.empty() || V->Alternatives.size() > 8 ||
