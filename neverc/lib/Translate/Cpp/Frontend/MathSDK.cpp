@@ -54429,6 +54429,10 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
     if (Name == "erase_after" && M->getNumParams() == 1 &&
         forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context))
       return UtilityForwardListOperation::EraseAfter;
+    if (Name == "erase_after" && M->getNumParams() == 2 &&
+        forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
+        forwardListIteratorType(S, SM, M->getParamDecl(1)->getType(), Owner->Node, true, Context))
+      return UtilityForwardListOperation::EraseRange;
     if (Name == "insert_after" && M->getNumParams() == 2 &&
         forwardListIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
         forwardListIntegerValueParameter(M->getParamDecl(1)->getType(), Context))

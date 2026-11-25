@@ -27132,22 +27132,35 @@ class FunctionLowering {
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
         quantity(16, "u64", L), L);
   }
-  void releaseForwardListChain(Expression Head, const UtilityForwardListNodeRecord &Info,
+  void releaseForwardListChain(Expression Head, Expression End, const UtilityForwardListNodeRecord &Info,
                                SourceLocation L) {
     auto Current = temporary("ptr:void", L);
     assign(Current, std::move(Head), L);
     const auto Check = labelName(), Release = labelName(), Done = labelName();
     jump(Check, L); label(Check, L);
-    branch(cast(Current, "bool", L), Release, Done, L);
+    branch(binary("!=", Current, End, "bool", L), Release, Done, L);
     label(Release, L);
     auto Next = snapshot(forwardListNext(Current, L), L);
     forwardListReleaseNode(Current, Info, L);
     assign(Current, Next, L);
     jump(Check, L); label(Done, L);
   }
+  Expression eraseForwardListRange(const UtilityForwardListRecord &Owner, QualType ResultType,
+                                   Expression First, Expression End, SourceLocation L) {
+    const auto Read = labelName(), Unlink = labelName(), Done = labelName();
+    branch(binary("!=", First, End, "bool", L), Read, Done, L);
+    label(Read, L);
+    auto Current = snapshot(forwardListNext(First, L), L);
+    branch(binary("!=", Current, End, "bool", L), Unlink, Done, L);
+    label(Unlink, L);
+    assign(forwardListNext(First, L), End, L);
+    releaseForwardListChain(Current, End, Owner.Node, L);
+    jump(Done, L); label(Done, L);
+    return forwardListIterator(ResultType, End, L);
+  }
   void destroyForwardListStorage(Expression Place, const UtilityForwardListNodeRecord &Info,
                                   SourceLocation L) {
-    releaseForwardListChain(forwardListMember(Place, false, L), Info, L);
+    releaseForwardListChain(forwardListMember(Place, false, L), A.zero(A.Context.VoidPtrTy, L), Info, L);
     // Unlike pop_front/erase_after, SDK clear leaves its head unchanged until
     // the entire deletion loop has finished.
     initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
@@ -27176,7 +27189,7 @@ class FunctionLowering {
     jump(Done, L); label(Shrink, L);
     // Range erasure unlinks the suffix before releasing it.
     initializeZero(dereference(Link, L), A.Context.VoidPtrTy, L);
-    releaseForwardListChain(Output, Info, L);
+    releaseForwardListChain(Output, A.zero(A.Context.VoidPtrTy, L), Info, L);
     jump(Done, L); label(Done, L);
   }
   void transferForwardListStorage(Expression Place, Expression Source, SourceLocation L) {
@@ -27274,6 +27287,11 @@ class FunctionLowering {
     if (Operation == UtilityForwardListOperation::Clear) {
       destroyForwardListStorage(Place, Owner->Node, L);
       return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::EraseRange) {
+      auto First = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
+      auto End = snapshot(forwardListMember(dereference(Operands[1], L), true, L), L);
+      return eraseForwardListRange(*Owner, Method->getReturnType(), std::move(First), std::move(End), L);
     }
     const bool Insert = Operation == UtilityForwardListOperation::InsertAfter;
     const bool Erase = Operation == UtilityForwardListOperation::EraseAfter;
