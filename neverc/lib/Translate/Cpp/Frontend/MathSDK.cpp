@@ -53905,6 +53905,10 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
     return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, C->getParent(), Context)) {
     if (!C->getNumParams()) return UtilityForwardListConstruction::Default;
+    if (C->getNumParams() == 1 && C->isMoveConstructor() &&
+        Context.hasSameType(C->getParamDecl(0)->getType(),
+            Context.getRValueReferenceType(Context.getRecordType(Owner->Record))))
+      return UtilityForwardListConstruction::Move;
     if (C->getNumParams() == 1 &&
         forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
       return UtilityForwardListConstruction::Allocator;
@@ -54272,6 +54276,88 @@ bool forwardListOperandTypes(const CallExpr *Call, const FunctionDecl *F,
   }
   return true;
 }
+
+const CallExpr *forwardListMoveCall(const State &S, const SourceManager &SM,
+    const Expr *Input, const ASTContext &Context) {
+  const auto *Call = Input ? dyn_cast<CallExpr>(Input->IgnoreParenImpCasts()) : nullptr;
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  return Function && Function->getBuiltinID() == Builtin::BImove &&
+                 Call->getNumArgs() == 1 && forwardListBuiltinLibraryCast(S, SM, Function, Context)
+      ? Call : nullptr;
+}
+
+bool forwardListMoveBody(const State &S, const SourceManager &SM,
+    const CXXConstructorDecl *C, const UtilityForwardListNodeRecord &Node,
+    const ASTContext &Context) {
+  const auto *OuterBody = dyn_cast_or_null<CompoundStmt>(C->getBody());
+  if (!OuterBody || !OuterBody->body_empty() || C->getNumCtorInitializers() != 1)
+    return false;
+  const auto *Init = *C->init_begin();
+  const auto *Selected = Init->isBaseInitializer() && !Init->isBaseVirtual()
+      ? dyn_cast<CXXConstructExpr>(Init->getInit()->IgnoreParens()) : nullptr;
+  const auto *Base = Selected
+      ? dyn_cast_or_null<CXXConstructorDecl>(Selected->getConstructor()->getDefinition()) : nullptr;
+  if (!Base || Selected->getNumArgs() != 1 || !Base->isMoveConstructor() ||
+      Base->getNumParams() != 1 || Base->getNumCtorInitializers() != 2 ||
+      !forwardListFunctionDeclarations(S, SM, Base))
+    return false;
+  const auto *OwnerMove = forwardListMoveCall(S, SM, Selected->getArg(0), Context);
+  if (!OwnerMove || !variantParameter(OwnerMove->getArg(0), C->getParamDecl(0)))
+    return false;
+  const auto *Input = Base->getParamDecl(0);
+  const FieldDecl *BeforeBegin = nullptr;
+  bool MovedAllocator = false;
+  for (const auto *FieldInit : Base->inits()) {
+    const auto *Field = FieldInit->isMemberInitializer() ? FieldInit->getMember() : nullptr;
+    const auto *Copy = Field ? dyn_cast<CXXConstructExpr>(FieldInit->getInit()->IgnoreParens()) : nullptr;
+    const auto *Move = Copy && Copy->getNumArgs() == 1 && Copy->getConstructor()->isCopyOrMoveConstructor() &&
+        Copy->getConstructor()->isTrivial()
+        ? forwardListMoveCall(S, SM, Copy->getArg(0), Context) : nullptr;
+    const auto *Read = Move ? dyn_cast<MemberExpr>(Move->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+    if (!Read || Read->isArrow() || Read->getMemberDecl() != Field || !Field->getIdentifier() ||
+        !variantParameter(Read->getBase(), Input))
+      return false;
+    if (Field->getName() == "__before_begin_" &&
+        Context.hasSameType(Field->getType(), Context.getRecordType(Node.BeginNode))) {
+      BeforeBegin = Field;
+    } else if (Field->getName() == "__alloc_") {
+      const auto Allocator = approvedUtilityAllocatorRecord(S, SM,
+          forwardListRecordType(Field->getType()), Context);
+      MovedAllocator = Allocator &&
+          Context.hasSameType(Allocator->ElementType, Context.getRecordType(Node.Record));
+    } else {
+      return false;
+    }
+  }
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Base->getBody());
+  const auto *Write = Body && Body->size() == 1 ? dyn_cast<BinaryOperator>(Body->body_front()) : nullptr;
+  const auto *Next = Write && Write->getOpcode() == BO_Assign
+      ? dyn_cast<MemberExpr>(Write->getLHS()->IgnoreParens()) : nullptr;
+  const auto *Before = Next && Next->isArrow() && Next->getMemberDecl() == Node.Next
+      ? dyn_cast<CXXMemberCallExpr>(Next->getBase()->IgnoreParenImpCasts()) : nullptr;
+  const auto *Accessor = Before ? Before->getMethodDecl() : nullptr;
+  if (!BeforeBegin || !MovedAllocator || !Accessor || Before->getNumArgs() || Accessor->isConst() ||
+      !Accessor->getIdentifier() || Accessor->getName() != "__before_begin" ||
+      Accessor->getParent()->getCanonicalDecl() != Base->getParent()->getCanonicalDecl() ||
+      !forwardListFunctionDeclarations(S, SM, Accessor) ||
+      !variantParameter(Before->getImplicitObjectArgument(), Input) ||
+      !isa<CXXNullPtrLiteralExpr>(Write->getRHS()->IgnoreParenImpCasts()))
+    return false;
+  const auto *Address = variantVisitCall(variantReturned(Accessor));
+  const auto *PointerTo = Address ? Address->getDirectCallee() : nullptr;
+  const auto *Member = Address && Address->getNumArgs() == 1
+      ? dyn_cast<MemberExpr>(Address->getArg(0)->IgnoreParenImpCasts()) : nullptr;
+  const auto *AddressOf = variantVisitCall(variantReturned(PointerTo));
+  const auto *Addressof = AddressOf ? AddressOf->getDirectCallee() : nullptr;
+  return PointerTo && PointerTo->getNumParams() == 1 && PointerTo->getIdentifier() &&
+         PointerTo->getName() == "pointer_to" &&
+         forwardListPinned(S, SM, PointerTo, "__memory/pointer_traits.h") &&
+         Member && Member->getMemberDecl() == BeforeBegin &&
+         isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()) &&
+         Addressof && AddressOf->getNumArgs() == 1 && Addressof->getBuiltinID() == Builtin::BIaddressof &&
+         forwardListBuiltinLibraryCast(S, SM, Addressof, Context) &&
+         variantParameter(AddressOf->getArg(0), PointerTo->getParamDecl(0));
+}
 }
 
 std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruction(
@@ -54286,7 +54372,9 @@ std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruc
   const auto Node = C ? forwardListReceiverNode(S, SM, C->getParent(), Context) : std::nullopt;
   if (!Kind || !Node || Construction->getNumArgs() != C->getNumParams() ||
       !Context.hasSameUnqualifiedType(Construction->getType(), Context.getRecordType(C->getParent())) ||
-      !forwardListSourceGraph(S, SM, C, Context, *Node)) return std::nullopt;
+      !forwardListSourceGraph(S, SM, C, Context, *Node) ||
+      (*Kind == UtilityForwardListConstruction::Move && !forwardListMoveBody(S, SM, C, *Node, Context)))
+    return std::nullopt;
   for (unsigned I = 0; I != C->getNumParams(); ++I) {
     const auto Parameter = C->getParamDecl(I)->getType();
     const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : Parameter;
