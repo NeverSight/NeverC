@@ -54510,8 +54510,15 @@ std::optional<UtilityForwardListOperation> forwardListOwnerComparisonSignature(
     return std::nullopt;
   const auto Allocator = approvedUtilityAllocatorRecord(S, SM, forwardListRecordType(Arguments->get(1).getAsType()), Context);
   if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) return std::nullopt;
-  return F->getOverloadedOperator() == OO_EqualEqual ? UtilityForwardListOperation::OwnerEqual
-                                                    : UtilityForwardListOperation::OwnerNotEqual;
+  switch (F->getOverloadedOperator()) {
+  case OO_EqualEqual: return UtilityForwardListOperation::OwnerEqual;
+  case OO_ExclaimEqual: return UtilityForwardListOperation::OwnerNotEqual;
+  case OO_Less: return UtilityForwardListOperation::OwnerLess;
+  case OO_Greater: return UtilityForwardListOperation::OwnerGreater;
+  case OO_LessEqual: return UtilityForwardListOperation::OwnerLessEqual;
+  case OO_GreaterEqual: return UtilityForwardListOperation::OwnerGreaterEqual;
+  default: return std::nullopt;
+  }
 }
 
 bool forwardListOwnerEqualityBody(const State &S, const SourceManager &SM, const FunctionDecl *F,
@@ -54548,8 +54555,7 @@ std::optional<UtilityForwardListOperation> forwardListComparisonSignature(
     const ASTContext &Context) {
   if (!F || isa<CXXMethodDecl>(F) || !F->isOverloadedOperator() || F->getNumParams() != 2 ||
       !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
-      !forwardListFunctionDeclarations(S, SM, F) ||
-      (F->getOverloadedOperator() != OO_EqualEqual && F->getOverloadedOperator() != OO_ExclaimEqual))
+      !forwardListFunctionDeclarations(S, SM, F))
     return std::nullopt;
   const auto Left = F->getParamDecl(0)->getType();
   if (!Left->isLValueReferenceType() || !Left->getPointeeType().isConstQualified() ||
@@ -54557,7 +54563,9 @@ std::optional<UtilityForwardListOperation> forwardListComparisonSignature(
       !Context.hasSameType(Left, F->getParamDecl(1)->getType())) return std::nullopt;
   if (approvedUtilityForwardListRecord(S, SM, forwardListRecordType(Left->getPointeeType()), Context))
     return forwardListOwnerComparisonSignature(S, SM, F, Context);
-  if (F->getPrimaryTemplate()) return std::nullopt;
+  if (F->getPrimaryTemplate() ||
+      (F->getOverloadedOperator() != OO_EqualEqual && F->getOverloadedOperator() != OO_ExclaimEqual))
+    return std::nullopt;
   const auto I = approvedUtilityForwardListIteratorRecord(S, SM,
       forwardListRecordType(Left->getPointeeType()), Context);
   if (!I) return std::nullopt;
@@ -55014,6 +55022,67 @@ bool forwardListDefaultMergeBody(const State &S, const SourceManager &SM,
   return forwardListDefaultLess(S, SM, Selected->getParamDecl(1)->getType(), Context);
 }
 
+bool forwardListLexicographicCall(const State &S, const SourceManager &SM,
+    const CallExpr *Call, unsigned Count, const ASTContext &Context) {
+  const auto *Function = Call ? Call->getDirectCallee() : nullptr;
+  if (!Function || !Function->getIdentifier() || Function->getName() != "lexicographical_compare" ||
+      !forwardListStd(Function->getDeclContext()) || !Function->getPrimaryTemplate() ||
+      Function->getNumParams() != Count || Call->getNumArgs() != Count ||
+      !Context.hasSameType(Function->getReturnType(), Context.BoolTy)) return false;
+  for (const auto *D : Function->redecls())
+    if (!forwardListPinned(S, SM, D, "__algorithm/lexicographical_compare.h")) return false;
+  return true;
+}
+
+const Expr *forwardListSingleReturn(const FunctionDecl *F) {
+  const auto *Definition = F ? F->getDefinition() : nullptr;
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  return Return ? Return->getRetValue() : nullptr;
+}
+
+bool forwardListOwnerOrderBody(const State &S, const SourceManager &SM, const FunctionDecl *F,
+    UtilityForwardListOperation Operation, const UtilityForwardListNodeRecord &Node, const ASTContext &Context) {
+  const auto *Definition = F->getDefinition();
+  const auto *Result = forwardListSingleReturn(F);
+  if (!Result) return false;
+  const auto *Value = Result->IgnoreParenImpCasts();
+  if (Operation == UtilityForwardListOperation::OwnerLess) {
+    const auto *Compare = dyn_cast<CallExpr>(Value);
+    if (!forwardListLexicographicCall(S, SM, Compare, 4, Context)) return false;
+    for (unsigned I = 0; I != 4; ++I) {
+      const auto *Bound = dyn_cast<CXXMemberCallExpr>(Compare->getArg(I)->IgnoreUnlessSpelledInSource());
+      const auto *Accessor = Bound ? Bound->getMethodDecl() : nullptr;
+      const auto *Parameter = Definition->getParamDecl(I / 2);
+      if (!Accessor || !Accessor->getIdentifier() || Accessor->getName() != (I % 2 ? "end" : "begin") ||
+          !Accessor->isConst() || Bound->getNumArgs() || !forwardListFunctionDeclarations(S, SM, Accessor) ||
+          !Context.hasSameUnqualifiedType(Context.getRecordType(Accessor->getParent()), Parameter->getType()->getPointeeType()) ||
+          !forwardListIteratorType(S, SM, Accessor->getReturnType(), Node, true, Context) ||
+          !variantParameter(Bound->getImplicitObjectArgument(), Parameter))
+        return false;
+    }
+    const auto *Default = forwardListSingleReturn(Compare->getDirectCallee());
+    const auto *Delegate = Default ? dyn_cast<CallExpr>(Default->IgnoreParenImpCasts()) : nullptr;
+    return forwardListLexicographicCall(S, SM, Delegate, 5, Context) &&
+           forwardListDefaultLess(S, SM, Delegate->getDirectCallee()->getParamDecl(4)->getType(), Context);
+  }
+  const bool Reverse = Operation == UtilityForwardListOperation::OwnerGreater ||
+                       Operation == UtilityForwardListOperation::OwnerLessEqual;
+  if (Operation != UtilityForwardListOperation::OwnerGreater) {
+    const auto *Negate = dyn_cast<UnaryOperator>(Value);
+    if (!Negate || Negate->getOpcode() != UO_LNot) return false;
+    Value = Negate->getSubExpr()->IgnoreParenImpCasts();
+  }
+  const auto *Less = dyn_cast<CXXOperatorCallExpr>(Value);
+  const auto *Selected = Less ? Less->getDirectCallee() : nullptr;
+  return Selected && Less->getOperator() == OO_Less && Less->getNumArgs() == 2 &&
+         forwardListFunctionDeclarations(S, SM, Selected) &&
+         forwardListOwnerComparisonSignature(S, SM, Selected, Context) == UtilityForwardListOperation::OwnerLess &&
+         variantParameter(Less->getArg(0), Definition->getParamDecl(Reverse ? 1 : 0)) &&
+         variantParameter(Less->getArg(1), Definition->getParamDecl(Reverse ? 0 : 1)) &&
+         forwardListOwnerOrderBody(S, SM, Selected, UtilityForwardListOperation::OwnerLess, Node, Context);
+}
+
 std::optional<UtilityForwardListNodeRecord> forwardListReceiverNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *R,
     const ASTContext &Context) {
@@ -55188,6 +55257,10 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
         !forwardListSourceGraph(S, SM, Function, Context, *Node)) return std::nullopt;
     if ((*Comparison == UtilityForwardListOperation::OwnerEqual || *Comparison == UtilityForwardListOperation::OwnerNotEqual) &&
         !forwardListOwnerEqualityBody(S, SM, Function, *Comparison)) return std::nullopt;
+    if ((*Comparison == UtilityForwardListOperation::OwnerLess || *Comparison == UtilityForwardListOperation::OwnerGreater ||
+         *Comparison == UtilityForwardListOperation::OwnerLessEqual || *Comparison == UtilityForwardListOperation::OwnerGreaterEqual) &&
+        !forwardListOwnerOrderBody(S, SM, Function, *Comparison, *Node, Context))
+      return std::nullopt;
     return UtilityForwardListCall{*Comparison, nullptr, Function, 0};
   }
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);

@@ -27251,10 +27251,10 @@ class FunctionLowering {
     assign(forwardListMember(Place, false, L), std::move(Head), L);
     assign(forwardListMember(Source, false, L), A.zero(A.Context.VoidPtrTy, L), L);
   }
-  Expression compareForwardListOwners(Expression Left, Expression Right, bool Invert, SourceLocation L) {
+  Expression compareForwardListOwners(Expression Left, Expression Right, bool Ordered, bool Invert, SourceLocation L) {
     auto LeftNode = snapshot(forwardListMember(Left, false, L), L);
     auto RightNode = snapshot(forwardListMember(Right, false, L), L);
-    auto Equal = temporary("bool", L);
+    auto Result = temporary("bool", L);
     const auto Check = labelName(), Compare = labelName(), Advance = labelName();
     const auto Different = labelName(), End = labelName(), Done = labelName();
     jump(Check, L);
@@ -27268,13 +27268,15 @@ class FunctionLowering {
     assign(RightNode, forwardListNext(RightNode, L), L);
     jump(Check, L);
     label(Different, L);
-    assign(Equal, boolean(false, L), L);
+    assign(Result, Ordered ? binary("<", forwardListValue(LeftNode, true, L),
+        forwardListValue(RightNode, true, L), "bool", L) : boolean(false, L), L);
     jump(Done, L);
     label(End, L);
-    assign(Equal, binary("==", LeftNode, RightNode, "bool", L), L);
+    assign(Result, Ordered ? binary("&&", binary("==", LeftNode, A.zero(A.Context.VoidPtrTy, L), "bool", L),
+        cast(RightNode, "bool", L), "bool", L) : binary("==", LeftNode, RightNode, "bool", L), L);
     jump(Done, L);
     label(Done, L);
-    return Invert ? binary("==", Equal, boolean(false, L), "bool", L) : Equal;
+    return Invert ? binary("==", Result, boolean(false, L), "bool", L) : Result;
   }
   Expression utilityForwardListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
@@ -27298,9 +27300,16 @@ class FunctionLowering {
       Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
           Proof->Function->getParamDecl(I)->getType()), L));
     if (AssignmentSyntax) CaptureReceiver();
-    if (Operation == UtilityForwardListOperation::OwnerEqual || Operation == UtilityForwardListOperation::OwnerNotEqual)
-      return compareForwardListOwners(dereference(Operands[0], L), dereference(Operands[1], L),
-          Operation == UtilityForwardListOperation::OwnerNotEqual, L);
+    if (Operation == UtilityForwardListOperation::OwnerEqual || Operation == UtilityForwardListOperation::OwnerNotEqual ||
+        Operation == UtilityForwardListOperation::OwnerLess || Operation == UtilityForwardListOperation::OwnerGreater ||
+        Operation == UtilityForwardListOperation::OwnerLessEqual || Operation == UtilityForwardListOperation::OwnerGreaterEqual) {
+      const bool Ordered = Operation != UtilityForwardListOperation::OwnerEqual && Operation != UtilityForwardListOperation::OwnerNotEqual;
+      const bool Swap = Operation == UtilityForwardListOperation::OwnerGreater || Operation == UtilityForwardListOperation::OwnerLessEqual;
+      const bool Invert = Operation == UtilityForwardListOperation::OwnerNotEqual ||
+          Operation == UtilityForwardListOperation::OwnerLessEqual || Operation == UtilityForwardListOperation::OwnerGreaterEqual;
+      return compareForwardListOwners(dereference(Operands[Swap ? 1 : 0], L), dereference(Operands[Swap ? 0 : 1], L),
+          Ordered, Invert, L);
+    }
     if (Operation == UtilityForwardListOperation::IteratorEqual ||
         Operation == UtilityForwardListOperation::IteratorNotEqual) {
       auto Left = forwardListMember(dereference(Operands[0], L), true, L);
