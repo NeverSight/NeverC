@@ -1,0 +1,167 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-empty-load-factor-empty-set",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyLoadFactorEmptySetRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e008fa0d2f47c45dfaf88239c6da4de1811043d22ff97be4ba8b3cea857137f1",
+      "original_case_source_sha256": "e008fa0d2f47c45dfaf88239c6da4de1811043d22ff97be4ba8b3cea857137f1",
+      "gtest_body_sha256": "3e037a03916cae25929db83a61c2581732fbb09b9717d6f4af3a6148a803ea9e"
+    },
+    {
+      "name": "unordered-empty-load-factor-empty-multiset",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyLoadFactorEmptyMultisetRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "511b1ee7a5f72809403cd0862394a2416d85e59eb471d39bbb283ca86be223f4",
+      "original_case_source_sha256": "511b1ee7a5f72809403cd0862394a2416d85e59eb471d39bbb283ca86be223f4",
+      "gtest_body_sha256": "b968a2328055ecbccf845358c787a3cf8ccf54277889359abfb86fbf5cd89e23"
+    },
+    {
+      "name": "unordered-empty-load-factor-single-receiver-evaluation",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyLoadFactorSingleReceiverEvaluationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e8cce4d789600e7614087bc3f952bccf412d7718aea3fc9576db921df91cc1dd",
+      "original_case_source_sha256": "e8cce4d789600e7614087bc3f952bccf412d7718aea3fc9576db921df91cc1dd",
+      "gtest_body_sha256": "e7babc27f9f855b8d6b911fa060f04213a0f004c39ffe73ab189994dfcb27dbc"
+    },
+    {
+      "name": "unordered-empty-load-factor-nested-scope",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyLoadFactorNestedScopeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6290ae7fdabee8be22e4212b7d9b1f2ce8a9e2d268dc21ec7e73768d338a557d",
+      "original_case_source_sha256": "6290ae7fdabee8be22e4212b7d9b1f2ce8a9e2d268dc21ec7e73768d338a557d",
+      "gtest_body_sha256": "507464eb47ad43062e1f2d00a7cd60bf896e0365ff9ed449c96e1e84e68d5297"
+    },
+    {
+      "name": "unordered-empty-load-factor-rehash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f",
+      "original_case_source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f",
+      "gtest_body_sha256": "0a08c2084aa0fdf84678a63be12694097d8efe31c97cd8c0a53cb6aaf4e406b6"
+    },
+    {
+      "name": "unordered-empty-load-factor-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerLoadFactorRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0fdde5039e70dab229aaeadf9d93a2adc0d810d1ae77a39bcfb7efb9de06fcf6",
+      "original_case_source_sha256": "0fdde5039e70dab229aaeadf9d93a2adc0d810d1ae77a39bcfb7efb9de06fcf6",
+      "gtest_body_sha256": "8d29e7cdde2a842bd292dacc924ffdb73fca1beba43dde7dec43a88a02586b54"
+    },
+    {
+      "name": "unordered-empty-load-factor-different-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalUnsignedLoadFactor",
+      "expected": "accept",
+      "source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b",
+      "original_case_source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b",
+      "gtest_body_sha256": "73fb7ee77abbb57ad8f64bd15d4b1caf53bda158455a7bc9e29ea643dd345c36"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-empty-load-factor-custom-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyLoadFactorCustomHashRejected",
+      "expected": "reject",
+      "source_sha256": "324d3b8ca743535cc9593bafe84668def8ec262692069b2a5abf3d81001385c1",
+      "original_case_source_sha256": "324d3b8ca743535cc9593bafe84668def8ec262692069b2a5abf3d81001385c1",
+      "gtest_body_sha256": "5e29cb019ad2bcfb28477fde278be6812011e3a0b9b96faa175604b63f3e7425"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-empty-load-factor-empty-set",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> value;\n  return value.load_factor() != 0.0f || value.bucket_count() != 0 ||\n         value.max_load_factor() != 1.0f;\n}\n",
+      "source_sha256": "e008fa0d2f47c45dfaf88239c6da4de1811043d22ff97be4ba8b3cea857137f1"
+    },
+    {
+      "name": "unordered-empty-load-factor-empty-multiset",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> value;\n  float current = value.load_factor();\n  return current != 0.0f || !value.empty() || value.size() != 0;\n}\n",
+      "source_sha256": "511b1ee7a5f72809403cd0862394a2416d85e59eb471d39bbb283ca86be223f4"
+    },
+    {
+      "name": "unordered-empty-load-factor-single-receiver-evaluation",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nconst std::unordered_set<int>& observe(int& calls, const std::unordered_set<int>& value) {\n  ++calls;\n  return value;\n}\nint main() {\n  const std::unordered_set<int> value;\n  int calls = 0;\n  float load = observe(calls, value).load_factor();\n  return calls != 1 || load != 0.0f;\n}\n",
+      "source_sha256": "e8cce4d789600e7614087bc3f952bccf412d7718aea3fc9576db921df91cc1dd"
+    },
+    {
+      "name": "unordered-empty-load-factor-nested-scope",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nfloat load(bool nested) {\n  const std::unordered_multiset<int> outer;\n  if (nested) {\n    const std::unordered_multiset<int> inner;\n    return inner.load_factor() + outer.load_factor();\n  }\n  return outer.load_factor();\n}\nint main() { return load(true) != 0.0f || load(false) != 0.0f; }\n",
+      "source_sha256": "6290ae7fdabee8be22e4212b7d9b1f2ce8a9e2d268dc21ec7e73768d338a557d"
+    },
+    {
+      "name": "unordered-empty-load-factor-rehash",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> value;\n  value.rehash(7);\n  return value.load_factor() != 0.0f;\n}\n",
+      "source_sha256": "b3d4045664488053246eab9e8572fb9b4ac32c6f867cd85b403db43bbdeba38f"
+    },
+    {
+      "name": "unordered-empty-load-factor-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> value;\n  const auto* pointer = &value;\n  return pointer->load_factor() != 0.0f;\n}\n",
+      "source_sha256": "0fdde5039e70dab229aaeadf9d93a2adc0d810d1ae77a39bcfb7efb9de06fcf6"
+    },
+    {
+      "name": "unordered-empty-load-factor-different-key",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<unsigned int> value;\n  return value.load_factor() != 0.0f;\n}\n",
+      "source_sha256": "77a5fe5d75f7d10ee19cf28315b79297661fecbea14058f8028f136c3ef5544b"
+    },
+    {
+      "name": "unordered-empty-load-factor-custom-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "kind": "source-body-guard",
+      "source": "#include <unordered_set>\nstruct AlternateHash { unsigned long long operator()(int value) const { return value; } };\nint main() {\n  const std::unordered_set<int, AlternateHash> value;\n  return value.load_factor() != 0.0f;\n}\n",
+      "source_sha256": "324d3b8ca743535cc9593bafe84668def8ec262692069b2a5abf3d81001385c1"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedEmptyLoadFactorEmptySetRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyLoadFactorEmptyMultisetRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyLoadFactorSingleReceiverEvaluationRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyLoadFactorNestedScopeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyLoadFactorRehashRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerLoadFactorRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalUnsignedLoadFactor",
+    "TranslateTest.CoreV2UnorderedEmptyLoadFactorCustomHashRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931",
+  "maintained_original_sha256": "b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5",
+  "previous_registered_source_sha256": "c36266a7928342a5d83595fd908886b67fb1cbb2748be1f9299b981d25b866b2",
+  "previous_maintained_original_sha256": "5ef4d0491c68e82841467b5fd534a89ec5330e0220fc1c33babab7cf342c9e37",
+  "restorer_sha256": "7e1d23a29b98e7781506bbae3313e0093e1f5f1bc0e2bbde7858e93964e3542e",
+  "extractor_sha256": "71a0b8cd25ec3d53b17a72e642003ab2a60bab3cbee294521c5ed181501bb3c3",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8342,
+  "current_python_registry_tests": 172,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "unordered-bucket-storage": "2eba369d4578e9e03c506e68fc1b71004f3614f6d7fbf879a0fdcf3b8acaef76",
+    "unordered-empty-load-factor": "f69568b5562b19312bee40cfd8fb3134b5bf56aae1ab760b9c696fbae531892e",
+    "unordered-set-bucket-receivers": "1a0de477baf71caf287cb98e07a1017a3c2a3df8497717c62c00fa1dfc95ed03",
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "4bfd2cfc7430b0d4a6bbc658aa085ac34a941024d28a72884f3bf7a4118deff6",
+  "source_proof_sha256": "351ea3f24d0f47273b3afdccef354e2b16e72f7884498d4a4792fed3304f7884"
+}
