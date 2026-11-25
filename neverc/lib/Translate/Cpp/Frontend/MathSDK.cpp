@@ -53905,6 +53905,10 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
     return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, C->getParent(), Context)) {
     if (!C->getNumParams()) return UtilityForwardListConstruction::Default;
+    if (C->getNumParams() == 1 && C->isCopyConstructor() &&
+        Context.hasSameType(C->getParamDecl(0)->getType(),
+          Context.getLValueReferenceType(Context.getRecordType(Owner->Record).withConst())))
+      return UtilityForwardListConstruction::Copy;
     if (C->getNumParams() == 1 &&
         forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
       return UtilityForwardListConstruction::Allocator;
@@ -54287,6 +54291,20 @@ std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruc
   if (!Kind || !Node || Construction->getNumArgs() != C->getNumParams() ||
       !Context.hasSameUnqualifiedType(Construction->getType(), Context.getRecordType(C->getParent())) ||
       !forwardListSourceGraph(S, SM, C, Context, *Node)) return std::nullopt;
+  if (*Kind == UtilityForwardListConstruction::Copy) {
+    const auto *Definition = dyn_cast_or_null<CXXConstructorDecl>(C->getDefinition());
+    const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+    if (!Body || Body->size() != 1 || Definition->getNumCtorInitializers() != 1)
+      return std::nullopt;
+    const auto *Base = *Definition->init_begin();
+    const auto *Insert = dyn_cast<CXXMemberCallExpr>(Body->body_front());
+    const auto *Method = Insert ? Insert->getMethodDecl() : nullptr;
+    if (!Base->isBaseInitializer() || Base->isBaseVirtual() || !Method ||
+        !Method->getIdentifier() || Method->getName() != "insert_after" ||
+        Method->getParent()->getCanonicalDecl() != Definition->getParent()->getCanonicalDecl() ||
+        !Method->getPrimaryTemplate() || Insert->getNumArgs() != 3)
+      return std::nullopt;
+  }
   for (unsigned I = 0; I != C->getNumParams(); ++I) {
     const auto Parameter = C->getParamDecl(I)->getType();
     const auto Value = Parameter->isReferenceType() ? Parameter->getPointeeType() : Parameter;

@@ -27101,6 +27101,28 @@ class FunctionLowering {
     assign(forwardListValue(Node, false, L), dereference(ValueReference, L), L);
     return Node;
   }
+  void copyForwardListStorage(Expression Place, Expression Source,
+                              const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Current = temporary("ptr:void", L);
+    auto First = temporary("ptr:void", L);
+    auto LastLink = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
+    assign(Current, forwardListMember(Source, false, L), L);
+    initializeZero(First, A.Context.VoidPtrTy, L);
+    assign(LastLink, address(First, A.Context.VoidPtrTy, L), L);
+    const auto Check = labelName(), Add = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Current, "bool", L), Add, Done, L);
+    label(Add, L);
+    auto Value = address(forwardListValue(Current, true, L), A.Context.IntTy.withConst(), L);
+    auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    assign(dereference(LastLink, L), Node, L);
+    assign(LastLink, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
+    assign(Current, forwardListNext(Current, L), L);
+    jump(Check, L); label(Done, L);
+    // The pinned range insertion publishes the new chain only after all nodes
+    // have been constructed.
+    assign(forwardListMember(Place, false, L), First, L);
+  }
   void forwardListReleaseNode(Expression Node, const UtilityForwardListNodeRecord &Info,
                               SourceLocation L) {
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
@@ -41034,6 +41056,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "forward-list construction", "The checked integer owner layout is required.");
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
+      if (*Kind == UtilityForwardListConstruction::Copy) {
+        copyForwardListStorage(Place, dereference(Operands.front(), L), Owner->Node, L);
+        return;
+      }
       if (*Kind != UtilityForwardListConstruction::InitializerList) return;
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
           C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
