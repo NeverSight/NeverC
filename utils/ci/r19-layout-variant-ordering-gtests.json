@@ -1,0 +1,132 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-ordering-index-before-value",
+      "formal_test_name": "TranslateTest.CoreV2VariantOrderingIndexBeforeValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "434b9100565ac8ef3998a524991f93c85b36972d2987c81d00ecbaa6421f24b4",
+      "original_case_source_sha256": "434b9100565ac8ef3998a524991f93c85b36972d2987c81d00ecbaa6421f24b4",
+      "gtest_body_sha256": "4d43f4b125d456a16e104bb4f15201e9f2748d0a49bf90f25ad35c4c7539ddc8"
+    },
+    {
+      "name": "variant-ordering-signed-values-and-duplicate-types",
+      "formal_test_name": "TranslateTest.CoreV2VariantOrderingSignedValuesAndDuplicateTypesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a097a28a8dcd0f438582762b058ded3d6003bee7d3bb106dae8de6840f57db1d",
+      "original_case_source_sha256": "a097a28a8dcd0f438582762b058ded3d6003bee7d3bb106dae8de6840f57db1d",
+      "gtest_body_sha256": "413db4073f9355f377ccff43a9ba61afe6372b35247dad51a07c958dd2c6a46d"
+    },
+    {
+      "name": "variant-ordering-once-only-const-operands",
+      "formal_test_name": "TranslateTest.CoreV2VariantOrderingOnceOnlyConstOperandsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1aaeb113bcd8b2e82c3512c5280a6a251478296140743479e534a98371a23f4d",
+      "original_case_source_sha256": "1aaeb113bcd8b2e82c3512c5280a6a251478296140743479e534a98371a23f4d",
+      "gtest_body_sha256": "5bd68dbc87fa7e890dc3362433a6d8bd638605326345767811d8b48da767ce5c"
+    },
+    {
+      "name": "variant-ordering-floating-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantOrderingAcceptsFloatingAlternative",
+      "expected": "accept",
+      "source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
+      "original_case_source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
+      "gtest_body_sha256": "c61dce0cb109f20ae339a32ff31d27523bc3666780333abaaebc5fe10a9e1a49",
+      "source_only": true
+    },
+    {
+      "name": "variant-ordering-temporary-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantOrderingAcceptsTemporaryOperand",
+      "expected": "accept",
+      "source_sha256": "65fa3ac2a218ac7de88660ebc1ddefee7a782c40f9a6e0f802152d4874771d45",
+      "original_case_source_sha256": "65fa3ac2a218ac7de88660ebc1ddefee7a782c40f9a6e0f802152d4874771d45",
+      "gtest_body_sha256": "6cd32d1718e79ec128ab66f9c910bc6c43a780a28d7bdf924f7ed26fe5793855",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-ordering-renamed-policy",
+      "formal_test_name": "TranslateTest.CoreV2VariantOrderingRenamedPolicyRejected",
+      "expected": "reject",
+      "source_sha256": "071750b73bb03a0e6d080200f781dbebaa56b73111b006b0817a870b4de5be98",
+      "original_case_source_sha256": "071750b73bb03a0e6d080200f781dbebaa56b73111b006b0817a870b4de5be98",
+      "gtest_body_sha256": "79638d031254ab90abda6e5f4d573f25ef565a6bb8af1708f9667cdde22caf86"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-ordering-index-before-value",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<int, short>;\n  Value left(std::in_place_index<0>, 1000);\n  Value right(std::in_place_index<1>, short(-9));\n  if (!(left < right) || !(left <= right) || left > right || left >= right)\n    return 1;\n  if (right < left || right <= left || !(right > left) || !(right >= left))\n    return 2;\n  left.emplace<1>(short(-9));\n  return left < right || left > right || !(left <= right) || !(left >= right);\n}\n",
+      "expected": "accept",
+      "source_sha256": "434b9100565ac8ef3998a524991f93c85b36972d2987c81d00ecbaa6421f24b4",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-ordering-signed-values-and-duplicate-types",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<int, int>;\n  const Value lower_index(std::in_place_index<0>, 1);\n  Value a(std::in_place_index<1>, -6);\n  Value b(std::in_place_index<1>, 1);\n  if (!(lower_index < a) || !(a < b) || !(b > a))\n    return 1;\n  b.emplace<1>(-9);\n  return a <= b || !(a >= b);\n}\n",
+      "expected": "accept",
+      "source_sha256": "a097a28a8dcd0f438582762b058ded3d6003bee7d3bb106dae8de6840f57db1d",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-ordering-once-only-const-operands",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nint left_reads, right_reads;\nconst Value& left(const Value& v) { ++left_reads; return v; }\nconst Value& right(const Value& v) { ++right_reads; return v; }\nint main() {\n  const Value a(std::in_place_index<0>, short(3));\n  const Value b(std::in_place_index<0>, short(7));\n  if (!std::operator<=(left(a), right(b))) return 1;\n  if (std::operator>(left(a), right(a))) return 2;\n  return left_reads != 2 || right_reads != 2;\n}\n",
+      "expected": "accept",
+      "source_sha256": "1aaeb113bcd8b2e82c3512c5280a6a251478296140743479e534a98371a23f4d",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-ordering-floating-alternative",
+      "source": "#include <variant>\nusing Value = std::variant<int, double>;\nbool compare(const Value& a, const Value& b) { return a >= b; }\n",
+      "expected": "accept",
+      "source_sha256": "5e1e409e0445082da3ce1ba1c2889df20efe12261251bc39d61d11a7dbc0e2bd",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-ordering-temporary-operand",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nbool compare(const Value& a) { return a <= Value(3); }\n",
+      "expected": "accept",
+      "source_sha256": "65fa3ac2a218ac7de88660ebc1ddefee7a782c40f9a6e0f802152d4874771d45",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-ordering-renamed-policy",
+      "source": "#define less altered_variant_less\n#include <variant>\n#undef less\nusing Value = std::variant<short, int>;\nbool compare(const Value& a, const Value& b) { return a < b; }\n",
+      "expected": "reject",
+      "source_sha256": "071750b73bb03a0e6d080200f781dbebaa56b73111b006b0817a870b4de5be98",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantOrderingIndexBeforeValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantOrderingSignedValuesAndDuplicateTypesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantOrderingOnceOnlyConstOperandsRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantOrderingAcceptsFloatingAlternative",
+    "TranslateTest.CoreV2VariantOrderingAcceptsTemporaryOperand",
+    "TranslateTest.CoreV2VariantOrderingRenamedPolicyRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f4438c626036d992e46581f28d2eb2660ec440254ae2e7e70a3badcc0a478224",
+  "maintained_original_sha256": "d46e00876290437ca25e5bb20bee825ac7fefe03bd6447d02e060695381d35f9",
+  "previous_registered_source_sha256": "7f86edcd2554ebcbbfd63c7e218c8e3366058bca3ecb5b935c52d040ef1a8e5a",
+  "previous_maintained_original_sha256": "bbdd93fd3a492641167ec5618c88f5dd8fff5115e940b8737487acab8ef4c73e",
+  "restorer_sha256": "1af6d49f45be55ad9200af876bc8fca6b66497e8b4a1fc91570dd855d26fae31",
+  "extractor_sha256": "d7fe726437dffad2cfb5770639e20e3109bc60756cc0de7fb14a6ee45b6bd420",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8240,
+  "current_python_registry_tests": 144,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "variant-ordering": "1f8eaed0efc9ab7e629dc17d69896bc04b5710ebfc5adfdada4d0f576a3655a8"
+  },
+  "native_reference_authentication_sha256": "b5386b2eaa34e1d92fb233c24f00a4dbeec9767b4e61bbb0eccfd1cc5250ea5a",
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
+}
