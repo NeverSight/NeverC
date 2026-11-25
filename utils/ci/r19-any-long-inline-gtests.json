@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-long-inline-distinct-native-long-tags",
+      "formal_test_name": "TranslateTest.CoreV2AnyLongInlineDistinctNativeLongTagsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3f6432f83e15aaed81f256d59e7a860931a62febd263977bbe9ebbc3a33e625c",
+      "original_case_source_sha256": "3f6432f83e15aaed81f256d59e7a860931a62febd263977bbe9ebbc3a33e625c",
+      "gtest_body_sha256": "4e7c29fbef2aff4a28aedc682f57250a2653fa64aa1bbdff3d7570ff41574aa8"
+    },
+    {
+      "name": "any-long-inline-make-and-copy-native-long",
+      "formal_test_name": "TranslateTest.CoreV2AnyLongInlineMakeAndCopyNativeLongRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "eca29cddee1809fa504b21f8d0b9f6d6134708911c276039a764dcae1ffa2c77",
+      "original_case_source_sha256": "eca29cddee1809fa504b21f8d0b9f6d6134708911c276039a764dcae1ffa2c77",
+      "gtest_body_sha256": "f08c7609ac59791cc47dc1dddbbd3da70dbbdf92536252b9a39ce87ffee0edd3"
+    },
+    {
+      "name": "any-long-inline-long-emplace-and-move",
+      "formal_test_name": "TranslateTest.CoreV2AnyLongInlineLongEmplaceAndMoveRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "24cb95c170431e773c061f25308ef6f4c725b0d694c37da42288304911c2cf3d",
+      "original_case_source_sha256": "24cb95c170431e773c061f25308ef6f4c725b0d694c37da42288304911c2cf3d",
+      "gtest_body_sha256": "5e31ab39e9c6db27ba53c39e9b8ddb81338a8e300f5585ab6e4de4eb6e357540"
+    },
+    {
+      "name": "any-long-inline-swap-native-long-and-signed-wide",
+      "formal_test_name": "TranslateTest.CoreV2AnyLongInlineSwapNativeLongAndSignedWideRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c4951f9536399df007b580cac325279efded03240ebfe72076a98895160e09f5",
+      "original_case_source_sha256": "c4951f9536399df007b580cac325279efded03240ebfe72076a98895160e09f5",
+      "gtest_body_sha256": "b9c36cb3520529f1cd2229fe4dfd3e2c4fc6b2b52a3d674c430eabd8ce43016d"
+    },
+    {
+      "name": "any-long-inline-mutable-long-reference-cast",
+      "formal_test_name": "TranslateTest.CoreV2AnyLongMutableReferenceRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "048c14105435338e7fe937f0c96fc0a95bed207ad49719b3f3d6344500f70739",
+      "original_case_source_sha256": "048c14105435338e7fe937f0c96fc0a95bed207ad49719b3f3d6344500f70739",
+      "gtest_body_sha256": "080721a72e95b6b6c0271102ddcdab0bbf0905bc7a288225b462bdda1c6863a0"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-long-inline-signed-long-tag-mismatch",
+      "formal_test_name": "TranslateTest.CoreV2AnyLongInlineSignedLongTagMismatchRejected",
+      "expected": "reject",
+      "source_sha256": "88181d8fbe5d4ecf93099ed94ae36f4721491883be1c94091d26902978bb0c60",
+      "original_case_source_sha256": "88181d8fbe5d4ecf93099ed94ae36f4721491883be1c94091d26902978bb0c60",
+      "gtest_body_sha256": "927a187254c3ecaace93596b84779c0171487ccd2bc05d80b283c85c933aad37"
+    },
+    {
+      "name": "any-long-inline-unsigned-long-tag-mismatch",
+      "formal_test_name": "TranslateTest.CoreV2AnyLongInlineUnsignedLongTagMismatchRejected",
+      "expected": "reject",
+      "source_sha256": "432afa3dcc2011dd41596a42402ad03a37e4e42b6f0a6607968c7705ca457071",
+      "original_case_source_sha256": "432afa3dcc2011dd41596a42402ad03a37e4e42b6f0a6607968c7705ca457071",
+      "gtest_body_sha256": "12fd3cb83434c4742d1740bbafdd7cb553593a6ea8c05d983c21cc7197c6bd09"
+    },
+    {
+      "name": "any-long-inline-volatile-native-long-access",
+      "formal_test_name": "TranslateTest.CoreV2AnyLongInlineVolatileNativeLongAccessRejected",
+      "expected": "reject",
+      "source_sha256": "1e4a49b1a21888ae7402c36d9dbc8b77d3d8ca4b3601b4e7f45156cf06e1d0fe",
+      "original_case_source_sha256": "1e4a49b1a21888ae7402c36d9dbc8b77d3d8ca4b3601b4e7f45156cf06e1d0fe",
+      "gtest_body_sha256": "a791bed5148c6ffeb24efae1cee2ae58e3d79fee3337e256114d14667637ec50"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "any-long-inline-distinct-native-long-tags",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  const long input = sizeof(long) == 8 ? static_cast<long>(-4000000007LL) : -2000000007L;\n  std::any value = input;\n  const auto* number = std::any_cast<long>(&value);\n  if (!number || *number != input || std::any_cast<int>(&value) ||\n      std::any_cast<long long>(&value) || std::any_cast<unsigned long>(&value)) return 1;\n  const unsigned long bits = static_cast<unsigned long>(0xaedcb987f6543210ULL);\n  value = bits;\n  auto* word = std::any_cast<unsigned long>(&value);\n  return !word || *word != bits || std::any_cast<unsigned int>(&value) ||\n      std::any_cast<unsigned long long>(&value);\n}\n",
+      "source_sha256": "3f6432f83e15aaed81f256d59e7a860931a62febd263977bbe9ebbc3a33e625c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-long-inline-make-and-copy-native-long",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  using Word = unsigned long;\n  constexpr Word input = static_cast<Word>(0x90000000f0000007ULL);\n  std::any original = std::make_any<Word>(input);\n  std::any copy(original);\n  original.reset();\n  const std::any direct(input);\n  if (original.has_value() || std::any_cast<Word>(direct) != input) return 1;\n  const auto* saved = std::any_cast<Word>(&copy);\n  return !saved || *saved != input;\n}\n",
+      "source_sha256": "eca29cddee1809fa504b21f8d0b9f6d6134708911c276039a764dcae1ffa2c77",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-long-inline-long-emplace-and-move",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\n#include <utility>\nint main() {\n  std::any value;\n  auto& n = value.emplace<long>();\n  n = -19L;\n  std::any receiver;\n  receiver = std::move(value);\n  const auto* moved = std::any_cast<long>(&receiver);\n  return value.has_value() || !moved || *moved != -19L;\n}\n",
+      "source_sha256": "24cb95c170431e773c061f25308ef6f4c725b0d694c37da42288304911c2cf3d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-long-inline-swap-native-long-and-signed-wide",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any left = 15L;\n  std::any right = -19LL;\n  left.swap(right);\n  auto* native = std::any_cast<long>(&right);\n  auto* wide = std::any_cast<long long>(&left);\n  return !native || *native != 15L || !wide || *wide != -19LL ||\n      std::any_cast<long>(&left) || std::any_cast<long long>(&right);\n}\n",
+      "source_sha256": "c4951f9536399df007b580cac325279efded03240ebfe72076a98895160e09f5",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-long-inline-mutable-long-reference-cast",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any value = 7L;\n  return std::any_cast<long&>(value) != 7L;\n}\n",
+      "source_sha256": "048c14105435338e7fe937f0c96fc0a95bed207ad49719b3f3d6344500f70739",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-long-inline-signed-long-tag-mismatch",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any value = 3L;\n  return std::any_cast<long long>(value) != 3LL;\n}\n",
+      "source_sha256": "88181d8fbe5d4ecf93099ed94ae36f4721491883be1c94091d26902978bb0c60",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-long-inline-unsigned-long-tag-mismatch",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any value = 7UL;\n  return std::any_cast<unsigned int>(value) != 7U;\n}\n",
+      "source_sha256": "432afa3dcc2011dd41596a42402ad03a37e4e42b6f0a6607968c7705ca457071",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-long-inline-volatile-native-long-access",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any value = 7UL;\n  return !std::any_cast<volatile unsigned long>(&value);\n}\n",
+      "source_sha256": "1e4a49b1a21888ae7402c36d9dbc8b77d3d8ca4b3601b4e7f45156cf06e1d0fe",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyLongInlineDistinctNativeLongTagsRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLongInlineMakeAndCopyNativeLongRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLongInlineLongEmplaceAndMoveRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLongInlineSwapNativeLongAndSignedWideRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLongMutableReferenceRunsAtBothOptimizations",
+    "TranslateTest.CoreV2AnyLongInlineSignedLongTagMismatchRejected",
+    "TranslateTest.CoreV2AnyLongInlineUnsignedLongTagMismatchRejected",
+    "TranslateTest.CoreV2AnyLongInlineVolatileNativeLongAccessRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "53e99dffe80159aa038982885bbfee7f1754826e1bdee52379334e31896f7e8b",
+  "maintained_original_sha256": "af6ac408f8952c76df507ba8cd681bc37e8caac5a6d4929a123187b498967475",
+  "previous_registered_source_sha256": "ef55f1aa18a14070806d8cde459ca4e9427c524342219dba308bf6426224817d",
+  "previous_maintained_original_sha256": "d54d1ec315de5daf79db5c01d8e1dbd53a914fd11baf2c5b4388ee32201de29f",
+  "restorer_sha256": "2dfce46d760bd737166a012ddd58153933b54c4ecf8e3d8513ad6bf22565a1f0",
+  "extractor_sha256": "3f1890d00d2b20be4ed33496c1e9a5b1b0ce0bd4352f58ced78257a1c04d8f47",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8424,
+  "current_python_registry_tests": 192,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "any-active-mutable-reference": "48c5bf01bc62c9cc06f7956355c46a38b033a773d095c14cffbf7ba449c26bc1",
+    "any-long-inline": "2b933e9d9a0ead958777527d3c269d679640bb100e0f9d75ff780a4225fe911b"
+  },
+  "native_reference_authentication_sha256": "d4400e8050ca7c78f35abbbb77b186d3d14f151d70079d868b1017e8e923d014",
+  "source_proof_sha256": "958e1870a5db6bb2cc244d2612705723872e55415408db2a16b06f6d1a4f9059"
+}

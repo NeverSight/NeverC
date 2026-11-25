@@ -1,0 +1,182 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-map-list-assignment-reuses-only-successful-unique-insertions",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapListAssignmentReusesOnlySuccessfulUniqueInsertionsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f926fca2b55e83585ee7377e444ecc2336153d02b01845b7281df2868e287be1",
+      "original_case_source_sha256": "f926fca2b55e83585ee7377e444ecc2336153d02b01845b7281df2868e287be1",
+      "gtest_body_sha256": "3c9ee9c16b89a511c3794ce58ce200a540a85f6498b3eb40804dd1a7a8a8c5e5"
+    },
+    {
+      "name": "ordered-multimap-list-assignment-keeps-the-new-equivalent-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapListAssignmentKeepsTheNewEquivalentOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "906d3fdb5f8a7f6ecf4f06094d15848d73982c3c4f940a5157e90e83a5f7f53d",
+      "original_case_source_sha256": "906d3fdb5f8a7f6ecf4f06094d15848d73982c3c4f940a5157e90e83a5f7f53d",
+      "gtest_body_sha256": "43705b561d18595fcc43c0421e4bec8024d666b4fdc8fcebe0449a40b1ad74cb"
+    },
+    {
+      "name": "ordered-set-list-assignment-preserves-operator-and-member-evaluation-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetListAssignmentPreservesOperatorAndMemberEvaluationOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "08ad94dcd308f399f42b9979ce96ef348f90e80a5090f06a6e9e42bcb36f9019",
+      "original_case_source_sha256": "08ad94dcd308f399f42b9979ce96ef348f90e80a5090f06a6e9e42bcb36f9019",
+      "gtest_body_sha256": "c4cb59db229518c51f8d335ea37b6253cf59ac60ac440c9a86bc3b4eced91626"
+    },
+    {
+      "name": "ordered-multiset-empty-list-assignment-reuses-an-empty-owner-after-clear",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetEmptyListAssignmentReusesAnEmptyOwnerAfterClearRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "789e26c85e2477bc419afc15c2519a68e32fa8525f483a098deea9c3cb7f3487",
+      "original_case_source_sha256": "789e26c85e2477bc419afc15c2519a68e32fa8525f483a098deea9c3cb7f3487",
+      "gtest_body_sha256": "751ce317c48f2bdaa7343a314616669b13ec8862193f7d3081ad5f0c5a611909"
+    },
+    {
+      "name": "ordered-set-emplace-exact-int-reuses-the-existing-key-without-allocating",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetEmplaceExactIntReusesTheExistingKeyWithoutAllocatingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ac602c303f11f98d20cce52564ec453fae6a7e13c9cd7cac4cd700e3a8ebd7de",
+      "original_case_source_sha256": "ac602c303f11f98d20cce52564ec453fae6a7e13c9cd7cac4cd700e3a8ebd7de",
+      "gtest_body_sha256": "bfd6a4034c94007e859f76dd6160175b772ade139e00b69aea74369f735d00ae"
+    },
+    {
+      "name": "ordered-set-emplace-default-destroys-a-rejected-zero-node",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetEmplaceDefaultDestroysARejectedZeroNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "73482e3f43b3ac1502883d54c4ee90b5737913ce50d23d55d3b6e8e1daf2e3d8",
+      "original_case_source_sha256": "73482e3f43b3ac1502883d54c4ee90b5737913ce50d23d55d3b6e8e1daf2e3d8",
+      "gtest_body_sha256": "cf025fd6165e4f8fb651d77a0903e5c6c5b8f4a519473fd75e4abaf480d960a6"
+    },
+    {
+      "name": "ordered-multiset-emplace-default-and-rvalue-preserve-equivalent-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetEmplaceDefaultAndRvaluePreserveEquivalentOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0f62026374de6991bbd76fcf4967d802dd86fb9ab417dba6a2f5b9072db37375",
+      "original_case_source_sha256": "0f62026374de6991bbd76fcf4967d802dd86fb9ab417dba6a2f5b9072db37375",
+      "gtest_body_sha256": "c4d3e18d7a145a4f4a998f597b0dbcf63204366e1d22b823c5d80c2430817581"
+    },
+    {
+      "name": "ordered-set-emplace-converting-key-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
+      "original_case_source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
+      "gtest_body_sha256": "1632baf9dbeb50182b7e61272626a963cf884e2bb8dc2258f3185904fd03eb55",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-map-list-assignment-custom-comparator-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapListAssignmentCustomComparatorRemainsUnsupportedRejected",
+      "expected": "reject",
+      "source_sha256": "3928bf69997340da27cc04522bddc07852441e10cf8cc999d18a357afffc8b57",
+      "original_case_source_sha256": "3928bf69997340da27cc04522bddc07852441e10cf8cc999d18a357afffc8b57",
+      "gtest_body_sha256": "cfedf3f8500d227188f598f616802a88389b1f2b8b35fec0436a54e3c125a6da"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-map-list-assignment-reuses-only-successful-unique-insertions",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <cstddef>\n#include <cstdlib>\nstatic unsigned allocations;\nstatic unsigned releases;\nvoid *operator new(std::size_t bytes) {\n  ++allocations;\n  return std::malloc(bytes);\n}\nvoid operator delete(void *ptr) noexcept {\n  if (ptr) ++releases;\n  std::free(ptr);\n}\nint main() {\n  {\n    std::map<int, int> values{{1, 10}, {2, 20}, {3, 30}};\n    auto &result = (values = {{7, 70}, {7, 99}, {5, 50}});\n    if (&result != &values || allocations != 3 || releases != 1 ||\n        values.size() != 2 || values.count(2) || values.find(7)->second != 70) return 1;\n    values = {{4, 40}, {5, 54}, {6, 60}, {8, 80}};\n    if (allocations != 5 || releases != 1 || values.size() != 4 ||\n        values.find(5)->second != 54) return 2;\n  }\n  return allocations == 5 && releases == 5 ? 0 : 3;\n}\n",
+      "source_sha256": "f926fca2b55e83585ee7377e444ecc2336153d02b01845b7281df2868e287be1",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-list-assignment-keeps-the-new-equivalent-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> values{{2, 20}, {2, 21}};\n  auto *pointer = &values;\n  auto &result = pointer->operator=({{2, 32}, {1, 17}, {2, 34}, {2, 31}});\n  auto bounds = values.equal_range(2);\n  auto cursor = bounds.first;\n  if (&result != pointer || values.size() != 4 ||\n      cursor == bounds.second || cursor->second != 32) return 1;\n  ++cursor;\n  if (cursor == bounds.second || cursor->second != 34) return 2;\n  ++cursor;\n  if (cursor == bounds.second || cursor->second != 31) return 3;\n  return ++cursor == bounds.second && values.begin()->second == 17 ? 0 : 4;\n}\n",
+      "source_sha256": "906d3fdb5f8a7f6ecf4f06094d15848d73982c3c4f940a5157e90e83a5f7f53d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-list-assignment-preserves-operator-and-member-evaluation-order",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint item(int &state, int value) {\n  state = state * 10 + value;\n  return value;\n}\nstd::set<int> &owner(std::set<int> &values, int &state) {\n  state = state * 10 + 1;\n  return values;\n}\nint main() {\n  std::set<int> values{0};\n  int state = 0;\n  auto &result = (owner(values, state) = {item(state, 3), item(state, 2)});\n  if (&result != &values || state != 321 || values.count(0) || values.size() != 2) return 1;\n  state = 0;\n  owner(values, state).operator=({item(state, 7), item(state, 4)});\n  return state == 174 && *values.begin() == 4 && values.size() == 2 ? 0 : 2;\n}\n",
+      "source_sha256": "08ad94dcd308f399f42b9979ce96ef348f90e80a5090f06a6e9e42bcb36f9019",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multiset-empty-list-assignment-reuses-an-empty-owner-after-clear",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::multiset<int> values{4, 3, 4};\n  values = {};\n  if (!values.empty() || values.begin() != values.end()) return 1;\n  values = {5, 2, 5};\n  auto cursor = values.end();\n  --cursor;\n  return values.size() == 3 && values.count(5) == 2 && *cursor == 5 ? 0 : 2;\n}\n",
+      "source_sha256": "789e26c85e2477bc419afc15c2519a68e32fa8525f483a098deea9c3cb7f3487",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-emplace-exact-int-reuses-the-existing-key-without-allocating",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <cstddef>\n#include <cstdlib>\nstatic unsigned allocations;\nstatic unsigned releases;\nvoid *operator new(std::size_t bytes) {\n  ++allocations;\n  return std::malloc(bytes);\n}\nvoid operator delete(void *storage) noexcept {\n  if (storage) ++releases;\n  std::free(storage);\n}\nint main() {\n  {\n    std::set<int> values;\n    int key = 9;\n    const int duplicate = 9;\n    int calls = 0;\n    auto first = values.emplace(key);\n    auto found = values.emplace(duplicate);\n    auto other = values.emplace(++calls + 2);\n    if (!first.second || found.second || first.first != found.first || !other.second ||\n        *first.first != 9 || *other.first != 3 || calls != 1 ||\n        allocations != 2 || releases != 0) return 1;\n  }\n  return allocations == 2 && releases == 2 ? 0 : 2;\n}\n",
+      "source_sha256": "ac602c303f11f98d20cce52564ec453fae6a7e13c9cd7cac4cd700e3a8ebd7de",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-emplace-default-destroys-a-rejected-zero-node",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <cstddef>\n#include <cstdlib>\nstatic unsigned allocations;\nstatic unsigned releases;\nvoid *operator new(std::size_t bytes) {\n  ++allocations;\n  return std::malloc(bytes);\n}\nvoid operator delete(void *storage) noexcept {\n  if (storage) ++releases;\n  std::free(storage);\n}\nint main() {\n  {\n    std::set<int> values;\n    auto first = values.emplace();\n    auto duplicate = values.emplace();\n    if (!first.second || duplicate.second || first.first != duplicate.first ||\n        *first.first != 0 || values.size() != 1 || allocations != 2 || releases != 1) return 1;\n  }\n  return allocations == 2 && releases == 2 ? 0 : 2;\n}\n",
+      "source_sha256": "73482e3f43b3ac1502883d54c4ee90b5737913ce50d23d55d3b6e8e1daf2e3d8",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multiset-emplace-default-and-rvalue-preserve-equivalent-order",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::multiset<int> values;\n  auto *receiver = &values;\n  auto first = receiver->emplace();\n  auto second = values.emplace(0);\n  auto third = values.emplace(0);\n  values.emplace(-4);\n  auto range = values.equal_range(0);\n  auto cursor = range.first;\n  if (cursor != first || *values.begin() != -4 || values.size() != 4) return 1;\n  if (++cursor != second || ++cursor != third) return 2;\n  return ++cursor == range.second ? 0 : 3;\n}\n",
+      "source_sha256": "0f62026374de6991bbd76fcf4967d802dd86fb9ab417dba6a2f5b9072db37375",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-emplace-converting-key-remains-unsupported",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nauto append(std::set<int> &values, short key) { return values.emplace(key); }\n",
+      "source_sha256": "8050fa5bdcc4396b9cf391f805aa58ac0be71c2353a2b98d42a30d4c4598d004",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-list-assignment-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int lhs, int rhs) const { return lhs > rhs; }\n};\nvoid assign(std::map<int, int, Reverse> &values) { values = {{1, 7}, {1, 8}}; }\n",
+      "source_sha256": "3928bf69997340da27cc04522bddc07852441e10cf8cc999d18a357afffc8b57",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedMapListAssignmentReusesOnlySuccessfulUniqueInsertionsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapListAssignmentKeepsTheNewEquivalentOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetListAssignmentPreservesOperatorAndMemberEvaluationOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetEmptyListAssignmentReusesAnEmptyOwnerAfterClearRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetEmplaceExactIntReusesTheExistingKeyWithoutAllocatingRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetEmplaceDefaultDestroysARejectedZeroNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetEmplaceDefaultAndRvaluePreserveEquivalentOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetEmplaceConvertingKeyAcceptsFunctionBody",
+    "TranslateTest.CoreV2OrderedMapListAssignmentCustomComparatorRemainsUnsupportedRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "045b8bf332dc81fa11c018ca5e0360fe683be8e2808d3e61e89dac547bce4905",
+  "maintained_original_sha256": "7f999b85b761decd27f7e336a4ae778552062c84936b797d0d834c864a31f26a",
+  "previous_registered_source_sha256": "bb12ea1163040adf934b63874bf20669b3cbaee8e970fcf8ccf2c56e8ccb723a",
+  "previous_maintained_original_sha256": "7ba291b819182fba645dd7581f92b0a6629deabd4d7da9975b1a7b2da83c7abd",
+  "restorer_sha256": "027543e426651e1355073f785ee978425578098ef7d254d3d5719ec4196693d2",
+  "extractor_sha256": "5f688e8241e3ce0eac4280d2e925e7cd9a1f40ed57e28ea7a3bc96b08616c9c5",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8757,
+  "current_python_registry_tests": 256,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "ordered-list-assign-and-emplace": "fefd9316cfc570d68252c8f81f3251485376c14200db77e2834760c6bc6c1910"
+  },
+  "native_reference_authentication_sha256": "e14506aa90b5390f72dd8349936361bf9c529c737c9078b7aad37c5cdf2f6b13",
+  "source_proof_sha256": "958e1870a5db6bb2cc244d2612705723872e55415408db2a16b06f6d1a4f9059"
+}

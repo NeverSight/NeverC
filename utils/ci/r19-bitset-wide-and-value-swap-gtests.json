@@ -95,6 +95,14 @@
       "source_sha256": "3c5e043b373742f2594ea107e0c6bd69e0efd909bcab068aab6462fd6b1a9e98",
       "original_case_source_sha256": "3c5e043b373742f2594ea107e0c6bd69e0efd909bcab068aab6462fd6b1a9e98",
       "gtest_body_sha256": "8d907f7e501a0d1a10c7b9606203db7806f3bb0df34210a309ed4f11f44e2638"
+    },
+    {
+      "name": "bitset-wide-temporary-guard-copy-construction",
+      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryCopyOfSingleUseObject",
+      "expected": "accept",
+      "source_sha256": "34115a0e65b5faec366c4dad0860c663592438a95e47294eef9fa163519de453",
+      "original_case_source_sha256": "34115a0e65b5faec366c4dad0860c663592438a95e47294eef9fa163519de453",
+      "gtest_body_sha256": "035b6a6bfef721c045906f6ddddfa49f3ad06389668fffba935cb2fc61891336"
     }
   ],
   "negative_cases": [
@@ -129,14 +137,6 @@
       "source_sha256": "a5bcaf2d8006b7534e3c8abafa871f79ba8b76a8487bb0ff06df0400268f7540",
       "original_case_source_sha256": "a5bcaf2d8006b7534e3c8abafa871f79ba8b76a8487bb0ff06df0400268f7540",
       "gtest_body_sha256": "ebbdc70a9cc4c13d441406a58036bd843ca85d552715e95a30d8da3579e565b8"
-    },
-    {
-      "name": "bitset-wide-temporary-guard-copy-construction",
-      "formal_test_name": "TranslateTest.CoreV2BitsetWideTemporaryGuardCopyConstructionRejected",
-      "expected": "reject",
-      "source_sha256": "34115a0e65b5faec366c4dad0860c663592438a95e47294eef9fa163519de453",
-      "original_case_source_sha256": "34115a0e65b5faec366c4dad0860c663592438a95e47294eef9fa163519de453",
-      "gtest_body_sha256": "263729907727412a0a0876f02b5e11cf3e059dae6c39cba30e7362672c23acbf"
     },
     {
       "name": "bitset-wide-temporary-guard-storage",
@@ -232,11 +232,11 @@
     "TranslateTest.CoreV2BitsetValueSwapExactTemplateRunAtBothOptimizations",
     "TranslateTest.CoreV2BitsetValueSwapSelfAliasAndEvaluationRunAtBothOptimizations",
     "TranslateTest.CoreV2BitsetValueSwapExistingProxyRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetWideTemporaryCopyOfSingleUseObject",
     "TranslateTest.CoreV2BitsetWideTemporaryGuardSavedObjectRejected",
     "TranslateTest.CoreV2BitsetWideTemporaryGuardOverflowingWordRejected",
     "TranslateTest.CoreV2BitsetWideTemporaryGuardFactoryValueRejected",
     "TranslateTest.CoreV2BitsetWideTemporaryGuardIndirectReceiverRejected",
-    "TranslateTest.CoreV2BitsetWideTemporaryGuardCopyConstructionRejected",
     "TranslateTest.CoreV2BitsetWideTemporaryGuardStorageRejected",
     "TranslateTest.CoreV2BitsetWideTemporaryGuardRangeDependencyRejected",
     "TranslateTest.CoreV2BitsetWideTemporaryGuardOverflowDeclarationRejected",
@@ -248,13 +248,14 @@
     "TranslateTest.CoreV2BitsetValueSwapGuardIndirectCallRejected",
     "TranslateTest.CoreV2BitsetValueSwapGuardCastCalleeRejected"
   ],
-  "native_reference_authentication_sha256": "eb9d829eede5b56f762678276e05ba79d9cd2201f8e4131d1f487a59ce82389c",
+  "native_reference_authentication_sha256": "73944fd692c94088bdc9c7feb2d21b939a549b7cdb0b1c336a47c468a65f4d37",
   "native_reference_proofs": {
     "wide-char-width": "7b4bc987235e0a8244730c200e65355f2564f425e077852be5e7ac14e7ab6296",
-    "value-swap-checked": "85c7ba6a9abe05654410935e257f90d68c59499b2823006b9a1f863bdf5681d5"
+    "value-swap-checked": "85c7ba6a9abe05654410935e257f90d68c59499b2823006b9a1f863bdf5681d5",
+    "bitset-temporary-copy-replay": "c77f4f3f9c73bc60afac4fda3076de3e42ab842954dbe8e2f9c8bf3aeeceb3e3"
   },
-  "native_reference_selected_executions": 24,
-  "planned_generated_c23_executions": 24,
+  "native_reference_selected_executions": 26,
+  "planned_generated_c23_executions": 26,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
   "source_proof_gate_pending": false,
@@ -1139,8 +1140,8 @@
       "public_header": "bitset",
       "source": "#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n",
       "source_sha256": "34115a0e65b5faec366c4dad0860c663592438a95e47294eef9fa163519de453",
-      "expected": "reject",
-      "kind": "source-body-guard"
+      "expected": "accept",
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-wide-temporary-guard-storage",

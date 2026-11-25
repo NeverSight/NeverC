@@ -1,0 +1,412 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-empty-default-local",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyDefaultLocalRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e399a21f07a466b7426a6c217dac0324998aeeb8a6dc914f92df8df2d8926874",
+      "original_case_source_sha256": "e399a21f07a466b7426a6c217dac0324998aeeb8a6dc914f92df8df2d8926874",
+      "gtest_body_sha256": "4cf0e0b84c5ba4898963bd85c1ebada7600bedc77509cd373b1a384cab4540d0"
+    },
+    {
+      "name": "any-empty-receiver-evaluation",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyReceiverEvaluationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ab0625ffa0cf84bad9c0db281c30b24d07e80f0a238f05d691e2c5693dfdd06c",
+      "original_case_source_sha256": "ab0625ffa0cf84bad9c0db281c30b24d07e80f0a238f05d691e2c5693dfdd06c",
+      "gtest_body_sha256": "089fb986cb83db276e4e6942a1c3200321e2aaf59ba5610beb0c24e0bb5637c3"
+    },
+    {
+      "name": "any-empty-temporary",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyTemporaryRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ef4cb6dea33875f5738078979e04d31fcb456880bc9b2270892aa0b7c1709665",
+      "original_case_source_sha256": "ef4cb6dea33875f5738078979e04d31fcb456880bc9b2270892aa0b7c1709665",
+      "gtest_body_sha256": "1b890a994890aae65f09f59a1989f86f8b30c6dd769595ea337ee00fc2fdb4d0"
+    },
+    {
+      "name": "any-empty-member-lifetime",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyMemberLifetimeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "67aace76f54980f76ec0b125fd0416a22ab1c0471ae28d27da5398a051164592",
+      "original_case_source_sha256": "67aace76f54980f76ec0b125fd0416a22ab1c0471ae28d27da5398a051164592",
+      "gtest_body_sha256": "f27ff1e6bf725162731b7d1a70c0871e2603d6c7c9446ae2a1baa0ef5d18367d"
+    },
+    {
+      "name": "any-empty-array-lifetime",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyArrayLifetimeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "856e0ea7c38cbd16b8b71fb4995f47e2b5eb75183f3912e0256c62d13c9bfab3",
+      "original_case_source_sha256": "856e0ea7c38cbd16b8b71fb4995f47e2b5eb75183f3912e0256c62d13c9bfab3",
+      "gtest_body_sha256": "004971d87dd6b9593ceb2e73c6ee688fcf1d19ac62625b4c33859cc8c21a0fed"
+    },
+    {
+      "name": "any-empty-unproved-copy",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyUnprovedCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fdb1b4aa621ea589bf033cb811c2b287eece8341bbd8bd80e5b79b3975e97073",
+      "original_case_source_sha256": "fdb1b4aa621ea589bf033cb811c2b287eece8341bbd8bd80e5b79b3975e97073",
+      "gtest_body_sha256": "058c4af3e6023849d852979d59f85968e409a35faac5d4ee7123b5f62c1f6d35"
+    },
+    {
+      "name": "any-empty-pointer-cast-mutable",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyPointerCastMutableRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fd4cc477df5f590b5bc50ea7f97e3a5b565623b046dd0d08f64eac9730045ec1",
+      "original_case_source_sha256": "fd4cc477df5f590b5bc50ea7f97e3a5b565623b046dd0d08f64eac9730045ec1",
+      "gtest_body_sha256": "9e13f6f0bf2f6333221c39c52de183e1719af633ab2e87daf825d7951b9b374b"
+    },
+    {
+      "name": "any-empty-pointer-cast-const",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyPointerCastConstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d0660498f60db5ee214e9a39689ac8447f4b7a03f217d140caa571f657576734",
+      "original_case_source_sha256": "d0660498f60db5ee214e9a39689ac8447f4b7a03f217d140caa571f657576734",
+      "gtest_body_sha256": "5a80657e8836100717edbca77093384bd53ff0629759f75cb67ef3beb5c29b82"
+    },
+    {
+      "name": "any-empty-pointer-cast-null-and-evaluation",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyPointerCastNullAndEvaluationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9597c80c8a713d816b325d30c905bb8f08f9af3b71756d7070cd2def4774dcef",
+      "original_case_source_sha256": "9597c80c8a713d816b325d30c905bb8f08f9af3b71756d7070cd2def4774dcef",
+      "gtest_body_sha256": "17f36d73d478dd1dce74edfac4161e48002f1a8938f63415630c1a7216705673"
+    },
+    {
+      "name": "any-empty-pointer-cast-pointer-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyPointerCastPointerTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5438c2e78bbce415f7ff74933e677e3699ec0e97c4db2592b1941ae52efa4a1d",
+      "original_case_source_sha256": "5438c2e78bbce415f7ff74933e677e3699ec0e97c4db2592b1941ae52efa4a1d",
+      "gtest_body_sha256": "222f9187e2dc8503c374cdebb94e6d8372121193a1ca534da6220f4cfd4c89fd"
+    },
+    {
+      "name": "any-empty-copy-move",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyCopyMoveRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "58e76703f9a3cac62f51065d1ee65be8d31a45b16ec2e3cd12ae4a73fcdee6a6",
+      "original_case_source_sha256": "58e76703f9a3cac62f51065d1ee65be8d31a45b16ec2e3cd12ae4a73fcdee6a6",
+      "gtest_body_sha256": "d4b6dce3e1a42eddde006c35c31d8e8308a4725c4c4519ea0be77cd98f7edd42"
+    },
+    {
+      "name": "any-empty-copy-copy-effects",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyCopyCopyEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "98bf50f9ffc271801af7e38fbe5e0e4d627f94f985792fab977158f9f5e40ce0",
+      "original_case_source_sha256": "98bf50f9ffc271801af7e38fbe5e0e4d627f94f985792fab977158f9f5e40ce0",
+      "gtest_body_sha256": "34c17d4d7483f9d5abcc1d0054e62fdcf6b6d2dad27f57f3d92926e3ccc4d2e3"
+    },
+    {
+      "name": "any-empty-assignment-copy-identity",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAssignmentCopyIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dacd898d582026878c3f5f2193dec0edcff6e52b0a1ce5c9c8e3a7d912430032",
+      "original_case_source_sha256": "dacd898d582026878c3f5f2193dec0edcff6e52b0a1ce5c9c8e3a7d912430032",
+      "gtest_body_sha256": "af8b17f798ca5264b1e06b341c81bcd8f06450aa222eaa6a9a7defc742f65521"
+    },
+    {
+      "name": "any-empty-assignment-operator-notation-order",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAssignmentOperatorNotationOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "656120c5fdb0240a5266521e6f1123bb48925f65705bcd945eb48ff6a3410013",
+      "original_case_source_sha256": "656120c5fdb0240a5266521e6f1123bb48925f65705bcd945eb48ff6a3410013",
+      "gtest_body_sha256": "5611ef1fcc1aeaf16f63c2664723ce142c67ae7a24050ed64a7991c7cf47fcf1"
+    },
+    {
+      "name": "any-empty-assignment-explicit-assignment-order",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAssignmentExplicitAssignmentOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b2b24240f5ac89c2f7cc2f5f3e0c61d1e3f44ce8cb74f3ccf4e2cd6284babcca",
+      "original_case_source_sha256": "b2b24240f5ac89c2f7cc2f5f3e0c61d1e3f44ce8cb74f3ccf4e2cd6284babcca",
+      "gtest_body_sha256": "2aea5e55e6b3e0f6dc4e3fbd4e4138eb79730dc7dda94aeb330b263290b83b4d"
+    },
+    {
+      "name": "any-empty-assignment-move-and-self",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAssignmentMoveAndSelfRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5b6f9960b49def437b2b00cf2882c64738304019eedd803ec617b872783b54b8",
+      "original_case_source_sha256": "5b6f9960b49def437b2b00cf2882c64738304019eedd803ec617b872783b54b8",
+      "gtest_body_sha256": "cab2c4569d7c58198e9a3bfcdf5e78f2a51d905277aa09eabe1a66c54db4b3e3"
+    },
+    {
+      "name": "any-empty-assignment-swap-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAssignmentSwapSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8393e08781429ad91bb6c305bc70b4c6d4989167cc9072333d839d1eebab8fda",
+      "original_case_source_sha256": "8393e08781429ad91bb6c305bc70b4c6d4989167cc9072333d839d1eebab8fda",
+      "gtest_body_sha256": "9450793bd3667d464bfb9ab12a86eea80d01d154f0cee8ad9cc13ff894576eef"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-empty-altered-observer",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAlteredObserverRejected",
+      "expected": "reject",
+      "source_sha256": "44541f8636ab83a23f8d0641313b9aa5a91a685482d21263f790d08c36807bec",
+      "original_case_source_sha256": "44541f8636ab83a23f8d0641313b9aa5a91a685482d21263f790d08c36807bec",
+      "gtest_body_sha256": "595f932c5fcb6c5fd6dbb8771565cac9778034c37f4020de9ae1b6270222c339"
+    },
+    {
+      "name": "any-empty-altered-reset",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAlteredResetRejected",
+      "expected": "reject",
+      "source_sha256": "fe48449cd9f6decbd9bf43a1461978456d319abb0ea13b5a40e044788c99b466",
+      "original_case_source_sha256": "fe48449cd9f6decbd9bf43a1461978456d319abb0ea13b5a40e044788c99b466",
+      "gtest_body_sha256": "953a5d253b79fb85997a64b994a0218d7fbd11e7c403f22c4fb1e42a6f3e9663"
+    },
+    {
+      "name": "any-empty-pointer-cast-value-form",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyPointerCastValueFormRejected",
+      "expected": "reject",
+      "source_sha256": "49f07030103de5708d23858a49715019687d12936f13c1a237e39f0b68cbcab7",
+      "original_case_source_sha256": "49f07030103de5708d23858a49715019687d12936f13c1a237e39f0b68cbcab7",
+      "gtest_body_sha256": "351196124ab44ac4536de77baafd23a6190b3247db10e3b11150091ac37dda40"
+    },
+    {
+      "name": "any-empty-pointer-cast-user-redeclaration",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyPointerCastUserRedeclarationRejected",
+      "expected": "reject",
+      "source_sha256": "b7086c08f2d58f3196eb25ff9836ccc68b913ba27f6a3d2edb68791f97c9e1b0",
+      "original_case_source_sha256": "b7086c08f2d58f3196eb25ff9836ccc68b913ba27f6a3d2edb68791f97c9e1b0",
+      "gtest_body_sha256": "0a77d4465be17ae2fd9ded011840d59e1a5c9e83e37033fb9e059b7c4392557e"
+    },
+    {
+      "name": "any-empty-assignment-renamed-swap",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmptyAssignmentRenamedSwapRejected",
+      "expected": "reject",
+      "source_sha256": "a4d0760fcd1021136204859da5ab13c1e64da4b79f286c31a6f761399d9f51f1",
+      "original_case_source_sha256": "a4d0760fcd1021136204859da5ab13c1e64da4b79f286c31a6f761399d9f51f1",
+      "gtest_body_sha256": "e947a205331fe4830533c4d171f9e4583d35749c75276202c2d35d797d502852"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyEmptyDefaultLocalRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyReceiverEvaluationRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyTemporaryRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyMemberLifetimeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyArrayLifetimeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyUnprovedCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyPointerCastMutableRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyPointerCastConstRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyPointerCastNullAndEvaluationRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyPointerCastPointerTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyCopyMoveRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyCopyCopyEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyAssignmentCopyIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyAssignmentOperatorNotationOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyAssignmentExplicitAssignmentOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyAssignmentMoveAndSelfRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyAssignmentSwapSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmptyAlteredObserverRejected",
+    "TranslateTest.CoreV2AnyEmptyAlteredResetRejected",
+    "TranslateTest.CoreV2AnyEmptyPointerCastValueFormRejected",
+    "TranslateTest.CoreV2AnyEmptyPointerCastUserRedeclarationRejected",
+    "TranslateTest.CoreV2AnyEmptyAssignmentRenamedSwapRejected"
+  ],
+  "source_cases": [
+    {
+      "name": "any-empty-default-local",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any a;\n  if (a.has_value()) return 1;\n  a.reset();\n  a.reset();\n  return a.has_value();\n}\n",
+      "source_sha256": "e399a21f07a466b7426a6c217dac0324998aeeb8a6dc914f92df8df2d8926874",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-receiver-evaluation",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint visits;\nstd::any* receive(std::any* p) { ++visits; return p; }\nint main() {\n  std::any a;\n  receive(&a)->reset();\n  const std::any* p = receive(&a);\n  return visits != 2 || p->has_value();\n}\n",
+      "source_sha256": "ab0625ffa0cf84bad9c0db281c30b24d07e80f0a238f05d691e2c5693dfdd06c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-temporary",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  return std::any{}.has_value();\n}\n",
+      "source_sha256": "ef4cb6dea33875f5738078979e04d31fcb456880bc9b2270892aa0b7c1709665",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-member-lifetime",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nstruct Owner { std::any any; int marker; };\nint main() {\n  Owner object{{}, 2};\n  object.any.reset();\n  return object.marker != 2 || object.any.has_value();\n}\n",
+      "source_sha256": "67aace76f54980f76ec0b125fd0416a22ab1c0471ae28d27da5398a051164592",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-array-lifetime",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any values[2];\n  values[1].reset();\n  return values[0].has_value() || values[1].has_value();\n}\n",
+      "source_sha256": "856e0ea7c38cbd16b8b71fb4995f47e2b5eb75183f3912e0256c62d13c9bfab3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-unproved-copy",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any a;\n  std::any b(a);\n  return b.has_value();\n}\n",
+      "source_sha256": "fdb1b4aa621ea589bf033cb811c2b287eece8341bbd8bd80e5b79b3975e97073",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-pointer-cast-mutable",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  std::any value;\n  int* payload = std::any_cast<int>(&value);\n  return payload != nullptr || value.has_value();\n}\n",
+      "source_sha256": "fd4cc477df5f590b5bc50ea7f97e3a5b565623b046dd0d08f64eac9730045ec1",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-pointer-cast-const",
+      "expected": "accept",
+      "source": "#include <any>\n#include <type_traits>\nint main() {\n  const std::any value;\n  using T = unsigned;\n  const auto* pointer = std::any_cast<T>(&value);\n  static_assert(std::is_same_v<decltype(pointer), const T*>);\n  return pointer != nullptr || std::any_cast<const T>(&value) != nullptr;\n}\n",
+      "source_sha256": "d0660498f60db5ee214e9a39689ac8447f4b7a03f217d140caa571f657576734",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-pointer-cast-null-and-evaluation",
+      "expected": "accept",
+      "source": "#include <any>\nint calls;\nstd::any* choose(std::any* value) { ++calls; return value; }\nint main() {\n  std::any value;\n  auto* first = std::any_cast<int>(choose(&value));\n  auto* second = std::any_cast<int>(choose(nullptr));\n  return first != nullptr || second != nullptr || calls != 2;\n}\n",
+      "source_sha256": "9597c80c8a713d816b325d30c905bb8f08f9af3b71756d7070cd2def4774dcef",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-pointer-cast-pointer-type",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  const std::any* value = nullptr;\n  int* const* pointer = std::any_cast<int*>(value);\n  return pointer != nullptr;\n}\n",
+      "source_sha256": "5438c2e78bbce415f7ff74933e677e3699ec0e97c4db2592b1941ae52efa4a1d",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-copy-move",
+      "expected": "accept",
+      "source": "#include <any>\n#include <utility>\nint main() {\n  std::any original;\n  std::any moved(std::move(original));\n  return original.has_value() || moved.has_value() || std::any_cast<int>(&moved);\n}\n",
+      "source_sha256": "58e76703f9a3cac62f51065d1ee65be8d31a45b16ec2e3cd12ae4a73fcdee6a6",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-copy-copy-effects",
+      "expected": "accept",
+      "source": "#include <any>\nint calls;\nconst std::any& observe(const std::any& value) { ++calls; return value; }\nint main() {\n  std::any original;\n  std::any copy(observe(original));\n  return calls != 1 || copy.has_value();\n}\n",
+      "source_sha256": "98bf50f9ffc271801af7e38fbe5e0e4d627f94f985792fab977158f9f5e40ce0",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-assignment-copy-identity",
+      "source": "#include <any>\nint main() {\n  std::any target;\n  const std::any source;\n  return &(target = source) != &target || target.has_value() || source.has_value();\n}\n",
+      "expected": "accept",
+      "source_sha256": "dacd898d582026878c3f5f2193dec0edcff6e52b0a1ce5c9c8e3a7d912430032",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-assignment-operator-notation-order",
+      "source": "#include <any>\nint effects;\nstd::any& select(std::any& value, int number) { effects = effects * 10 + number; return value; }\nint main() {\n  std::any first, second;\n  auto& result = (select(first, 1) = select(second, 2));\n  return effects != 21 || &result != &first || first.has_value() || second.has_value();\n}\n",
+      "expected": "accept",
+      "source_sha256": "656120c5fdb0240a5266521e6f1123bb48925f65705bcd945eb48ff6a3410013",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-assignment-explicit-assignment-order",
+      "source": "#include <any>\nint effects;\nstd::any* select(std::any* value, int number) { effects = effects * 10 + number; return value; }\nint main() {\n  std::any first, second;\n  auto& result = select(&first, 1)->operator=(*select(&second, 2));\n  return effects != 12 || &result != &first || first.has_value() || second.has_value();\n}\n",
+      "expected": "accept",
+      "source_sha256": "b2b24240f5ac89c2f7cc2f5f3e0c61d1e3f44ce8cb74f3ccf4e2cd6284babcca",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-assignment-move-and-self",
+      "source": "#include <any>\n#include <utility>\nint main() {\n  std::any first, second;\n  return &(first = std::move(second)) != &first || &(first = std::move(first)) != &first ||\n         first.has_value() || second.has_value();\n}\n",
+      "expected": "accept",
+      "source_sha256": "5b6f9960b49def437b2b00cf2882c64738304019eedd803ec617b872783b54b8",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-assignment-swap-sequencing",
+      "source": "#include <any>\nint effects;\nstd::any& select(std::any& value, int number) { effects = effects * 10 + number; return value; }\nint main() {\n  std::any first, second;\n  select(first, 1).swap(select(second, 2));\n  first.swap(first);\n  return effects != 12 || first.has_value() || second.has_value();\n}\n",
+      "expected": "accept",
+      "source_sha256": "8393e08781429ad91bb6c305bc70b4c6d4989167cc9072333d839d1eebab8fda",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-empty-altered-observer",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#define has_value changed_observer\n#include <any>\n#undef has_value\nint main() {\n  std::any a;\n  return a.changed_observer();\n}\n",
+      "source_sha256": "44541f8636ab83a23f8d0641313b9aa5a91a685482d21263f790d08c36807bec",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-empty-altered-reset",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#define reset changed_reset\n#include <any>\n#undef reset\nint main() {\n  std::any a;\n  a.changed_reset();\n  return a.has_value();\n}\n",
+      "source_sha256": "fe48449cd9f6decbd9bf43a1461978456d319abb0ea13b5a40e044788c99b466",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-empty-pointer-cast-value-form",
+      "expected": "reject",
+      "source": "#include <any>\nint f() {\n  std::any value;\n  return std::any_cast<int>(value);\n}\n",
+      "source_sha256": "49f07030103de5708d23858a49715019687d12936f13c1a237e39f0b68cbcab7",
+      "public_header": "any",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-empty-pointer-cast-user-redeclaration",
+      "expected": "reject",
+      "source": "#include <any>\n_LIBCPP_BEGIN_NAMESPACE_STD\ntemplate <class T> add_pointer_t<T> any_cast(any*) noexcept;\n_LIBCPP_END_NAMESPACE_STD\nint f() {\n  std::any value;\n  return std::any_cast<int>(&value) != nullptr;\n}\n",
+      "source_sha256": "b7086c08f2d58f3196eb25ff9836ccc68b913ba27f6a3d2edb68791f97c9e1b0",
+      "public_header": "any",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-empty-assignment-renamed-swap",
+      "source": "#define swap changed_swap\n#include <any>\n#undef swap\nint f() {\n  std::any first, second;\n  first = second;\n  return first.has_value();\n}\n",
+      "expected": "reject",
+      "source_sha256": "a4d0760fcd1021136204859da5ab13c1e64da4b79f286c31a6f761399d9f51f1",
+      "public_header": "any",
+      "kind": "source-body-guard"
+    }
+  ],
+  "deduplicated_exact_any_layout_cases": [
+    "any-layout-direct-size-align",
+    "any-layout-const-reference-size",
+    "any-layout-wrapped-pointer-type",
+    "any-layout-constant-array-bound",
+    "any-layout-volatile-type",
+    "any-layout-runtime-construction",
+    "any-layout-unevaluated-object",
+    "any-layout-altered-handler-field"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f92c06c48a9fad4a28afc4a157985a18624fd4ddfb17d0869e3e925d8dfa908a",
+  "maintained_original_sha256": "20c9f075f5b6d3a2f1394438f689368c7f2da1a75286dce1704b219e87e6d5df",
+  "previous_registered_source_sha256": "8746852cd5a814adfd86f59ec98a95dffb6c493af46f699f40a1822674f12c29",
+  "previous_maintained_original_sha256": "71ea495d9ecd713746a7e5fca2acf69633b5b264ff17437bc0252078575cc947",
+  "restorer_sha256": "af34c9780b56fd99826dea3417c4586b4749502a949f49c4b6d9d6267e795d43",
+  "extractor_sha256": "344345a1eb71213fc661b8257d9509b52ee734de995132ed41aa9d9f3a73663a",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8119,
+  "current_python_registry_tests": 122,
+  "native_reference_selected_executions": 34,
+  "planned_generated_c23_executions": 34,
+  "native_reference_proofs": {
+    "any-empty-runtime": "0bb71d358ea25b5e0ae51a6353aff89c50f729178cb2f0aece8f990c247da948"
+  },
+  "native_reference_authentication_sha256": "6006bad24e84bf02aaeb4b4883c0265f08c5ad6b03204f03e922334e591bc501",
+  "source_proof_sha256": "958e1870a5db6bb2cc244d2612705723872e55415408db2a16b06f6d1a4f9059"
+}
