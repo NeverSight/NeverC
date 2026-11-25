@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-equal-range-unique-range-has-one-element",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualRangeUniqueRangeHasOneElementRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4d366bc4968b4d46d566cf3467d2e327599bcc2d97e2c93684ad85744f8fbbce",
+      "original_case_source_sha256": "4d366bc4968b4d46d566cf3467d2e327599bcc2d97e2c93684ad85744f8fbbce",
+      "gtest_body_sha256": "e71f9e13517895bcb9979d58e084db15d48d16b63fedf28b0fee6b6ccea5a08f"
+    },
+    {
+      "name": "unordered-set-equal-range-absent-key-has-two-endpoints",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualRangeAbsentKeyHasTwoEndpointsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4a377a218d0a13c309eef8e6a3540ebbd8ad7ec638784295c6a5fecb625ff7fa",
+      "original_case_source_sha256": "4a377a218d0a13c309eef8e6a3540ebbd8ad7ec638784295c6a5fecb625ff7fa",
+      "gtest_body_sha256": "cb41e36e9bc7d9dc40bbee2b919ff79fa72fc7026b638b7e1a506f19f064525a"
+    },
+    {
+      "name": "unordered-set-equal-range-duplicate-range-preserves-colliding-groups",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualRangeDuplicateRangePreservesCollidingGroupsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4310c6881825ab0f66da3bd6a4e651e5c5076bb8b870e2b13ed8d1758d3d39b2",
+      "original_case_source_sha256": "4310c6881825ab0f66da3bd6a4e651e5c5076bb8b870e2b13ed8d1758d3d39b2",
+      "gtest_body_sha256": "400139cef2f318ee344f69df3dc3f6bfff911ceba481b77bb43a70b82b97eb79"
+    },
+    {
+      "name": "unordered-set-equal-range-receiver-and-key-evaluated-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualRangeReceiverAndKeyEvaluatedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6d1d86cd5fc4b3c6be3b1ee9056dcfc9a246a7e1c4dd769e9c4005234812c4a0",
+      "original_case_source_sha256": "6d1d86cd5fc4b3c6be3b1ee9056dcfc9a246a7e1c4dd769e9c4005234812c4a0",
+      "gtest_body_sha256": "dff3c8d49f19cbcd82f2f386123e7391269ce229c9df199368a0d2692d988f6b"
+    },
+    {
+      "name": "unordered-set-equal-range-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerEqualRangeRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
+      "original_case_source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
+      "gtest_body_sha256": "db66619d0262152c7afae3d7f77a7d22e7650d39507102dd3df1bc07b5b99178"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-equal-range-different-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualRangeDifferentKeyRejected",
+      "expected": "reject",
+      "source_sha256": "b1a7bc03aea5a916fb3ae2a2ced411b7425894b03665fba100859797c70c755b",
+      "original_case_source_sha256": "b1a7bc03aea5a916fb3ae2a2ced411b7425894b03665fba100859797c70c755b",
+      "gtest_body_sha256": "4256920f8021d0c4567e79b887fc5b37e6cb588a89f770d5ee0d23992fb60c6f"
+    },
+    {
+      "name": "unordered-set-equal-range-custom-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualRangeCustomHashRejected",
+      "expected": "reject",
+      "source_sha256": "c7af33e55cdb68e16c1bc7aa9f5f42b221424efc0f2403c10ae5471cd2308998",
+      "original_case_source_sha256": "c7af33e55cdb68e16c1bc7aa9f5f42b221424efc0f2403c10ae5471cd2308998",
+      "gtest_body_sha256": "f13f3ec53b07a5ffddc6c03ad4dbbb79913174cabc628db4d1aa81d0feb125e7"
+    },
+    {
+      "name": "unordered-set-equal-range-custom-equality",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEqualRangeCustomEqualityRejected",
+      "expected": "reject",
+      "source_sha256": "107f2b9eddeac5baf5e63e364a34ceb06243981deb238ce563f3a1fe8bfae67f",
+      "original_case_source_sha256": "107f2b9eddeac5baf5e63e364a34ceb06243981deb238ce563f3a1fe8bfae67f",
+      "gtest_body_sha256": "26b66939fde7e21e27d3dac6d82e2c4aef38c041c9e71f22262bc03cf1fda2c5"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-equal-range-unique-range-has-one-element",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{2, 4, -7};\n  auto range = values.equal_range(-7);\n  if (range.first != values.find(-7) || range.first == range.second || *range.first != -7) return 1;\n  auto successor = range.first;\n  ++successor;\n  return successor != range.second;\n}\n",
+      "source_sha256": "4d366bc4968b4d46d566cf3467d2e327599bcc2d97e2c93684ad85744f8fbbce",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-equal-range-absent-key-has-two-endpoints",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> empty;\n  const std::unordered_multiset<int> values{1, 1, 4};\n  const auto none = empty.equal_range(1);\n  auto missing = values.equal_range(2);\n  return none.first != empty.cend() || none.second != empty.cend() ||\n      missing.first != values.cend() || missing.second != values.cend();\n}\n",
+      "source_sha256": "4a377a218d0a13c309eef8e6a3540ebbd8ad7ec638784295c6a5fecb625ff7fa",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-equal-range-duplicate-range-preserves-colliding-groups",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 11, 3, 19, 3, 11};\n  values.rehash(8);\n  const auto& read = values;\n  auto range = read.equal_range(3);\n  unsigned seen = 0;\n  for (auto it = range.first; it != range.second; ++it) {\n    if (*it != 3) return 1;\n    ++seen;\n  }\n  return seen != 3 || values.count(11) != 2 || values.count(19) != 1;\n}\n",
+      "source_sha256": "4310c6881825ab0f66da3bd6a4e651e5c5076bb8b870e2b13ed8d1758d3d39b2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-equal-range-receiver-and-key-evaluated-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Bag = std::unordered_multiset<int>;\nint trace;\nconst Bag& receiver(const Bag& values) { trace = trace * 10 + 1; return values; }\nint key() { trace = trace * 10 + 2; return 6; }\nint main() {\n  const Bag values{6, 6};\n  auto range = receiver(values).equal_range(key());\n  if (trace != 12 || range.first == range.second) return 1;\n  auto it = range.first;\n  ++it;\n  if (it == range.second || *it != 6) return 2;\n  ++it;\n  return it != range.second;\n}\n",
+      "source_sha256": "6d1d86cd5fc4b3c6be3b1ee9056dcfc9a246a7e1c4dd769e9c4005234812c4a0",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-equal-range-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values{2, 2}; auto* p=&values; return p->equal_range(2).first == values.end(); }\n",
+      "source_sha256": "803b38bd3009ec61d5a5d749a7d5b8533280137f58f81801fa57a3bec812a3b9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-equal-range-different-key",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<long> values{2}; return values.equal_range(2).first == values.end(); }\n",
+      "source_sha256": "b1a7bc03aea5a916fb3ae2a2ced411b7425894b03665fba100859797c70c755b",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-equal-range-custom-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int k) const { return static_cast<unsigned long>(k); } };\nint main() { std::unordered_set<int, Hash> values{2}; return values.equal_range(2).first == values.end(); }\n",
+      "source_sha256": "c7af33e55cdb68e16c1bc7aa9f5f42b221424efc0f2403c10ae5471cd2308998",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-equal-range-custom-equality",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int a,int b) const { return a == b; } };\nint main() { std::unordered_multiset<int, std::hash<int>, Equal> values{2, 2}; return values.equal_range(2).first == values.end(); }\n",
+      "source_sha256": "107f2b9eddeac5baf5e63e364a34ceb06243981deb238ce563f3a1fe8bfae67f",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetEqualRangeUniqueRangeHasOneElementRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetEqualRangeAbsentKeyHasTwoEndpointsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetEqualRangeDuplicateRangePreservesCollidingGroupsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetEqualRangeReceiverAndKeyEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerEqualRangeRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetEqualRangeDifferentKeyRejected",
+    "TranslateTest.CoreV2UnorderedSetEqualRangeCustomHashRejected",
+    "TranslateTest.CoreV2UnorderedSetEqualRangeCustomEqualityRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "fc919f87ffd1377e6fd0ec40841c2af74e64e685ab55f68163b58e3e78a1e9c9",
+  "maintained_original_sha256": "44fc110f1f40d86b7d188fe484d1a166c7da73e98f76edcd001d249395538cbf",
+  "previous_registered_source_sha256": "724deef07eb49b8fd2a84f1c9a9e074ca4bffafa652bcd041dcf0cfebc1a8217",
+  "previous_maintained_original_sha256": "6d3886e9bdf1e29f2b9152a585312e5875beb45ef1616cf7c519cba7e76ae0b2",
+  "restorer_sha256": "02e913fd7fa9a669cebc2210b0de535987cb6f3200f652b567b6a4d6d08440c2",
+  "extractor_sha256": "3a0d8dc1596f9b826929c08e984892dd58cd94925f93d9b40c629cbf7e56055b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8480,
+  "current_python_registry_tests": 206,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-equal-range": "342eaf29b76136b7028c5b2aabc4bd691ce5a883be92ddea17a052fec67325bf",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "7f3523566b2cb5cb99c3ee69955e708bc2b810db8915caff542254be920b92b8",
+  "source_proof_sha256": "135987d96ced1c11f4a641b64b5194ab0cd8d0b57ce8bdfed82d1460e3672d19"
+}

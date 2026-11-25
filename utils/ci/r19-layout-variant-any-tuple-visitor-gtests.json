@@ -1,0 +1,252 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-in-place-value-init",
+      "formal_test_name": "TranslateTest.CoreV2AnyInPlaceValueInitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "264cb2910a12b68027d99198066ed264c94bf457fdaae970566764e0f8bd706c",
+      "original_case_source_sha256": "264cb2910a12b68027d99198066ed264c94bf457fdaae970566764e0f8bd706c",
+      "gtest_body_sha256": "1401efc1a3e36f451a93838412df143a7392f6624ec3a3835eb57c4db85b5942"
+    },
+    {
+      "name": "any-in-place-evaluates-argument-once",
+      "formal_test_name": "TranslateTest.CoreV2AnyInPlaceEvaluatesArgumentOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f564e6e36c16325a9cfe0257db7d755485dd79796ca08fd474381db93395dcc2",
+      "original_case_source_sha256": "f564e6e36c16325a9cfe0257db7d755485dd79796ca08fd474381db93395dcc2",
+      "gtest_body_sha256": "48650dce531d3a05c93cf6683be5e126afdffa51f477f4271d98ee29c0562817"
+    },
+    {
+      "name": "any-emplace-integer-replaces-and-returns-reference",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmplaceIntegerReplacesAndReturnsReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f01dce23b5c62d7670f14fdb121676dc80e92884ecd93db0c0057645bb5be0c8",
+      "original_case_source_sha256": "f01dce23b5c62d7670f14fdb121676dc80e92884ecd93db0c0057645bb5be0c8",
+      "gtest_body_sha256": "e92fc60cf36754275cb97a62a4fbc2df3f38cbca4cd1caca9023b7deee0a4c56"
+    },
+    {
+      "name": "any-emplace-integer-evaluates-arrow-before-argument",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmplaceIntegerEvaluatesArrowBeforeArgumentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4ace60072859f3ee6bc3ae54b7fd8e8ad246f1b9a3b4d0b64d80a24daff7cc3e",
+      "original_case_source_sha256": "4ace60072859f3ee6bc3ae54b7fd8e8ad246f1b9a3b4d0b64d80a24daff7cc3e",
+      "gtest_body_sha256": "2f48ee307dc5173d812344b08d077175eb3470c9e14e842ba1e1000b3732aad3"
+    },
+    {
+      "name": "variant-owned-visit-const-borrow",
+      "formal_test_name": "TranslateTest.CoreV2VariantOwnedVisitConstBorrowRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6ab7e33d1efe378d0d3f470f172e3669b4360347dee57c9f10c4e012ff61ba2a",
+      "original_case_source_sha256": "6ab7e33d1efe378d0d3f470f172e3669b4360347dee57c9f10c4e012ff61ba2a",
+      "gtest_body_sha256": "5a6530109996b8cbaebd89b45eaf645edf3c7769f86d1166068aec6c48ff67d5"
+    },
+    {
+      "name": "variant-owned-visit-overload-by-active-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantOwnedVisitOverloadByActiveAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b1aef468577d909dbe51bf85b3da13f4f972fdf357fe89778c677332757262b7",
+      "original_case_source_sha256": "b1aef468577d909dbe51bf85b3da13f4f972fdf357fe89778c677332757262b7",
+      "gtest_body_sha256": "e844648f41f1c5f2abeb46b465bffa81060fb7a4961d8f6aa4295b950788a83a"
+    },
+    {
+      "name": "variant-owned-visit-void-borrow-evaluated-once",
+      "formal_test_name": "TranslateTest.CoreV2VariantOwnedVisitVoidBorrowEvaluatedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c8e47a489d6ea602891ec497733e37742ea11387d6f8ffca13d488f530c50191",
+      "original_case_source_sha256": "c8e47a489d6ea602891ec497733e37742ea11387d6f8ffca13d488f530c50191",
+      "gtest_body_sha256": "f2aa8c6c4d0a6c2a884f754d5f5a5d40fb6fbd4c97c3b2ef314428bb74b65266"
+    },
+    {
+      "name": "any-in-place-other-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "07758950c63a906f0c0c2baa32c8cb5447133f329b80545bce742f1b543c21e5",
+      "original_case_source_sha256": "07758950c63a906f0c0c2baa32c8cb5447133f329b80545bce742f1b543c21e5",
+      "gtest_body_sha256": "d5990f8d6ac9158e40725e0e9794d5e949ddf2d0770b1fb02239d3e747409525",
+      "source_only": true
+    },
+    {
+      "name": "any-emplace-other-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyEmplaceLongAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
+      "original_case_source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
+      "gtest_body_sha256": "432b71b519dbc24860808feb35710664e9b317d494f1eef364cea5ee42e2e1ba",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-in-place-renamed-handler-installation-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyInPlaceRenamedHandlerInstallationGuardRejected",
+      "expected": "reject",
+      "source_sha256": "113ef97af3a3f2391a0c72247491e8e021cc0e8c1744d52073be61da6d319377",
+      "original_case_source_sha256": "113ef97af3a3f2391a0c72247491e8e021cc0e8c1744d52073be61da6d319377",
+      "gtest_body_sha256": "9068efa57f7e73e0f351838fa071312c7d9c657ece0def53bf2e4663facca7fe"
+    },
+    {
+      "name": "variant-owned-visit-renamed-invoke",
+      "formal_test_name": "TranslateTest.CoreV2VariantOwnedVisitRenamedInvokeRejected",
+      "expected": "reject",
+      "source_sha256": "dbcf1f3f956378f293dbdf70f76e4c00be98f958fc1de8670536ffc4be84868b",
+      "original_case_source_sha256": "dbcf1f3f956378f293dbdf70f76e4c00be98f958fc1de8670536ffc4be84868b",
+      "gtest_body_sha256": "06950e438c87cc5e4d9dfe883eec8755bb3862add8f12f51ad9bf078fe006df4"
+    },
+    {
+      "name": "variant-owned-visit-renamed-dispatch",
+      "formal_test_name": "TranslateTest.CoreV2VariantOwnedVisitRenamedDispatchRejected",
+      "expected": "reject",
+      "source_sha256": "fedf4aff70839668be8871d960274a91f6d4029debf4385caa18e7038c6aec95",
+      "original_case_source_sha256": "fedf4aff70839668be8871d960274a91f6d4029debf4385caa18e7038c6aec95",
+      "gtest_body_sha256": "fb1f5732b1c1f7401668fb16b61ac87f06aadf740d7802c214120c39939e76a7"
+    },
+    {
+      "name": "variant-owned-visit-renamed-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantOwnedVisitRenamedIndexRejected",
+      "expected": "reject",
+      "source_sha256": "f173bfe80044765f26c7799541d4d1aef7a3643a728243f008ce200cb3fd7415",
+      "original_case_source_sha256": "f173bfe80044765f26c7799541d4d1aef7a3643a728243f008ce200cb3fd7415",
+      "gtest_body_sha256": "cef70654cad402879f9aaf64d0817b35c3d68c8f667ece4f484f52d9c6ab5718"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "any-in-place-value-init",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  std::any a(std::in_place_type<int>);\n  const auto *p = std::any_cast<int>(&a);\n  return !a.has_value() || !p || *p != 0;\n}\n",
+      "source_sha256": "264cb2910a12b68027d99198066ed264c94bf457fdaae970566764e0f8bd706c",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-in-place-evaluates-argument-once",
+      "expected": "accept",
+      "source": "#include <any>\nint calls;\nint value() { ++calls; return 27; }\nint main() {\n  std::any a(std::in_place_type<int>, value());\n  const auto *p = std::any_cast<int>(&a);\n  return calls != 1 || !p || *p != 27;\n}\n",
+      "source_sha256": "f564e6e36c16325a9cfe0257db7d755485dd79796ca08fd474381db93395dcc2",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-emplace-integer-replaces-and-returns-reference",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  std::any a(12);\n  int original = 21;\n  int& item = a.emplace<int>(original);\n  if (item != 21 || &item != std::any_cast<int>(&a))\n    return 1;\n  item = 32;\n  if (*std::any_cast<int>(&a) != 32)\n    return 2;\n  int& zero = a.emplace<int>();\n  return !a.has_value() || zero != 0 || &zero != std::any_cast<int>(&a);\n}\n",
+      "source_sha256": "f01dce23b5c62d7670f14fdb121676dc80e92884ecd93db0c0057645bb5be0c8",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-emplace-integer-evaluates-arrow-before-argument",
+      "expected": "accept",
+      "source": "#include <any>\nint receivers, inputs, order;\nstd::any* receiver(std::any& a) { ++receivers; return &a; }\nint input() { ++inputs; order = receivers; return 89; }\nint main() {\n  std::any a;\n  int& item = receiver(a)->emplace<int>(input());\n  if (receivers != 1 || inputs != 1 || order != 1 || item != 89)\n    return 1;\n  item = 39;\n  return *std::any_cast<int>(&a) != 39;\n}\n",
+      "source_sha256": "4ace60072859f3ee6bc3ae54b7fd8e8ad246f1b9a3b4d0b64d80a24daff7cc3e",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-owned-visit-const-borrow",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Visitor {\n  int weight;\n  int operator()(int x) const & { return x * weight; }\n};\nint main() {\n  const Visitor call{7};\n  std::variant<short, int> input(std::in_place_index<0>, short(3));\n  if (std::visit(call, input) != 21)\n    return 1;\n  input.emplace<1>(5);\n  return std::visit(call, input) != 35;\n}\n",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source_sha256": "6ab7e33d1efe378d0d3f470f172e3669b4360347dee57c9f10c4e012ff61ba2a"
+    },
+    {
+      "name": "variant-owned-visit-overload-by-active-alternative",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Visitor {\n  int seen;\n  int operator()(short a, int b) & { ++seen; return a * 100 + b; }\n  int operator()(int a, int b) & { ++seen; return a * 1000 + b; }\n};\nint main() {\n  Visitor call{0};\n  std::variant<short, int> left(std::in_place_index<0>, short(8));\n  std::variant<bool, int> right(std::in_place_index<1>, 23);\n  if (std::visit(call, left, right) != 823 || call.seen != 1)\n    return 1;\n  left.emplace<1>(9);\n  right.emplace<0>(true);\n  return std::visit(call, left, right) != 9001 || call.seen != 2;\n}\n",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source_sha256": "b1aef468577d909dbe51bf85b3da13f4f972fdf357fe89778c677332757262b7"
+    },
+    {
+      "name": "variant-owned-visit-void-borrow-evaluated-once",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Visitor {\n  int observed;\n  void operator()(int a, int b) & { observed = a * 10 + b; }\n};\nint selections;\nVisitor& choose(Visitor& call) { ++selections; return call; }\nint main() {\n  Visitor call{0};\n  std::variant<short, int> input(std::in_place_index<1>, 3);\n  std::visit(choose(call), input, input);\n  return selections != 1 || call.observed != 33;\n}\n",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source_sha256": "c8e47a489d6ea602891ec497733e37742ea11387d6f8ffca13d488f530c50191"
+    },
+    {
+      "name": "any-in-place-other-payload-guard",
+      "expected": "accept",
+      "source": "#include <any>\nbool f() {\n  std::any a(std::in_place_type<double>);\n  return a.has_value();\n}\n",
+      "source_sha256": "07758950c63a906f0c0c2baa32c8cb5447133f329b80545bce742f1b543c21e5",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-emplace-other-payload-guard",
+      "expected": "accept",
+      "source": "#include <any>\nvoid f(std::any& a) { a.emplace<long>(3L); }\n",
+      "source_sha256": "a4603165b552041b4480b85c007fb027daed03f2e778ecc60b00debd40b9ea47",
+      "public_header": "any",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-in-place-renamed-handler-installation-guard",
+      "expected": "reject",
+      "source": "#define __create changed_handler_installation\n#include <any>\n#undef __create\nbool f() {\n  std::any a(std::in_place_type<int>, 51);\n  return a.has_value();\n}\n",
+      "source_sha256": "113ef97af3a3f2391a0c72247491e8e021cc0e8c1744d52073be61da6d319377",
+      "public_header": "any",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-owned-visit-renamed-invoke",
+      "expected": "reject",
+      "source": "#define __invoke renamed_invoke\n#include <variant>\n#undef __invoke\nstruct Visitor { int operator()(int a, int b) & { return a - b; } };\nint check(Visitor& call, std::variant<short, int>& left, std::variant<short, int>& right) {\n  return std::visit(call, left, right);\n}\n",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source_sha256": "dbcf1f3f956378f293dbdf70f76e4c00be98f958fc1de8670536ffc4be84868b"
+    },
+    {
+      "name": "variant-owned-visit-renamed-dispatch",
+      "expected": "reject",
+      "source": "#define __dispatch renamed_dispatch\n#include <variant>\n#undef __dispatch\nstruct Visitor { int operator()(int a, int b) & { return a - b; } };\nint check(Visitor& call, std::variant<short, int>& left, std::variant<short, int>& right) {\n  return std::visit(call, left, right);\n}\n",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source_sha256": "fedf4aff70839668be8871d960274a91f6d4029debf4385caa18e7038c6aec95"
+    },
+    {
+      "name": "variant-owned-visit-renamed-index",
+      "expected": "reject",
+      "source": "#define __at renamed_index\n#include <variant>\n#undef __at\nstruct Visitor { int operator()(int a, int b) & { return a - b; } };\nint check(Visitor& call, std::variant<short, int>& left, std::variant<short, int>& right) {\n  return std::visit(call, left, right);\n}\n",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source_sha256": "f173bfe80044765f26c7799541d4d1aef7a3643a728243f008ce200cb3fd7415"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyInPlaceValueInitRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyInPlaceEvaluatesArgumentOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmplaceIntegerReplacesAndReturnsReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyEmplaceIntegerEvaluatesArrowBeforeArgumentRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantOwnedVisitConstBorrowRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantOwnedVisitOverloadByActiveAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantOwnedVisitVoidBorrowEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyInPlaceDefaultDoubleAcceptsFunctionBody",
+    "TranslateTest.CoreV2AnyEmplaceLongAcceptsFunctionBody",
+    "TranslateTest.CoreV2AnyInPlaceRenamedHandlerInstallationGuardRejected",
+    "TranslateTest.CoreV2VariantOwnedVisitRenamedInvokeRejected",
+    "TranslateTest.CoreV2VariantOwnedVisitRenamedDispatchRejected",
+    "TranslateTest.CoreV2VariantOwnedVisitRenamedIndexRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "deabe4c6550212f7d333e33ed273465783a9844e1e11013128dfea59982657cf",
+  "maintained_original_sha256": "91d19f5afd022ffacdcb11a0d764e6bb0e308db2d969cc51cf1cd3156953bba3",
+  "previous_registered_source_sha256": "6a2d17db32fb8ea7bfa8f228b1403969b32513e75ccc20158e3413f0026fad27",
+  "previous_maintained_original_sha256": "b41ccc064da285dc98be686407bd95e978596261c5baf6b23b57afb6f9716dd4",
+  "restorer_sha256": "d305c6a455ad94d68590bac7c7698af2566ab9bf9b68addd524bcb78eab2cfca",
+  "extractor_sha256": "e0f9d1e684eaf9890b774e3a77ddf29b37cec7052841305b0c98576ce6992850",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8206,
+  "current_python_registry_tests": 138,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "any-in-place": "6df3ff5f32a6aefd59d674e4995f1ee301617c2c173aa9cd61844737a6f88398",
+    "named-variant-visitor": "1a713942339b83425f91551689666ba5bca925776c2376e4f0430ee3da059c29"
+  },
+  "native_reference_authentication_sha256": "d11ee7a140d27204c569b076b43821ebe3deff92876cb3dc6a2ede1d2dcc0fae",
+  "source_proof_sha256": "135987d96ced1c11f4a641b64b5194ab0cd8d0b57ce8bdfed82d1460e3672d19"
+}

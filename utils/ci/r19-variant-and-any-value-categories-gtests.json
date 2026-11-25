@@ -1,0 +1,286 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-emplace-integer-conversion-returns-slot",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceIntegerConversionReturnsSlotRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9f6a9124b8a7c0ae5c8d7fc2af62db771edc162404b0e7ab612d5632e69fc7f8",
+      "original_case_source_sha256": "9f6a9124b8a7c0ae5c8d7fc2af62db771edc162404b0e7ab612d5632e69fc7f8",
+      "gtest_body_sha256": "55543b7c2a38866517cafd1169867fc30da8fe5b75622172f7e0cae82b0e49ea"
+    },
+    {
+      "name": "variant-in-place-unsigned-to-wider-signed",
+      "formal_test_name": "TranslateTest.CoreV2VariantInPlaceUnsignedToWiderSignedRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "04e2f670c9eb024f2367f772af33d889a45af311a3f5747d301110d47a7935b6",
+      "original_case_source_sha256": "04e2f670c9eb024f2367f772af33d889a45af311a3f5747d301110d47a7935b6",
+      "gtest_body_sha256": "662c8f1587d5a8d7b5b6d0a1d812d0ee2021d99bec562ac2794dd8979bc4f410"
+    },
+    {
+      "name": "any-moved-local-cast-preserves-scalar",
+      "formal_test_name": "TranslateTest.CoreV2AnyMovedLocalCastPreservesScalarRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "57316bccd743b2a9b0c399093d1d76bd9fdc8c64c0f5ffd305e73f83f86b8fd1",
+      "original_case_source_sha256": "57316bccd743b2a9b0c399093d1d76bd9fdc8c64c0f5ffd305e73f83f86b8fd1",
+      "gtest_body_sha256": "2537a9364eecc9dc18bb6e997365c2f5a702e6f0a8edbcec9f24cb7fbd8b1d90"
+    },
+    {
+      "name": "any-rvalue-reference-cast-aliases-payload",
+      "formal_test_name": "TranslateTest.CoreV2AnyRvalueReferenceCastAliasesPayloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ce77118d89d15e0430070bcc0ffbc33ff06cc3573b4d70e39b78d0c25a3cbbbe",
+      "original_case_source_sha256": "ce77118d89d15e0430070bcc0ffbc33ff06cc3573b4d70e39b78d0c25a3cbbbe",
+      "gtest_body_sha256": "f88113a19f54b5b39c645a54e04bd3bbd8f95e2c9d784105568bd69da29e8c73"
+    },
+    {
+      "name": "any-explicit-rvalue-cast-aliases-pointer-payload",
+      "formal_test_name": "TranslateTest.CoreV2AnyExplicitRvalueCastAliasesPointerPayloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "392981b11730d36821e0d32eb3d2c370d5042e329deef4b316add66079aa24bd",
+      "original_case_source_sha256": "392981b11730d36821e0d32eb3d2c370d5042e329deef4b316add66079aa24bd",
+      "gtest_body_sha256": "084d827dd25feac88d90d217e1e996158cf6c489cd0f8b6e32178bbfc54ab0aa"
+    },
+    {
+      "name": "variant-sizeof-expression-skips-side-effects",
+      "formal_test_name": "TranslateTest.CoreV2VariantSizeofExpressionSkipsSideEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "88a1b44cdb7b0172674b63be023998abb70b159c7a7d3349191d80dc9f4ae010",
+      "original_case_source_sha256": "88a1b44cdb7b0172674b63be023998abb70b159c7a7d3349191d80dc9f4ae010",
+      "gtest_body_sha256": "f1def17dedb6b906900a0286fc9717d07b9ea3707fe51101e982d44cf87505eb"
+    },
+    {
+      "name": "any-sizeof-expression-skips-payload-construction",
+      "formal_test_name": "TranslateTest.CoreV2AnySizeofExpressionSkipsPayloadConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9499fd5ac3f191415f32ee9c4a096bba0b33323044d17e45d708f963933281c3",
+      "original_case_source_sha256": "9499fd5ac3f191415f32ee9c4a096bba0b33323044d17e45d708f963933281c3",
+      "gtest_body_sha256": "4445179de1fd9c90789042e43ce63b2387a5cf80397c88c0ad1e9dc43a4ee0e9"
+    },
+    {
+      "name": "any-fundamental-pointer-copy-keeps-double-type",
+      "formal_test_name": "TranslateTest.CoreV2AnyFundamentalPointerCopyKeepsDoubleTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a163029bc14f19c36c4770633fd9914808678155d3ed9adff30a940fddf73fed",
+      "original_case_source_sha256": "a163029bc14f19c36c4770633fd9914808678155d3ed9adff30a940fddf73fed",
+      "gtest_body_sha256": "185b34c050c250bbb1db0f9ebb8b0c27dadf41d170bf3ea95be3c024dcd81099"
+    },
+    {
+      "name": "any-fundamental-pointer-keeps-const-bool",
+      "formal_test_name": "TranslateTest.CoreV2AnyFundamentalPointerKeepsConstBoolRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f94182fa94d4d40c77febd0d8777bce3a45cff48e717e4586ca28e561c9af0cb",
+      "original_case_source_sha256": "f94182fa94d4d40c77febd0d8777bce3a45cff48e717e4586ca28e561c9af0cb",
+      "gtest_body_sha256": "82115c3451f967b20e9a1b60fff60d428b4c7f909ef51d4978bc145315a9b4d1"
+    },
+    {
+      "name": "any-fundamental-pointer-distinguishes-utf-and-integers",
+      "formal_test_name": "TranslateTest.CoreV2AnyFundamentalPointerDistinguishesUtfAndIntegersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fb887cd9b12a7405dad795233de583e640f0608dd3204cac556a5107f04763f2",
+      "original_case_source_sha256": "fb887cd9b12a7405dad795233de583e640f0608dd3204cac556a5107f04763f2",
+      "gtest_body_sha256": "b642b631f45a1e1c3d27eebf299a3897bc039925461c77516d861648b4f8cfde"
+    },
+    {
+      "name": "any-fundamental-pointer-emplace-distinguishes-long",
+      "formal_test_name": "TranslateTest.CoreV2AnyFundamentalPointerEmplaceDistinguishesLongRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1d7f86bbf48639d69b0c92d1470f42db03baeaa07b6416a29e320356e64014ff",
+      "original_case_source_sha256": "1d7f86bbf48639d69b0c92d1470f42db03baeaa07b6416a29e320356e64014ff",
+      "gtest_body_sha256": "138680e51deb11d89b1ac0ab7594610f15c603820107d09e81d44a22aa0500d3"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-emplace-lossy-integer-conversion-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceLossyIntegerConversionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "7283bf0c742e26edf0066858a824fb8d968c51102e362cf3f1dc8d7f4cda318a",
+      "original_case_source_sha256": "7283bf0c742e26edf0066858a824fb8d968c51102e362cf3f1dc8d7f4cda318a",
+      "gtest_body_sha256": "5f2ae5b1a25f4f8f92d405b37e19290e2965749b4a223c7704ae79fa77b3b18f"
+    },
+    {
+      "name": "any-moved-local-after-reset-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyMovedLocalAfterResetGuardRejected",
+      "expected": "reject",
+      "source_sha256": "7c66058521657bc33b9db3799f51409d2141dc221444d843eb8262c5119a5da1",
+      "original_case_source_sha256": "7c66058521657bc33b9db3799f51409d2141dc221444d843eb8262c5119a5da1",
+      "gtest_body_sha256": "cc895b90e76480e6f67bdd84f3655310e0b4cf879d6f14d2367513704f393ff0"
+    },
+    {
+      "name": "any-rvalue-cast-unproved-caller-owned-type-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyRvalueCastUnprovedCallerOwnedTypeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "32bc3ec5b602bc6c038575d7f3ebc10a99240f6862d3438b317d29ce1c2d0482",
+      "original_case_source_sha256": "32bc3ec5b602bc6c038575d7f3ebc10a99240f6862d3438b317d29ce1c2d0482",
+      "gtest_body_sha256": "f2be574489c116c1c6560820491eebbef901bff5838f7f1588ac510c5e672f35"
+    },
+    {
+      "name": "any-rvalue-cast-temporary-reference-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyRvalueCastTemporaryReferenceGuardRejected",
+      "expected": "reject",
+      "source_sha256": "b509f11b8fd7df768765e4017ffd125281d02fbb147f33eafd910a68911a09b7",
+      "original_case_source_sha256": "b509f11b8fd7df768765e4017ffd125281d02fbb147f33eafd910a68911a09b7",
+      "gtest_body_sha256": "853bccf071601a3f8260d7f213ad5d3145790cbf8591e33727aeaf77d0834910"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-emplace-integer-conversion-returns-slot",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstatic int next(int& calls) { ++calls; return -12; }\nint main() {\n  int calls = 0;\n  std::variant<int, long> value{3};\n  long& slot = value.emplace<1>(next(calls));\n  if (calls != 1 || slot != -12L || value.index() != 1) return 1;\n  slot = -33L;\n  const auto* checked = std::get_if<long>(&value);\n  return !checked || checked != &slot || *checked != -33L;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "9f6a9124b8a7c0ae5c8d7fc2af62db771edc162404b0e7ab612d5632e69fc7f8"
+    },
+    {
+      "name": "variant-in-place-unsigned-to-wider-signed",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  unsigned int input = 4294967295u;\n  std::variant<int, long long> value{std::in_place_type<long long>, input};\n  const auto* stored = std::get_if<1>(&value);\n  return !stored || *stored != 4294967295LL || value.index() != 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "04e2f670c9eb024f2367f772af33d889a45af311a3f5747d301110d47a7935b6"
+    },
+    {
+      "name": "any-moved-local-cast-preserves-scalar",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\n#include <utility>\nint main() {\n  std::any local{23};\n  int obtained = std::any_cast<int>(std::move(local));\n  return obtained != 23 || std::any_cast<int>(local) != 23;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "57316bccd743b2a9b0c399093d1d76bd9fdc8c64c0f5ffd305e73f83f86b8fd1"
+    },
+    {
+      "name": "any-rvalue-reference-cast-aliases-payload",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\n#include <utility>\nint main() {\n  std::any local{23};\n  int&& payload = std::any_cast<int&&>(std::move(local));\n  payload = 44;\n  return std::any_cast<int>(local) != 44;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "ce77118d89d15e0430070bcc0ffbc33ff06cc3573b4d70e39b78d0c25a3cbbbe"
+    },
+    {
+      "name": "any-explicit-rvalue-cast-aliases-pointer-payload",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  int first = 5;\n  int second = 8;\n  std::any local{&first};\n  int*&& pointer = std::any_cast<int*&&>(static_cast<std::any&&>(local));\n  pointer = &second;\n  return std::any_cast<int*>(local) != &second;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "392981b11730d36821e0d32eb3d2c370d5042e329deef4b316add66079aa24bd"
+    },
+    {
+      "name": "variant-sizeof-expression-skips-side-effects",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  int calls = 0;\n  using Value = std::variant<int, long>;\n  const Value owner{17};\n  return sizeof((++calls, owner)) != sizeof(Value) || calls != 0 || owner.index() != 0;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "88a1b44cdb7b0172674b63be023998abb70b159c7a7d3349191d80dc9f4ae010"
+    },
+    {
+      "name": "any-sizeof-expression-skips-payload-construction",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  int calls = 0;\n  const std::any owner;\n  return sizeof(std::any{++calls}) != sizeof(owner) || sizeof(owner) != sizeof(std::any) || calls != 0;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "9499fd5ac3f191415f32ee9c4a096bba0b33323044d17e45d708f963933281c3"
+    },
+    {
+      "name": "any-fundamental-pointer-copy-keeps-double-type",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  double first = 2.5;\n  std::any local{&first};\n  std::any copied = local;\n  double** pointer = std::any_cast<double*>(&copied);\n  if (!pointer || *pointer != &first) return 1;\n  return std::any_cast<const double*>(&copied) != nullptr ||\n         std::any_cast<float*>(&copied) != nullptr;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "a163029bc14f19c36c4770633fd9914808678155d3ed9adff30a940fddf73fed"
+    },
+    {
+      "name": "any-fundamental-pointer-keeps-const-bool",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  const bool input = true;\n  std::any local = std::make_any<const bool*>(&input);\n  const auto* pointer = std::any_cast<const bool*>(&local);\n  return !pointer || *pointer != &input || std::any_cast<bool*>(&local) != nullptr;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "f94182fa94d4d40c77febd0d8777bce3a45cff48e717e4586ca28e561c9af0cb"
+    },
+    {
+      "name": "any-fundamental-pointer-distinguishes-utf-and-integers",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  char16_t input = u'Q';\n  std::any local{&input};\n  char16_t** pointer = std::any_cast<char16_t*>(&local);\n  return !pointer || *pointer != &input || std::any_cast<unsigned short*>(&local) != nullptr;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "fb887cd9b12a7405dad795233de583e640f0608dd3204cac556a5107f04763f2"
+    },
+    {
+      "name": "any-fundamental-pointer-emplace-distinguishes-long",
+      "public_header": "any",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  long input = 12;\n  std::any local;\n  long*& placed = local.emplace<long*>(&input);\n  long** pointer = std::any_cast<long*>(&local);\n  return !pointer || pointer != &placed || *pointer != &input ||\n         std::any_cast<long long*>(&local) != nullptr;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "1d7f86bbf48639d69b0c92d1470f42db03baeaa07b6416a29e320356e64014ff"
+    },
+    {
+      "name": "variant-emplace-lossy-integer-conversion-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nint narrow(int input) {\n  std::variant<int, signed char> value{1};\n  return value.emplace<1>(input);\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "7283bf0c742e26edf0066858a824fb8d968c51102e362cf3f1dc8d7f4cda318a"
+    },
+    {
+      "name": "any-moved-local-after-reset-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\n#include <utility>\nint read() {\n  std::any local{23};\n  local.reset();\n  return std::any_cast<int>(std::move(local));\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "7c66058521657bc33b9db3799f51409d2141dc221444d843eb8262c5119a5da1"
+    },
+    {
+      "name": "any-rvalue-cast-unproved-caller-owned-type-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\n#include <utility>\nint read(std::any& value) {\n  return std::any_cast<int>(std::move(value));\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "32bc3ec5b602bc6c038575d7f3ebc10a99240f6862d3438b317d29ce1c2d0482"
+    },
+    {
+      "name": "any-rvalue-cast-temporary-reference-guard",
+      "public_header": "any",
+      "expected": "reject",
+      "source": "#include <any>\nint&& read() {\n  return std::any_cast<int&&>(std::any{23});\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "b509f11b8fd7df768765e4017ffd125281d02fbb147f33eafd910a68911a09b7"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantEmplaceIntegerConversionReturnsSlotRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantInPlaceUnsignedToWiderSignedRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyMovedLocalCastPreservesScalarRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyRvalueReferenceCastAliasesPayloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyExplicitRvalueCastAliasesPointerPayloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantSizeofExpressionSkipsSideEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnySizeofExpressionSkipsPayloadConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFundamentalPointerCopyKeepsDoubleTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFundamentalPointerKeepsConstBoolRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFundamentalPointerDistinguishesUtfAndIntegersRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyFundamentalPointerEmplaceDistinguishesLongRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEmplaceLossyIntegerConversionGuardRejected",
+    "TranslateTest.CoreV2AnyMovedLocalAfterResetGuardRejected",
+    "TranslateTest.CoreV2AnyRvalueCastUnprovedCallerOwnedTypeGuardRejected",
+    "TranslateTest.CoreV2AnyRvalueCastTemporaryReferenceGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "8dd2c7054ddf9f1f4365d54e7600c39f9214dd6f6f24b7c2962cbfbad1719409",
+  "maintained_original_sha256": "cdcab2839c2508cdd7656a81b5fb658e683cb8d6d4adbb32abb007ee62df3941",
+  "previous_registered_source_sha256": "6c8f8fdd9fad8c417eb6fbb85441efde19d2baab6c1dce99ddd405a58986abc1",
+  "previous_maintained_original_sha256": "0900451648aa61cc024f0d051071bdc8b7afb25c758ce6884588c79c65402be2",
+  "restorer_sha256": "b7f283c7a7de26d035353373a5345503c4faffd088ae56891aeefa262281829a",
+  "extractor_sha256": "2dedbb7c2a7dc86f1438bbdd326ea878a5523195594d2cbcd651b4484b762e89",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9058,
+  "current_python_registry_tests": 290,
+  "native_reference_selected_executions": 22,
+  "planned_generated_c23_executions": 22,
+  "native_reference_proofs": {
+    "any-fundamental-pointer-values": "f587679c435e82326d9f0553f1008edb18f4687034fd5caf1c9cba6207af8366",
+    "any-rvalue-active-cast": "7f53d0403878f852521d08e3b56002ee5d3070314a689331b4405b6d376fa4dc",
+    "variant-any-sizeof-expression-replay": "f6616e5d860e92b55d2861a53b6ab3ee778624959a0d22f9c15173122dbef208",
+    "variant-integral-forwarding": "110c2a8639d896398a8df8061e0795e2170d024994bde2fc83ed211ae6b8a244"
+  },
+  "native_reference_authentication_sha256": "9cbbf8179798a6263758b547fc2a7fe47b16640564dc51a27f51bff9a231c50c",
+  "source_proof_sha256": "135987d96ced1c11f4a641b64b5194ab0cd8d0b57ce8bdfed82d1460e3672d19"
+}
