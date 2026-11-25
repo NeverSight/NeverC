@@ -41225,6 +41225,11 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return;
       }
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
+      if (*Kind == UtilityForwardListConstruction::PointerRange) {
+        auto Input = forwardListPointerInput(Operands[0], Operands[1], L);
+        insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);
+        return;
+      }
       if (*Kind == UtilityForwardListConstruction::Copy) {
         auto Head = snapshot(forwardListMember(dereference(Operands.front(), L), false, L), L);
         insertForwardListChain(forwardListMember(Place, false, L), {std::move(Head), std::nullopt}, Owner->Node, L);
