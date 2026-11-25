@@ -1,0 +1,91 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-unsigned-conversion-default-member-in-aggregate-list",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionDefaultMemberInAggregateListRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "10c1a959c3e7fad31478a859074a429541a2d131e1463cd1277ef8bc7bebd69f",
+      "original_case_source_sha256": "10c1a959c3e7fad31478a859074a429541a2d131e1463cd1277ef8bc7bebd69f",
+      "gtest_body_sha256": "8642e0743fdfaedcfb9582938127f25bb648788990aafd0ca31abfa22ceba737"
+    },
+    {
+      "name": "bitset-unsigned-conversion-conditional-const-members",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionConditionalConstMembersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9d405ca78b0546b30b8d9332b6776ceb6bf2c7f5d8bd0329cd8f44b22ee66167",
+      "original_case_source_sha256": "9d405ca78b0546b30b8d9332b6776ceb6bf2c7f5d8bd0329cd8f44b22ee66167",
+      "gtest_body_sha256": "6b493be28ae3a6c8c33b69360a9ff3834d765df6eb82962605aaf9b5f0a5a4e2"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-unsigned-conversion-explicit-member-initializer-guard",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionExplicitMemberInitializerGuardRejected",
+      "expected": "reject",
+      "source_sha256": "269a60e0a6235916a6144ac63df429be17c3750589fbf334bf27344bce231311",
+      "original_case_source_sha256": "269a60e0a6235916a6144ac63df429be17c3750589fbf334bf27344bce231311",
+      "gtest_body_sha256": "e70795cd6c48f8ad46beb2fa7b1eb0b0ac3f669206e0097be5d400f8324c7ad1"
+    },
+    {
+      "name": "bitset-unsigned-conversion-aliased-member-owner-guard",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionAliasedMemberOwnerGuardRejected",
+      "expected": "reject",
+      "source_sha256": "56349d348e37ddfac9f171ba4f0e521607171b858058377467981a7b407044af",
+      "original_case_source_sha256": "56349d348e37ddfac9f171ba4f0e521607171b858058377467981a7b407044af",
+      "gtest_body_sha256": "6832629dd4c24834816bfd83b9e70a9f3b29d0487fbfb981b573b5c5617865b1"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "bitset-unsigned-conversion-default-member-in-aggregate-list",
+      "public_header": "bitset",
+      "expected": "accept",
+      "source": "#include <bitset>\nstruct State { const std::bitset<129> bits{0x80000000ULL}; };\nint main() {\n  const State state{};\n  return state.bits.to_ulong() != 0x80000000UL;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "10c1a959c3e7fad31478a859074a429541a2d131e1463cd1277ef8bc7bebd69f"
+    },
+    {
+      "name": "bitset-unsigned-conversion-conditional-const-members",
+      "public_header": "bitset",
+      "expected": "accept",
+      "source": "#include <bitset>\nstruct First { const std::bitset<129> bits{5}; };\nstruct Second { const std::bitset<129> bits{9}; };\nbool choose(int& reads) { ++reads; return reads == 1; }\nint main() {\n  First first;\n  Second second;\n  int reads = 0;\n  const bool selected = choose(reads);\n  return (selected ? first.bits : second.bits).to_ullong() != 5 || reads != 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "9d405ca78b0546b30b8d9332b6776ceb6bf2c7f5d8bd0329cd8f44b22ee66167"
+    },
+    {
+      "name": "bitset-unsigned-conversion-explicit-member-initializer-guard",
+      "public_header": "bitset",
+      "expected": "reject",
+      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State { const Bits bits{2}; };\nint main() {\n  State state{Bits{4}};\n  return state.bits.to_ullong() != 4;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "269a60e0a6235916a6144ac63df429be17c3750589fbf334bf27344bce231311"
+    },
+    {
+      "name": "bitset-unsigned-conversion-aliased-member-owner-guard",
+      "public_header": "bitset",
+      "expected": "reject",
+      "source": "#include <bitset>\nstruct State { const std::bitset<129> bits{2}; };\nint main() {\n  State state;\n  const State* alias = &state;\n  return alias == nullptr || state.bits.to_ullong() != 2;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "56349d348e37ddfac9f171ba4f0e521607171b858058377467981a7b407044af"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetUnsignedConversionDefaultMemberInAggregateListRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionConditionalConstMembersRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionExplicitMemberInitializerGuardRejected",
+    "TranslateTest.CoreV2BitsetUnsignedConversionAliasedMemberOwnerGuardRejected"
+  ],
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "d24f407c3db94555b36bf6d240d2f5d86b909f8c3ca657586b036d717284fae6",
+  "maintained_original_sha256": "21710e5055cb1257bdf09df7aac3c1a08bfd230586e1bd0a3bba5cbf054b1a5b",
+  "previous_registered_source_sha256": "841a079cfa207ab9e62cca16bfc1575d14f1021f1cd3a4166965319a45070628",
+  "previous_maintained_original_sha256": "48e1f05751a00c512de0c0f78c9ca29ea059b41c927fcdfa468a1e76891e52f9",
+  "restorer_sha256": "c2a21b5a37323552dbaab717ddf9b42c2da9fd511afae884b075dd98caa31486",
+  "extractor_sha256": "a1ff2132d5e288a73aa33545aeec41fa5b4339ae17dda33b0cc56c95dca4fa82",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9076,
+  "current_python_registry_tests": 296,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6
+}
