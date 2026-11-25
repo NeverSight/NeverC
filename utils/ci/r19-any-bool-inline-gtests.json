@@ -1,0 +1,159 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-bool-inline-typed-mutable-pointer",
+      "formal_test_name": "TranslateTest.CoreV2AnyBoolInlineTypedMutablePointerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "19a795446b7081f11f8014fd3cbd180dd0ae211c1fd85aed39e8863026f2f4ab",
+      "original_case_source_sha256": "19a795446b7081f11f8014fd3cbd180dd0ae211c1fd85aed39e8863026f2f4ab",
+      "gtest_body_sha256": "4486a9f5f269ebf4bae95c4e7cd0bd636d7e1a89df4aa747e2d9328b767614ec"
+    },
+    {
+      "name": "any-bool-inline-factory-emplace-reset",
+      "formal_test_name": "TranslateTest.CoreV2AnyBoolInlineFactoryEmplaceResetRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8f00e8099df875775989754363e2158f54cb9afe33b036337ce25fec8bd72568",
+      "original_case_source_sha256": "8f00e8099df875775989754363e2158f54cb9afe33b036337ce25fec8bd72568",
+      "gtest_body_sha256": "5893565d1c19e39c9760795ee4bfc47829b697e4f3d5cb18d5a6879cd37a6be1"
+    },
+    {
+      "name": "any-bool-inline-copy-move-and-assignment",
+      "formal_test_name": "TranslateTest.CoreV2AnyBoolInlineCopyMoveAndAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9fff6f3daf6edfab7929440c3580421e796828869c5676488ab9d7977e5c0e15",
+      "original_case_source_sha256": "9fff6f3daf6edfab7929440c3580421e796828869c5676488ab9d7977e5c0e15",
+      "gtest_body_sha256": "12f5f56e76cf1d6c83a320e978427a9b2394e097bc41c4f1a00898b6d3602e41"
+    },
+    {
+      "name": "any-bool-inline-constant-active-value",
+      "formal_test_name": "TranslateTest.CoreV2AnyBoolInlineConstantActiveValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f3eb968ca25957f91a4aeed5b938dee7d5e69bce5aa693f0e36eede807333195",
+      "original_case_source_sha256": "f3eb968ca25957f91a4aeed5b938dee7d5e69bce5aa693f0e36eede807333195",
+      "gtest_body_sha256": "c2c4ffdb4621d906e455f7c45919ea96904c41b81b57c266e22b5cf30621108a"
+    },
+    {
+      "name": "any-bool-inline-pointer-payload",
+      "formal_test_name": "TranslateTest.CoreV2AnyBooleanPointerPayloadRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6be35615008b714f6548af6634b6357546de635e3421b29ad5ff11d945a8be60",
+      "original_case_source_sha256": "6be35615008b714f6548af6634b6357546de635e3421b29ad5ff11d945a8be60",
+      "gtest_body_sha256": "71c1f3a64cd557df382ae11803f19a829a17bb0c2de97984c70fe28ab699b80a"
+    },
+    {
+      "name": "any-bool-inline-mutable-reference-cast",
+      "formal_test_name": "TranslateTest.CoreV2AnyBooleanMutableReferenceRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3b63f6b82ceac0a587c0d7c94e561561888706e5f0e43c41371af97928b4e6f0",
+      "original_case_source_sha256": "3b63f6b82ceac0a587c0d7c94e561561888706e5f0e43c41371af97928b4e6f0",
+      "gtest_body_sha256": "89b78f42b64ce7221c597db0c64bb449621c8eaa4d3e983d6082f9f7f9f4a1d3"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-bool-inline-value-mismatch",
+      "formal_test_name": "TranslateTest.CoreV2AnyBoolInlineValueMismatchRejected",
+      "expected": "reject",
+      "source_sha256": "d5e03b534a70db55941c205033c550c5f8d50bbdac8139c31a4c2d109431e621",
+      "original_case_source_sha256": "d5e03b534a70db55941c205033c550c5f8d50bbdac8139c31a4c2d109431e621",
+      "gtest_body_sha256": "4a153328ca8fb6de015cf734ba1b022a033fdb6022ad12befa108708f5e82053"
+    },
+    {
+      "name": "any-bool-inline-dynamic-value-tag",
+      "formal_test_name": "TranslateTest.CoreV2AnyBoolInlineDynamicValueTagRejected",
+      "expected": "reject",
+      "source_sha256": "b0cb54c44350fb4ee1931b49fca503a2fc34d84ad94d9fd968536686d1e3517e",
+      "original_case_source_sha256": "b0cb54c44350fb4ee1931b49fca503a2fc34d84ad94d9fd968536686d1e3517e",
+      "gtest_body_sha256": "14fe0dc96834cc9db891e39ba2d62745fe4887770c78e4f5da8c29e417b69073"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "any-bool-inline-typed-mutable-pointer",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  std::any value{true};\n  auto* flag = std::any_cast<bool>(&value);\n  if (!flag || !*flag || std::any_cast<int>(&value)) return 1;\n  *flag = false;\n  const auto& view = value;\n  auto* result = std::any_cast<const bool>(&view);\n  return !result || *result || std::any_cast<unsigned>(&view) != nullptr;\n}\n",
+      "source_sha256": "19a795446b7081f11f8014fd3cbd180dd0ae211c1fd85aed39e8863026f2f4ab"
+    },
+    {
+      "name": "any-bool-inline-factory-emplace-reset",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  std::any value = std::make_any<bool>();\n  auto* first = std::any_cast<bool>(&value);\n  if (!first || *first) return 1;\n  bool& stored = value.emplace<bool>(true);\n  if (!stored || !value.has_value()) return 2;\n  value.reset();\n  return value.has_value() || std::any_cast<bool>(&value) != nullptr;\n}\n",
+      "source_sha256": "8f00e8099df875775989754363e2158f54cb9afe33b036337ce25fec8bd72568"
+    },
+    {
+      "name": "any-bool-inline-copy-move-and-assignment",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\n#include <utility>\nint main() {\n  std::any left{true};\n  std::any right{7u};\n  left.swap(right);\n  std::any transferred(std::move(right));\n  if (right.has_value() || !std::any_cast<unsigned>(&left)) return 1;\n  const auto* first = std::any_cast<bool>(&transferred);\n  if (!first || !*first) return 2;\n  left = false;\n  transferred = left;\n  const auto* copied = std::any_cast<bool>(&transferred);\n  return !copied || *copied || std::any_cast<unsigned>(&left) != nullptr;\n}\n",
+      "source_sha256": "9fff6f3daf6edfab7929440c3580421e796828869c5676488ab9d7977e5c0e15"
+    },
+    {
+      "name": "any-bool-inline-constant-active-value",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  const std::any value{std::in_place_type<bool>, true};\n  return std::any_cast<bool>(value) ? 0 : 1;\n}\n",
+      "source_sha256": "f3eb968ca25957f91a4aeed5b938dee7d5e69bce5aa693f0e36eede807333195"
+    },
+    {
+      "name": "any-bool-inline-value-mismatch",
+      "expected": "reject",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source": "#include <any>\nint main() {\n  const std::any value{1};\n  return std::any_cast<bool>(value) ? 0 : 1;\n}\n",
+      "source_sha256": "d5e03b534a70db55941c205033c550c5f8d50bbdac8139c31a4c2d109431e621"
+    },
+    {
+      "name": "any-bool-inline-dynamic-value-tag",
+      "expected": "reject",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source": "#include <any>\nbool read(const std::any& value) { return std::any_cast<bool>(value); }\n",
+      "source_sha256": "b0cb54c44350fb4ee1931b49fca503a2fc34d84ad94d9fd968536686d1e3517e"
+    },
+    {
+      "name": "any-bool-inline-pointer-payload",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  bool truth = true;\n  const std::any value{&truth};\n  return !value.has_value();\n}\n",
+      "source_sha256": "6be35615008b714f6548af6634b6357546de635e3421b29ad5ff11d945a8be60"
+    },
+    {
+      "name": "any-bool-inline-mutable-reference-cast",
+      "expected": "accept",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source": "#include <any>\nint main() {\n  std::any value{true};\n  bool& result = std::any_cast<bool&>(value);\n  return result ? 0 : 1;\n}\n",
+      "source_sha256": "3b63f6b82ceac0a587c0d7c94e561561888706e5f0e43c41371af97928b4e6f0"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyBoolInlineTypedMutablePointerRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyBoolInlineFactoryEmplaceResetRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyBoolInlineCopyMoveAndAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyBoolInlineConstantActiveValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyBooleanPointerPayloadRunsAtBothOptimizations",
+    "TranslateTest.CoreV2AnyBooleanMutableReferenceRunsAtBothOptimizations",
+    "TranslateTest.CoreV2AnyBoolInlineValueMismatchRejected",
+    "TranslateTest.CoreV2AnyBoolInlineDynamicValueTagRejected"
+  ],
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "4d1378b02f329e006c80ba4071c984fe15eb83298fc0d4658a244e7413b23acf",
+  "maintained_original_sha256": "bdf19d17388b4157ca9e10e6b4454c833104e8a331a09b0924694c19718d994e",
+  "previous_registered_source_sha256": "9e9ba754f81959ca9b377627825515a8be2f0ad69242ce21ad0b6fa792afed14",
+  "previous_maintained_original_sha256": "0a33208d656054ec6265c968c1c3c9ed504da77d0709bb325cc0ecdd9bded1a5",
+  "restorer_sha256": "6867e27f3f7158ad6721736a7dccc68a7506e3f93879eea53abe3403248b8c7a",
+  "extractor_sha256": "8259c62ca0f80eccca3f6cccff65cc6937f1e536acdbe2611c977a511377695a",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8318,
+  "current_python_registry_tests": 166,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12
+}
