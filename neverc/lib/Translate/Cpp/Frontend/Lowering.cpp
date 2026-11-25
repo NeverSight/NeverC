@@ -27122,6 +27122,11 @@ class FunctionLowering {
     // the entire deletion loop has finished.
     initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
   }
+  void transferForwardListStorage(Expression Place, Expression Source, SourceLocation L) {
+    auto Head = snapshot(forwardListMember(Source, false, L), L);
+    assign(forwardListMember(Place, false, L), std::move(Head), L);
+    assign(forwardListMember(Source, false, L), A.zero(A.Context.VoidPtrTy, L), L);
+  }
   Expression utilityForwardListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityForwardListCall(A.S, A.Sources, Call, A.Context);
@@ -27129,15 +27134,19 @@ class FunctionLowering {
       reject(L, "forward-list operation", "The selected SDK body, layout and operands are required.");
     const auto Operation = Proof->Operation;
     std::optional<Expression> Receiver;
-    if (Proof->Receiver) {
-      const auto *Object = Proof->Receiver;
-      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-    }
+    auto CaptureReceiver = [&] {
+      if (const auto *Object = Proof->Receiver)
+        Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+            : address(lvalue(Object), Object->getType(), L), L);
+    };
+    const bool MoveAssignmentSyntax = Operation == UtilityForwardListOperation::MoveAssign &&
+        isa<CXXOperatorCallExpr>(Call);
+    if (!MoveAssignmentSyntax) CaptureReceiver();
     std::vector<Expression> Operands;
     for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
       Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
           Proof->Function->getParamDecl(I)->getType()), L));
+    if (MoveAssignmentSyntax) CaptureReceiver();
     if (Operation == UtilityForwardListOperation::IteratorEqual ||
         Operation == UtilityForwardListOperation::IteratorNotEqual) {
       auto Left = forwardListMember(dereference(Operands[0], L), true, L);
@@ -27175,6 +27184,12 @@ class FunctionLowering {
     }
     const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Method->getParent(), A.Context);
     if (!Owner) reject(L, "forward-list owner", "The selected integer owner layout is required.");
+    if (Operation == UtilityForwardListOperation::MoveAssign) {
+      auto Source = dereference(Operands.front(), L);
+      destroyForwardListStorage(Place, Owner->Node, L);
+      transferForwardListStorage(Place, Source, L);
+      return Place;
+    }
     if (Operation == UtilityForwardListOperation::Empty)
       return binary("==", forwardListMember(Place, false, L), A.zero(A.Context.VoidPtrTy, L), "bool", L);
     if (Operation == UtilityForwardListOperation::Begin ||
