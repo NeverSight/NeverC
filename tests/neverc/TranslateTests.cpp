@@ -385366,7 +385366,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2VariantIntegralVisitGenericVisitorRejected) {
+TEST_F(TranslateTest, CoreV2VariantIntegralVisitUsesCapturelessGenericVisitor) {
   const auto Source = tmpFile("variant-integral-visit-generic-visitor.cpp");
   writeFile(Source, R"r19containers(#include <variant>
 int f(std::variant<int, short>& value) {
@@ -385374,9 +385374,7 @@ int f(std::variant<int, short>& value) {
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2AnyIntRuntimeReferenceAndMismatchRunAtBothOptimizations) {
@@ -385639,7 +385637,7 @@ int f(std::variant<int, short>& left, std::variant<int, short>& right) {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2VariantTwoVisitGenericVisitorRejected) {
+TEST_F(TranslateTest, CoreV2VariantTwoVisitUsesCapturelessGenericVisitor) {
   const auto Source = tmpFile("variant-two-visit-generic-visitor.cpp");
   writeFile(Source, R"r19containers(#include <variant>
 int f(std::variant<int, short>& left, std::variant<int, short>& right) {
@@ -385647,9 +385645,7 @@ int f(std::variant<int, short>& left, std::variant<int, short>& right) {
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
 }
 
 TEST_F(TranslateTest, CoreV2TupleBudgetDeep15ExecutionRunAtBothOptimizations) {
@@ -406279,6 +406275,81 @@ int main() {
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitCapturelessSelectedIntegralResultRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-captureless-selected-integral-result.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  using Item = std::variant<int, short>;
+  Item value(std::in_place_index<1>, short(4));
+  return std::visit([](auto input) -> int { return int(input) * 3 + 1; }, value) != 13;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-captureless-selected-integral-result.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-captureless-selected-integral-result" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitCapturelessDispatchesTwoSelectedIndicesRunAtBothOptimizations) {
+  const auto Source = tmpFile("variant-visit-captureless-dispatches-two-selected-indices.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  using Item = std::variant<int, short>;
+  const Item left(std::in_place_index<1>, short(17));
+  Item right(6);
+  return std::visit([](auto a, auto b) -> int { return int(a) - int(b); }, left, right) != 11;
+}
+)r19containers");
+  const auto Output = tmpFile("variant-visit-captureless-dispatches-two-selected-indices.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("variant-visit-captureless-dispatches-two-selected-indices" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitCapturingLambdaGuardRejected) {
+  const auto Source = tmpFile("variant-visit-capturing-lambda-guard.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int main() {
+  std::variant<int, short> value(3);
+  int offset = 2;
+  return std::visit([offset](auto x) -> int { return int(x) + offset; }, value) != 5;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2VariantVisitCapturelessNonparameterSourceGuardRejected) {
+  const auto Source = tmpFile("variant-visit-captureless-nonparameter-source-guard.cpp");
+  writeFile(Source, R"r19containers(#include <variant>
+int bias = 2;
+int main() {
+  std::variant<int, short> value(3);
+  return std::visit([](auto x) -> int { return int(x) + bias; }, value) != 5;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
 

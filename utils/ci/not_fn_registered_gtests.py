@@ -3070,9 +3070,6 @@ R19_VARIANT_TEMPLATED_VISITOR_ADDITIONS_SIZE = 3833
 def restore_variant_templated_visitor_history(source):
     """Remove the exact combined layout fixture batch from the registry."""
     sha = lambda data: hashlib.sha256(data).hexdigest()
-    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
-        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
-        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     digest = sha(source)
     assert digest in {R19_VARIANT_TEMPLATED_VISITOR_REGISTERED_SHA256, R19_VARIANT_TEMPLATED_VISITOR_MAINTAINED_SHA256}
     stop = R19_VARIANT_TEMPLATED_VISITOR_MAINTAINED_SIZE
@@ -3081,6 +3078,37 @@ def restore_variant_templated_visitor_history(source):
     restored = source[:start] + source[stop:]
     prior = (R19_VARIANT_TEMPLATED_VISITOR_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_TEMPLATED_VISITOR_REGISTERED_SHA256
              else R19_VARIANT_TEMPLATED_VISITOR_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_VARIANT_CAPTURELESS_VISIT_REGISTERED_SHA256 = 'a04814ab0205839486630e2b37acc1aa3694b84163d9f5662f2468ac9b9765bf'
+R19_VARIANT_CAPTURELESS_VISIT_MAINTAINED_SHA256 = '8ddf7129b52ae199ed136802c6cef2f7a1349d5fcfd940c372373bf730bf68de'
+R19_VARIANT_CAPTURELESS_VISIT_PREVIOUS_REGISTERED_SHA256 = '09743ceb993860cd5315ea8d340ccb1f1e5e15ba5f084f8242173aad8e67d4d1'
+R19_VARIANT_CAPTURELESS_VISIT_PREVIOUS_MAINTAINED_SHA256 = '5067723d6daf17e8fcc1a67b0ef269ebb100726af8e5adb2e1911ff4fdfeadd0'
+R19_VARIANT_CAPTURELESS_VISIT_ADDITIONS_SHA256 = '69a182b02c39a51ce240c7d5611938a133ca82768f22387ac9cf2632d66fb2c5'
+R19_VARIANT_CAPTURELESS_VISIT_MAINTAINED_SIZE = 20843970
+R19_VARIANT_CAPTURELESS_VISIT_ADDITIONS_SIZE = 3650
+
+
+def restore_variant_captureless_visit_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
+        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    digest = sha(source)
+    assert digest in {R19_VARIANT_CAPTURELESS_VISIT_REGISTERED_SHA256, R19_VARIANT_CAPTURELESS_VISIT_MAINTAINED_SHA256}
+    stop = R19_VARIANT_CAPTURELESS_VISIT_MAINTAINED_SIZE
+    start = stop - R19_VARIANT_CAPTURELESS_VISIT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_VARIANT_CAPTURELESS_VISIT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantTwoVisitUsesCapturelessGenericVisitor) {\n  const auto Source = tmpFile("variant-two-visit-generic-visitor.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit([](auto a, auto b) -> int { return a - b; }, left, right);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantTwoVisitUsesCapturelessGenericVisitor) {\n  const auto Source = tmpFile("variant-two-visit-generic-visitor.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit([](auto a, auto b) -> int { return a - b; }, left, right);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantTwoVisitGenericVisitorRejected) {\n  const auto Source = tmpFile("variant-two-visit-generic-visitor.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit([](auto a, auto b) -> int { return a - b; }, left, right);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2VariantIntegralVisitUsesCapturelessGenericVisitor) {\n  const auto Source = tmpFile("variant-integral-visit-generic-visitor.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint f(std::variant<int, short>& value) {\n  return std::visit([](auto v) -> int { return int(v); }, value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2VariantIntegralVisitUsesCapturelessGenericVisitor) {\n  const auto Source = tmpFile("variant-integral-visit-generic-visitor.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint f(std::variant<int, short>& value) {\n  return std::visit([](auto v) -> int { return int(v); }, value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n}', b'TEST_F(TranslateTest, CoreV2VariantIntegralVisitGenericVisitorRejected) {\n  const auto Source = tmpFile("variant-integral-visit-generic-visitor.cpp");\n  writeFile(Source, R"r19containers(#include <variant>\nint f(std::variant<int, short>& value) {\n  return std::visit([](auto v) -> int { return int(v); }, value);\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_VARIANT_CAPTURELESS_VISIT_PREVIOUS_REGISTERED_SHA256 if digest == R19_VARIANT_CAPTURELESS_VISIT_REGISTERED_SHA256
+             else R19_VARIANT_CAPTURELESS_VISIT_PREVIOUS_MAINTAINED_SHA256)
     assert sha(restored) == prior
     return restored
 
@@ -3127,12 +3155,12 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
-    if source_digest == '94644182219ab10bbfb73b450b2380438f31ad71981b7de3668fda823e762e14':
+    if source_digest == '471c417224bbe6cb4f9771c109d5380471665456aa719b4df8326b755ea0b7db':
         return source
-    if source_digest == '5a5af4abbad171b513b54233746d739894f684b60441357fcc62bd891d0ec5b0':
+    if source_digest == '5cfacab8df540d9fd45518eac1cb4203fa5fd7f39c70fef95cdf7382a2a4ac88':
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         current = source[:-len(additions)]
-        assert digest(current) == '94644182219ab10bbfb73b450b2380438f31ad71981b7de3668fda823e762e14'
+        assert digest(current) == '471c417224bbe6cb4f9771c109d5380471665456aa719b4df8326b755ea0b7db'
         return current
     if source_digest == R19_VARIANT_SCALAR_MAINTAINED_SHA256:
         return source
@@ -3777,6 +3805,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_VARIANT_TEMPLATED_VISITOR_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_VARIANT_CAPTURELESS_VISIT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_VARIANT_CAPTURELESS_VISIT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_VARIANT_CAPTURELESS_VISIT_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

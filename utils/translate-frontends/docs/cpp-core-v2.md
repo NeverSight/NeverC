@@ -18602,3 +18602,9 @@ An owned, named visitor can use a templated call operator in variant
 visitation. The source proof checks the selected specialization for
 each alternative combination and uses its concrete parameter types
 and return type in the existing dispatch.
+
+## Captureless variant visitors
+
+Checked captureless generic visitors dispatch on the concrete selected
+specialization for each variant alternative. The translator checks the
+visitor body and its storage dependencies during the full expression.

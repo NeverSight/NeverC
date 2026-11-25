@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.variant_captureless_visit_registered = cls.registered
+        cls.variant_captureless_visit_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.variant_captureless_visit_original = cls.adapter.restore_original_gtests(cls.variant_captureless_visit_registered,
+                                                                        cls.variant_captureless_visit_suffix)
+        cls.registered = cls.adapter.restore_variant_captureless_visit_history(cls.variant_captureless_visit_registered)
         cls.variant_templated_visitor_registered = cls.registered
         cls.variant_templated_visitor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_templated_visitor_original = cls.adapter.restore_original_gtests(cls.variant_templated_visitor_registered,
@@ -3889,6 +3894,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_templated_visitor_history(self.variant_templated_visitor_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_templated_visitor_registered, self.variant_templated_visitor_suffix + b' ')
+
+
+    def test_variant_captureless_visit_retains_published_bodies(self):
+        self.assertEqual(self.variant_captureless_visit_original + self.variant_captureless_visit_suffix, self.variant_captureless_visit_registered)
+        self.assertEqual(self.adapter.restore_variant_captureless_visit_history(self.variant_captureless_visit_original),
+                         self.variant_templated_visitor_original)
+        output, evidence = self.extractor.extract(self.variant_captureless_visit_original, ['TranslateTest.CoreV2VariantVisitCapturelessSelectedIntegralResultRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitCapturelessDispatchesTwoSelectedIndicesRunAtBothOptimizations', 'TranslateTest.CoreV2VariantVisitCapturingLambdaGuardRejected', 'TranslateTest.CoreV2VariantVisitCapturelessNonparameterSourceGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9087)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'variant-visit-captureless-selected-integral-result', output)
+        self.assertIn(b'variant-visit-capturing-lambda-guard', output)
+
+    def test_variant_captureless_visit_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_variant_captureless_visit_history(self.variant_captureless_visit_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.variant_captureless_visit_registered, self.variant_captureless_visit_suffix + b' ')
 
 
 if __name__ == '__main__':

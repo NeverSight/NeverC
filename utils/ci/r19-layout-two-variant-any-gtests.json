@@ -23,6 +23,15 @@
       "source_sha256": "88a7ff3f38c2e089aa1cfe0acb4c716c95866883368944288213f38f4d7402d9",
       "original_case_source_sha256": "88a7ff3f38c2e089aa1cfe0acb4c716c95866883368944288213f38f4d7402d9",
       "gtest_body_sha256": "fc6e17a9f61930e9a8482ecf867b7ffcd1a80aa5dd0b65772316abb4eab12e7b"
+    },
+    {
+      "name": "variant-two-visit-generic-visitor",
+      "formal_test_name": "TranslateTest.CoreV2VariantTwoVisitUsesCapturelessGenericVisitor",
+      "expected": "accept",
+      "source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
+      "original_case_source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
+      "gtest_body_sha256": "8fe72d31cc0314aae765446c39f83ed3c94488e981b532e0ec86eb45d05077f1",
+      "source_only": true
     }
   ],
   "negative_cases": [
@@ -41,14 +50,6 @@
       "source_sha256": "595064f2bbaa4a9d4d20e26accf4fe2c0cedcc36f2607036948d8278be3db4c4",
       "original_case_source_sha256": "595064f2bbaa4a9d4d20e26accf4fe2c0cedcc36f2607036948d8278be3db4c4",
       "gtest_body_sha256": "22cf5ec63d74b3cb2b0898f6d3b348f2407a0ace00adf7fe96b530b7c5b78292"
-    },
-    {
-      "name": "variant-two-visit-generic-visitor",
-      "formal_test_name": "TranslateTest.CoreV2VariantTwoVisitGenericVisitorRejected",
-      "expected": "reject",
-      "source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
-      "original_case_source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
-      "gtest_body_sha256": "261a3658561b26fd0b5a88f59ace0ac82205e29fe3204b1916c07d97a9fbc1b1"
     }
   ],
   "source_cases": [
@@ -77,6 +78,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "variant-two-visit-generic-visitor",
+      "source": "#include <variant>\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit([](auto a, auto b) -> int { return a - b; }, left, right);\n}\n",
+      "expected": "accept",
+      "source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "variant-two-visit-renamed-matrix-index",
       "source": "#define __at changed_matrix_index\n#include <variant>\n#undef __at\nint sub(int a, int b) { return a - b; }\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit(sub, left, right);\n}\n",
       "expected": "reject",
@@ -91,23 +100,15 @@
       "source_sha256": "595064f2bbaa4a9d4d20e26accf4fe2c0cedcc36f2607036948d8278be3db4c4",
       "public_header": "variant",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "variant-two-visit-generic-visitor",
-      "source": "#include <variant>\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit([](auto a, auto b) -> int { return a - b; }, left, right);\n}\n",
-      "expected": "reject",
-      "source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
-      "public_header": "variant",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
     "TranslateTest.CoreV2VariantTwoVisitMixedActiveIndicesRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantTwoVisitConstOperandAndMutationRunAtBothOptimizations",
     "TranslateTest.CoreV2VariantTwoVisitAliasAndEffectsWithVoidResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTwoVisitUsesCapturelessGenericVisitor",
     "TranslateTest.CoreV2VariantTwoVisitRenamedMatrixIndexRejected",
-    "TranslateTest.CoreV2VariantTwoVisitRenamedMatrixDispatchRejected",
-    "TranslateTest.CoreV2VariantTwoVisitGenericVisitorRejected"
+    "TranslateTest.CoreV2VariantTwoVisitRenamedMatrixDispatchRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -126,5 +127,5 @@
     "variant-two-operand-visit": "6df3ff5f32a6aefd59d674e4995f1ee301617c2c173aa9cd61844737a6f88398"
   },
   "native_reference_authentication_sha256": "1e0d40a335099597144bb8e9e0dd74310af6f9080b6d1871c92ff195bf8361d8",
-  "source_proof_sha256": "97a9eb6f2bf9596a2ee3dcba58637750db04adcf1b9ea008d66db4130f225e10"
+  "source_proof_sha256": "35723ca145d11d089e6494b3202a425522850ced8520b52e25ab9d3180d886ae"
 }
