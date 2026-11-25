@@ -56156,22 +56156,32 @@ bool listLeaves(const State &S, const SourceManager &SM,
   return true;
 }
 
-bool listIntegerVoidArguments(const ClassTemplateSpecializationDecl *R,
+bool listElementType(QualType Type, const ASTContext &Context) {
+  if (Type.isNull() || Type.hasLocalQualifiers()) return false;
+  if (Context.hasSameType(Type, Context.IntTy) || Context.hasSameType(Type, Context.UnsignedIntTy))
+    return Context.getTypeSize(Type) == 32;
+  return (Context.hasSameType(Type, Context.LongTy) || Context.hasSameType(Type, Context.UnsignedLongTy)) &&
+      (Context.getTypeSize(Type) == 32 || Context.getTypeSize(Type) == 64);
+}
+
+bool listElementVoidArguments(const ClassTemplateSpecializationDecl *R,
                                const ASTContext &Context) {
   if (!R || R->getTemplateArgs().size() != 2) return false;
   const auto &Args = R->getTemplateArgs();
   return Args[0].getKind() == TemplateArgument::Type && Args[1].getKind() == TemplateArgument::Type &&
-      Context.hasSameType(Args[0].getAsType(), Context.IntTy) &&
+      listElementType(Args[0].getAsType(), Context) &&
       Context.hasSameType(Args[1].getAsType(), Context.VoidPtrTy);
 }
 std::optional<UtilityListNodeRecord> listNode(const State &S, const SourceManager &SM,
     const CXXRecordDecl *Input, const ASTContext &Context) {
   const auto *R = listSpecialization(S, SM, Input, "__list_node", "list");
-  if (!listTarget(Context) || !listIntegerVoidArguments(R, Context) || R->getNumBases() != 1)
+  if (!listTarget(Context) || !listElementVoidArguments(R, Context) || R->getNumBases() != 1)
     return std::nullopt;
   const auto &B = *R->bases_begin();
   const auto *Base = listSpecialization(S, SM, listRecordType(B.getType()), "__list_node_base", "list");
-  if (B.isVirtual() || !listIntegerVoidArguments(Base, Context) || Base->getNumBases()) return std::nullopt;
+  const auto Element = R->getTemplateArgs()[0].getAsType();
+  if (B.isVirtual() || !listElementVoidArguments(Base, Context) || Base->getNumBases() ||
+      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Element)) return std::nullopt;
   const auto Pointer = Context.getPointerType(Context.getRecordType(Base));
   std::vector<ListLeaf> Leaves;
   unsigned Budget = 0;
@@ -56182,7 +56192,7 @@ std::optional<UtilityListNodeRecord> listNode(const State &S, const SourceManage
       Leaves[0].Field->getParent() != Base || Leaves[1].Field->getParent() != Base ||
       !Context.hasSameType(Leaves[0].Field->getType(), Pointer) ||
       !Context.hasSameType(Leaves[1].Field->getType(), Pointer) ||
-      !Context.hasSameType(Leaves[2].Field->getType(), Context.IntTy)) return std::nullopt;
+      !Context.hasSameType(Leaves[2].Field->getType(), Element)) return std::nullopt;
   const auto &Layout = Context.getASTRecordLayout(R);
   const auto &BaseLayout = Context.getASTRecordLayout(Base);
   if (Layout.getSize().getQuantity() != 24 || Layout.getAlignment().getQuantity() != 8 ||
@@ -56199,15 +56209,16 @@ std::optional<UtilityListRecord> approvedUtilityListRecord(const State &S, const
   const auto &Args = R->getTemplateArgs();
   if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
       Args[1].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Args[0].getAsType(), Context.IntTy)) return std::nullopt;
+      !listElementType(Args[0].getAsType(), Context)) return std::nullopt;
+  const auto Element = Args[0].getAsType();
   const auto Allocator = approvedUtilityAllocatorRecord(S, SM, listRecordType(Args[1].getAsType()), Context);
-  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) return std::nullopt;
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Element)) return std::nullopt;
   const auto &B = *R->bases_begin();
   const auto *Base = listSpecialization(S, SM, listRecordType(B.getType()), "__list_imp", "list");
   if (B.isVirtual() || !Base || Base->getTemplateArgs().size() != 2 ||
       Base->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       Base->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Element) ||
       !Context.hasSameType(Base->getTemplateArgs()[1].getAsType(), Args[1].getAsType())) return std::nullopt;
   const CXXRecordDecl *NodeType = nullptr;
   for (const auto *D : Base->decls())
@@ -56216,7 +56227,7 @@ std::optional<UtilityListRecord> approvedUtilityListRecord(const State &S, const
       NodeType = listRecordType(T->getUnderlyingType());
     }
   const auto Node = listNode(S, SM, NodeType, Context);
-  if (!Node) return std::nullopt;
+  if (!Node || !Context.hasSameType(Node->Value->getType(), Element)) return std::nullopt;
   std::vector<ListLeaf> Leaves;
   unsigned Budget = 0;
   if (!listLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 3 ||
@@ -56238,7 +56249,7 @@ std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
     R = listSpecialization(S, SM, Input, "__list_const_iterator", "list");
     Const = true;
   }
-  if (!listTarget(Context) || !listIntegerVoidArguments(R, Context) || R->getNumBases()) return std::nullopt;
+  if (!listTarget(Context) || !listElementVoidArguments(R, Context) || R->getNumBases()) return std::nullopt;
   std::vector<ListLeaf> Leaves;
   unsigned Budget = 0;
   if (!listLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 1 ||
@@ -56246,7 +56257,9 @@ std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
       !Leaves[0].Field->getType()->isPointerType()) return std::nullopt;
   const auto *Base = listSpecialization(S, SM,
       listRecordType(Leaves[0].Field->getType()->getPointeeType()), "__list_node_base", "list");
-  if (!listIntegerVoidArguments(Base, Context)) return std::nullopt;
+  const auto Element = R->getTemplateArgs()[0].getAsType();
+  if (!listElementVoidArguments(Base, Context) ||
+      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Element)) return std::nullopt;
   const CXXRecordDecl *NodeType = nullptr;
   for (const auto *D : Base->methods()) {
     if (!D->getIdentifier() || D->getName() != "__as_node") continue;
@@ -56257,6 +56270,7 @@ std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
   const auto Node = listNode(S, SM, NodeType, Context);
   const auto &Layout = Context.getASTRecordLayout(R);
   if (!Node || Node->Base->getCanonicalDecl() != Base->getCanonicalDecl() ||
+      !Context.hasSameType(Node->Value->getType(), Element) ||
       Layout.getSize().getQuantity() != 8 || Layout.getAlignment().getQuantity() != 8) return std::nullopt;
   return UtilityListIteratorRecord{R, Leaves[0].Field, *Node, Const};
 }
@@ -56276,17 +56290,17 @@ bool listFunctionDeclarations(const State &S, const SourceManager &SM,
           !listPinned(S, SM, D->getTemplatedDecl(), "list")) return false;
   return true;
 }
-bool listIntegerValueParameter(QualType T, const ASTContext &Context) {
-  return Context.hasSameType(T, Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-         Context.hasSameType(T, Context.getRValueReferenceType(Context.IntTy));
+bool listValueParameter(QualType T, QualType Element, const ASTContext &Context) {
+  return Context.hasSameType(T, Context.getLValueReferenceType(Element.withConst())) ||
+         Context.hasSameType(T, Context.getRValueReferenceType(Element));
 }
-bool listIntegerAllocatorParameter(const State &S, const SourceManager &SM,
-                                         QualType T, const ASTContext &Context) {
+bool listAllocatorParameter(const State &S, const SourceManager &SM,
+                                         QualType T, QualType Element, const ASTContext &Context) {
   if (!T->isLValueReferenceType() || !T->getPointeeType().isConstQualified() ||
       T->getPointeeType().isVolatileQualified()) return false;
   const auto A = approvedUtilityAllocatorRecord(S, SM,
       listRecordType(T->getPointeeType()), Context);
-  return A && Context.hasSameType(A->ElementType, Context.IntTy);
+  return A && Context.hasSameType(A->ElementType, Element);
 }
 bool listIteratorType(const State &S, const SourceManager &SM, QualType T,
                              const UtilityListNodeRecord &Node, bool Const,
@@ -56303,6 +56317,7 @@ std::optional<UtilityListConstruction> listConstructorSignature(
   if (!C || C->getPrimaryTemplate() || !listFunctionDeclarations(S, SM, C))
     return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, C->getParent(), Context)) {
+    const auto Element = Owner->Node.Value->getType();
     if (!C->getNumParams()) return UtilityListConstruction::Default;
     if (C->getNumParams() == 1 || C->getNumParams() == 2) {
       const auto Type = Context.getRecordType(Owner->Record);
@@ -56312,21 +56327,21 @@ std::optional<UtilityListConstruction> listConstructorSignature(
       if (Copy || Move) {
         for (const auto *Parameter : C->parameters())
           if (Parameter->hasDefaultArg()) return std::nullopt;
-        if (C->getNumParams() == 2 && !listIntegerAllocatorParameter(S, SM, C->getParamDecl(1)->getType(), Context))
+        if (C->getNumParams() == 2 && !listAllocatorParameter(S, SM, C->getParamDecl(1)->getType(), Element, Context))
           return std::nullopt;
         return Copy ? UtilityListConstruction::Copy : UtilityListConstruction::Move;
       }
     }
     if (C->getNumParams() == 1 &&
-        listIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
+        listAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Element, Context))
       return UtilityListConstruction::Allocator;
     if (C->getNumParams() == 1 || C->getNumParams() == 2) {
       const auto ListType = C->getParamDecl(0)->getType();
       if (ListType->isReferenceType() || ListType.isVolatileQualified()) return std::nullopt;
       const auto List = approvedUtilityInitializerListRecord(S, SM, listRecordType(ListType), Context);
-      if (List && Context.hasSameType(List->ElementType, Context.IntTy) &&
-          (C->getNumParams() == 1 || listIntegerAllocatorParameter(S, SM,
-              C->getParamDecl(1)->getType(), Context))) return UtilityListConstruction::InitializerList;
+      if (List && Context.hasSameType(List->ElementType, Element) &&
+          (C->getNumParams() == 1 || listAllocatorParameter(S, SM,
+              C->getParamDecl(1)->getType(), Element, Context))) return UtilityListConstruction::InitializerList;
     }
     return std::nullopt;
   }
@@ -56353,6 +56368,7 @@ std::optional<UtilityListOperation> listMethodSignature(
   if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
       !listFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, M->getParent(), Context)) {
+    const auto Element = Owner->Node.Value->getType();
     const auto Type = Context.getRecordType(Owner->Record);
     if (!M->isConst() && M->getRefQualifier() == RQ_None && M->isOverloadedOperator() &&
         M->getOverloadedOperator() == OO_Equal && M->getNumParams() == 1 &&
@@ -56382,7 +56398,7 @@ std::optional<UtilityListOperation> listMethodSignature(
       if ((Name == "cbegin" || Name == "cend") && M->isConst() &&
           listIteratorType(S, SM, M->getReturnType(), Owner->Node, true, Context))
         return Name == "cbegin" ? UtilityListOperation::Begin : UtilityListOperation::End;
-      const auto ValueType = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
+      const auto ValueType = M->isConst() ? Element.withConst() : Element;
       if ((Name == "front" || Name == "back") && Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(ValueType)))
         return Name == "front" ? UtilityListOperation::Front : UtilityListOperation::Back;
       if (!M->isConst() && M->getReturnType()->isVoidType()) {
@@ -56396,7 +56412,7 @@ std::optional<UtilityListOperation> listMethodSignature(
     if (M->isConst()) return std::nullopt;
     if (M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
       if (Name == "remove" && M->getNumParams() == 1 && !M->getParamDecl(0)->hasDefaultArg() &&
-          Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())))
+          Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Element.withConst())))
         return UtilityListOperation::Remove;
       if (Name == "unique" && !M->getNumParams()) return UtilityListOperation::Unique;
       if (Name == "sort" && !M->getNumParams()) return UtilityListOperation::Sort;
@@ -56412,7 +56428,7 @@ std::optional<UtilityListOperation> listMethodSignature(
         M->getReturnType()->isVoidType() && Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) {
       if (M->getNumParams() == 1) return UtilityListOperation::Resize;
       if (!M->getParamDecl(1)->hasDefaultArg() &&
-          Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(Context.IntTy.withConst())))
+          Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(Element.withConst())))
         return UtilityListOperation::ResizeFill;
     }
     if (Name == "splice" && M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
@@ -56432,7 +56448,7 @@ std::optional<UtilityListOperation> listMethodSignature(
       return UtilityListOperation::SpliceRange;
     }
     if ((Name == "push_front" || Name == "push_back") && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
-        listIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
+        listValueParameter(M->getParamDecl(0)->getType(), Element, Context))
       return Name == "push_front" ? UtilityListOperation::PushFront : UtilityListOperation::PushBack;
     if (!listIteratorType(S, SM, M->getReturnType(), Owner->Node, false, Context)) return std::nullopt;
     if (Name == "erase" && M->getRefQualifier() == RQ_None &&
@@ -56444,7 +56460,7 @@ std::optional<UtilityListOperation> listMethodSignature(
     }
     if (Name == "insert" && M->getNumParams() == 2 &&
         listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
-        listIntegerValueParameter(M->getParamDecl(1)->getType(), Context))
+        listValueParameter(M->getParamDecl(1)->getType(), Element, Context))
       return UtilityListOperation::Insert;
     return std::nullopt;
   }
@@ -56456,7 +56472,7 @@ std::optional<UtilityListOperation> listMethodSignature(
       (Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(IteratorType.withConst())) ||
        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(IteratorType))))
     return UtilityListOperation::IteratorAssign;
-  const auto Element = I->Const ? Context.IntTy.withConst() : Context.IntTy;
+  const auto Element = I->Const ? I->Node.Value->getType().withConst() : I->Node.Value->getType();
   if (M->isConst() && !M->getNumParams()) {
     if (M->getOverloadedOperator() == OO_Star &&
         Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element)))
@@ -56498,7 +56514,7 @@ std::optional<UtilityListOperation> listValueSwapSignature(
   const auto Owner = approvedUtilityListRecord(S, SM, listRecordType(Left->getPointeeType()), Context);
   const auto *Specialization = Owner ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
   if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
-      !Context.hasSameType(Arguments->get(0).getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Owner->Node.Value->getType()) ||
       !Context.hasSameType(Arguments->get(1).getAsType(), Specialization->getTemplateArgs().get(1).getAsType()))
     return std::nullopt;
   return UtilityListOperation::Swap;
@@ -56528,7 +56544,7 @@ std::optional<UtilityListOperation> listOwnerComparisonSignature(
   const auto Owner = approvedUtilityListRecord(S, SM, listRecordType(Left->getPointeeType()), Context);
   const auto *Specialization = Owner ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
   if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
-      !Context.hasSameType(Arguments->get(0).getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Owner->Node.Value->getType()) ||
       !Context.hasSameType(Arguments->get(1).getAsType(), Specialization->getTemplateArgs().get(1).getAsType()))
     return std::nullopt;
   switch (F->getOverloadedOperator()) {
@@ -56606,7 +56622,7 @@ bool listScalarDestruction(const State &S, const SourceManager &SM,
   const auto *D = Call && !Call->getNumArgs()
       ? dyn_cast<CXXPseudoDestructorExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
   if (!D || !D->isArrow() || !D->getBase() || !D->getDestroyedTypeInfo() ||
-      !Context.hasSameType(D->getDestroyedType(), Context.IntTy)) return false;
+      !Context.hasSameType(D->getDestroyedType(), Owner.Value->getType())) return false;
   const auto File = S.sdkFile(SM, Call->getExprLoc());
   if (!File || File->Root != "libcxx" ||
       (File->Path != "__memory/construct_at.h" && File->Path != "__memory/allocator.h")) return false;
@@ -56615,7 +56631,7 @@ bool listScalarDestruction(const State &S, const SourceManager &SM,
   const auto *Function = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
   if (!Function || Function->getNumParams() != 1 || Function->getParamDecl(0) != Parameter ||
       !Function->getReturnType()->isVoidType() ||
-      !Context.hasSameType(Parameter->getType(), Context.getPointerType(Context.IntTy))) return false;
+      !Context.hasSameType(Parameter->getType(), Context.getPointerType(Owner.Value->getType()))) return false;
   for (const auto *Redeclaration : Function->redecls())
     if (!listDependencyDeclaration(S, SM, Redeclaration)) return false;
   if (const auto *Method = dyn_cast<CXXMethodDecl>(Function)) {
@@ -56782,7 +56798,7 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
-      if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
+      if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
            !Context.hasSameType(N->getAllocatedType(), Context.getRecordType(Owner.Record))) ||
           N->getNumPlacementArgs() != 1 ||
           !Function(N->getOperatorNew(), Depth + 1)) return false;

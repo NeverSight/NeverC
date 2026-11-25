@@ -28987,11 +28987,11 @@ class FunctionLowering {
   Expression listLink(Expression Node, bool Prev, SourceLocation L) {
     return nodeFieldAt(std::move(Node), A.Context.VoidPtrTy, Prev ? 0 : 8, L);
   }
-  Expression listValue(Expression Node, bool Const, SourceLocation L) {
+  Expression listValue(Expression Node, QualType Element, bool Const, SourceLocation L) {
     auto Bytes = binary("+", cast(std::move(Node), "ptr:u8", L),
         quantity(16, type(A.Context.getSizeType(), L), L), "ptr:u8", L);
     return dereference(cast(cast(std::move(Bytes), "ptr:void", L),
-        Const ? "cptr:int" : "ptr:int", L), L);
+        type(A.Context.getPointerType(Const ? Element.withConst() : Element), L), L), L);
   }
   Expression listSentinel(Expression Place, SourceLocation L, bool ReadOnly = false) {
     return cast(address(listMember(std::move(Place), "nct_list_prev", L),
@@ -29019,7 +29019,7 @@ class FunctionLowering {
         quantity(24, type(A.Context.getSizeType(), L), L), L), "ptr:void", L), L);
     initializeZero(listLink(Node, true, L), A.Context.VoidPtrTy, L);
     initializeZero(listLink(Node, false, L), A.Context.VoidPtrTy, L);
-    assign(listValue(Node, false, L), dereference(ValueReference, L), L);
+    assign(listValue(Node, Info.Value->getType(), false, L), dereference(ValueReference, L), L);
     return Node;
   }
   void listReleaseNode(Expression Node, const UtilityListNodeRecord &Info, SourceLocation L) {
@@ -29095,9 +29095,10 @@ class FunctionLowering {
     branch(binary(">", SizeRequested, CurrentSize, "bool", L), Grow, Done, L);
     label(Grow, L);
     if (!Fill) {
-      auto Zero = temporary(type(A.Context.IntTy, L), L);
-      initializeZero(Zero, A.Context.IntTy, L);
-      Fill = address(Zero, A.Context.IntTy, L);
+      const auto Element = Info.Value->getType();
+      auto Zero = temporary(type(Element, L), L);
+      initializeZero(Zero, Element, L);
+      Fill = address(Zero, Element, L);
     }
     auto Added = snapshot(binary("-", SizeRequested, CurrentSize, Size, L), L);
     auto ToCreate = temporary(Size, L);
@@ -29160,7 +29161,8 @@ class FunctionLowering {
     jump(Check, L); label(Check, L);
     branch(binary("!=", Current, End, "bool", L), Append, Done, L);
     label(Append, L);
-    auto Value = address(listValue(Current, true, L), A.Context.IntTy.withConst(), L);
+    const auto Element = Info.Value->getType();
+    auto Value = address(listValue(Current, Element, true, L), Element.withConst(), L);
     auto Node = listCreateNode(Value, Info, L);
     listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
     assign(Current, snapshot(listLink(Current, false, L), L), L);
@@ -29265,8 +29267,9 @@ class FunctionLowering {
     label(Visit, L);
     auto Node = snapshot(Current, L);
     auto Next = snapshot(listLink(Node, false, L), L);
-    auto Compare = Value ? *Value : listValue(*Previous, true, L);
-    branch(binary("==", listValue(Node, true, L), Compare, "bool", L), Transfer, Keep, L);
+    const auto Element = Info.Node.Value->getType();
+    auto Compare = Value ? *Value : listValue(*Previous, Element, true, L);
+    branch(binary("==", listValue(Node, Element, true, L), Compare, "bool", L), Transfer, Keep, L);
     label(Transfer, L);
     // Keep unlinked nodes alive while the value can still alias one of them.
     listRelinkSpliceRange(RemovedEnd, Node, Node, Next, L);
@@ -29286,7 +29289,7 @@ class FunctionLowering {
     destroyListStorage(Removed, Info.Node, L);
   }
 
-  void listMergeValueStorage(Expression Place, Expression Source, SourceLocation L) {
+  void listMergeValueStorage(Expression Place, Expression Source, QualType Element, SourceLocation L) {
     auto End = snapshot(listSentinel(Place, L), L);
     auto SourceEnd = snapshot(listSentinel(Source, L), L);
     const auto Start = labelName(), CheckLeft = labelName(), CheckRight = labelName();
@@ -29301,7 +29304,7 @@ class FunctionLowering {
     label(CheckRight, L);
     branch(binary("!=", Right, SourceEnd, "bool", L), Compare, Done, L);
     label(Compare, L);
-    branch(binary("<", listValue(Right, true, L), listValue(Left, true, L), "bool", L), Move, Keep, L);
+    branch(binary("<", listValue(Right, Element, true, L), listValue(Left, Element, true, L), "bool", L), Move, Keep, L);
     label(Move, L);
     auto Node = snapshot(Right, L);
     assign(Right, snapshot(listLink(Node, false, L), L), L);
@@ -29315,7 +29318,7 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
-  void listSortValueStorage(Expression Place, SourceLocation L) {
+  void listSortValueStorage(Expression Place, QualType Element, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     auto Length = snapshot(listMember(Place, "nct_list_size", L), L);
     auto End = snapshot(listSentinel(Place, L), L);
@@ -29351,7 +29354,7 @@ class FunctionLowering {
     label(CheckLeft, L);
     branch(binary("!=", LeftCount, quantity(0, Size, L), "bool", L), Compare, Advance, L);
     label(Compare, L);
-    branch(binary("<", listValue(Right, true, L), listValue(Left, true, L), "bool", L), Transfer, Keep, L);
+    branch(binary("<", listValue(Right, Element, true, L), listValue(Left, Element, true, L), "bool", L), Transfer, Keep, L);
     label(Transfer, L);
     auto Node = snapshot(Right, L);
     auto After = snapshot(listLink(Node, false, L), L);
@@ -29443,7 +29446,9 @@ class FunctionLowering {
     branch(binary("!=", Input, InputEnd, "bool", L), CheckOutput, Erase, L);
     label(CheckOutput, L);
     branch(binary("!=", Output, OutputEnd, "bool", L), Store, Append, L);
-    label(Store, L); assign(listValue(Output, false, L), listValue(Input, true, L), L);
+    label(Store, L);
+    const auto Element = Info.Value->getType();
+    assign(listValue(Output, Element, false, L), listValue(Input, Element, true, L), L);
     assign(Input, snapshot(listLink(Input, false, L), L), L);
     assign(Output, snapshot(listLink(Output, false, L), L), L);
     jump(CheckInput, L);
@@ -29470,7 +29475,7 @@ class FunctionLowering {
     jump(AppendCheck, L); label(AppendCheck, L);
     branch(binary("!=", Input, InputEnd, "bool", L), Make, Commit, L);
     label(Make, L);
-    auto Value = address(listValue(Input, true, L), A.Context.IntTy.withConst(), L);
+    auto Value = address(listValue(Input, Element, true, L), Element.withConst(), L);
     auto Node = listCreateNode(Value, Info, L);
     assign(listLink(Node, true, L), Last, L);
     branch(cast(First, "bool", L), Link, SetFirst, L);
@@ -29487,7 +29492,7 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
-  Expression compareListOwners(Expression Left, Expression Right, bool Ordered, bool Invert, SourceLocation L) {
+  Expression compareListOwners(Expression Left, Expression Right, QualType Element, bool Ordered, bool Invert, SourceLocation L) {
     auto LEnd = snapshot(listSentinel(Left, L, true), L);
     auto REnd = snapshot(listSentinel(Right, L, true), L);
     auto LNode = temporary("ptr:void", L), RNode = temporary("ptr:void", L);
@@ -29507,7 +29512,7 @@ class FunctionLowering {
     label(CheckRight, L);
     branch(binary("!=", RNode, REnd, "bool", L), Compare, Done, L);
     label(Compare, L);
-    const auto LValue = listValue(LNode, true, L), RValue = listValue(RNode, true, L);
+    const auto LValue = listValue(LNode, Element, true, L), RValue = listValue(RNode, Element, true, L);
     branch(binary("==", LValue, RValue, "bool", L), Advance, Different, L);
     label(Different, L);
     if (Ordered) assign(Result, binary("<", LValue, RValue, "bool", L), L);
@@ -29553,8 +29558,11 @@ class FunctionLowering {
       const bool Swap = Operation == UtilityListOperation::OwnerGreater || Operation == UtilityListOperation::OwnerLessEqual;
       const bool Invert = Operation == UtilityListOperation::OwnerNotEqual ||
           Operation == UtilityListOperation::OwnerLessEqual || Operation == UtilityListOperation::OwnerGreaterEqual;
+      const auto Type = Proof->Function->getParamDecl(0)->getType()->getPointeeType();
+      const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context);
+      if (!Owner) reject(L, "list comparison", "The compared integer owner layout is required.");
       return compareListOwners(dereference(Operands[Swap ? 1 : 0], L), dereference(Operands[Swap ? 0 : 1], L),
-          Ordered, Invert, L);
+          Owner->Node.Value->getType(), Ordered, Invert, L);
     }
     if (!Receiver && Operation == UtilityListOperation::Swap) {
       listSwapValueStorage(dereference(Operands[0], L), dereference(Operands[1], L), L);
@@ -29570,11 +29578,11 @@ class FunctionLowering {
         return Place;
       }
       auto Node = snapshot(listIteratorMember(Place, L), L);
-      if (Operation == UtilityListOperation::IteratorDereference) return listValue(Node, Iterator->Const, L);
+      const auto Element = Iterator->Node.Value->getType();
+      if (Operation == UtilityListOperation::IteratorDereference) return listValue(Node, Element, Iterator->Const, L);
       if (Operation == UtilityListOperation::IteratorArrow)
-        return cast(address(listValue(Node, Iterator->Const, L),
-            Iterator->Const ? A.Context.IntTy.withConst() : A.Context.IntTy, L),
-            Iterator->Const ? "cptr:int" : "ptr:int", L);
+        return cast(address(listValue(Node, Element, Iterator->Const, L),
+            Iterator->Const ? Element.withConst() : Element, L), type(Method->getReturnType(), L), L);
       const bool PreIncrement = Operation == UtilityListOperation::IteratorPreIncrement;
       const bool PostIncrement = Operation == UtilityListOperation::IteratorPostIncrement;
       const bool PreDecrement = Operation == UtilityListOperation::IteratorPreDecrement;
@@ -29589,6 +29597,7 @@ class FunctionLowering {
     }
     const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Method->getParent(), A.Context);
     if (!Owner) reject(L, "list owner", "The selected integer owner layout is required.");
+    const auto Element = Owner->Node.Value->getType();
     if (Operation == UtilityListOperation::CopyAssign || Operation == UtilityListOperation::MoveAssign) {
       auto Source = dereference(Operands[0], L);
       if (Operation == UtilityListOperation::CopyAssign) {
@@ -29625,11 +29634,11 @@ class FunctionLowering {
       return Expression{};
     }
     if (Operation == UtilityListOperation::Merge) {
-      listMergeValueStorage(Place, dereference(Operands[0], L), L);
+      listMergeValueStorage(Place, dereference(Operands[0], L), Element, L);
       return Expression{};
     }
     if (Operation == UtilityListOperation::Sort) {
-      listSortValueStorage(Place, L);
+      listSortValueStorage(Place, Element, L);
       return Expression{};
     }
     if (Operation == UtilityListOperation::Swap) {
@@ -29644,7 +29653,7 @@ class FunctionLowering {
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L, Method->isConst()), L), L);
     if (Operation == UtilityListOperation::Front || Operation == UtilityListOperation::Back)
       return listValue(snapshot(listMember(Place,
-          Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Method->isConst(), L);
+          Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Element, Method->isConst(), L);
     if (Operation == UtilityListOperation::Reverse) {
       reverseListStorage(Place, L);
       return Expression{};
@@ -42236,6 +42245,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "list construction", "The selected integer owner layout is required.");
+      const auto Element = Owner->Node.Value->getType();
       initializeListStorage(Place, L);
       if (*Kind == UtilityListConstruction::Copy || *Kind == UtilityListConstruction::Move) {
         auto Source = dereference(Operands[0], L);
@@ -42246,7 +42256,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       if (*Kind != UtilityListConstruction::InitializerList) return;
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
           C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-      if (!List) reject(L, "list initializer", "The pinned integer initializer-list carrier is required.");
+      if (!List || !A.Context.hasSameType(List->ElementType, Element))
+        reject(L, "list initializer", "The matching pinned integer initializer-list carrier is required.");
       auto Input = snapshot(fieldStorage(dereference(Operands[0], L), List->Begin, L), L);
       auto Count = snapshot(fieldStorage(dereference(Operands[0], L), List->Size, L), L);
       const auto Size = type(A.Context.getSizeType(), L);
@@ -42256,8 +42267,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       jump(Check, L); label(Check, L);
       branch(binary("<", Position, Count, "bool", L), Append, Done, L);
       label(Append, L);
-      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), "int", L),
-          A.Context.IntTy.withConst(), L);
+      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), type(Element, L), L),
+          Element.withConst(), L);
       auto Node = listCreateNode(Value, Owner->Node, L);
       listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
       assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
