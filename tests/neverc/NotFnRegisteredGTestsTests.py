@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.bitset_local_owners_registered = cls.registered
+        cls.bitset_local_owners_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.bitset_local_owners_original = cls.adapter.restore_original_gtests(cls.bitset_local_owners_registered,
+                                                                        cls.bitset_local_owners_suffix)
+        cls.registered = cls.adapter.restore_bitset_local_owners_history(cls.bitset_local_owners_registered)
         cls.variant_and_bitset_receivers_registered = cls.registered
         cls.variant_and_bitset_receivers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.variant_and_bitset_receivers_original = cls.adapter.restore_original_gtests(cls.variant_and_bitset_receivers_registered,
@@ -3797,6 +3802,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_variant_and_bitset_receivers_history(self.variant_and_bitset_receivers_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.variant_and_bitset_receivers_registered, self.variant_and_bitset_receivers_suffix + b' ')
+
+
+    def test_bitset_local_owners_retains_published_bodies(self):
+        self.assertEqual(self.bitset_local_owners_original + self.bitset_local_owners_suffix, self.bitset_local_owners_registered)
+        self.assertEqual(self.adapter.restore_bitset_local_owners_history(self.bitset_local_owners_original),
+                         self.variant_and_bitset_receivers_original)
+        output, evidence = self.extractor.extract(self.bitset_local_owners_original, ['TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseLocalRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionStaticConstantFitsUnsignedLongRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionSelectsStaticConstantRunAtBothOptimizations', 'TranslateTest.CoreV2BitsetUnsignedConversionCopyAfterMutationGuardRejected', 'TranslateTest.CoreV2BitsetUnsignedConversionCopyFromAliasedOwnerGuardRejected', 'TranslateTest.CoreV2BitsetUnsignedConversionDynamicStaticInitializationGuardRejected', 'TranslateTest.CoreV2BitsetUnsignedConversionMutableStaticBindingGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9072)
+        self.assertEqual(evidence['selected_count'], 8)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'bitset-unsigned-conversion-copies-single-use-local', output)
+        self.assertIn(b'bitset-unsigned-conversion-dynamic-static-initialization-guard', output)
+
+    def test_bitset_local_owners_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_bitset_local_owners_history(self.bitset_local_owners_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.bitset_local_owners_registered, self.bitset_local_owners_suffix + b' ')
 
 
 if __name__ == '__main__':

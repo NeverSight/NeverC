@@ -380008,15 +380008,22 @@ int main(){auto* b=new std::bitset<129>{33};auto v=b->to_ullong();delete b;retur
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {
+TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {
   const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");
+  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");
   writeFile(Source, R"r19bitwidechar(#include <bitset>
 int main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}
 )r19bitwidechar");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardStorageRejected) {
@@ -380487,16 +380494,23 @@ int main(){const Bits& bits=Bits(2);return bits.to_ullong()!=2;}
   }
 }
 
-TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardStaticConstRejected) {
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionAcceptsStaticConstant) {
   const auto Source = tmpFile("bitset-const-local-guard-static-const.cpp");
   writeFile(Source, R"r19bitlocal(#include <bitset>
 using Bits = std::bitset<129>;
 int main(){static const Bits bits(2);return bits.to_ullong()!=2;}
 )r19bitlocal");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("bitset-const-local-guard-static-const.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-const-local-guard-static-const" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConstParameterRejected) {
@@ -380512,16 +380526,23 @@ int main(){const Bits bits(2);return convert(bits)!=2;}
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardCopyInitializedRejected) {
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionCopiesSingleUseLocal) {
   const auto Source = tmpFile("bitset-const-local-guard-copy-initialized.cpp");
   writeFile(Source, R"r19bitlocal(#include <bitset>
 using Bits = std::bitset<129>;
 int main(){Bits a(3);const Bits b=a;return b.to_ullong()!=3;}
 )r19bitlocal");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("bitset-const-local-guard-copy-initialized.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-const-local-guard-copy-initialized" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2BitsetConstLocalGuardConstMemberRejected) {
@@ -405820,6 +405841,168 @@ using Value = std::variant<int>;
 Value&& produce(Value& value) { return static_cast<Value&&>(value); }
 int read(int value) { return value; }
 int test(Value& item) { return std::visit(read, produce(item)); }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionCopiesSingleUseLocalRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-copies-single-use-local.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+int main() {
+  using Bits = std::bitset<129>;
+  Bits input(0x80000000ULL);
+  const Bits first(input);
+  const Bits second(first);
+  return second.to_ulong() != 0x80000000UL;
+}
+)r19containers");
+  const auto Output = tmpFile("bitset-unsigned-conversion-copies-single-use-local.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-unsigned-conversion-copies-single-use-local" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionCopiesSingleUseDefaultRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-copies-single-use-default.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+int main() {
+  using Bits = std::bitset<129>;
+  Bits input;
+  const Bits copy = input;
+  return copy.to_ullong() != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("bitset-unsigned-conversion-copies-single-use-default.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-unsigned-conversion-copies-single-use-default" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionCopyAfterMutationGuardRejected) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-copy-after-mutation-guard.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+int main() {
+  using Bits = std::bitset<129>;
+  Bits input(4);
+  input.set(90);
+  const Bits copy = input;
+  return copy.to_ullong() != 4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionCopyFromAliasedOwnerGuardRejected) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-copy-from-aliased-owner-guard.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+int main() {
+  using Bits = std::bitset<129>;
+  Bits input(4);
+  Bits* alias = &input;
+  alias->set(90);
+  const Bits copy = input;
+  return copy.to_ullong() != 4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionStaticConstantFitsUnsignedLongRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-static-constant-fits-unsigned-long.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+int main() {
+  using Bits = std::bitset<129>;
+  static const Bits payload(0x80000000ULL);
+  return payload.to_ulong() != 0x80000000UL;
+}
+)r19containers");
+  const auto Output = tmpFile("bitset-unsigned-conversion-static-constant-fits-unsigned-long.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-unsigned-conversion-static-constant-fits-unsigned-long" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionSelectsStaticConstantRunAtBothOptimizations) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-selects-static-constant.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+bool select(int& calls) { return ++calls == 1; }
+int main() {
+  using Bits = std::bitset<129>;
+  static const Bits first(6), second(7);
+  int calls = 0;
+  unsigned long long left = (select(calls) ? first : second).to_ullong();
+  unsigned long long right = (select(calls) ? first : second).to_ullong();
+  return calls != 2 || left != 6 || right != 7;
+}
+)r19containers");
+  const auto Output = tmpFile("bitset-unsigned-conversion-selects-static-constant.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("bitset-unsigned-conversion-selects-static-constant" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionDynamicStaticInitializationGuardRejected) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-dynamic-static-initialization-guard.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+unsigned long long initial_value() { return 1; }
+int main() {
+  using Bits = std::bitset<129>;
+  static const Bits payload(initial_value());
+  return payload.to_ullong() != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2BitsetUnsignedConversionMutableStaticBindingGuardRejected) {
+  const auto Source = tmpFile("bitset-unsigned-conversion-mutable-static-binding-guard.cpp");
+  writeFile(Source, R"r19containers(#include <bitset>
+int main() {
+  using Bits = std::bitset<129>;
+  static Bits payload(1);
+  payload.set(90);
+  return payload.to_ullong() != 1;
+}
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;

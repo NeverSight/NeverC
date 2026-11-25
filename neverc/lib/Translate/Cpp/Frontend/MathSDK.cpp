@@ -52928,13 +52928,13 @@ static std::optional<UtilityBitsetCall> bitsetStringResultCall(
   return UtilityBitsetCall{UtilityOperation::BitsetToString, 0, Receiver, 0, M->getParent()};
 }
 
-static bool bitsetOnlyLocalReferenceUse(const State &S, const SourceManager &SM,
-    const VarDecl *Reference, const DeclRefExpr *Use) {
-  const auto *Owner = dyn_cast<FunctionDecl>(Reference->getDeclContext());
+static bool bitsetOnlyLocalUse(const State &S, const SourceManager &SM,
+    const VarDecl *Variable, const DeclRefExpr *Use) {
+  const auto *Owner = dyn_cast<FunctionDecl>(Variable->getDeclContext());
   const auto *Body = Owner ? Owner->getBody() : nullptr;
   if (!Body || !S.owns(SM, Owner->getLocation()))
     return false;
-  const auto *Identity = Reference->getCanonicalDecl();
+  const auto *Identity = Variable->getCanonicalDecl();
   unsigned Nodes = 0;
   bool Found = false;
   const auto Check = [&](auto &&Self, const Stmt *Statement, unsigned Depth) -> bool {
@@ -52962,7 +52962,7 @@ static bool bitsetOnlyLocalReferenceUse(const State &S, const SourceManager &SM,
 
 static bool bitsetUnsignedSourceFits(const State &S, const SourceManager &SM,
                                      const Expr *Receiver, QualType Result, const ASTContext &Context,
-                                     unsigned Depth, unsigned &Nodes) {
+                                     unsigned Depth, unsigned &Nodes, bool CopySource = false) {
   if (!Receiver || Depth >= 16 || ++Nodes > 64)
     return false;
   const Expr *Value = Receiver->IgnoreParenImpCasts();
@@ -52975,15 +52975,25 @@ static bool bitsetUnsignedSourceFits(const State &S, const SourceManager &SM,
   if (const auto *Reference = dyn_cast<DeclRefExpr>(Value)) {
     const auto *Variable = dyn_cast<VarDecl>(Reference->getDecl());
     if (!Variable || isa<ParmVarDecl>(Variable) || Variable->isImplicit() ||
-        !Variable->hasLocalStorage() || !Variable->hasInit() || !S.owns(SM, Variable->getLocation()))
+        !Variable->hasInit() || !S.owns(SM, Variable->getLocation()))
       return false;
     const auto Binding = Variable->getType();
     const auto Type = Binding.getNonReferenceType();
-    if (Binding->isRValueReferenceType() || !Type.isConstQualified() || Type.isVolatileQualified() ||
+    if (!Variable->hasLocalStorage() &&
+        !(Variable->isStaticLocal() && Variable->getTLSKind() == VarDecl::TLS_None &&
+          !Binding->isReferenceType() && Type.isConstQualified() &&
+          Variable->hasConstantInitialization()))
+      return false;
+    if (Binding->isRValueReferenceType() || Type.isVolatileQualified() ||
         Type.isRestrictQualified() || Type.getAddressSpace() != LangAS::Default)
       return false;
     const auto Bitset = approvedUtilityBitsetRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
     if (!Bitset || (Bitset->Storage && Bitset->Storage->isMutable()))
+      return false;
+    // Only the operand of the authenticated copy may be a mutable owner.
+    // A single direct use rules out a mutation or a surviving alias.
+    if (!Type.isConstQualified() && (!CopySource || Binding->isReferenceType() ||
+                                     !bitsetOnlyLocalUse(S, SM, Variable, Reference)))
       return false;
     if (Binding->isLValueReferenceType()) {
       // Keep the materialization until its extending declaration and duration
@@ -52998,7 +53008,7 @@ static bool bitsetUnsignedSourceFits(const State &S, const SourceManager &SM,
       if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Init)) {
         if (Temporary->getExtendingDecl() != Variable || Temporary->getStorageDuration() != SD_Automatic ||
             !Context.hasSameUnqualifiedType(Temporary->getType(), Type) ||
-            (!Temporary->getType().isConstQualified() && !bitsetOnlyLocalReferenceUse(S, SM, Variable, Reference)))
+            (!Temporary->getType().isConstQualified() && !bitsetOnlyLocalUse(S, SM, Variable, Reference)))
           return false;
       } else if (!isa<DeclRefExpr, ConditionalOperator>(Init)) {
         return false;
@@ -53037,7 +53047,8 @@ static bool bitsetUnsignedSourceFits(const State &S, const SourceManager &SM,
   if (Construction == UtilityBitsetConstruction::Default)
     return true;
   if (Construction == UtilityBitsetConstruction::Copy)
-    return bitsetUnsignedSourceFits(S, SM, Constructor->getArg(0), Result, Context, Depth + 1, Nodes);
+    return bitsetUnsignedSourceFits(S, SM, Constructor->getArg(0), Result, Context, Depth + 1, Nodes,
+                                   /*CopySource=*/true);
   if (Construction != UtilityBitsetConstruction::UnsignedValue)
     return false;
   // The pinned constructor clears all bits above the converted unsigned operand.

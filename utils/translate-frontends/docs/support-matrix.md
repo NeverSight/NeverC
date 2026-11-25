@@ -1046,3 +1046,10 @@ The combined compiler passes 7,032 source requests across six 64-bit targets
 and 1276 formal tests on Linux x86-64. All 856 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Automatic and static bitset initialization
+
+The combined compiler passes 7,080 source requests across six 64-bit targets
+and 1284 formal tests on Linux x86-64. All 863 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

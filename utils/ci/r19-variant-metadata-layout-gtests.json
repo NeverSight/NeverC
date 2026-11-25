@@ -369,5 +369,5 @@
     "variant-scalar-runtime": "07ea60a20ba37e38c9239712660b6c63e9c4c8598061d0af9c36008b349c6e29"
   },
   "native_reference_authentication_sha256": "228481d1072ff54bcc8cbe9794830d85ef743a6b092c0b4af92f2b4358fe870b",
-  "source_proof_sha256": "9cb6bafffe5978d749c1e2531e122de008a3906892056a005cf8b3bb6b0b01af"
+  "source_proof_sha256": "cb127107a48c25cccba710ec9f44d16c8365de53d792325d2f841456370a525b"
 }

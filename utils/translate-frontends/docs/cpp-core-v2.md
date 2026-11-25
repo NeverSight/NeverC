@@ -18574,3 +18574,10 @@ Checked wide bitset conversion follows const aliases and a conditional
 receiver through the selected constructor and its storage duration.
 Value-returning visitors with value parameters can dispatch on borrowed
 variant xvalues from an exact same-type reference cast or pinned std::move.
+
+## Automatic and static bitset initialization
+
+Wide bitset conversion can follow a checked copy from a single-use
+automatic object and a const local static object with constant
+initialization. The source proof uses the selected constructor, exact
+object identity, and storage duration.
