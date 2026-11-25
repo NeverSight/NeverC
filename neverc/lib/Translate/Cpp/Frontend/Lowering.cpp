@@ -27149,6 +27149,27 @@ class FunctionLowering {
     assign(forwardListMember(Place, false, L), std::move(Head), L);
     assign(forwardListMember(Source, false, L), A.zero(A.Context.VoidPtrTy, L), L);
   }
+  void swapForwardListStorage(Expression Left, Expression Right, SourceLocation L) {
+    auto Head = snapshot(forwardListMember(Left, false, L), L);
+    assign(forwardListMember(Left, false, L), forwardListMember(Right, false, L), L);
+    assign(forwardListMember(Right, false, L), std::move(Head), L);
+  }
+  void reverseForwardListStorage(Expression Place, SourceLocation L) {
+    auto Current = temporary("ptr:void", L);
+    auto Head = temporary("ptr:void", L);
+    assign(Current, forwardListMember(Place, false, L), L);
+    initializeZero(Head, A.Context.VoidPtrTy, L);
+    const auto Check = labelName(), Reverse = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Current, "bool", L), Reverse, Done, L);
+    label(Reverse, L);
+    auto Next = snapshot(forwardListNext(Current, L), L);
+    assign(forwardListNext(Current, L), Head, L);
+    assign(Head, Current, L);
+    assign(Current, Next, L);
+    jump(Check, L); label(Done, L);
+    assign(forwardListMember(Place, false, L), Head, L);
+  }
   Expression utilityForwardListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityForwardListCall(A.S, A.Sources, Call, A.Context);
@@ -27175,6 +27196,10 @@ class FunctionLowering {
       auto Right = forwardListMember(dereference(Operands[1], L), true, L);
       return binary(Operation == UtilityForwardListOperation::IteratorEqual ? "==" : "!=",
           std::move(Left), std::move(Right), "bool", L);
+    }
+    if (Operation == UtilityForwardListOperation::FreeSwap) {
+      swapForwardListStorage(dereference(Operands[0], L), dereference(Operands[1], L), L);
+      return Expression{};
     }
     if (!Receiver) reject(L, "forward-list receiver", "A checked receiver is required.");
     auto Place = dereference(*Receiver, L);
@@ -27226,6 +27251,14 @@ class FunctionLowering {
     }
     if (Operation == UtilityForwardListOperation::Front)
       return forwardListValue(snapshot(forwardListMember(Place, false, L), L), Method->isConst(), L);
+    if (Operation == UtilityForwardListOperation::Reverse) {
+      reverseForwardListStorage(Place, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Swap) {
+      swapForwardListStorage(Place, dereference(Operands.front(), L), L);
+      return Expression{};
+    }
     if (Operation == UtilityForwardListOperation::Clear) {
       destroyForwardListStorage(Place, Owner->Node, L);
       return Expression{};

@@ -54414,10 +54414,14 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
         return UtilityForwardListOperation::Front;
       if (!M->isConst() && M->getReturnType()->isVoidType()) {
         if (Name == "clear") return UtilityForwardListOperation::Clear;
+        if (Name == "reverse") return UtilityForwardListOperation::Reverse;
         if (Name == "pop_front") return UtilityForwardListOperation::PopFront;
       }
     }
     if (M->isConst()) return std::nullopt;
+    if (Name == "swap" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
+        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(OwnerType)))
+      return UtilityForwardListOperation::Swap;
     if (Name == "push_front" && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
         forwardListIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
       return UtilityForwardListOperation::PushFront;
@@ -54763,6 +54767,33 @@ bool forwardListOperandTypes(const CallExpr *Call, const FunctionDecl *F,
   return true;
 }
 
+bool forwardListFreeSwap(const State &S, const SourceManager &SM,
+    const CallExpr *Call, const FunctionDecl *F, const ASTContext &Context) {
+  if (!F->getIdentifier() || F->getName() != "swap" || isa<CXXMethodDecl>(F) ||
+      !forwardListStd(F->getDeclContext()) || !F->getPrimaryTemplate() ||
+      F->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      !F->getReturnType()->isVoidType() || F->getNumParams() != 2 ||
+      !forwardListFunctionDeclarations(S, SM, F) || !forwardListOperandTypes(Call, F, 0, Context) ||
+      !Call->getCallee() || !S.owns(SM, Call->getCallee()->getExprLoc()))
+    return false;
+  const auto Left = F->getParamDecl(0)->getType();
+  if (!Left->isLValueReferenceType() || Left.getNonReferenceType().hasQualifiers() ||
+      !Context.hasSameType(Left, F->getParamDecl(1)->getType()))
+    return false;
+  const auto Owner = approvedUtilityForwardListRecord(S, SM, forwardListRecordType(Left.getNonReferenceType()), Context);
+  const auto *Definition = F->getDefinition();
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Delegate = Body && Body->size() == 1 ? dyn_cast<CXXMemberCallExpr>(Body->body_front()) : nullptr;
+  const auto *Selected = Delegate ? Delegate->getMethodDecl() : nullptr;
+  return Owner && Selected &&
+      forwardListMethodSignature(S, SM, Selected, Context) == UtilityForwardListOperation::Swap &&
+      Selected->getParent()->getCanonicalDecl() == Owner->Record->getCanonicalDecl() &&
+      Delegate->getNumArgs() == 1 &&
+      variantParameter(Delegate->getImplicitObjectArgument(), Definition->getParamDecl(0)) &&
+      variantParameter(Delegate->getArg(0), Definition->getParamDecl(1)) &&
+      forwardListSourceGraph(S, SM, F, Context, Owner->Node);
+}
+
 const CallExpr *forwardListMoveCall(const State &S, const SourceManager &SM,
     const Expr *Input, const ASTContext &Context) {
   const auto *Call = Input ? dyn_cast<CallExpr>(Input->IgnoreParenImpCasts()) : nullptr;
@@ -54911,6 +54942,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       Call->isInstantiationDependent() || !S.owns(SM, Call->getExprLoc())) return std::nullopt;
   const auto *Function = Call->getDirectCallee();
   if (!Function) return std::nullopt;
+  if (forwardListFreeSwap(S, SM, Call, Function, Context))
+    return UtilityForwardListCall{UtilityForwardListOperation::FreeSwap, nullptr, Function, 0};
   if (const auto Comparison = forwardListComparisonSignature(S, SM, Function, Context)) {
     const auto T = Function->getParamDecl(0)->getType()->getPointeeType();
     const auto Node = forwardListReceiverNode(S, SM, forwardListRecordType(T), Context);
