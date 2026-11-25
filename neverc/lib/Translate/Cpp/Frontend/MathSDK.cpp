@@ -54576,19 +54576,20 @@ bool forwardListGetAllocatorBody(const State &S, const SourceManager &SM,
   return forwardListAllocatorMember(S, SM, Method->getParent(), Node.Record, Construction->getArg(0), Context);
 }
 
-bool forwardListFilterPointer(QualType Type, unsigned Arity, const ASTContext &Context) {
+bool forwardListCallbackPointer(QualType Type, QualType Element, unsigned Arity,
+                                const ASTContext &Context) {
   const auto *Prototype = Type->isFunctionPointerType()
       ? Type->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
   if (!Prototype || Prototype->isVariadic() || Prototype->getCallConv() != CC_C ||
       Prototype->hasExtParameterInfos() || Prototype->getNumParams() != Arity ||
       !Context.hasSameType(Prototype->getReturnType(), Context.BoolTy)) return false;
   for (auto Parameter : Prototype->param_types())
-    if (!Context.hasSameType(Parameter, Context.IntTy)) return false;
+    if (!Context.hasSameType(Parameter, Element)) return false;
   return true;
 }
 
 std::optional<UtilityForwardListOperation> forwardListPredicateSignature(
-    const CXXMethodDecl *Method, const ASTContext &Context) {
+    const CXXMethodDecl *Method, QualType Element, const ASTContext &Context) {
   if (!Method->getIdentifier() || Method->isConst() || !Method->getReturnType()->isVoidType() ||
       Method->getNumParams() != 1 || Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
     return std::nullopt;
@@ -54598,11 +54599,12 @@ std::optional<UtilityForwardListOperation> forwardListPredicateSignature(
   const auto *Arguments = Method->getTemplateSpecializationArgs();
   if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
-      !forwardListFilterPointer(Type, Remove ? 1 : 2, Context)) return std::nullopt;
+      !forwardListCallbackPointer(Type, Element, Remove ? 1 : 2, Context)) return std::nullopt;
   return Remove ? UtilityForwardListOperation::RemoveIf : UtilityForwardListOperation::UniqueWithPredicate;
 }
 
-bool forwardListSDKFilterCall(const CallExpr *Call, const FunctionDecl *Root, const ASTContext &Context) {
+bool forwardListSDKFilterCall(const CallExpr *Call, const FunctionDecl *Root, QualType Element,
+                              const ASTContext &Context) {
   if (Call->getDirectCallee() || !Root || Root->getNumParams() != 1 ||
       !isa<CXXMethodDecl>(Root) || !Root->getIdentifier()) return false;
   const auto Name = Root->getName();
@@ -54611,26 +54613,14 @@ bool forwardListSDKFilterCall(const CallExpr *Call, const FunctionDecl *Root, co
   if (!Arity || Call->getNumArgs() != Arity || !Definition ||
       !Context.hasSameType(Call->getType(), Context.BoolTy) ||
       !variantParameter(Call->getCallee(), Definition->getParamDecl(0)) ||
-      !forwardListFilterPointer(Definition->getParamDecl(0)->getType(), Arity, Context)) return false;
+      !forwardListCallbackPointer(Definition->getParamDecl(0)->getType(), Element, Arity, Context)) return false;
   for (const auto *Argument : Call->arguments())
-    if (!Context.hasSameType(Argument->getType(), Context.IntTy)) return false;
+    if (!Context.hasSameType(Argument->getType(), Element)) return false;
   return true;
 }
 
-const FunctionProtoType *forwardListOrderPrototype(QualType Type, const ASTContext &Context) {
-  const auto Pointer = Type.getNonReferenceType();
-  const auto *Prototype = Pointer->isFunctionPointerType()
-      ? Pointer->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
-  if (!Prototype || Prototype->isVariadic() || Prototype->getCallConv() != CC_C ||
-      Prototype->hasExtParameterInfos() || Prototype->getNumParams() != 2 ||
-      !Context.hasSameType(Prototype->getReturnType(), Context.BoolTy) ||
-      !Context.hasSameType(Prototype->getParamType(0), Context.IntTy) ||
-      !Context.hasSameType(Prototype->getParamType(1), Context.IntTy)) return nullptr;
-  return Prototype;
-}
-
 std::optional<UtilityForwardListOperation> forwardListCustomOrderSignature(
-    const CXXMethodDecl *Method, QualType Owner, const ASTContext &Context) {
+    const CXXMethodDecl *Method, QualType Owner, QualType Element, const ASTContext &Context) {
   if (!Method->getIdentifier() || Method->isConst() || !Method->getReturnType()->isVoidType() ||
       Method->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return std::nullopt;
   const auto *Arguments = Method->getTemplateSpecializationArgs();
@@ -54645,15 +54635,15 @@ std::optional<UtilityForwardListOperation> forwardListCustomOrderSignature(
         !Context.hasSameType(Source, Context.getRValueReferenceType(Owner))) return std::nullopt;
   }
   const auto Callback = Method->getParamDecl(Merge ? 1 : 0)->getType();
-  if (Callback->isReferenceType() || !forwardListOrderPrototype(Callback, Context) ||
+  if (Callback->isReferenceType() || !forwardListCallbackPointer(Callback, Element, 2, Context) ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Callback)) return std::nullopt;
   return Merge ? UtilityForwardListOperation::MergeWithOrder : UtilityForwardListOperation::SortWithOrder;
 }
 
 bool forwardListDirectOrder(const State &S, const SourceManager &SM, const Expr *Argument,
-                            const ASTContext &Context) {
+                            QualType Element, const ASTContext &Context) {
   if (!Argument || !S.owns(SM, Argument->getExprLoc()) ||
-      !forwardListOrderPrototype(Argument->getType(), Context)) return false;
+      !forwardListCallbackPointer(Argument->getType().getNonReferenceType(), Element, 2, Context)) return false;
   const Expr *Target = Argument->IgnoreParenImpCasts();
   if (const auto *Address = dyn_cast<UnaryOperator>(Target); Address && Address->getOpcode() == UO_AddrOf)
     Target = Address->getSubExpr()->IgnoreParenImpCasts();
@@ -54674,7 +54664,7 @@ bool forwardListDirectOrder(const State &S, const SourceManager &SM, const Expr 
 }
 
 bool forwardListSDKOrderCall(const State &S, const SourceManager &SM, const CallExpr *Call,
-                             const ASTContext &Context) {
+                             QualType Element, const ASTContext &Context) {
   if (Call->getDirectCallee() || Call->getNumArgs() != 2) return false;
   const auto *Reference = dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
   const auto *Parameter = Reference ? dyn_cast<ParmVarDecl>(Reference->getDecl()) : nullptr;
@@ -54683,10 +54673,10 @@ bool forwardListSDKOrderCall(const State &S, const SourceManager &SM, const Call
       Method->getParamDecl(2) != Parameter || !Parameter->getType()->isLValueReferenceType() ||
       (Method->getName() != "__merge" && Method->getName() != "__sort") ||
       !forwardListFunctionDeclarations(S, SM, Method) ||
-      !forwardListOrderPrototype(Parameter->getType(), Context)) return false;
+      !forwardListCallbackPointer(Parameter->getType().getNonReferenceType(), Element, 2, Context)) return false;
   return Context.hasSameType(Call->getType(), Context.BoolTy) &&
-         Context.hasSameType(Call->getArg(0)->getType(), Context.IntTy) &&
-         Context.hasSameType(Call->getArg(1)->getType(), Context.IntTy);
+         Context.hasSameType(Call->getArg(0)->getType(), Element) &&
+         Context.hasSameType(Call->getArg(1)->getType(), Element);
 }
 
 std::optional<UtilityForwardListOperation> forwardListMethodSignature(
@@ -54696,10 +54686,10 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       !forwardListFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, M->getParent(), Context)) {
     const auto Element = Owner->Node.Value->getType();
-    if (M->getPrimaryTemplate() && Context.hasSameType(Element, Context.IntTy)) {
-      if (const auto Order = forwardListCustomOrderSignature(M, Context.getRecordType(Owner->Record), Context))
+    if (M->getPrimaryTemplate()) {
+      if (const auto Order = forwardListCustomOrderSignature(M, Context.getRecordType(Owner->Record), Element, Context))
         return Order;
-      if (const auto Filter = forwardListPredicateSignature(M, Context)) return Filter;
+      if (const auto Filter = forwardListPredicateSignature(M, Element, Context)) return Filter;
     }
     if (const auto Insert = forwardListInsertRangeSignature(S, SM, M, *Owner, Context))
       return Insert;
@@ -55138,8 +55128,8 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!forwardListScalarDestruction(S, SM, Call, Context, Owner) &&
-          !(DirectOrder && forwardListSDKOrderCall(S, SM, Call, Context)) &&
-          !(DirectFilter && forwardListSDKFilterCall(Call, Root, Context)) &&
+          !(DirectOrder && forwardListSDKOrderCall(S, SM, Call, Owner.Value->getType(), Context)) &&
+          !(DirectFilter && forwardListSDKFilterCall(Call, Root, Owner.Value->getType(), Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
@@ -55934,7 +55924,7 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   const bool DirectOrder = *Operation == UtilityForwardListOperation::MergeWithOrder ||
                            *Operation == UtilityForwardListOperation::SortWithOrder;
   if (DirectOrder && (Call->getNumArgs() != Method->getNumParams() ||
-      !forwardListDirectOrder(S, SM, Call->getArg(Call->getNumArgs() - 1), Context))) return std::nullopt;
+      !forwardListDirectOrder(S, SM, Call->getArg(Call->getNumArgs() - 1), Node->Value->getType(), Context))) return std::nullopt;
   const bool DirectFilter = *Operation == UtilityForwardListOperation::RemoveIf ||
                             *Operation == UtilityForwardListOperation::UniqueWithPredicate;
   if (!forwardListSourceGraph(S, SM, Method, Context, *Node, DirectOrder, DirectFilter)) return std::nullopt;
