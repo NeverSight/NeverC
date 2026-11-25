@@ -161,5 +161,5 @@
     "any-mutable-reference-numeric": "f5af51d5c778c2e0e49b9d5a0efd34ab654fde1d7001773a3a4fbfe72f9eef0b"
   },
   "native_reference_authentication_sha256": "12370c92b69bd49dbc319577d416e62b88ff86fc23f5501774afe1b61c35342f",
-  "source_proof_sha256": "351ea3f24d0f47273b3afdccef354e2b16e72f7884498d4a4792fed3304f7884"
+  "source_proof_sha256": "4418e08c490db8e328b3fa65694870af607d9d08d34ca56a39a55127c2aa1ed7"
 }

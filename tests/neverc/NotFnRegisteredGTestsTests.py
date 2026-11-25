@@ -43,6 +43,16 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.forward_list_splice_erase_and_emplace_registered = cls.registered
+        cls.forward_list_splice_erase_and_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_splice_erase_and_emplace_original = cls.adapter.restore_original_gtests(cls.forward_list_splice_erase_and_emplace_registered,
+                                                                        cls.forward_list_splice_erase_and_emplace_suffix)
+        cls.registered = cls.adapter.restore_forward_list_splice_erase_and_emplace_history(cls.forward_list_splice_erase_and_emplace_registered)
+        cls.forward_list_copy_assignment_reverse_and_swap_registered = cls.registered
+        cls.forward_list_copy_assignment_reverse_and_swap_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_copy_assignment_reverse_and_swap_original = cls.adapter.restore_original_gtests(cls.forward_list_copy_assignment_reverse_and_swap_registered,
+                                                                        cls.forward_list_copy_assignment_reverse_and_swap_suffix)
+        cls.registered = cls.adapter.restore_forward_list_copy_assignment_reverse_and_swap_history(cls.forward_list_copy_assignment_reverse_and_swap_registered)
         cls.forward_list_owner_assignment_and_copy_registered = cls.registered
         cls.forward_list_owner_assignment_and_copy_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.forward_list_owner_assignment_and_copy_original = cls.adapter.restore_original_gtests(cls.forward_list_owner_assignment_and_copy_registered,
@@ -3958,6 +3968,42 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_forward_list_owner_assignment_and_copy_history(self.forward_list_owner_assignment_and_copy_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.forward_list_owner_assignment_and_copy_registered, self.forward_list_owner_assignment_and_copy_suffix + b' ')
+
+
+    def test_forward_list_copy_assignment_reverse_and_swap_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_copy_assignment_reverse_and_swap_original + self.forward_list_copy_assignment_reverse_and_swap_suffix, self.forward_list_copy_assignment_reverse_and_swap_registered)
+        self.assertEqual(self.adapter.restore_forward_list_copy_assignment_reverse_and_swap_history(self.forward_list_copy_assignment_reverse_and_swap_original),
+                         self.forward_list_owner_assignment_and_copy_original)
+        output, evidence = self.extractor.extract(self.forward_list_copy_assignment_reverse_and_swap_original, ['TranslateTest.CoreV2ForwardListCopyAssignmentReusesNodesAndAppendsRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCopyAssignmentTruncatesAndHandlesSelfRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCopyAssignmentObeysCallOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListReversePreservesNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListReverseEmptyAndSingletonRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMemberSwapKeepsIteratorsAndReceiverSentinelRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListFreeSwapEvaluatesTheSelectedOwnersOnceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCopyAssignmentUnapprovedElementGuardRejected', 'TranslateTest.CoreV2ForwardListReverseOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListFreeSwapSourceAllocatorGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9119)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-copy-assignment-reuses-nodes-and-appends', output)
+        self.assertIn(b'forward-list-free-swap-source-allocator-guard', output)
+
+    def test_forward_list_copy_assignment_reverse_and_swap_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_copy_assignment_reverse_and_swap_history(self.forward_list_copy_assignment_reverse_and_swap_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_copy_assignment_reverse_and_swap_registered, self.forward_list_copy_assignment_reverse_and_swap_suffix + b' ')
+
+
+    def test_forward_list_splice_erase_and_emplace_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_splice_erase_and_emplace_original + self.forward_list_splice_erase_and_emplace_suffix, self.forward_list_splice_erase_and_emplace_registered)
+        self.assertEqual(self.adapter.restore_forward_list_splice_erase_and_emplace_history(self.forward_list_splice_erase_and_emplace_original),
+                         self.forward_list_copy_assignment_reverse_and_swap_original)
+        output, evidence = self.extractor.extract(self.forward_list_splice_erase_and_emplace_original, ['TranslateTest.CoreV2ForwardListSpliceWholeInMiddleKeepsNodeIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceWholeRvalueAppendsWithoutDestroyingSourceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceWholeEmptyEdgesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceSingleNodeOverloadGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceRangeOverloadGuardRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEraseRangePreservesPredecessorAndSuffixRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEraseRangeReleasesAllAndReusesOwnerRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEraseRangeWithAdjacentBoundsIsEmptyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEraseRangeAtHeadRetainsTheLiveTailRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceSingleSameOwnerPreservesOverlapRulesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceRangeSameOwnerSuffixRetainsNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEmplaceFrontDefaultReturnsStoredIntRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEmplaceFrontKeepsAliasedAndConstValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEmplaceAfterZeroAndRvalueReturnExactCursorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSpliceWholeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListEraseRangeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListEraseRangeSourceAllocatorGuardRejected', 'TranslateTest.CoreV2ForwardListSpliceRangeOtherElementGuardRejected', 'TranslateTest.CoreV2ForwardListSpliceSingleSourceAllocatorGuardRejected', 'TranslateTest.CoreV2ForwardListEmplaceConvertedLongGuardRejected', 'TranslateTest.CoreV2ForwardListEmplaceUserConversionGuardRejected', 'TranslateTest.CoreV2ForwardListEmplaceOtherElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9141)
+        self.assertEqual(evidence['selected_count'], 22)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-splice-whole-in-middle-keeps-node-identity', output)
+        self.assertIn(b'forward-list-emplace-user-conversion-guard', output)
+
+    def test_forward_list_splice_erase_and_emplace_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_splice_erase_and_emplace_history(self.forward_list_splice_erase_and_emplace_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_splice_erase_and_emplace_registered, self.forward_list_splice_erase_and_emplace_suffix + b' ')
 
 
 if __name__ == '__main__':

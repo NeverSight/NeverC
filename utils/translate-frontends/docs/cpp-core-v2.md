@@ -18622,3 +18622,17 @@ Default-allocator forward_list<int> move assignment releases the former
 destination chain and transfers the source nodes with their identities.
 Checked copy construction reads the source values in order and creates
 an independent chain. The copy also accepts a const source.
+
+## Forward list copy assignment, reversal, and swaps
+
+Default-allocator forward_list<int> copy assignment reuses the common
+prefix and appends or erases the remaining nodes. Self-assignment
+preserves the list. Reversal and the checked member and free swaps
+relink existing nodes and preserve their addresses.
+
+## Forward list splices, range erasure, and emplacement
+
+The default-allocator forward_list<int> supports whole-list, single-node
+and range splice_after, including the checked same-owner cases. Range
+erase_after keeps its last iterator and unlinks the removed nodes before
+deallocation. Integer emplacement returns the selected element or iterator.
