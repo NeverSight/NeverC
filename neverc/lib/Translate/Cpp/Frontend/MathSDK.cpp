@@ -54833,13 +54833,54 @@ bool forwardListSDKFilterCall(const CallExpr *Call, const FunctionDecl *Root, Qu
   return linkedListFilterArguments(Call, Definition->getParamDecl(0)->getType(), Element, Context);
 }
 
-std::optional<bool> forwardListOrderDirection(const FunctionDecl *Definition) {
+const BinaryOperator *linkedListOrderExpression(const FunctionDecl *Definition) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
   const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
   const auto *Comparison = Return && Return->getRetValue()
       ? dyn_cast<BinaryOperator>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
   if (!Comparison || (Comparison->getOpcode() != BO_LT && Comparison->getOpcode() != BO_GT))
-    return std::nullopt;
+    return nullptr;
+  return Comparison;
+}
+
+bool linkedListNamedRecordOrder(const State &S, const SourceManager &SM, const Expr *Value,
+    QualType Element, const ASTContext &Context) {
+  const auto *Record = Element->getAsCXXRecordDecl();
+  if (!Record || !Value || !S.owns(SM, Value->getExprLoc()) ||
+      !linkedListCallbackPointer(Value->getType(), Element, 2, Context, true))
+    return false;
+  const auto *Prototype = Value->getType()->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Prototype->getParamType(0)->isLValueReferenceType()) return false;
+  const Expr *Target = Value->IgnoreParenImpCasts();
+  if (const auto *Address = dyn_cast<UnaryOperator>(Target); Address && Address->getOpcode() == UO_AddrOf)
+    Target = Address->getSubExpr()->IgnoreParenImpCasts();
+  const auto *Reference = dyn_cast<DeclRefExpr>(Target);
+  const auto *Function = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  if (!Definition || Definition->getNumParams() != 2 || Definition->getBuiltinID() ||
+      !S.owns(SM, Definition->getLocation()) || isa<CXXMethodDecl>(Definition) ||
+      Definition->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
+    return false;
+  const auto *Comparison = linkedListOrderExpression(Definition);
+  if (!Comparison) return false;
+  const auto *Left = dyn_cast<MemberExpr>(Comparison->getLHS()->IgnoreParenImpCasts());
+  const auto *Right = dyn_cast<MemberExpr>(Comparison->getRHS()->IgnoreParenImpCasts());
+  if (!Left || !Right || Left->isArrow() || Right->isArrow()) return false;
+  const auto *Field = dyn_cast<FieldDecl>(Left->getMemberDecl());
+  if (!Field || Field != Right->getMemberDecl() || Field->isBitField() ||
+      !Field->getType()->isBuiltinType() || !Field->getType()->isIntegerType() ||
+      Field->getType().hasLocalQualifiers() || Field->getType().isVolatileQualified() ||
+      Field->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+    return false;
+  const auto *First = Definition->getParamDecl(0);
+  const auto *Second = Definition->getParamDecl(1);
+  return (variantParameter(Left->getBase(), First) && variantParameter(Right->getBase(), Second)) ||
+         (variantParameter(Left->getBase(), Second) && variantParameter(Right->getBase(), First));
+}
+
+std::optional<bool> forwardListOrderDirection(const FunctionDecl *Definition) {
+  const auto *Comparison = linkedListOrderExpression(Definition);
+  if (!Comparison) return std::nullopt;
   const auto *First = Definition->getParamDecl(0);
   const auto *Second = Definition->getParamDecl(1);
   const bool Forward = variantParameter(Comparison->getLHS(), First) &&
@@ -54921,7 +54962,7 @@ std::optional<UtilityForwardListOperation> forwardListCustomOrderSignature(
   }
   const auto Callback = Method->getParamDecl(Merge ? 1 : 0)->getType();
   if (Callback->isReferenceType() ||
-      (!linkedListCallbackPointer(Callback, Element, 2, Context) &&
+      (!linkedListCallbackPointer(Callback, Element, 2, Context, true) &&
        !forwardListOrderObject(S, SM, Callback, Element, Context) &&
        !scalarListStandardOrder(S, SM, Callback, Element, Context)) ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Callback)) return std::nullopt;
@@ -54966,9 +55007,10 @@ bool forwardListSDKOrderCall(const State &S, const SourceManager &SM, const Call
   const auto Compared = Parameter->getType().getNonReferenceType();
   const bool CorrectCallback = ObjectMethod
       ? Context.hasSameType(Compared, Context.getRecordType(ObjectMethod->getParent()))
-      : linkedListCallbackPointer(Compared, Element, 2, Context);
-  return CorrectCallback && Context.hasSameType(Call->getType(), Context.BoolTy) &&
-         Context.hasSameType(Call->getArg(Offset)->getType(), Element) &&
+      : linkedListCallbackPointer(Compared, Element, 2, Context, true);
+  if (!CorrectCallback || !Context.hasSameType(Call->getType(), Context.BoolTy)) return false;
+  if (!ObjectMethod) return linkedListFilterArguments(Call, Compared, Element, Context);
+  return Context.hasSameType(Call->getArg(Offset)->getType(), Element) &&
          Context.hasSameType(Call->getArg(Offset + 1)->getType(), Element);
 }
 
@@ -56251,7 +56293,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
     const auto Index = Call->getNumArgs() - 1;
     const auto *Argument = Call->getArg(Index);
     const auto Element = Node->Value->getType();
-    if (!forwardListDirectOrder(S, SM, Argument, Element, Context)) {
+    if (!forwardListDirectOrder(S, SM, Argument, Element, Context) &&
+        !linkedListNamedRecordOrder(S, SM, Argument, Element, Context)) {
       const auto Type = Method->getParamDecl(Index)->getType();
       if (!S.owns(SM, Argument->getExprLoc()) || !Context.hasSameType(Argument->getType(), Type))
         return std::nullopt;
@@ -56893,7 +56936,7 @@ std::optional<UtilityListOperation> listOrderSignature(
   const auto *Arguments = M->getTemplateSpecializationArgs();
   if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Compare) ||
-      (!linkedListCallbackPointer(Compare, Element, 2, Context) &&
+      (!linkedListCallbackPointer(Compare, Element, 2, Context, true) &&
        !scalarListStandardOrder(S, SM, Compare, Element, Context) &&
        !forwardListOrderObject(S, SM, Compare, Element, Context))) return std::nullopt;
   if (Sort) return UtilityListOperation::Sort;
@@ -57352,6 +57395,7 @@ bool listSDKOrderCall(const State &S, const SourceManager &SM, const CallExpr *C
         Method->getParamDecl(3) == Parameter && Parameter->getType()->isLValueReferenceType()) &&
       !(Method->getName() == "merge" && !Method->isStatic() && Method->getNumParams() == 2 &&
         Method->getParamDecl(1) == Parameter && !Parameter->getType()->isReferenceType())) return false;
+  if (!ObjectMethod) return linkedListFilterArguments(Call, Compare, Element, Context);
   return Context.hasSameType(Call->getArg(Offset)->getType(), Element) &&
          Context.hasSameType(Call->getArg(Offset + 1)->getType(), Element);
 }
@@ -57588,8 +57632,9 @@ std::optional<UtilityListCall> approvedUtilityListCall(
     const auto *Argument = Call->getArg(Index);
     const auto Element = Node->Value->getType();
     const auto Type = Method->getParamDecl(Index)->getType();
-    Descending = listDirectOrder(S, SM, Argument, Element, Context);
-    if (Descending) {
+    const bool RecordOrder = linkedListNamedRecordOrder(S, SM, Argument, Element, Context);
+    if (!RecordOrder) Descending = listDirectOrder(S, SM, Argument, Element, Context);
+    if (RecordOrder || Descending) {
       Compare = Type;
     } else {
       if (!S.owns(SM, Argument->getExprLoc()) || !Context.hasSameType(Argument->getType(), Type))
