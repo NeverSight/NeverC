@@ -54857,7 +54857,7 @@ const FunctionDecl *linkedListRecordOrderDefinition(
 }
 
 bool linkedListRecordComparisonBody(const FunctionDecl *Definition, const CXXRecordDecl *Record,
-    OverloadedOperatorKind Operator = OO_Less) {
+    const ASTContext &Context, OverloadedOperatorKind Operator = OO_Less) {
   const auto *Comparison = linkedListComparisonExpression(Definition, Operator);
   if (!Comparison) return false;
   const auto *Left = dyn_cast<MemberExpr>(Comparison->getLHS()->IgnoreParenImpCasts());
@@ -54865,9 +54865,13 @@ bool linkedListRecordComparisonBody(const FunctionDecl *Definition, const CXXRec
   if (!Left || !Right || Left->isArrow() || Right->isArrow()) return false;
   const auto *Field = dyn_cast<FieldDecl>(Left->getMemberDecl());
   if (!Field || Field != Right->getMemberDecl() || Field->isBitField() ||
-      !Field->getType()->isBuiltinType() || !Field->getType()->isIntegerType() ||
-      Field->getType().hasLocalQualifiers() || Field->getType().isVolatileQualified() ||
+      Field->getType().hasLocalQualifiers() ||
       Field->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+    return false;
+  const auto Value = Field->getType();
+  if (!(Value->isBuiltinType() && Value->isIntegerType()) &&
+      !linkedListFloatingElement(Value, Context) && !linkedListFixedEnumElement(Value, Context) &&
+      !(Operator == OO_EqualEqual && linkedListObjectPointerElement(Value, Context)))
     return false;
   const auto *First = Definition->getParamDecl(0);
   const auto *Second = Definition->getParamDecl(1);
@@ -54889,7 +54893,7 @@ bool linkedListNamedRecordOrder(const State &S, const SourceManager &SM, const E
   const auto *Reference = dyn_cast<DeclRefExpr>(Target);
   const auto *Function = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
   const auto *Definition = linkedListRecordOrderDefinition(S, SM, Function);
-  return Definition && linkedListRecordComparisonBody(Definition, Record);
+  return Definition && linkedListRecordComparisonBody(Definition, Record, Context);
 }
 
 bool bindLinkedListDefaultRecordComparison(const State &S, const SourceManager &SM,
@@ -54913,7 +54917,7 @@ bool bindLinkedListDefaultRecordComparison(const State &S, const SourceManager &
   if (!Record || !linkedListCallbackPointer(Pointer, Element, 2, Context, true) ||
       !Definition->getParamDecl(0)->getType()->isLValueReferenceType() ||
       !linkedListFilterArguments(Call, Pointer, Element, Context) ||
-      !linkedListRecordComparisonBody(Definition, Record, Kind)) return false;
+      !linkedListRecordComparisonBody(Definition, Record, Context, Kind)) return false;
   *Selected = Definition;
   return true;
 }
