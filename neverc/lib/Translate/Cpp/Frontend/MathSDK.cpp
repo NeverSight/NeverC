@@ -54269,9 +54269,16 @@ bool linkedListWideCharacterElement(QualType Type, const ASTContext &Context) {
          Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32;
 }
 
+bool linkedListObjectPointerElement(QualType Type, const ASTContext &Context) {
+  return !Type.isNull() && !Type.hasLocalQualifiers() &&
+         utilityObjectPointer(Context, Type) &&
+         utilityScalar(Context, Type->getPointeeType().getUnqualifiedType()) &&
+         Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
+}
+
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
   if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context) ||
-      linkedListFixedEnumElement(Type, Context))
+      linkedListFixedEnumElement(Type, Context) || linkedListObjectPointerElement(Type, Context))
     return true;
   if (Context.hasSameType(Type, Context.BoolTy) ||
       Context.hasSameType(Type, Context.CharTy) ||
@@ -54425,7 +54432,8 @@ bool forwardListIteratorType(const State &S, const SourceManager &SM, QualType T
 }
 
 bool forwardListInputType(QualType Type, QualType Element, const ASTContext &Context) {
-  if (Element->isEnumeralType() || linkedListFloatingElement(Element, Context))
+  if (Element->isEnumeralType() || Element->isPointerType() ||
+      linkedListFloatingElement(Element, Context))
     return Context.hasSameType(Type, Element);
   return Type->isIntegerType() && !Type->isEnumeralType() && forwardListElementType(Type, Context);
 }
@@ -56357,7 +56365,7 @@ bool listLeaves(const State &S, const SourceManager &SM,
 
 bool listElementType(QualType Type, const ASTContext &Context) {
   if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context) ||
-      linkedListFixedEnumElement(Type, Context))
+      linkedListFixedEnumElement(Type, Context) || linkedListObjectPointerElement(Type, Context))
     return true;
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
   if (Context.hasSameType(Type, Context.BoolTy))
