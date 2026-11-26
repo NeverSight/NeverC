@@ -27776,7 +27776,10 @@ class FunctionLowering {
     std::optional<Expression> Comparator;
     QualType ComparatorType;
     const bool Descending = Proof->ObjectOrderDescending.value_or(false);
-    if ((CustomSort || CustomMerge) && !Proof->ObjectOrderDescending) {
+    if (const auto *Order = Proof->DefaultRecordOrder) {
+      Comparator = A.functionAddress(Order, L);
+      ComparatorType = A.Context.getPointerType(Order->getType());
+    } else if ((CustomSort || CustomMerge) && !Proof->ObjectOrderDescending) {
       const unsigned Index = CustomMerge ? 1 : 0;
       Comparator = Operands[Index];
       ComparatorType = Method->getParamDecl(Index)->getType();
@@ -29897,7 +29900,10 @@ class FunctionLowering {
       const bool Merge = Operation == UtilityListOperation::Merge;
       std::optional<Expression> Comparator;
       QualType ComparatorType;
-      if (Method->getPrimaryTemplate() && !Proof->Descending) {
+      if (const auto *Order = Proof->DefaultRecordOrder) {
+        Comparator = A.functionAddress(Order, L);
+        ComparatorType = A.Context.getPointerType(Order->getType());
+      } else if (Method->getPrimaryTemplate() && !Proof->Descending) {
         const unsigned Index = Merge ? 1 : 0;
         Comparator = Operands[Index];
         ComparatorType = Method->getParamDecl(Index)->getType();
