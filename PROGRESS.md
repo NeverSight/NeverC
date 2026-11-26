@@ -1,5 +1,13 @@
 # NeverC Progress
 
+## Current snapshot — 2026-11-26T00:58:36Z
+
+- Reviewed [26127e48 to 690e1dac](https://github.com/NeverSight/NeverC/compare/26127e4871f70f15172dfcab22fedd463a227a35...690e1dac312d2f3902127db562b1aae56c9edd26): 18 commits ahead, 118 changed paths; only a selected slice reviewed. Read the forward_list element typing changes in C++ translation Lowering and MathSDK, associated fixture diffs, and the registry history mapping. Node fields, allocator arguments, counted/pointer inputs, and predicate comparisons in the reviewed paths now use the admitted element type rather than a fixed int. The recognition checks still bind the approved node layout. No new confirmed source defect or source change in this static pass.
+- Activity since 2026-11-25T01:01:00Z: 10 open ordinary issues, zero open PRs, both unchanged. The sampled REST listings show no product PR openings or closures/merges, and no ordinary issue openings or closures; progress-only [#37](https://github.com/NeverSight/NeverC/pull/37) is excluded. Direct dev commits include the [long-element forward_list change](https://github.com/NeverSight/NeverC/commit/690e1dac312d2f3902127db562b1aae56c9edd26). No product review is pending in the open PR list.
+- Existing CI: no Actions run matched exact dev `690e1dac` in the sampled listing. On the earlier `6c45e0b4`, the existing sanitizer metadata showed the plugin ASan/UBSan CTest step failing after build while TSan passed; the first failing test was not available in the sampled logs. This is not evidence for the latest dev. No build, test, benchmark, script execution, or workflow dispatch by this report.
+- Suggested priorities: (1) Run forward_list int and long accepted fixtures with native 32-bit and 64-bit long widths, both optimization levels, and rejected layouts. (2) Validate list construction, copy/move, splice/sort and predicate behavior with the owning node and allocator fixtures. (3) Find the first sanitizer plugin test failure and compare it with an exact-head native rerun before classifying it.
+
+
 ## Current snapshot — 2026-11-25T01:01:00Z
 
 - Reviewed [61fceebd to 26127e48](https://github.com/NeverSight/NeverC/compare/61fceebd499465a97c74ba3bfe46345b3d86e3e5...26127e4871f70f15172dfcab22fedd463a227a35): 18 commits ahead; changed paths not totaled. Checked selected Translate/Cpp Frontend and MathSDK changes, fixture source, and registry metadata for temporary variant visits and scalar any reference casts. Owned operands must be unextended full-expression temporaries; their payloads are not admitted through visitor lvalue-reference parameters. Mutable any references are rejected from const owners and keep the bounded use check on mutable locals. Registry extraction records new and historical fixture digests separately.
@@ -1694,3 +1702,8 @@ Bounded static review of unordered multiset modifier lowering and documented sup
 - Activity: 10 open issues and 0 open PRs, unchanged. GitHub indexed no issue openings/closures or product PR openings, merges, or unmerged closures since 2026-11-24T00:58:16Z; [previous report #36](https://github.com/NeverSight/NeverC/pull/36) is excluded. The range includes direct dev commits. No open product review was pending at the snapshot.
 - No new confirmed source defect or source change. No Actions run returned for the exact dev SHA in the sampled listing; runs with other heads were not treated as dev evidence. No build, test, benchmark, or workflow dispatch. Other translator branches and native runtime behavior were not audited.
 - Suggested priorities: (1) Run accepted and rejected temporary visit cases, requiring by-value visitor behavior and rejection of borrowed references. (2) Verify mutable and const any reference controls and O0/O2 parity with the existing fixture set. (3) Keep production-size Windows COFF and native-width toolchain parity separate until exact-head native evidence is available.
+
+
+## 2026-11-26 — static review
+
+- 2026-11-26T00:58:36Z: Reviewed long-element forward_list lowering and registry provenance; no new confirmed defect. 10 open issues, no open PRs. Next: compare supported native element widths and investigate the older plugin sanitizer failure. No project code, build, test, or workflow dispatch in this snapshot.
