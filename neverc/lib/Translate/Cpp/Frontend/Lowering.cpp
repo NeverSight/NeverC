@@ -29721,6 +29721,26 @@ class FunctionLowering {
       destroyListStorage(Place, Owner->Node, L);
       return Expression{};
     }
+    const bool Emplace = Operation == UtilityListOperation::Emplace;
+    if (Emplace || Operation == UtilityListOperation::EmplaceFront ||
+        Operation == UtilityListOperation::EmplaceBack) {
+      std::optional<Expression> Position;
+      if (Emplace) Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
+      const unsigned Offset = Emplace ? 1 : 0;
+      Expression Argument;
+      if (Operands.size() == Offset) {
+        auto Zero = temporary(type(Element, L), L);
+        initializeZero(Zero, Element, L);
+        Argument = address(Zero, Element, L);
+      } else {
+        Argument = Operands[Offset];
+      }
+      auto Node = listCreateNode(std::move(Argument), Owner->Node, L);
+      if (!Position) Position = Operation == UtilityListOperation::EmplaceFront
+          ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
+      listInsertNode(Place, *Position, Node, L);
+      return Emplace ? listIterator(Method->getReturnType(), Node, L) : listValue(Node, Element, false, L);
+    }
     const bool Insert = Operation == UtilityListOperation::Insert;
     if (Insert || Operation == UtilityListOperation::PushFront || Operation == UtilityListOperation::PushBack) {
       std::optional<Expression> Position;

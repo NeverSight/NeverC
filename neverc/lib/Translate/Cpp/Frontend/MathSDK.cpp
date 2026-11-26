@@ -56446,6 +56446,45 @@ bool listPredicateBody(const FunctionDecl *F) {
          Cast && Cast->getCastKind() == CK_ToVoid;
 }
 
+std::optional<UtilityListOperation> listEmplacementSignature(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *M,
+    const UtilityListRecord &Owner, const ASTContext &Context) {
+  if (!M->getIdentifier() || M->isConst() || M->getRefQualifier() != RQ_None ||
+      M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return std::nullopt;
+  const auto Name = M->getName();
+  const bool AtPosition = Name == "emplace";
+  if (!AtPosition && Name != "emplace_front" && Name != "emplace_back") return std::nullopt;
+  const auto Element = Owner.Node.Value->getType();
+  const auto *Parameters = M->getPrimaryTemplate()->getTemplateParameters();
+  const auto *TypePack = Parameters->size() == 1
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  if (!TypePack || !TypePack->isParameterPack() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Pack) return std::nullopt;
+  const auto Pack = Arguments->get(0).pack_elements();
+  const unsigned Offset = AtPosition ? 1 : 0;
+  if (Pack.size() > 1 || M->getNumParams() != Offset + Pack.size()) return std::nullopt;
+  if (AtPosition) {
+    if (M->getParamDecl(0)->hasDefaultArg() ||
+        !listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner.Node, true, Context) ||
+        !listIteratorType(S, SM, M->getReturnType(), Owner.Node, false, Context)) return std::nullopt;
+  } else if (!Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element))) {
+    return std::nullopt;
+  }
+  if (!Pack.empty()) {
+    if (Pack[0].getKind() != TemplateArgument::Type || M->getParamDecl(Offset)->hasDefaultArg())
+      return std::nullopt;
+    const auto Type = Pack[0].getAsType();
+    const auto Source = Type.getNonReferenceType();
+    if (!Context.hasSameType(Source, Element) && !Context.hasSameType(Source, Element.withConst()))
+      return std::nullopt;
+    const auto Parameter = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
+    if (!Context.hasSameType(M->getParamDecl(Offset)->getType(), Parameter)) return std::nullopt;
+  }
+  if (AtPosition) return UtilityListOperation::Emplace;
+  return Name == "emplace_front" ? UtilityListOperation::EmplaceFront : UtilityListOperation::EmplaceBack;
+}
+
 std::optional<UtilityListOperation> listMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
@@ -56453,7 +56492,10 @@ std::optional<UtilityListOperation> listMethodSignature(
       !listFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, M->getParent(), Context)) {
     const auto Element = Owner->Node.Value->getType();
-    if (M->getPrimaryTemplate()) return listPredicateSignature(M, Element, Context);
+    if (M->getPrimaryTemplate()) {
+      if (auto Predicate = listPredicateSignature(M, Element, Context)) return Predicate;
+      return listEmplacementSignature(S, SM, M, *Owner, Context);
+    }
     const auto Type = Context.getRecordType(Owner->Record);
     if (!M->isConst() && M->getRefQualifier() == RQ_None && M->isOverloadedOperator() &&
         M->getOverloadedOperator() == OO_Equal && M->getNumParams() == 1 &&
