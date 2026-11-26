@@ -407773,7 +407773,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListEmplaceConvertedLongGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListEmplacesConvertedLong) {
   const auto Source = tmpFile("forward-list-emplace-converted-long-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int main() {
@@ -407781,10 +407781,17 @@ int main() {
   return values.emplace_front(4L) != 4;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-emplace-converted-long-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-emplace-converted-long-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListEmplaceUserConversionGuardRejected) {
@@ -410564,6 +410571,100 @@ int main() {
   float source[] = {1.25f, 2.75f};
   std::forward_list<int> list(source, source + 2);
   return list.front() != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListEmplaceAfterConvertsConstShortRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-emplace-after-converts-const-short.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const short value = -320;
+  std::forward_list<int> list{5, 6};
+  auto selected = list.emplace_after(list.cbegin(), value);
+  auto item = list.begin();
+  if (*item++ != 5 || item != selected || *item++ != -320)
+    return 1;
+  return *item++ != 6 || item != list.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-emplace-after-converts-const-short.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-emplace-after-converts-const-short" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListLongEmplaceFrontPreservesSourceEvaluationRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-long-emplace-front-preserves-source-evaluation.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int calls = 0;
+int next() { ++calls; return -289; }
+int main() {
+  std::forward_list<long> list{9L};
+  long &result = list.emplace_front(next());
+  if (calls != 1 || &result != &list.front() || result != -289L)
+    return 1;
+  result = 700L;
+  auto item = list.cbegin();
+  return *item++ != 700L || *item++ != 9L || item != list.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-long-emplace-front-preserves-source-evaluation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-long-emplace-front-preserves-source-evaluation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListEmplaceFrontConvertsMutableLongRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-emplace-front-converts-mutable-long.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  long value = -45L;
+  std::forward_list<int> list;
+  int &result = list.emplace_front(value);
+  value = 19L;
+  return &result != &list.front() || result != -45 || value != 19L;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-emplace-front-converts-mutable-long.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-emplace-front-converts-mutable-long" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListEmplaceVolatileShortGuardRejected) {
+  const auto Source = tmpFile("forward-list-emplace-volatile-short-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  volatile short value = 1;
+  std::forward_list<long> list;
+  list.emplace_front(value);
+  return list.front() != 1L;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

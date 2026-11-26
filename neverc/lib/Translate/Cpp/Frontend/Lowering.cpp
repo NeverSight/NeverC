@@ -27819,15 +27819,18 @@ class FunctionLowering {
           : forwardListMember(Place, false, L);
       const unsigned PositionArgs = EmplaceAfter ? 1 : 0;
       Expression ValueReference;
+      QualType InputElement;
       if (Operands.size() == PositionArgs) {
         auto Value = temporary(type(Element, L), L);
         initializeZero(Value, Element, L);
         ValueReference = address(Value, Element, L);
       } else {
         ValueReference = Operands[PositionArgs];
+        InputElement = Method->getParamDecl(PositionArgs)->getType()
+                           ->getPointeeType().getUnqualifiedType();
       }
       auto Next = snapshot(Link, L);
-      auto Node = forwardListCreateNode(std::move(ValueReference), std::move(Next), Owner->Node, L);
+      auto Node = forwardListCreateNode(std::move(ValueReference), std::move(Next), Owner->Node, L, InputElement);
       assign(Link, Node, L);
       auto Inserted = snapshot(Link, L);
       if (EmplaceAfter) return forwardListIterator(Method->getReturnType(), std::move(Inserted), L);

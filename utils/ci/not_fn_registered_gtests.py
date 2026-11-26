@@ -3462,9 +3462,6 @@ R19_FORWARD_LIST_CONVERTING_RANGES_ADDITIONS_SIZE = 5115
 def restore_forward_list_converting_ranges_history(source):
     """Remove the exact combined layout fixture batch from the registry."""
     sha = lambda data: hashlib.sha256(data).hexdigest()
-    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
-        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
-        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     digest = sha(source)
     assert digest in {R19_FORWARD_LIST_CONVERTING_RANGES_REGISTERED_SHA256, R19_FORWARD_LIST_CONVERTING_RANGES_MAINTAINED_SHA256}
     stop = R19_FORWARD_LIST_CONVERTING_RANGES_MAINTAINED_SIZE
@@ -3481,6 +3478,35 @@ def restore_forward_list_converting_ranges_history(source):
     restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ForwardListAssignsConvertedPointerValues) {\n  const auto Source = tmpFile("forward-list-assign-converted-pointer-elements-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint main() {\n  long values[]{3, 5};\n  std::forward_list<int> list;\n  list.assign(values, values + 2);\n  return list.front() != 3;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-assign-converted-pointer-elements-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-assign-converted-pointer-elements-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ForwardListAssignConvertedPointerElementsGuardRejected) {\n  const auto Source = tmpFile("forward-list-assign-converted-pointer-elements-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint main() {\n  long values[]{3, 5};\n  std::forward_list<int> list;\n  list.assign(values, values + 2);\n  return list.front() != 3;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     prior = (R19_FORWARD_LIST_CONVERTING_RANGES_PREVIOUS_REGISTERED_SHA256 if digest == R19_FORWARD_LIST_CONVERTING_RANGES_REGISTERED_SHA256
              else R19_FORWARD_LIST_CONVERTING_RANGES_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_FORWARD_LIST_CONVERTING_EMPLACE_REGISTERED_SHA256 = 'be2a1e00dde6f5628947634a30d19c98d7f52d64e8edb89ca3f2f87a8a978f75'
+R19_FORWARD_LIST_CONVERTING_EMPLACE_MAINTAINED_SHA256 = '6b9196d994fcd86fe1b2bd5c6e4af35f866f7bd0dacda4417ba816135db02808'
+R19_FORWARD_LIST_CONVERTING_EMPLACE_PREVIOUS_REGISTERED_SHA256 = '47ddd5063205cb2696d1f2912263fbecbfe25352fdecbad64b5423db06578b6a'
+R19_FORWARD_LIST_CONVERTING_EMPLACE_PREVIOUS_MAINTAINED_SHA256 = 'e4870f9d43cfc9b9f94b967104bb13b119609adb36af0c6a29d6821f6991cfcf'
+R19_FORWARD_LIST_CONVERTING_EMPLACE_ADDITIONS_SHA256 = 'f9ad785989cccf7eb1d0f64bc5862e377b997f7f4d2f5f5b94599fa8f1b59470'
+R19_FORWARD_LIST_CONVERTING_EMPLACE_MAINTAINED_SIZE = 21034638
+R19_FORWARD_LIST_CONVERTING_EMPLACE_ADDITIONS_SIZE = 4310
+
+
+def restore_forward_list_converting_emplace_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
+        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    digest = sha(source)
+    assert digest in {R19_FORWARD_LIST_CONVERTING_EMPLACE_REGISTERED_SHA256, R19_FORWARD_LIST_CONVERTING_EMPLACE_MAINTAINED_SHA256}
+    stop = R19_FORWARD_LIST_CONVERTING_EMPLACE_MAINTAINED_SIZE
+    start = stop - R19_FORWARD_LIST_CONVERTING_EMPLACE_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_FORWARD_LIST_CONVERTING_EMPLACE_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ForwardListEmplacesConvertedLong) {\n  const auto Source = tmpFile("forward-list-emplace-converted-long-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint main() {\n  std::forward_list<int> values;\n  return values.emplace_front(4L) != 4;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-emplace-converted-long-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-emplace-converted-long-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ForwardListEmplacesConvertedLong) {\n  const auto Source = tmpFile("forward-list-emplace-converted-long-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint main() {\n  std::forward_list<int> values;\n  return values.emplace_front(4L) != 4;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-emplace-converted-long-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-emplace-converted-long-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ForwardListEmplaceConvertedLongGuardRejected) {\n  const auto Source = tmpFile("forward-list-emplace-converted-long-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint main() {\n  std::forward_list<int> values;\n  return values.emplace_front(4L) != 4;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_FORWARD_LIST_CONVERTING_EMPLACE_PREVIOUS_REGISTERED_SHA256 if digest == R19_FORWARD_LIST_CONVERTING_EMPLACE_REGISTERED_SHA256
+             else R19_FORWARD_LIST_CONVERTING_EMPLACE_PREVIOUS_MAINTAINED_SHA256)
     assert sha(restored) == prior
     return restored
 
@@ -3527,12 +3553,12 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
-    if source_digest == 'f35d57f1b6d898ff6fa899783674733ff73b64730bcd130ec7fc70cd41407fa9':
+    if source_digest == 'ae87371450dd9ec5369f1e60b9e97c21dcebfc74219c855a8dfa93bbea1f3b30':
         return source
-    if source_digest == 'eeee547f236937c5fccd74b801ade3e2a1458bdbc28d16dac7d383d11d59631a':
+    if source_digest == '4b349c22dde635919ef2a08f89f5715aec1e589fd23da0a084d54ea67b876595':
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         current = source[:-len(additions)]
-        assert digest(current) == 'f35d57f1b6d898ff6fa899783674733ff73b64730bcd130ec7fc70cd41407fa9'
+        assert digest(current) == 'ae87371450dd9ec5369f1e60b9e97c21dcebfc74219c855a8dfa93bbea1f3b30'
         return current
     if source_digest == R19_VARIANT_SCALAR_MAINTAINED_SHA256:
         return source
@@ -4268,6 +4294,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_FORWARD_LIST_CONVERTING_RANGES_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_FORWARD_LIST_CONVERTING_EMPLACE_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_FORWARD_LIST_CONVERTING_EMPLACE_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_FORWARD_LIST_CONVERTING_EMPLACE_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

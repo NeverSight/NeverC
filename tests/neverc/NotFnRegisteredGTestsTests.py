@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.forward_list_converting_emplace_registered = cls.registered
+        cls.forward_list_converting_emplace_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_converting_emplace_original = cls.adapter.restore_original_gtests(cls.forward_list_converting_emplace_registered,
+                                                                        cls.forward_list_converting_emplace_suffix)
+        cls.registered = cls.adapter.restore_forward_list_converting_emplace_history(cls.forward_list_converting_emplace_registered)
         cls.forward_list_converting_ranges_registered = cls.registered
         cls.forward_list_converting_ranges_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.forward_list_converting_ranges_original = cls.adapter.restore_original_gtests(cls.forward_list_converting_ranges_registered,
@@ -4188,6 +4193,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_forward_list_converting_ranges_history(self.forward_list_converting_ranges_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.forward_list_converting_ranges_registered, self.forward_list_converting_ranges_suffix + b' ')
+
+
+    def test_forward_list_converting_emplace_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_converting_emplace_original + self.forward_list_converting_emplace_suffix, self.forward_list_converting_emplace_registered)
+        self.assertEqual(self.adapter.restore_forward_list_converting_emplace_history(self.forward_list_converting_emplace_original),
+                         self.forward_list_converting_ranges_original)
+        output, evidence = self.extractor.extract(self.forward_list_converting_emplace_original, ['TranslateTest.CoreV2ForwardListEmplaceAfterConvertsConstShortRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListLongEmplaceFrontPreservesSourceEvaluationRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEmplaceFrontConvertsMutableLongRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListEmplaceVolatileShortGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9251)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-emplace-after-converts-const-short', output)
+        self.assertIn(b'forward-list-emplace-volatile-short-guard', output)
+
+    def test_forward_list_converting_emplace_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_converting_emplace_history(self.forward_list_converting_emplace_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_converting_emplace_registered, self.forward_list_converting_emplace_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -143,6 +143,14 @@
       "source_sha256": "b05ee54ae66b81ce2050f624d38740c1e4b14f3602c81d67ea79158a152b62fa",
       "original_case_source_sha256": "b05ee54ae66b81ce2050f624d38740c1e4b14f3602c81d67ea79158a152b62fa",
       "gtest_body_sha256": "f6727916c2891b4d80e8258abb7d9b0d78d65a5661a5a55f1e9942167a9e33ae"
+    },
+    {
+      "name": "forward-list-emplace-converted-long-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplacesConvertedLong",
+      "expected": "accept",
+      "source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
+      "original_case_source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
+      "gtest_body_sha256": "383a5f5402335e471276dcff97002fb00ee566c7dcdac1cb39c981e13fd7c0a4"
     }
   ],
   "negative_cases": [
@@ -161,14 +169,6 @@
       "source_sha256": "2bcf6058aff3a5085417a2d814ca29a1ff429d3d584c3651a56be0931e64f94d",
       "original_case_source_sha256": "2bcf6058aff3a5085417a2d814ca29a1ff429d3d584c3651a56be0931e64f94d",
       "gtest_body_sha256": "ce4668e8ea800a8cfaeac0e2ab63378a4d28655d5ae3a04f67e34a3efb3d1693"
-    },
-    {
-      "name": "forward-list-emplace-converted-long-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceConvertedLongGuardRejected",
-      "expected": "reject",
-      "source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
-      "original_case_source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
-      "gtest_body_sha256": "90968824af6fa6dce5df881d834d0da1a231c9b6a5834a140eadf561cbd7c485"
     },
     {
       "name": "forward-list-emplace-user-conversion-guard",
@@ -325,6 +325,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "forward-list-emplace-converted-long-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values;\n  return values.emplace_front(4L) != 4;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "forward-list-erase-range-source-allocator-guard",
       "expected": "reject",
       "source": "#include <forward_list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  LocalAllocator() = default;\n  template <class U> LocalAllocator(const LocalAllocator<U> &) {}\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n};\nint main() {\n  std::forward_list<int, LocalAllocator<int>> values{2, 3};\n  auto result = values.erase_after(values.cbefore_begin(), values.cend());\n  return result != values.end();\n}\n",
@@ -338,14 +346,6 @@
       "source": "#include <forward_list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  LocalAllocator() = default;\n  template <class U> LocalAllocator(const LocalAllocator<U> &) {}\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n};\nint main() {\n  std::forward_list<int, LocalAllocator<int>> source{2, 3};\n  std::forward_list<int, LocalAllocator<int>> destination;\n  destination.splice_after(destination.before_begin(), source, source.before_begin());\n  return destination.front() != 2;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "2bcf6058aff3a5085417a2d814ca29a1ff429d3d584c3651a56be0931e64f94d",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "forward-list-emplace-converted-long-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values;\n  return values.emplace_front(4L) != 4;\n}\n",
-      "public_header": "forward_list",
-      "source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
       "kind": "source-body-guard"
     },
     {
@@ -376,9 +376,9 @@
     "TranslateTest.CoreV2ForwardListLongErasesRanges",
     "TranslateTest.CoreV2ForwardListLongSplicesPartialRanges",
     "TranslateTest.CoreV2ForwardListLongEmplacesValues",
+    "TranslateTest.CoreV2ForwardListEmplacesConvertedLong",
     "TranslateTest.CoreV2ForwardListEraseRangeSourceAllocatorGuardRejected",
     "TranslateTest.CoreV2ForwardListSpliceSingleSourceAllocatorGuardRejected",
-    "TranslateTest.CoreV2ForwardListEmplaceConvertedLongGuardRejected",
     "TranslateTest.CoreV2ForwardListEmplaceUserConversionGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -392,15 +392,16 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9141,
   "current_python_registry_tests": 310,
-  "native_reference_selected_executions": 36,
-  "planned_generated_c23_executions": 36,
+  "native_reference_selected_executions": 38,
+  "planned_generated_c23_executions": 38,
   "native_reference_proofs": {
+    "forward-list-converting-emplace": "45d5c2fcc9d1030f6653c8204018e48f90caa0beec702e97edd1764e79c23403",
     "forward-list-emplace": "a6bc6cd008cc29a468e889147d33fdf32f51250895f0386274b125a3eed42466",
     "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
     "forward-list-partial-splice": "23e0409651c25ef636d98e2f9c321261157aa1074cc2632ce62599208dd9905f",
     "forward-list-range-erase": "7e5e7093a5948b5caf40a6f08ecfe75fb57398e72d4666dc4822bca13504a02b",
     "forward-list-whole-splice": "b2ca18412cb3def1c654cfd9b604830aa2820404462caf65dfe2961d27ba46ef"
   },
-  "native_reference_authentication_sha256": "5ab07eb87db29db09906689ba82aedbc983e1979682f704d6069eec60e2d7305",
-  "source_proof_sha256": "d0e58cf5772355229fa29f8b2fc8743eda1e02888b31b4ab90ad0e64424b41fa"
+  "native_reference_authentication_sha256": "d0a7874d81de2ffb80bef76d10976088e6b4a12738f3c2c8131001025e51c480",
+  "source_proof_sha256": "0ab9dce2fff2f3039ddb6ec2b43d6d1ed707f655777ab1b5239f9ee263d90208"
 }

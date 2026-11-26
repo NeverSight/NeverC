@@ -54350,6 +54350,9 @@ bool forwardListIteratorType(const State &S, const SourceManager &SM, QualType T
   return I && I->Const == Const && I->Node.Record->getCanonicalDecl() == Node.Record->getCanonicalDecl();
 }
 
+bool forwardListSignedInput(QualType Type, const ASTContext &Context) {
+  return Context.hasSameType(Type, Context.ShortTy) || forwardListElementType(Type, Context);
+}
 bool forwardListPointerInputSignature(const CXXMethodDecl *M, unsigned First,
                                       const ASTContext &Context, unsigned Trailing = 0) {
   if (M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation || M->getNumParams() != First + 2 + Trailing)
@@ -54357,8 +54360,7 @@ bool forwardListPointerInputSignature(const CXXMethodDecl *M, unsigned First,
   const auto Type = M->getParamDecl(First)->getType();
   if (!Type->isPointerType() || Type->getPointeeType().isVolatileQualified()) return false;
   const auto Input = Type->getPointeeType().getUnqualifiedType();
-  if (!Context.hasSameType(Input, Context.ShortTy) &&
-      !forwardListElementType(Input, Context)) return false;
+  if (!forwardListSignedInput(Input, Context)) return false;
   const auto *Arguments = M->getTemplateSpecializationArgs();
   return Arguments && Arguments->size() == 2 && Arguments->get(0).getKind() == TemplateArgument::Type &&
          Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
@@ -54498,12 +54500,14 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
   if (!Pack.empty()) {
     if (Pack[0].getKind() != TemplateArgument::Type) return std::nullopt;
     const auto Type = Pack[0].getAsType();
-    const auto LValue = Context.getLValueReferenceType(Element);
-    const auto ConstLValue = Context.getLValueReferenceType(Element.withConst());
-    const bool IsValue = Context.hasSameType(Type, Element);
+    const auto Input = Type.getNonReferenceType().getUnqualifiedType();
+    if (!forwardListSignedInput(Input, Context)) return std::nullopt;
+    const auto LValue = Context.getLValueReferenceType(Input);
+    const auto ConstLValue = Context.getLValueReferenceType(Input.withConst());
+    const bool IsValue = Context.hasSameType(Type, Input);
     if (!IsValue && !Context.hasSameType(Type, LValue) && !Context.hasSameType(Type, ConstLValue))
       return std::nullopt;
-    const auto Parameter = IsValue ? Context.getRValueReferenceType(Element) : Type;
+    const auto Parameter = IsValue ? Context.getRValueReferenceType(Input) : Type;
     if (!Context.hasSameType(Method->getParamDecl(Offset)->getType(), Parameter))
       return std::nullopt;
   }

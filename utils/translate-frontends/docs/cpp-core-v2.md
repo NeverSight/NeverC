@@ -18685,3 +18685,9 @@ adjacent uniqueness predicates.
 The default-allocator forward_list<int> and forward_list<long> accept
 checked signed short, int and long pointer ranges in constructors,
 assignment and insertion, with the input stride preserved.
+
+## Forward list emplacement with signed element conversion
+
+The default-allocator forward_list<int> and forward_list<long> accept
+checked signed short, int and long arguments to emplace_front
+and emplace_after. The new element reads its argument after allocation.
