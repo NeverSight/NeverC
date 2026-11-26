@@ -29014,12 +29014,16 @@ class FunctionLowering {
     assign(listIteratorMember(Result, L), std::move(Node), L);
     return Result;
   }
-  Expression listCreateNode(Expression ValueReference, const UtilityListNodeRecord &Info, SourceLocation L) {
+  Expression listCreateNode(Expression ValueReference, const UtilityListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
         quantity(24, type(A.Context.getSizeType(), L), L), L), "ptr:void", L), L);
     initializeZero(listLink(Node, true, L), A.Context.VoidPtrTy, L);
     initializeZero(listLink(Node, false, L), A.Context.VoidPtrTy, L);
-    assign(listValue(Node, Info.Value->getType(), false, L), dereference(ValueReference, L), L);
+    const auto Element = Info.Value->getType();
+    auto Value = dereference(std::move(ValueReference), L);
+    if (!InputElement.isNull() && !A.Context.hasSameType(InputElement, Element))
+      Value = cast(std::move(Value), type(Element, L), L);
+    assign(listValue(Node, Element, false, L), std::move(Value), L);
     return Node;
   }
   void listReleaseNode(Expression Node, const UtilityListNodeRecord &Info, SourceLocation L) {
@@ -29478,38 +29482,61 @@ class FunctionLowering {
     label(Done, L);
   }
 
-  void listAssignValueStorage(Expression Place, Expression Source,
+  struct ListAssignmentInput {
+    Expression Current;
+    Expression End;
+    QualType PointerElement;
+  };
+
+  ListAssignmentInput listAssignmentInput(Expression First, Expression Last,
+      QualType PointerElement, SourceLocation L) {
+    const auto Carrier = PointerElement.isNull() ? "ptr:void" :
+        type(A.Context.getPointerType(PointerElement.withConst()), L);
+    auto Current = temporary(Carrier, L);
+    assign(Current, PointerElement.isNull() ? std::move(First) : cast(std::move(First), Carrier, L), L);
+    auto End = snapshot(PointerElement.isNull() ? std::move(Last) : cast(std::move(Last), Carrier, L), L);
+    return {std::move(Current), std::move(End), PointerElement};
+  }
+
+  Expression listAssignmentReference(const ListAssignmentInput &Input, QualType Element, SourceLocation L) {
+    return Input.PointerElement.isNull()
+        ? address(listValue(Input.Current, Element, true, L), Element.withConst(), L)
+        : Input.Current;
+  }
+
+  void advanceListAssignmentInput(const ListAssignmentInput &Input, SourceLocation L) {
+    if (Input.PointerElement.isNull()) {
+      assign(Input.Current, snapshot(listLink(Input.Current, false, L), L), L);
+      return;
+    }
+    auto One = quantity(1, type(A.Context.getPointerDiffType(), L), L);
+    auto Value = index(Input.Current, std::move(One), type(Input.PointerElement, L), L);
+    assign(Input.Current, address(std::move(Value), Input.PointerElement.withConst(), L), L);
+  }
+
+  void listAssignValueStorage(Expression Place, const ListAssignmentInput &Input,
       const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
-    auto Input = temporary("ptr:void", L), Output = temporary("ptr:void", L);
-    assign(Input, listMember(Source, "nct_list_next", L), L);
-    auto InputEnd = snapshot(listSentinel(Source, L, true), L);
+    auto Output = temporary("ptr:void", L);
     assign(Output, listMember(Place, "nct_list_next", L), L);
     auto OutputEnd = snapshot(listSentinel(Place, L), L);
     const auto CheckInput = labelName(), CheckOutput = labelName(), Store = labelName(), Erase = labelName(), Append = labelName(), Done = labelName();
     jump(CheckInput, L); label(CheckInput, L);
-    branch(binary("!=", Input, InputEnd, "bool", L), CheckOutput, Erase, L);
+    branch(binary("!=", Input.Current, Input.End, "bool", L), CheckOutput, Erase, L);
     label(CheckOutput, L);
     branch(binary("!=", Output, OutputEnd, "bool", L), Store, Append, L);
     label(Store, L);
     const auto Element = Info.Value->getType();
-    assign(listValue(Output, Element, false, L), listValue(Input, Element, true, L), L);
-    assign(Input, snapshot(listLink(Input, false, L), L), L);
+    auto Value = dereference(listAssignmentReference(Input, Element, L), L);
+    if (!Input.PointerElement.isNull() && !A.Context.hasSameType(Input.PointerElement, Element))
+      Value = cast(std::move(Value), type(Element, L), L);
+    assign(listValue(Output, Element, false, L), std::move(Value), L);
+    advanceListAssignmentInput(Input, L);
     assign(Output, snapshot(listLink(Output, false, L), L), L);
     jump(CheckInput, L);
     label(Erase, L);
-    const auto Unlink = labelName(), EraseCheck = labelName(), Release = labelName();
-    branch(binary("!=", Output, OutputEnd, "bool", L), Unlink, Done, L);
-    label(Unlink, L);
-    auto Previous = snapshot(listLink(Output, true, L), L);
-    assign(listLink(Previous, false, L), OutputEnd, L); assign(listLink(OutputEnd, true, L), Previous, L);
-    jump(EraseCheck, L); label(EraseCheck, L);
-    branch(binary("!=", Output, OutputEnd, "bool", L), Release, Done, L);
-    label(Release, L);
-    auto Removed = snapshot(Output, L);
-    assign(Output, snapshot(listLink(Output, false, L), L), L);
-    assign(listMember(Place, "nct_list_size", L), binary("-", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
-    listReleaseNode(Removed, Info, L); jump(EraseCheck, L);
+    listEraseRange(Place, Output, OutputEnd, Info, L);
+    jump(Done, L);
     label(Append, L);
     // SDK assignment builds its remaining range as a detached chain, then
     // links it and changes the destination size after all allocation callbacks.
@@ -29518,17 +29545,17 @@ class FunctionLowering {
     assign(Count, quantity(0, Size, L), L);
     const auto AppendCheck = labelName(), Make = labelName(), Link = labelName(), SetFirst = labelName(), Advance = labelName(), Commit = labelName();
     jump(AppendCheck, L); label(AppendCheck, L);
-    branch(binary("!=", Input, InputEnd, "bool", L), Make, Commit, L);
+    branch(binary("!=", Input.Current, Input.End, "bool", L), Make, Commit, L);
     label(Make, L);
-    auto Value = address(listValue(Input, Element, true, L), Element.withConst(), L);
-    auto Node = listCreateNode(Value, Info, L);
+    auto Node = listCreateNode(listAssignmentReference(Input, Element, L), Info, L,
+                               Input.PointerElement);
     assign(listLink(Node, true, L), Last, L);
     branch(cast(First, "bool", L), Link, SetFirst, L);
     label(Link, L); assign(listLink(Last, false, L), Node, L); jump(Advance, L);
     label(SetFirst, L); assign(First, Node, L); jump(Advance, L);
     label(Advance, L); assign(Last, Node, L);
     assign(Count, binary("+", Count, quantity(1, Size, L), Size, L), L);
-    assign(Input, snapshot(listLink(Input, false, L), L), L);
+    advanceListAssignmentInput(Input, L);
     jump(AppendCheck, L); label(Commit, L);
     auto PreviousTail = snapshot(listLink(OutputEnd, true, L), L);
     assign(listLink(PreviousTail, false, L), First, L); assign(listLink(First, true, L), PreviousTail, L);
@@ -29673,7 +29700,11 @@ class FunctionLowering {
       if (Operation == UtilityListOperation::CopyAssign) {
         const auto Copy = labelName(), Done = labelName();
         branch(binary("!=", listSentinel(Place, L), listSentinel(Source, L, true), "bool", L), Copy, Done, L);
-        label(Copy, L); listAssignValueStorage(Place, Source, Owner->Node, L); jump(Done, L); label(Done, L);
+        label(Copy, L);
+        auto Input = listAssignmentInput(listMember(Source, "nct_list_next", L),
+                                         listSentinel(Source, L, true), {}, L);
+        listAssignValueStorage(Place, Input, Owner->Node, L);
+        jump(Done, L); label(Done, L);
       } else {
         destroyListStorage(Place, Owner->Node, L);
         listSpliceAllValueStorage(Place, Source, snapshot(listSentinel(Place, L), L), L);
@@ -29777,6 +29808,15 @@ class FunctionLowering {
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);
       return Insert ? listIterator(Method->getReturnType(), Node, L) : Expression{};
+    }
+    if (Operation == UtilityListOperation::AssignRange) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto Input = Parameter->isPointerType()
+          ? listAssignmentInput(Operands[0], Operands[1], Parameter->getPointeeType().getUnqualifiedType(), L)
+          : listAssignmentInput(listIteratorMember(dereference(Operands[0], L), L),
+                                listIteratorMember(dereference(Operands[1], L), L), {}, L);
+      listAssignValueStorage(Place, Input, Owner->Node, L);
+      return Expression{};
     }
     if (Operation == UtilityListOperation::AssignCount) {
       listAssignCount(Place, Operands[0], Operands[1], Owner->Node, L);

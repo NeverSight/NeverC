@@ -56489,6 +56489,28 @@ std::optional<UtilityListOperation> listEmplacementSignature(
   return Name == "emplace_front" ? UtilityListOperation::EmplaceFront : UtilityListOperation::EmplaceBack;
 }
 
+bool listAssignRangeSignature(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context) {
+  if (M->isConst() || M->getRefQualifier() != RQ_None || !M->getIdentifier() ||
+      M->getName() != "assign" || !M->getReturnType()->isVoidType() ||
+      M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation || M->getNumParams() != 2 ||
+      M->getParamDecl(0)->hasDefaultArg() || M->getParamDecl(1)->hasDefaultArg())
+    return false;
+  const auto Input = M->getParamDecl(0)->getType();
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Input) ||
+      !Context.hasSameType(M->getParamDecl(1)->getType(), Input))
+    return false;
+  if (Input->isPointerType()) {
+    const auto Value = Input->getPointeeType();
+    return !Value.isVolatileQualified() && listElementType(Value.getUnqualifiedType(), Context);
+  }
+  return listIteratorType(S, SM, Input, Owner.Node, false, Context) ||
+         listIteratorType(S, SM, Input, Owner.Node, true, Context);
+}
+
 std::optional<UtilityListOperation> listMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
@@ -56497,6 +56519,8 @@ std::optional<UtilityListOperation> listMethodSignature(
   if (const auto Owner = approvedUtilityListRecord(S, SM, M->getParent(), Context)) {
     const auto Element = Owner->Node.Value->getType();
     if (M->getPrimaryTemplate()) {
+      if (listAssignRangeSignature(S, SM, M, *Owner, Context))
+        return UtilityListOperation::AssignRange;
       if (auto Predicate = listPredicateSignature(M, Element, Context)) return Predicate;
       return listEmplacementSignature(S, SM, M, *Owner, Context);
     }
