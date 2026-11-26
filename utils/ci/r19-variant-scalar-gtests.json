@@ -1,0 +1,482 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-objects-default",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "eb560d39b0b728db84e8da4e872fdce1bb6d32655ffcf3145ce3f1eb3e5b40be",
+      "original_case_source_sha256": "eb560d39b0b728db84e8da4e872fdce1bb6d32655ffcf3145ce3f1eb3e5b40be",
+      "gtest_body_sha256": "1838ef96c71cdad233912973b5661ad8a0bbd04ea9dc81e10ce2957bd49256d4"
+    },
+    {
+      "name": "variant-objects-second",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsSecondRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f8fdc65903808f14d18c233d7b9ef0a5a916b48c5ee7beab5b8a25b9c566cf84",
+      "original_case_source_sha256": "f8fdc65903808f14d18c233d7b9ef0a5a916b48c5ee7beab5b8a25b9c566cf84",
+      "gtest_body_sha256": "3deece9a8baca8fa60c2cf28d1a21f4086a9a95cf93f02e045d756dec0555f79"
+    },
+    {
+      "name": "variant-objects-third-lvalue",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsThirdLvalueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c9b52b12ab96e85f0beeef07e05cd6ae0b8513edeebc85cee07d986e650a7ee7",
+      "original_case_source_sha256": "c9b52b12ab96e85f0beeef07e05cd6ae0b8513edeebc85cee07d986e650a7ee7",
+      "gtest_body_sha256": "aa4ebbc7157a60a285450712677c585e033fe571d4d3480fee374f3bb69d1aef"
+    },
+    {
+      "name": "variant-objects-copy",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "90db942f16203febbbf69c474aab39317d97fa1ea1ce865192f0483a02fccc59",
+      "original_case_source_sha256": "90db942f16203febbbf69c474aab39317d97fa1ea1ce865192f0483a02fccc59",
+      "gtest_body_sha256": "16bda00406eabe2177428bf211d29a265bc59f885d72857cad7f0e6eb5449bb6"
+    },
+    {
+      "name": "variant-objects-default-pointer",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsDefaultPointerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0ffa66f69293e1d91ca1e313816b6d06ba8ccc3e4347521c30f8aa1275e6ab5f",
+      "original_case_source_sha256": "0ffa66f69293e1d91ca1e313816b6d06ba8ccc3e4347521c30f8aa1275e6ab5f",
+      "gtest_body_sha256": "81359bb7ee693234b29ac64266c28e1ca2ad416affd0eb6e277a309416218c89"
+    },
+    {
+      "name": "variant-objects-ref-and-side-effect",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsRefAndSideEffectRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7e4e80cddf51d8d24133b0d0e0c3e80b5273d2f6fea49497446991fd6f58c98f",
+      "original_case_source_sha256": "7e4e80cddf51d8d24133b0d0e0c3e80b5273d2f6fea49497446991fd6f58c98f",
+      "gtest_body_sha256": "0b9e820dc4995ba9a23627e8f85e58347dfe398834e9b9dbd7d276ffae778a81"
+    },
+    {
+      "name": "variant-objects-temporary",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsTemporaryRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "678bc613726edc6e4261c1ca8326a44ccc229049300ad8fa11e094d0ed513b67",
+      "original_case_source_sha256": "678bc613726edc6e4261c1ca8326a44ccc229049300ad8fa11e094d0ed513b67",
+      "gtest_body_sha256": "6650853b396114ccd502668b81035ddf63e54b892c74fc7b1fcd3e284a47c379"
+    },
+    {
+      "name": "variant-objects-get-if-alias",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsGetIfAliasRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cf4f55c4ce1e01e6baf13f53e69c64b4c7212c1c1c12834f23f82d6d08767265",
+      "original_case_source_sha256": "cf4f55c4ce1e01e6baf13f53e69c64b4c7212c1c1c12834f23f82d6d08767265",
+      "gtest_body_sha256": "84364e32253796547de4a8fc3375b86b9bca7cfae9ff26afff6896fb9efe54c1"
+    },
+    {
+      "name": "variant-objects-get-if-const",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsGetIfConstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0af51a1669a5385593d8f893f7234b52a068a2be690fc156197da7a067e61740",
+      "original_case_source_sha256": "0af51a1669a5385593d8f893f7234b52a068a2be690fc156197da7a067e61740",
+      "gtest_body_sha256": "1521e488a285ddb050ebd96c9b35316d919ac6002a11888cfd6a8eed406ae13b"
+    },
+    {
+      "name": "variant-objects-get-if-duplicate",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsGetIfDuplicateRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8be054dc5f9585128e901b7ad145eda981ffd5477636b15c3078c87c7ace1d53",
+      "original_case_source_sha256": "8be054dc5f9585128e901b7ad145eda981ffd5477636b15c3078c87c7ace1d53",
+      "gtest_body_sha256": "b62c95755de7745c2ff78322992c83a8ff6acc4f6cdb38cdca50a8b481bb6d8f"
+    },
+    {
+      "name": "variant-objects-get-if-copy-and-evaluate-once",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsGetIfCopyAndEvaluateOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "276cbe77ee25b696004075f03c030e6146748f52fc27fd879540077629235df5",
+      "original_case_source_sha256": "276cbe77ee25b696004075f03c030e6146748f52fc27fd879540077629235df5",
+      "gtest_body_sha256": "ac3903af7c6d38f785bced09b551ed0ee414532db3032c1165106ef9fa35b32f"
+    },
+    {
+      "name": "variant-objects-holds-const",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsHoldsConstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cbd07417b5161c5f469a8a2aff19186b354e25ef61d607aef6093fc042dabdbf",
+      "original_case_source_sha256": "cbd07417b5161c5f469a8a2aff19186b354e25ef61d607aef6093fc042dabdbf",
+      "gtest_body_sha256": "84e65b60e0843db8112f2fc69a8df4409f998d094b0d1f58805ea1aec8ba5563"
+    },
+    {
+      "name": "variant-objects-copy-changing-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsCopyChangingAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "83af94299f6c89de5b0d8f8f595cd307bdd74a86e66b937ba01d2d62f048dd73",
+      "original_case_source_sha256": "83af94299f6c89de5b0d8f8f595cd307bdd74a86e66b937ba01d2d62f048dd73",
+      "gtest_body_sha256": "44827fcc05765dff33e2004a8aaf07874da9394660c240952895c974b830f67c"
+    },
+    {
+      "name": "variant-objects-move-and-self-assignment",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsMoveAndSelfAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2c10e9e143d08aad05d75a86bbdadf195fe89996303b1b854ec160ece99895f3",
+      "original_case_source_sha256": "2c10e9e143d08aad05d75a86bbdadf195fe89996303b1b854ec160ece99895f3",
+      "gtest_body_sha256": "436e03b6c8e14a94ff8d52b2d1bc36c9834daf5b7c70982433aeba59936720a9"
+    },
+    {
+      "name": "variant-objects-const-get-by-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsConstGetByIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7b45e648dc8b6b5b292f9ee5ac095afae6f164f8671453df90e3125f26259bf3",
+      "original_case_source_sha256": "7b45e648dc8b6b5b292f9ee5ac095afae6f164f8671453df90e3125f26259bf3",
+      "gtest_body_sha256": "69f1cd462a7b5f1c0b404e756ead66e25ef04a16b137c0b12b321bc768541f51"
+    },
+    {
+      "name": "variant-objects-const-get-by-type",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsConstGetByTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f4cfe0f468d883f60a802efae14e07e19c334e56066723684658efe091e7a127",
+      "original_case_source_sha256": "f4cfe0f468d883f60a802efae14e07e19c334e56066723684658efe091e7a127",
+      "gtest_body_sha256": "64a6321e2d17922e07b4a32f41165cbae9efea42e621b9ba5c57e717765cb1f4"
+    },
+    {
+      "name": "variant-objects-class-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantAggregateAlternativeRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2644d8a49f8f8d5b04f95e9d982e07c1ff3a8db404a897ad504b87da1594d570",
+      "original_case_source_sha256": "2644d8a49f8f8d5b04f95e9d982e07c1ff3a8db404a897ad504b87da1594d570",
+      "gtest_body_sha256": "d6de6b3a06715e19ee0e85fd61c60633e0d9f1318cc16a56be23bb6eabc891c7"
+    },
+    {
+      "name": "variant-objects-unproved-conversion",
+      "formal_test_name": "TranslateTest.CoreV2VariantPromotedIntegerConstructionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a639a9bcec52aabfb995a676135c4dbe73383448fc429ab9345ca1cf084cf1c",
+      "original_case_source_sha256": "6a639a9bcec52aabfb995a676135c4dbe73383448fc429ab9345ca1cf084cf1c",
+      "gtest_body_sha256": "f5faac581d33411bcc19891df55bec7a1166a81d9922fdeb0ca8257c1cc3f8eb"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-objects-const-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsConstAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "1850cd8a96d73b89c9e076ae378746265c61db4b8018377167ce3cd2efe2b3cf",
+      "original_case_source_sha256": "1850cd8a96d73b89c9e076ae378746265c61db4b8018377167ce3cd2efe2b3cf",
+      "gtest_body_sha256": "5c4e6f49fcd4523a3a593022f4f45b56848e60b5e8af610be66c0a2b51a6c73a"
+    },
+    {
+      "name": "variant-objects-altered-discriminant",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsAlteredDiscriminantRejected",
+      "expected": "reject",
+      "source_sha256": "76beff2597c4ad9d9d9e6d781a7b6f710e6d074a0de053ab5d96f3cae502797e",
+      "original_case_source_sha256": "76beff2597c4ad9d9d9e6d781a7b6f710e6d074a0de053ab5d96f3cae502797e",
+      "gtest_body_sha256": "dbed33b232f1e01f1c5689a7f2ebafc983daefaf8586f9c1fab3b229e8682c0d"
+    },
+    {
+      "name": "variant-objects-unchecked-get",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsUncheckedGetRejected",
+      "expected": "reject",
+      "source_sha256": "89b46681e4fc7ea7abdb4eab96eac648c83a25d9419a3e80245c19bdd735ad0c",
+      "original_case_source_sha256": "89b46681e4fc7ea7abdb4eab96eac648c83a25d9419a3e80245c19bdd735ad0c",
+      "gtest_body_sha256": "f32d25196edcbf393a5a03b32baba0430dbec05ac82d7c06cc3685ad957e5e83"
+    },
+    {
+      "name": "variant-objects-const-get-inactive",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsConstGetInactiveRejected",
+      "expected": "reject",
+      "source_sha256": "1ad5052fb3af6be457fbb14bb88bb386886fdbe88069bd73121c718af03fa686",
+      "original_case_source_sha256": "1ad5052fb3af6be457fbb14bb88bb386886fdbe88069bd73121c718af03fa686",
+      "gtest_body_sha256": "99972082f49bba0462bcb7ec582380d30fd8f56d6fc3d1f75c1e9a05b0a1a5a8"
+    },
+    {
+      "name": "variant-objects-const-get-mutable-alias",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsConstGetMutableAliasRejected",
+      "expected": "reject",
+      "source_sha256": "63d6e1fae292813a8a4e2ce4230efeea4edd4db1f14009b04127561b215c5dc0",
+      "original_case_source_sha256": "63d6e1fae292813a8a4e2ce4230efeea4edd4db1f14009b04127561b215c5dc0",
+      "gtest_body_sha256": "d1e3e4bc001efca45c9b2e6cba827d309e14fea04109e7bd6bfb10bc89dd3d05"
+    },
+    {
+      "name": "variant-objects-const-get-altered-helper",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsConstGetAlteredHelperRejected",
+      "expected": "reject",
+      "source_sha256": "eaa43308f7f73bed775341a412fdc0f101de262719b9282d4742529b1a789109",
+      "original_case_source_sha256": "eaa43308f7f73bed775341a412fdc0f101de262719b9282d4742529b1a789109",
+      "gtest_body_sha256": "163723bb915a54859abf841230dd8bb453fc8293867ebb0790944b4d22911150"
+    },
+    {
+      "name": "variant-objects-get-if-replaced-address-body",
+      "formal_test_name": "TranslateTest.CoreV2VariantObjectsGetIfReplacedAddressBodyRejected",
+      "expected": "reject",
+      "source_sha256": "a94087da891e97b78c02aca63d14c0c02bd21dd9c31373056134a9ea943c41ce",
+      "original_case_source_sha256": "a94087da891e97b78c02aca63d14c0c02bd21dd9c31373056134a9ea943c41ce",
+      "gtest_body_sha256": "ea4a43af1cd3bd618554577ce372cf36c04e4a11edb480456fe4dd7810e526e0"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantObjectsDefaultRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsSecondRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsThirdLvalueRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsDefaultPointerRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsRefAndSideEffectRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsTemporaryRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsGetIfAliasRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsGetIfConstRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsGetIfDuplicateRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsGetIfCopyAndEvaluateOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsHoldsConstRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsCopyChangingAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsMoveAndSelfAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsConstGetByIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsConstGetByTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantAggregateAlternativeRunsAtBothOptimizations",
+    "TranslateTest.CoreV2VariantPromotedIntegerConstructionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2VariantObjectsConstAlternativeRejected",
+    "TranslateTest.CoreV2VariantObjectsAlteredDiscriminantRejected",
+    "TranslateTest.CoreV2VariantObjectsUncheckedGetRejected",
+    "TranslateTest.CoreV2VariantObjectsConstGetInactiveRejected",
+    "TranslateTest.CoreV2VariantObjectsConstGetMutableAliasRejected",
+    "TranslateTest.CoreV2VariantObjectsConstGetAlteredHelperRejected",
+    "TranslateTest.CoreV2VariantObjectsGetIfReplacedAddressBodyRejected"
+  ],
+  "native_reference_selected_executions": 36,
+  "planned_generated_c23_executions": 36,
+  "actual_new_gtests_executed": 0,
+  "actual_new_generated_c23_executions": 0,
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "08b0ce98b80e83b85d6aea6acc547f7e087c561d69d1c97c5d6fc9ed2aee3abc",
+  "maintained_original_sha256": "2a750a4f20ba6f0674466279aa069b55d0dc71afd4062fc701b22cf286e7c49b",
+  "previous_registered_source_sha256": "37e42c15db2bcd9a9d39b25b1ee8af5407e13fe5419eb392fb2672120813a706",
+  "previous_maintained_original_sha256": "e51b392c0556e228dc98fa264fa5fc80232273c8bf68b4645b4f1c78b9cd1951",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8043,
+  "current_python_registry_tests": 118,
+  "previous8018_and_raw109_gtest_bytes_unchanged": true,
+  "restorer_sha256": "e9e91a9ba6091b163753e7aa394c7732fdcb5f6d010bdf2f0b94fc22ee444c90",
+  "extractor_sha256": "8f097ca52031c27eb6e01ede170c3699ac3e9bdbebece746be6ced2c67c17ba4",
+  "admitted_construction_fixture": {
+    "name": "variant-metadata-runtime-value",
+    "source": "#include <variant>\nusing V = std::variant<int,double>;\nint main(){V value(7);return value.index();}\n",
+    "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "public_header": "variant",
+    "expected": "accept",
+    "kind": "variant-runtime-control"
+  },
+  "prior_construction_guard": {
+    "name": "variant-metadata-runtime-value",
+    "formal_test_name": "TranslateTest.CoreV2VariantMetadataRuntimeValueRejected",
+    "expected": "reject",
+    "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "original_case_source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "gtest_body_sha256": "0a68bd1b8bc1e39971114960268bb43bbeeea32446948c39ce4570ac7021dd79"
+  },
+  "active_construction_test": {
+    "name": "variant-metadata-runtime-value",
+    "formal_test_name": "TranslateTest.CoreV2VariantMetadataRuntimeValueRunAtBothOptimizations",
+    "expected": "accept",
+    "source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "original_case_source_sha256": "f691467c5e458976b57ce36c46a4d45f1b9dfecfd3ec4f7d5efddd5cf1470973",
+    "gtest_body_sha256": "58e22ba548a034a2f603bf3692ae3db7d8342baa032459f8b0b83f8012535f5a"
+  },
+  "source_cases": [
+    {
+      "name": "variant-objects-default",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  std::variant<int, double> value;\n  return value.index() != 0 || value.valueless_by_exception();\n}\nint main() { return check(); }\n",
+      "source_sha256": "eb560d39b0b728db84e8da4e872fdce1bb6d32655ffcf3145ce3f1eb3e5b40be",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-second",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  std::variant<int, double> value = 2.5;\n  return value.index() != 1 || value.valueless_by_exception();\n}\nint main() { return check(); }\n",
+      "source_sha256": "f8fdc65903808f14d18c233d7b9ef0a5a916b48c5ee7beab5b8a25b9c566cf84",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-third-lvalue",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  int value = 7;\n  const std::variant<char, double, int> item = value;\n  return item.index() != 2 || item.valueless_by_exception();\n}\nint main() { return check(); }\n",
+      "source_sha256": "c9b52b12ab96e85f0beeef07e05cd6ae0b8513edeebc85cee07d986e650a7ee7",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-copy",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  std::variant<int, double> source = 3.0;\n  const std::variant<int, double> copy = source;\n  return copy.index() != 1 || copy.valueless_by_exception();\n}\nint main() { return check(); }\n",
+      "source_sha256": "90db942f16203febbbf69c474aab39317d97fa1ea1ce865192f0483a02fccc59",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-default-pointer",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  std::variant<int*, bool> value{};\n  return (&value)->index() != 0 || (&value)->valueless_by_exception();\n}\nint main() { return check(); }\n",
+      "source_sha256": "0ffa66f69293e1d91ca1e313816b6d06ba8ccc3e4347521c30f8aa1275e6ab5f",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-ref-and-side-effect",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Choice = std::variant<int, double>;\nint attempts;\nconst Choice& once(const Choice& choice) { ++attempts; return choice; }\nextern \"C\" int check() {\n  Choice choice = 4.0;\n  return once(choice).index() != 1 || attempts != 1 ||\n         once(choice).valueless_by_exception() || attempts != 2;\n}\nint main() { return check(); }\n",
+      "source_sha256": "7e4e80cddf51d8d24133b0d0e0c3e80b5273d2f6fea49497446991fd6f58c98f",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-temporary",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  return std::variant<int, double>(1).index() != 0 ||\n         std::variant<int, double>(2.5).valueless_by_exception();\n}\nint main() { return check(); }\n",
+      "source_sha256": "678bc613726edc6e4261c1ca8326a44ccc229049300ad8fa11e094d0ed513b67",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-get-if-alias",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  std::variant<int, double> value = 3;\n  auto *first = std::get_if<0>(&value);\n  if (!first || std::get_if<1>(&value) || *first != 3) return 1;\n  *first = 11;\n  auto *again = std::get_if<int>(&value);\n  return again != first || *again != 11;\n}\nint main() { return check(); }\n",
+      "source_sha256": "cf4f55c4ce1e01e6baf13f53e69c64b4c7212c1c1c12834f23f82d6d08767265",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-get-if-const",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  using Choice = std::variant<int, double>;\n  const Choice value = 2.5;\n  const auto *p = std::get_if<double>(&value);\n  const Choice *empty = nullptr;\n  return !p || *p != 2.5 || std::get_if<0>(&value) ||\n         std::get_if<1>(empty) || std::get_if<int>(empty);\n}\nint main() { return check(); }\n",
+      "source_sha256": "0af51a1669a5385593d8f893f7234b52a068a2be690fc156197da7a067e61740",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-get-if-duplicate",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  std::variant<int, int> value;\n  const auto *p = std::get_if<0>(&value);\n  return !p || *p != 0 || std::get_if<1>(&value);\n}\nint main() { return check(); }\n",
+      "source_sha256": "8be054dc5f9585128e901b7ad145eda981ffd5477636b15c3078c87c7ace1d53",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-get-if-copy-and-evaluate-once",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Choice = std::variant<char, double, int>;\nint attempts;\nChoice *once(Choice *owner) { ++attempts; return owner; }\nextern \"C\" int check() {\n  Choice value = 42;\n  Choice copy = value;\n  auto *p = std::get_if<2>(once(&copy));\n  if (!p || *p != 42 || attempts != 1) return 2;\n  *p = 19;\n  auto *original = std::get_if<2>(&value);\n  return !original || original == p || *original != 42 || *p != 19;\n}\nint main() { return check(); }\n",
+      "source_sha256": "276cbe77ee25b696004075f03c030e6146748f52fc27fd879540077629235df5",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-holds-const",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  const std::variant<int, double> value = 3.0;\n  return !std::holds_alternative<double>(value) || std::holds_alternative<int>(value);\n}\n",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source_sha256": "cbd07417b5161c5f469a8a2aff19186b354e25ef61d607aef6093fc042dabdbf"
+    },
+    {
+      "name": "variant-objects-copy-changing-alternative",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, double> first = 3;\n  const std::variant<int, double> second = 9.0;\n  auto& receiver = (first = second);\n  auto* payload = std::get_if<1>(&first);\n  return &receiver != &first || !payload || *payload != 9.0 || std::get_if<0>(&first);\n}\n",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source_sha256": "83af94299f6c89de5b0d8f8f595cd307bdd74a86e66b937ba01d2d62f048dd73"
+    },
+    {
+      "name": "variant-objects-move-and-self-assignment",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  using V = std::variant<int, double>;\n  V original = 6;\n  V copy = 3.0;\n  copy = static_cast<V&&>(original);\n  copy = copy;\n  auto* result = std::get_if<int>(&copy);\n  return !result || *result != 6 || !std::holds_alternative<int>(original);\n}\n",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source_sha256": "2c10e9e143d08aad05d75a86bbdadf195fe89996303b1b854ec160ece99895f3"
+    },
+    {
+      "name": "variant-objects-const-get-by-index",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  const std::variant<int, double> value{5};\n  const auto &item = std::get<0>(value);\n  return item != 5;\n}\n",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source_sha256": "7b45e648dc8b6b5b292f9ee5ac095afae6f164f8671453df90e3125f26259bf3"
+    },
+    {
+      "name": "variant-objects-const-get-by-type",
+      "expected": "accept",
+      "source": "#include <variant>\nint main() {\n  const std::variant<int, double> value{2.5};\n  return std::get<double>(value) != 2.5;\n}\n",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source_sha256": "f4cfe0f468d883f60a802efae14e07e19c334e56066723684658efe091e7a127"
+    },
+    {
+      "name": "variant-objects-class-alternative",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Payload { int field; };\nextern \"C\" int check() { std::variant<Payload, int> value; return int(value.index()); }\nint main() { return check(); }\n",
+      "source_sha256": "2644d8a49f8f8d5b04f95e9d982e07c1ff3a8db404a897ad504b87da1594d570",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-unproved-conversion",
+      "expected": "accept",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  short original = 7;\n  std::variant<int, double> value = original;\n  return int(value.index());\n}\nint main() { return check(); }\n",
+      "source_sha256": "6a639a9bcec52aabfb995a676135c4dbe73383448fc429ab9345ca1cf084cf1c",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-objects-const-alternative",
+      "expected": "reject",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  std::variant<const int, double> value;\n  return int(value.index());\n}\nint main() { return check(); }\n",
+      "source_sha256": "1850cd8a96d73b89c9e076ae378746265c61db4b8018377167ce3cd2efe2b3cf",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-objects-altered-discriminant",
+      "expected": "reject",
+      "source": "#define __index renamed_variant_discriminant\n#include <variant>\n#undef __index\nextern \"C\" int check() { std::variant<int, double> value; return int(value.index()); }\nint main() { return check(); }\n",
+      "source_sha256": "76beff2597c4ad9d9d9e6d781a7b6f710e6d074a0de053ab5d96f3cae502797e",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-objects-unchecked-get",
+      "expected": "reject",
+      "source": "#include <variant>\nextern \"C\" int check() {\n  std::variant<int, double> value;\n  return std::get<0>(value);\n}\nint main() { return check(); }\n",
+      "source_sha256": "89b46681e4fc7ea7abdb4eab96eac648c83a25d9419a3e80245c19bdd735ad0c",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-objects-const-get-inactive",
+      "expected": "reject",
+      "source": "#include <variant>\nint main() {\n  const std::variant<int, double> value{2.5};\n  return std::get<0>(value);\n}\n",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source_sha256": "1ad5052fb3af6be457fbb14bb88bb386886fdbe88069bd73121c718af03fa686"
+    },
+    {
+      "name": "variant-objects-const-get-mutable-alias",
+      "expected": "reject",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, double> value{3};\n  const auto &alias = value;\n  value = std::variant<int, double>{2.5};\n  return std::get<0>(alias);\n}\n",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source_sha256": "63d6e1fae292813a8a4e2ce4230efeea4edd4db1f14009b04127561b215c5dc0"
+    },
+    {
+      "name": "variant-objects-const-get-altered-helper",
+      "expected": "reject",
+      "source": "#define __generic_get replaced_generic_get\n#include <variant>\n#undef __generic_get\nint main() {\n  const std::variant<int, double> value{7};\n  return std::get<int>(value);\n}\n",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source_sha256": "eaa43308f7f73bed775341a412fdc0f101de262719b9282d4742529b1a789109"
+    },
+    {
+      "name": "variant-objects-get-if-replaced-address-body",
+      "source": "#define __builtin_addressof(x) (&(x))\n#include <variant>\n#undef __builtin_addressof\nint main() {\n  std::variant<int, double> value = 3;\n  const int *item = std::get_if<0>(&value);\n  return !item || *item != 3;\n}\n",
+      "source_sha256": "a94087da891e97b78c02aca63d14c0c02bd21dd9c31373056134a9ea943c41ce",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "native_reference_proofs": {
+    "variant-integral-forwarding": "110c2a8639d896398a8df8061e0795e2170d024994bde2fc83ed211ae6b8a244",
+    "variant-scalar-runtime": "07ea60a20ba37e38c9239712660b6c63e9c4c8598061d0af9c36008b349c6e29",
+    "variant-trivial-aggregate": "171f91b042bcb654e07f2b9b81d48d75ca2539963b11755e24601b71d3317a94"
+  },
+  "native_reference_authentication_sha256": "39e29a2ee828da5f4a573803a5543a0cc1922f0cfa524e2617bc5b74d51edd89",
+  "source_proof_sha256": "7a179f1c266748acb3ecb788c86717edfe6abb769806f5417959d27c3b058b4f"
+}

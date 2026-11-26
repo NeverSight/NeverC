@@ -1,0 +1,96 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-empty-order-object-evaluated-once",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmptyOrderObjectEvaluatedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "33cbfc2478908d0dc0d5f48db53655646bb11f9c15ed59cc52f20b1aef6ea9fb",
+      "original_case_source_sha256": "33cbfc2478908d0dc0d5f48db53655646bb11f9c15ed59cc52f20b1aef6ea9fb",
+      "gtest_body_sha256": "ec225b0bfc62ebda8e33d1858d18bfecdf296b7f1e1d3054e730432266b99726"
+    },
+    {
+      "name": "forward-list-empty-long-order-object-merges-equal-nodes",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmptyLongOrderObjectMergesEqualNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b503e68fef26de74d752454ce6331660b23ae521ed93e210265077d56b9f160b",
+      "original_case_source_sha256": "b503e68fef26de74d752454ce6331660b23ae521ed93e210265077d56b9f160b",
+      "gtest_body_sha256": "ab752127ffeab29e682a94ef27a253dbf4d6952939b0d53f24696e75eeb02cb9"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "forward-list-order-object-with-state-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListOrderObjectWithStateGuardRejected",
+      "expected": "reject",
+      "source_sha256": "c468777876225ec58a848fc4085532273eb41c12bbdbb84da1d68e1ad4dd768d",
+      "original_case_source_sha256": "c468777876225ec58a848fc4085532273eb41c12bbdbb84da1d68e1ad4dd768d",
+      "gtest_body_sha256": "f2d1884caa6e4ef43f2398f9e41f4c9a2300d9536abe06a2fdc695a4bf57a4ec"
+    },
+    {
+      "name": "forward-list-order-object-effect-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListOrderObjectEffectGuardRejected",
+      "expected": "reject",
+      "source_sha256": "1659b6b7f7f9ed79d166f74b7c2ae76bf712585f27699f645f5f306a10f3fb3e",
+      "original_case_source_sha256": "1659b6b7f7f9ed79d166f74b7c2ae76bf712585f27699f645f5f306a10f3fb3e",
+      "gtest_body_sha256": "474cc127729e1f6bc9b0285069ab41eee41d3f6107cddde6beb6a4fbc56c98c7"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "forward-list-empty-order-object-evaluated-once",
+      "expected": "accept",
+      "source": "#include <forward_list>\nstruct Greater { bool operator()(int left, int right) const { return right < left; } };\nint calls = 0;\nGreater get_order() { ++calls; return {}; }\nint main() {\n  std::forward_list<int> values{1, 8, 8, -3};\n  auto first_eight = values.begin();\n  ++first_eight;\n  values.sort(get_order());\n  auto item = values.begin();\n  if (calls != 1 || item != first_eight || *item++ != 8 || *item++ != 8)\n    return 1;\n  return *item++ != 1 || *item++ != -3 || item != values.end();\n}\n",
+      "source_sha256": "33cbfc2478908d0dc0d5f48db53655646bb11f9c15ed59cc52f20b1aef6ea9fb",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-empty-long-order-object-merges-equal-nodes",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nstruct Ascending { bool operator()(long left, long right) const { return right > left; } };\nint main() {\n  const long low = sizeof(long) == 8 ? static_cast<long>(-4294967289LL) : -17L;\n  std::forward_list<long> left{low, 9L};\n  std::forward_list<long> right{low, 12L};\n  auto left_node = left.begin();\n  auto right_node = right.begin();\n  left.merge(std::move(right), Ascending{});\n  auto item = left.begin();\n  if (!right.empty() || item != left_node || *item++ != low)\n    return 1;\n  if (item != right_node || *item++ != low)\n    return 2;\n  return *item++ != 9L || *item++ != 12L || item != left.end();\n}\n",
+      "source_sha256": "b503e68fef26de74d752454ce6331660b23ae521ed93e210265077d56b9f160b",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-order-object-with-state-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nstruct Order {\n  bool descending;\n  bool operator()(int a, int b) const { return descending ? a > b : a < b; }\n};\nint main() {\n  std::forward_list<int> values{1, 2};\n  values.sort(Order{true});\n  return values.front() != 2;\n}\n",
+      "source_sha256": "c468777876225ec58a848fc4085532273eb41c12bbdbb84da1d68e1ad4dd768d",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-order-object-effect-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint calls = 0;\nstruct Order {\n  bool operator()(int a, int b) const { ++calls; return a < b; }\n};\nint main() {\n  std::forward_list<int> values{2, 1};\n  values.sort(Order{});\n  return calls == 0 || values.front() != 1;\n}\n",
+      "source_sha256": "1659b6b7f7f9ed79d166f74b7c2ae76bf712585f27699f645f5f306a10f3fb3e",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListEmptyOrderObjectEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEmptyLongOrderObjectMergesEqualNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListOrderObjectWithStateGuardRejected",
+    "TranslateTest.CoreV2ForwardListOrderObjectEffectGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "dc1c07a397692bbb10bfc4a51a1f954168862de4f4ca2dc5e0ed3e958265c202",
+  "maintained_original_sha256": "198a13d3a038c4c8d03cb37f27abf8a9f18dc8722be329e39d13088c9a575fbc",
+  "previous_registered_source_sha256": "be2a1e00dde6f5628947634a30d19c98d7f52d64e8edb89ca3f2f87a8a978f75",
+  "previous_maintained_original_sha256": "6b9196d994fcd86fe1b2bd5c6e4af35f866f7bd0dacda4417ba816135db02808",
+  "restorer_sha256": "f0eeeebad807480435b6724b2b5aa8cf5ad2a6527ce82b32ebcbd06f175f5434",
+  "extractor_sha256": "4ae8ac31c88fa4e49657578d25cfae657c20d8d84c00ad1e6f96802db30d07dd",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9255,
+  "current_python_registry_tests": 330,
+  "native_reference_selected_executions": 4,
+  "planned_generated_c23_executions": 4,
+  "native_reference_proofs": {
+    "forward-list-empty-order-objects": "d20f7163f63898212bfbdbbfde570a459791102d215e12e7161fa2a0043c1bb0"
+  },
+  "native_reference_authentication_sha256": "435acb0e67e9536cb1d4fe529f21ad0429e805351741ba62b25417e9500ce753",
+  "source_proof_sha256": "7a179f1c266748acb3ecb788c86717edfe6abb769806f5417959d27c3b058b4f"
+}

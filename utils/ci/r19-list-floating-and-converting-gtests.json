@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-emplace-conversion-keeps-position-and-unsigned-residue",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplaceConversionKeepsPositionAndUnsignedResidueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "042cad07494755657a0655531c1c26e46a63dcd7a75cf0cda8e8e38becb635d8",
+      "original_case_source_sha256": "042cad07494755657a0655531c1c26e46a63dcd7a75cf0cda8e8e38becb635d8",
+      "gtest_body_sha256": "b4e6b5e37126f019277d36f35b7c5225021426124a08645891941071949edeb8"
+    },
+    {
+      "name": "list-emplace-loads-converting-reference-after-allocation",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplaceLoadsConvertingReferenceAfterAllocationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "558096a14475eb9b550b6b286b2e8f6143e0f0667702e456f2ad6fd149bd8903",
+      "original_case_source_sha256": "558096a14475eb9b550b6b286b2e8f6143e0f0667702e456f2ad6fd149bd8903",
+      "gtest_body_sha256": "dc1486db3c6e0f655aad0596ecc74549fd0af085e3e02f47556918cad8b3513b"
+    },
+    {
+      "name": "list-float-stable-merge-retains-the-original-nodes",
+      "formal_test_name": "TranslateTest.CoreV2ListFloatStableMergeRetainsTheOriginalNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d423fc43e2c4057805d6bf1fd10d268f25193b90cd9b966c7409a37cfa83d6f6",
+      "original_case_source_sha256": "d423fc43e2c4057805d6bf1fd10d268f25193b90cd9b966c7409a37cfa83d6f6",
+      "gtest_body_sha256": "55f091eb1c175233494f2949f8db6ad82f5f117630a0d2fcf74f22c5261032b7"
+    },
+    {
+      "name": "forward-list-float-construct-assign-and-emplace-same-type",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListFloatConstructAssignAndEmplaceSameTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "29aa4f8779586c6f6019a5d2b0fe3a64f2720ae7979776ba45e408559ed871fe",
+      "original_case_source_sha256": "29aa4f8779586c6f6019a5d2b0fe3a64f2720ae7979776ba45e408559ed871fe",
+      "gtest_body_sha256": "16a4bface2069989dd7e5532a85adaaf9d7d70bd3db407e52e6c0bed16e0eacd"
+    },
+    {
+      "name": "forward-list-double-stable-sort-keeps-fractional-values",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDoubleStableSortKeepsFractionalValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ae29eeb4250d2380a0d91a8b2bba25d11895d6f0c46cfde5c34e2e3cbfeb2087",
+      "original_case_source_sha256": "ae29eeb4250d2380a0d91a8b2bba25d11895d6f0c46cfde5c34e2e3cbfeb2087",
+      "gtest_body_sha256": "aaf814d1e64d6d744b5fd12cfe744f3d484792a8cd95c13128617cf573fea7fd"
+    },
+    {
+      "name": "forward-list-double-initializer-insert-retains-position",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDoubleInitializerInsertRetainsPositionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4e48ce16698ac804c6e59971b05ba0d584111f60f44d318c634f8dc749b70493",
+      "original_case_source_sha256": "4e48ce16698ac804c6e59971b05ba0d584111f60f44d318c634f8dc749b70493",
+      "gtest_body_sha256": "6ce44ca665526e3a2cc4d2e75e9501af59f93f0f900a9aae041451ba931b635f"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-emplace-floating-to-integer-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplaceFloatingToIntegerGuardRejected",
+      "expected": "reject",
+      "source_sha256": "b9543338c2bc9f339b051b981a2afd0c99e250d9b175fed6456a6250b66f3c59",
+      "original_case_source_sha256": "b9543338c2bc9f339b051b981a2afd0c99e250d9b175fed6456a6250b66f3c59",
+      "gtest_body_sha256": "3cfb47f1e5a5fde064b3c250d54ff4a7e876c60e0643bd4ac4ada7879c4608ad"
+    },
+    {
+      "name": "list-emplace-volatile-integer-conversion-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplaceVolatileIntegerConversionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "8db7ca4858c5bfc445612f0534a86c719a17cf92f97bd058990000322335667d",
+      "original_case_source_sha256": "8db7ca4858c5bfc445612f0534a86c719a17cf92f97bd058990000322335667d",
+      "gtest_body_sha256": "005b47fd732bda87e90fc55dc840db20006ee4623045fa26d78a12b5c90cdf51"
+    },
+    {
+      "name": "list-double-range-does-not-admit-float-conversion",
+      "formal_test_name": "TranslateTest.CoreV2ListDoubleRangeDoesNotAdmitFloatConversionRejected",
+      "expected": "reject",
+      "source_sha256": "db96de79f6878cbe1122afdaa153d650e72384782aa4f1c0e40d72ae7d2cf812",
+      "original_case_source_sha256": "db96de79f6878cbe1122afdaa153d650e72384782aa4f1c0e40d72ae7d2cf812",
+      "gtest_body_sha256": "a62cc23eb479f64695d2cdcfb679e72af41bf9cca06cf131f93fe77721c89901"
+    },
+    {
+      "name": "forward-list-double-emplace-volatile-argument-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDoubleEmplaceVolatileArgumentGuardRejected",
+      "expected": "reject",
+      "source_sha256": "b7963aa90312a3d1508883e2933063441345201c97318365b77d4c8c74e48f41",
+      "original_case_source_sha256": "b7963aa90312a3d1508883e2933063441345201c97318365b77d4c8c74e48f41",
+      "gtest_body_sha256": "5c9164296e47bc78dc11356fa33862df4d43a956b655a8c5d28ba884e0ac9a76"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-emplace-conversion-keeps-position-and-unsigned-residue",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<unsigned short> values{7, 9};\n  auto first = values.begin();\n  auto position = values.cbegin();\n  ++position;\n  const signed char negative = -2;\n  auto added = values.emplace(position, negative);\n  unsigned short& back = values.emplace_back(65539UL);\n  auto item = values.begin();\n  return values.size() != 4 || item != first || *item++ != 7 || item != added ||\n         *item++ != 65534 || *item++ != 9 || &*item != &back || *item++ != 3 || item != values.end();\n}\n",
+      "source_sha256": "042cad07494755657a0655531c1c26e46a63dcd7a75cf0cda8e8e38becb635d8",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-emplace-loads-converting-reference-after-allocation",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic std::list<long long>* observed;\nstatic int source = 13, allocations, previous_size;\nvoid* operator new(Size count) {\n  if (observed) {\n    ++allocations;\n    previous_size = static_cast<int>(observed->size());\n    source = -17;\n  }\n  return ::malloc(count);\n}\nvoid operator delete(void* p) noexcept { ::free(p); }\nint main() {\n  std::list<long long> values{7LL};\n  observed = &values;\n  const int& input = source;\n  auto& first = values.emplace_front(input);\n  observed = nullptr;\n  return allocations != 1 || previous_size != 1 || &first != &values.front() ||\n         first != -17LL || values.size() != 2 || values.back() != 7LL;\n}\n",
+      "source_sha256": "558096a14475eb9b550b6b286b2e8f6143e0f0667702e456f2ad6fd149bd8903",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-float-stable-merge-retains-the-original-nodes",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<float> left{-1.25f, 2.5f}, right{-1.25f, 9.75f};\n  auto first = left.cbegin();\n  auto second = right.cbegin();\n  left.merge(right);\n  auto it = left.cbegin();\n  return !right.empty() || it != first || *it++ != -1.25f || it != second ||\n         *it++ != -1.25f || *it++ != 2.5f || *it++ != 9.75f || it != left.cend();\n}\n",
+      "source_sha256": "d423fc43e2c4057805d6bf1fd10d268f25193b90cd9b966c7409a37cfa83d6f6",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-float-construct-assign-and-emplace-same-type",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  float input[]{1.25f, -6.5f, 3.0f};\n  std::forward_list<float> values(input, input + 3);\n  if (values.front() != 1.25f)\n    return 1;\n  values.assign(input + 1, input + 3);\n  float& first = values.emplace_front(input[0]);\n  auto it = values.cbegin();\n  return &first != &values.front() || *it++ != 1.25f || *it++ != -6.5f ||\n         *it++ != 3.0f || it != values.cend();\n}\n",
+      "source_sha256": "29aa4f8779586c6f6019a5d2b0fe3a64f2720ae7979776ba45e408559ed871fe",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-double-stable-sort-keeps-fractional-values",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<double> values{4.125, -0.25, 4.125, -6.5};\n  auto first_equal = values.begin();\n  values.sort();\n  auto it = values.begin();\n  return *it++ != -6.5 || *it++ != -0.25 || it != first_equal ||\n         *it++ != 4.125 || *it++ != 4.125 || it != values.end();\n}\n",
+      "source_sha256": "ae29eeb4250d2380a0d91a8b2bba25d11895d6f0c46cfde5c34e2e3cbfeb2087",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-double-initializer-insert-retains-position",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<double> values{1.125, 4.25};\n  auto old = values.begin();\n  auto last = values.insert_after(values.cbegin(), {2.25, 3.5});\n  auto item = values.begin();\n  return item != old || *item++ != 1.125 || *item++ != 2.25 ||\n         item != last || *item++ != 3.5 || *item++ != 4.25 || item != values.end();\n}\n",
+      "source_sha256": "4e48ce16698ac804c6e59971b05ba0d584111f60f44d318c634f8dc749b70493",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-emplace-floating-to-integer-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  std::list<int> values;\n  const double value = -3.25;\n  return values.emplace_back(value) != -3;\n}\n",
+      "source_sha256": "b9543338c2bc9f339b051b981a2afd0c99e250d9b175fed6456a6250b66f3c59",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-emplace-volatile-integer-conversion-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  std::list<long> values{4L};\n  volatile short value = -3;\n  auto inserted = values.emplace(values.cbegin(), value);\n  return *inserted != -3L || values.size() != 2;\n}\n",
+      "source_sha256": "8db7ca4858c5bfc445612f0534a86c719a17cf92f97bd058990000322335667d",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-double-range-does-not-admit-float-conversion",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  const float data[]{2.25f, 3.0f};\n  std::list<double> values(data, data + 2);\n  return values.front() != 2.25;\n}\n",
+      "source_sha256": "db96de79f6878cbe1122afdaa153d650e72384782aa4f1c0e40d72ae7d2cf812",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-double-emplace-volatile-argument-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint main() {\n  volatile double input = -2.25;\n  std::forward_list<double> values;\n  return values.emplace_front(input) != -2.25;\n}\n",
+      "source_sha256": "b7963aa90312a3d1508883e2933063441345201c97318365b77d4c8c74e48f41",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListEmplaceConversionKeepsPositionAndUnsignedResidueRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListEmplaceLoadsConvertingReferenceAfterAllocationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListFloatStableMergeRetainsTheOriginalNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListFloatConstructAssignAndEmplaceSameTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDoubleStableSortKeepsFractionalValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDoubleInitializerInsertRetainsPositionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListEmplaceFloatingToIntegerGuardRejected",
+    "TranslateTest.CoreV2ListEmplaceVolatileIntegerConversionGuardRejected",
+    "TranslateTest.CoreV2ListDoubleRangeDoesNotAdmitFloatConversionRejected",
+    "TranslateTest.CoreV2ForwardListDoubleEmplaceVolatileArgumentGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "7717207fb06fb900af26dc75510202b95e08a139b0a78c068b895a1ffda9d33d",
+  "maintained_original_sha256": "67d0a158ddb825331f6f40dead7af324824890142e82e50e833c37c2129457e3",
+  "previous_registered_source_sha256": "7b64ec337d1074ad1042d0f3e614fc13716c28dda3abd210007b43d4ee66e868",
+  "previous_maintained_original_sha256": "af96834e425af9b9e29b0c39d04e0f2a6336172d598a2face170d18ca51070c1",
+  "restorer_sha256": "fa95b625350b1274ce71ab43dd595f0a3397b54ac37bfabaee9862adc4e6b252",
+  "extractor_sha256": "dca5680b9e1f9811d2e9a1ccdd0d12bbcc1e6a82d4ce768c20de7af340f757a6",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9390,
+  "current_python_registry_tests": 338,
+  "native_reference_selected_executions": 20,
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "linked-list-floating-elements": "502dd6fd3e2e30b842111938720b1d038f62c9c19d71bd1280f96182d362a4bb",
+    "list-converting-emplace": "b01fc933796ba878497fe433b0bb3877fd3bfbf0b4c4e347dc1b765fac6275ad"
+  },
+  "native_reference_authentication_sha256": "c7cc9685252ea8aec31c8ff61a1ec77649face2ed3dfbb84337eeac61faeae90",
+  "source_proof_sha256": "7a179f1c266748acb3ecb788c86717edfe6abb769806f5417959d27c3b058b4f"
+}

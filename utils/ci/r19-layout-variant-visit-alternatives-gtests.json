@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-visit-alternatives-function-reference-alias",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAlternativesFunctionReferenceAliasRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "51832d010183a965f7c99869f88acfeb80aad51e9ca5ae1c725e94a5fd8c0c98",
+      "original_case_source_sha256": "51832d010183a965f7c99869f88acfeb80aad51e9ca5ae1c725e94a5fd8c0c98",
+      "gtest_body_sha256": "8441bec52c625c9ed92cd99ecf41212a31e8383d16825c26de623ff22432a421"
+    },
+    {
+      "name": "variant-visit-alternatives-mixed-const-and-mutable-bindings",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAlternativesMixedConstAndMutableBindingsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "410c03e1588d690738d93f2e88c349b2575101782c670e54926ddd8dce54a6b8",
+      "original_case_source_sha256": "410c03e1588d690738d93f2e88c349b2575101782c670e54926ddd8dce54a6b8",
+      "gtest_body_sha256": "3a9e3a217539feceaafb0347f04ea58bb0a96dd945b2ac2b84c269d51d14aa9c"
+    },
+    {
+      "name": "variant-visit-alternatives-monostate-value-copy",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAlternativesMonostateValueCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "733f074dc998d6a9f31af00d60375ef656cfa386f4e72f0a506a10329d5e28ee",
+      "original_case_source_sha256": "733f074dc998d6a9f31af00d60375ef656cfa386f4e72f0a506a10329d5e28ee",
+      "gtest_body_sha256": "5657ad2b34ae87ebbc9bb3a29bc1c9c6991cbc15578c46291b4e3a134381cee6"
+    },
+    {
+      "name": "variant-visit-alternatives-exact-pointer-and-floating-alternatives",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAlternativesExactPointerAndFloatingAlternativesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9214fe1e9611dc5299abe81886fa3f48d91bec637673f12511edec684772fab5",
+      "original_case_source_sha256": "9214fe1e9611dc5299abe81886fa3f48d91bec637673f12511edec684772fab5",
+      "gtest_body_sha256": "73e447e60789faea56341e3169580fe95a6466d8869852c5b20a0640335a769f"
+    },
+    {
+      "name": "variant-visit-alternatives-reference-result",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitReferenceResultAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5",
+      "original_case_source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5",
+      "gtest_body_sha256": "d78033fa4cb89e3d19b4be941dea6650b955cb41e28d52960392cc4df9843e6e",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-visit-alternatives-renamed-exhaustive-check",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAlternativesRenamedExhaustiveCheckRejected",
+      "expected": "reject",
+      "source_sha256": "7f16ab218a77a55800ff5b20360fd0ad5f0aabbdac2337e87ede8535419d00a9",
+      "original_case_source_sha256": "7f16ab218a77a55800ff5b20360fd0ad5f0aabbdac2337e87ede8535419d00a9",
+      "gtest_body_sha256": "bcdef2eca85e64b8a5a011570e3d04cc83e2078d38a27dc7d2beef3a37fbc17f"
+    },
+    {
+      "name": "variant-visit-alternatives-reference-to-converted-temporary",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAlternativesReferenceToConvertedTemporaryRejected",
+      "expected": "reject",
+      "source_sha256": "323cbd03e69ec2cf87ba56230c535a1b053f27059d18c322717c205c455a668d",
+      "original_case_source_sha256": "323cbd03e69ec2cf87ba56230c535a1b053f27059d18c322717c205c455a668d",
+      "gtest_body_sha256": "bf60c89c7d59e1647611e45df4f01106873c9faaf26676917ba365f90728ccd2"
+    },
+    {
+      "name": "variant-visit-alternatives-volatile-reference",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAlternativesVolatileReferenceRejected",
+      "expected": "reject",
+      "source_sha256": "b2838cde1a4412115fd3d4b83f3a7616a46d412ac2ff48eba2fef00640157ad3",
+      "original_case_source_sha256": "b2838cde1a4412115fd3d4b83f3a7616a46d412ac2ff48eba2fef00640157ad3",
+      "gtest_body_sha256": "15bb1b81ded414c7eac31015c00f66989372f89714dda4efe42bff02bb1c01e7"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-visit-alternatives-function-reference-alias",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing State = std::variant<int, int>;\nint* seen;\nint bump(int& value) { seen = &value; return ++value; }\nint main() {\n  State state(std::in_place_index<1>, 40);\n  int* active = std::get_if<1>(&state);\n  if (!active || std::visit(bump, state) != 41 || seen != active || *active != 41) return 1;\n  auto callback = &bump;\n  return std::visit(callback, state) != 42 || state.index() != 1 ||\n         *active != 42 || seen != active;\n}\n",
+      "source_sha256": "51832d010183a965f7c99869f88acfeb80aad51e9ca5ae1c725e94a5fd8c0c98"
+    },
+    {
+      "name": "variant-visit-alternatives-mixed-const-and-mutable-bindings",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Empty = std::monostate;\nusing State = std::variant<Empty, int, Empty>;\nusing Count = std::variant<int, int>;\nstruct Visit {\n  const Empty* expected;\n  int calls;\n  int operator()(const Empty& empty, int& count) & {\n    ++calls;\n    return count += &empty == expected ? 2 : 200;\n  }\n  int operator()(const int& value, int& count) & {\n    ++calls;\n    return count += value;\n  }\n};\nint visitor_calls, state_calls, count_calls;\nVisit& visitor(Visit& v) { ++visitor_calls; return v; }\nconst State& borrow(const State& v) { ++state_calls; return v; }\nCount& borrow_count(Count& v) { ++count_calls; return v; }\nint main() {\n  const State left(std::in_place_index<2>);\n  const State right(std::in_place_index<1>, 5);\n  Count count(std::in_place_index<1>, 30);\n  Visit use{&std::get<2>(left), 0};\n  if (std::visit(visitor(use), borrow(left), borrow_count(count)) != 32 ||\n      std::visit(use, right, count) != 37) return 1;\n  const int* stored = std::get_if<1>(&count);\n  return !stored || *stored != 37 || use.calls != 2 || visitor_calls != 1 ||\n         state_calls != 1 || count_calls != 1;\n}\n",
+      "source_sha256": "410c03e1588d690738d93f2e88c349b2575101782c670e54926ddd8dce54a6b8"
+    },
+    {
+      "name": "variant-visit-alternatives-monostate-value-copy",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Empty = std::monostate;\nusing State = std::variant<Empty, Empty>;\nint calls;\nint use(Empty lhs, const Empty& rhs) {\n  ++calls;\n  return &lhs != &rhs ? 41 : 0;\n}\nint main() {\n  const State source(std::in_place_index<1>);\n  auto callback = &use;\n  return std::visit(callback, source, source) != 41 || calls != 1 ||\n         source.index() != 1;\n}\n",
+      "source_sha256": "733f074dc998d6a9f31af00d60375ef656cfa386f4e72f0a506a10329d5e28ee"
+    },
+    {
+      "name": "variant-visit-alternatives-exact-pointer-and-floating-alternatives",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nstruct Visit {\n  int operator()(int* value) const & { return *value; }\n  int operator()(const double& value) const & { return value == 1.5 ? 23 : 99; }\n};\nint main() {\n  int x = 19;\n  const Visit use{};\n  const std::variant<int*, double> p(std::in_place_index<0>, &x);\n  const std::variant<int*, double> d(std::in_place_index<1>, 1.5);\n  return std::visit(use, p) != 19 || std::visit(use, d) != 23;\n}\n",
+      "source_sha256": "9214fe1e9611dc5299abe81886fa3f48d91bec637673f12511edec684772fab5"
+    },
+    {
+      "name": "variant-visit-alternatives-reference-result",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint& forward(int& value) { return value; }\nint& f(std::variant<int>& state) { return std::visit(forward, state); }\n",
+      "source_sha256": "059463531ed3b3fc895d61b06e76c61a73c472e507c8dfc40e0b5a3a077b1df5"
+    },
+    {
+      "name": "variant-visit-alternatives-renamed-exhaustive-check",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#define __std_visit_exhaustive_visitor_check changed_exhaustive_check\n#include <variant>\n#undef __std_visit_exhaustive_visitor_check\nusing State = std::variant<std::monostate, std::monostate>;\nint read(const std::monostate&) { return 1; }\nint f(const State& state) { return std::visit(read, state); }\n",
+      "source_sha256": "7f16ab218a77a55800ff5b20360fd0ad5f0aabbdac2337e87ede8535419d00a9"
+    },
+    {
+      "name": "variant-visit-alternatives-reference-to-converted-temporary",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nint read(const double& value) { return value != 0; }\nint f(std::variant<int>& state) { return std::visit(read, state); }\n",
+      "source_sha256": "323cbd03e69ec2cf87ba56230c535a1b053f27059d18c322717c205c455a668d"
+    },
+    {
+      "name": "variant-visit-alternatives-volatile-reference",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nint read(const volatile int& value) { return value; }\nint f(std::variant<int>& state) { return std::visit(read, state); }\n",
+      "source_sha256": "b2838cde1a4412115fd3d4b83f3a7616a46d412ac2ff48eba2fef00640157ad3"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantVisitAlternativesFunctionReferenceAliasRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitAlternativesMixedConstAndMutableBindingsRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitAlternativesMonostateValueCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitAlternativesExactPointerAndFloatingAlternativesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitReferenceResultAcceptsFunctionBody",
+    "TranslateTest.CoreV2VariantVisitAlternativesRenamedExhaustiveCheckRejected",
+    "TranslateTest.CoreV2VariantVisitAlternativesReferenceToConvertedTemporaryRejected",
+    "TranslateTest.CoreV2VariantVisitAlternativesVolatileReferenceRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "4cf479ebbca2e01ad687d823ed65a5638d39ea7b27eb4cafd53442c3fea7b77c",
+  "maintained_original_sha256": "4ebe1755104459f128be4ab723a1898ac57af93ceffb33a885f9cbd46f924d69",
+  "previous_registered_source_sha256": "531796afa63bd5b199baacccad91f1fb86b4a0c16a7e182437a6d779b75b5dbc",
+  "previous_maintained_original_sha256": "044375f31196b86b6225261c611c6f8100a8ec7ab0219709cfffe35e44d6daed",
+  "restorer_sha256": "7ebafa9e86a238fe2ef72bc3f210f7f5b148da0f35b2dd74376b5efcf96337b6",
+  "extractor_sha256": "2d1e8b499c18304cf4642414213058537276ed1295b8182a1603d644bc49e3ac",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8256,
+  "current_python_registry_tests": 150,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "variant-visit-alternatives": "47b6eb40b4b1e406e9e19f0c1b81c9ee8afa0aaa14b17225a9e75f717422a18b"
+  },
+  "native_reference_authentication_sha256": "f64b24b4e51ea2ba6061d574fcbcf274e35f914b8ed9fab8ff0572b85c8d64f6",
+  "source_proof_sha256": "7a179f1c266748acb3ecb788c86717edfe6abb769806f5417959d27c3b058b4f"
+}

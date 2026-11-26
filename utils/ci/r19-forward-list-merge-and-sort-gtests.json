@@ -1,0 +1,235 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-default-merge-is-stable-across-owners",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultMergeIsStableAcrossOwnersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "364bc14d7fffff90babcecaedd4095cd2fffd351e98dbd6c91883a7a56f860dd",
+      "original_case_source_sha256": "364bc14d7fffff90babcecaedd4095cd2fffd351e98dbd6c91883a7a56f860dd",
+      "gtest_body_sha256": "56a55813faea54519ef3afea125fac5b7f1c74cadda64a2ebecf8c55042fd902"
+    },
+    {
+      "name": "forward-list-default-merge-rvalue-and-self",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultMergeRvalueAndSelfRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ff3bade998c7a898ded59f0010065e958c592fed5d89e916f2ec20dc9cdd3149",
+      "original_case_source_sha256": "ff3bade998c7a898ded59f0010065e958c592fed5d89e916f2ec20dc9cdd3149",
+      "gtest_body_sha256": "e60745cdaa8374d2deda95d160563a0eae0e72ef374061e74540fbf3f6a0f0ef"
+    },
+    {
+      "name": "forward-list-default-merge-empty-and-tail-edges",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultMergeEmptyAndTailEdgesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6154ded52b097b1a2d2cccea967615e1e70afbb16a6ecdefb03ef6c4b35203c3",
+      "original_case_source_sha256": "6154ded52b097b1a2d2cccea967615e1e70afbb16a6ecdefb03ef6c4b35203c3",
+      "gtest_body_sha256": "84056b25a97a88cca4c9e59ce0b5c17421a0b55810b7242bbf92f6628806f088"
+    },
+    {
+      "name": "forward-list-default-sort-preserves-duplicate-order-and-addresses",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultSortPreservesDuplicateOrderAndAddressesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e5596e22a53816763cba30fb466768895e456fdd8218dc95cfc682e0f1aef457",
+      "original_case_source_sha256": "e5596e22a53816763cba30fb466768895e456fdd8218dc95cfc682e0f1aef457",
+      "gtest_body_sha256": "f7771f24f0cd80ad578a423b73530a78e04464fafcb98dba9c0b0ccbe5842476"
+    },
+    {
+      "name": "forward-list-default-sort-orders-signed-values",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultSortOrdersSignedValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a458f70332fc35226d6cc4e04bb3fdbb5601f70e7c8c8d66a81b337477047df2",
+      "original_case_source_sha256": "a458f70332fc35226d6cc4e04bb3fdbb5601f70e7c8c8d66a81b337477047df2",
+      "gtest_body_sha256": "5a397ec4b0fbd2e9b076ab3836039d3c6ffde1c37514c21011cfdb27fafb9ccf"
+    },
+    {
+      "name": "forward-list-default-sort-empty-singleton-and-sorted",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultSortEmptySingletonAndSortedRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ffa6ce5112ad61c36616d18cbb470b9bd94c85180e18c1aa80c0052e5b14cbba",
+      "original_case_source_sha256": "ffa6ce5112ad61c36616d18cbb470b9bd94c85180e18c1aa80c0052e5b14cbba",
+      "gtest_body_sha256": "9c05fda7665dcf6486a109504890dff4a603509261a9e03677bec35e636c58ff"
+    },
+    {
+      "name": "forward-list-sort-custom-function-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSortsWithFunctionComparison",
+      "expected": "accept",
+      "source_sha256": "6b8ec2816742754d0352de4b6904a62b0d7553763e1595e13d7627e1b80d58ad",
+      "original_case_source_sha256": "6b8ec2816742754d0352de4b6904a62b0d7553763e1595e13d7627e1b80d58ad",
+      "gtest_body_sha256": "bca798458ddcdbd9c6b676c2282996219fa9dab14b6791a1c4ac46aeefe65231"
+    },
+    {
+      "name": "forward-list-merge-custom-comparator-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListMergesWithFunctionComparison",
+      "expected": "accept",
+      "source_sha256": "1852030c72bfc1e5b5bce018b07d021bf4306f34fbda537c508a9cdb56a07a1e",
+      "original_case_source_sha256": "1852030c72bfc1e5b5bce018b07d021bf4306f34fbda537c508a9cdb56a07a1e",
+      "gtest_body_sha256": "0f48daf9d39348a3eda638becc953ca2a1e4daa83f2537e5453e32ed74b79748"
+    },
+    {
+      "name": "forward-list-merge-rvalue-custom-comparator-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListMergesRvalueWithFunctionComparison",
+      "expected": "accept",
+      "source_sha256": "dec26c7510edf43e1c6a8cebd20befa7065648a12e83d52d0b1d16ace0f4c1fa",
+      "original_case_source_sha256": "dec26c7510edf43e1c6a8cebd20befa7065648a12e83d52d0b1d16ace0f4c1fa",
+      "gtest_body_sha256": "ee59fbeb5074327661303c4374d2abb34901497039cf3e30449594b6f4e991dd"
+    },
+    {
+      "name": "forward-list-merge-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongMergesNodes",
+      "expected": "accept",
+      "source_sha256": "8b9ae5798e0f8d405f938ba083e710e20ce052729db45eae0bf954a726a6d798",
+      "original_case_source_sha256": "8b9ae5798e0f8d405f938ba083e710e20ce052729db45eae0bf954a726a6d798",
+      "gtest_body_sha256": "80619a7276f7d70de995caed54882b9998843da9ea496145eb8b54201b978132"
+    },
+    {
+      "name": "forward-list-sort-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongSortsNodes",
+      "expected": "accept",
+      "source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
+      "original_case_source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
+      "gtest_body_sha256": "d5e907584970825bb751c8f2ee83dee70fbc096bdae6fc0c2b94558177fce367"
+    },
+    {
+      "name": "forward-list-sort-custom-object-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSortsWithAnEmptyComparator",
+      "expected": "accept",
+      "source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
+      "original_case_source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
+      "gtest_body_sha256": "70945962576cad09b58e176094ed88900efdce67e6176d300d7132bf4fad477b"
+    }
+  ],
+  "negative_cases": [],
+  "source_cases": [
+    {
+      "name": "forward-list-default-merge-is-stable-across-owners",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> left{1, 3, 5, 9};\n  std::forward_list<int> right{2, 3, 5, 7};\n  auto left_three = left.begin();\n  ++left_three;\n  auto right_three = right.begin();\n  ++right_three;\n  auto left_five = left_three;\n  auto right_five = right_three;\n  ++left_five;\n  ++right_five;\n  left.merge(right);\n  if (!right.empty())\n    return 1;\n  auto it = left.begin();\n  if (*it != 1 || *++it != 2 || ++it != left_three || *it != 3)\n    return 2;\n  if (++it != right_three || *it != 3 || ++it != left_five || *it != 5)\n    return 3;\n  if (++it != right_five || *it != 5 || *++it != 7 || *++it != 9)\n    return 4;\n  return ++it != left.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "364bc14d7fffff90babcecaedd4095cd2fffd351e98dbd6c91883a7a56f860dd",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-default-merge-rvalue-and-self",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nint main() {\n  std::forward_list<int> left;\n  std::forward_list<int> right{3, 7};\n  auto before = right.begin();\n  int *node = &*before;\n  left.merge(std::move(right));\n  if (!right.empty() || left.begin() != before || &left.front() != node)\n    return 1;\n  auto &alias = left;\n  left.merge(alias);\n  if (&left.front() != node)\n    return 2;\n  right.push_front(11);\n  return *before != 3 || right.front() != 11;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "ff3bade998c7a898ded59f0010065e958c592fed5d89e916f2ec20dc9cdd3149",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-default-merge-empty-and-tail-edges",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> left;\n  std::forward_list<int> right;\n  left.merge(right);\n  if (!left.empty() || !right.empty())\n    return 1;\n  left.push_front(13);\n  auto original = left.begin();\n  left.merge(right);\n  if (left.begin() != original)\n    return 2;\n  right.push_front(7);\n  right.push_front(3);\n  auto transferred = right.begin();\n  auto *owner = &left;\n  owner->merge(right);\n  auto cursor = left.begin();\n  if (!right.empty() || cursor != transferred || *cursor != 3 || *++cursor != 7)\n    return 3;\n  return ++cursor != original || *cursor != 13 || ++cursor != left.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "6154ded52b097b1a2d2cccea967615e1e70afbb16a6ecdefb03ef6c4b35203c3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-default-sort-preserves-duplicate-order-and-addresses",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> list{4, 2, 4, 1, 2, 4, 3};\n  auto four1 = list.begin();\n  auto two1 = four1;\n  ++two1;\n  auto four2 = two1;\n  ++four2;\n  auto one = four2;\n  ++one;\n  auto two2 = one;\n  ++two2;\n  auto four3 = two2;\n  ++four3;\n  auto three = four3;\n  ++three;\n  list.sort();\n  auto cursor = list.begin();\n  if (cursor != one || *cursor != 1 || ++cursor != two1 || *cursor != 2)\n    return 1;\n  if (++cursor != two2 || *cursor != 2 || ++cursor != three || *cursor != 3)\n    return 2;\n  if (++cursor != four1 || *cursor != 4 || ++cursor != four2 || *cursor != 4)\n    return 3;\n  return ++cursor != four3 || *cursor != 4 || ++cursor != list.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "e5596e22a53816763cba30fb466768895e456fdd8218dc95cfc682e0f1aef457",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-default-sort-orders-signed-values",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> list{21, 13, 0, -2, -7, -11, -13, -17, -19};\n  const int expected[]{-19, -17, -13, -11, -7, -2, 0, 13, 21};\n  auto *owner = &list;\n  owner->sort();\n  auto cursor = list.begin();\n  for (int index = 0; index != 9; ++index, ++cursor)\n    if (cursor == list.end() || *cursor != expected[index])\n      return 1;\n  return cursor != list.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "a458f70332fc35226d6cc4e04bb3fdbb5601f70e7c8c8d66a81b337477047df2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-default-sort-empty-singleton-and-sorted",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> list;\n  list.sort();\n  if (!list.empty())\n    return 1;\n  list.push_front(7);\n  int *address = &list.front();\n  list.sort();\n  if (&list.front() != address)\n    return 2;\n  list.push_front(3);\n  auto first = list.begin();\n  list.sort();\n  list.sort();\n  auto next = list.begin();\n  return next != first || *next != 3 || &*++next != address || ++next != list.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "ffa6ce5112ad61c36616d18cbb470b9bd94c85180e18c1aa80c0052e5b14cbba",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-sort-custom-function-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nbool greater(int left, int right) { return left > right; }\nint main() {\n  std::forward_list<int> list{1, 2};\n  list.sort(greater);\n  return list.front() != 2;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "6b8ec2816742754d0352de4b6904a62b0d7553763e1595e13d7627e1b80d58ad",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-merge-custom-comparator-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nbool less(int a, int b) { return a < b; }\nint main() {\n  std::forward_list<int> left{1};\n  std::forward_list<int> right{2};\n  left.merge(right, less);\n  return left.front() != 1;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "1852030c72bfc1e5b5bce018b07d021bf4306f34fbda537c508a9cdb56a07a1e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-merge-rvalue-custom-comparator-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nbool greater(int a, int b) { return a > b; }\nint main() {\n  std::forward_list<int> left{3};\n  std::forward_list<int> right{2};\n  left.merge(std::move(right), greater);\n  return left.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "dec26c7510edf43e1c6a8cebd20befa7065648a12e83d52d0b1d16ace0f4c1fa",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-merge-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> left{1L};\n  std::forward_list<long> right{2L};\n  left.merge(right);\n  return left.front() != 1L;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "8b9ae5798e0f8d405f938ba083e710e20ce052729db45eae0bf954a726a6d798",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-sort-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> list{2L, 1L};\n  list.sort();\n  return list.front() != 1L;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-sort-custom-object-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nstruct Greater {\n  bool operator()(int left, int right) const { return left > right; }\n};\nint main() {\n  std::forward_list<int> list{1, 2};\n  list.sort(Greater{});\n  return list.front() != 2;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
+      "kind": "cpp17-operation"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListDefaultMergeIsStableAcrossOwnersRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDefaultMergeRvalueAndSelfRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDefaultMergeEmptyAndTailEdgesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDefaultSortPreservesDuplicateOrderAndAddressesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDefaultSortOrdersSignedValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDefaultSortEmptySingletonAndSortedRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSortsWithFunctionComparison",
+    "TranslateTest.CoreV2ForwardListMergesWithFunctionComparison",
+    "TranslateTest.CoreV2ForwardListMergesRvalueWithFunctionComparison",
+    "TranslateTest.CoreV2ForwardListLongMergesNodes",
+    "TranslateTest.CoreV2ForwardListLongSortsNodes",
+    "TranslateTest.CoreV2ForwardListSortsWithAnEmptyComparator"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "7185c63377e67716b6048237037fa9a7df8835d23e9b366938114aeb712f1669",
+  "maintained_original_sha256": "455f7a07841010ff753a0ad33b0de4884c2254398b56429c6bec575aba541df8",
+  "previous_registered_source_sha256": "b8225cd7e2daf8fe5938f8b24e0689f2008bbfbab7908f2f5ab4a4c4cc4e5ae4",
+  "previous_maintained_original_sha256": "ffd4a896aad67270c2530cd44eadf35070162a8d56c5f1d5175d5421b75e310c",
+  "restorer_sha256": "20c37c2e59e485682fee49048bd6c52de86590dbd3647dc4913ce4be43a2f4a5",
+  "extractor_sha256": "8a61068d21817ecc79f2e3eebd04d45736896cf0d480c4d155c5f011c2058608",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9181,
+  "current_python_registry_tests": 314,
+  "native_reference_selected_executions": 24,
+  "planned_generated_c23_executions": 24,
+  "native_reference_proofs": {
+    "forward-list-empty-order-objects": "d20f7163f63898212bfbdbbfde570a459791102d215e12e7161fa2a0043c1bb0",
+    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
+    "forward-list-merge": "bf98bd8e05ba20330a3d24d8a1804a7fc022387f57ab3eab174daa06d7b3694e",
+    "forward-list-order-function": "110db9e05085ccab8d58ac4007605516614a6f70bec3665d380865bd08c04442",
+    "forward-list-sort": "a0eaf80972e814c989310c40267fa9ac1f2b88f3624e05611cf1cd6dda84152a"
+  },
+  "native_reference_authentication_sha256": "b4ecad1414d0f40b525e6e0f8dcbce0a9303bd274b49a297dd990467a26e2b0a",
+  "source_proof_sha256": "7a179f1c266748acb3ecb788c86717edfe6abb769806f5417959d27c3b058b4f"
+}
