@@ -29497,6 +29497,24 @@ class FunctionLowering {
     assign(Input.Current, address(std::move(Value), Input.PointerElement.withConst(), L), L);
   }
 
+  ListAssignmentInput listInitializerInput(Expression Operand,
+      const UtilityInitializerListRecord &List, SourceLocation L) {
+    const auto Element = List.ElementType;
+    auto Carrier = dereference(std::move(Operand), L);
+    auto First = snapshot(fieldStorage(Carrier, List.Begin, L), L);
+    auto Count = snapshot(fieldStorage(std::move(Carrier), List.Size, L), L);
+    auto Last = temporary(type(A.Context.getPointerType(Element.withConst()), L), L);
+    assign(Last, First, L);
+    const auto Nonempty = labelName(), Ready = labelName();
+    branch(binary("!=", Count, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L), Nonempty, Ready, L);
+    label(Nonempty, L);
+    auto Offset = cast(Count, type(A.Context.getPointerDiffType(), L), L);
+    assign(Last, address(index(First, std::move(Offset), type(Element, L), L), Element.withConst(), L), L);
+    jump(Ready, L);
+    label(Ready, L);
+    return listAssignmentInput(std::move(First), std::move(Last), Element, L);
+  }
+
   ListAssignmentInput listRangeInput(Expression First, Expression Last, QualType Type, SourceLocation L) {
     if (Type->isPointerType())
       return listAssignmentInput(std::move(First), std::move(Last),
@@ -29655,7 +29673,8 @@ class FunctionLowering {
     const auto Operation = Proof->Operation;
     std::optional<Expression> Receiver;
     const bool AssignmentSyntax = isa<CXXOperatorCallExpr>(Call) &&
-        (Operation == UtilityListOperation::CopyAssign || Operation == UtilityListOperation::MoveAssign);
+        (Operation == UtilityListOperation::CopyAssign || Operation == UtilityListOperation::MoveAssign ||
+         Operation == UtilityListOperation::AssignInitializer);
     auto CaptureReceiver = [&] {
       if (const auto *Object = Proof->Receiver)
         Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
@@ -29831,6 +29850,15 @@ class FunctionLowering {
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);
       return Insert ? listIterator(Method->getReturnType(), Node, L) : Expression{};
+    }
+    if (Operation == UtilityListOperation::AssignInitializer) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources, Parameter->getAsCXXRecordDecl(), A.Context);
+      if (!List || !A.Context.hasSameType(List->ElementType, Element))
+        reject(L, "list assignment", "The matching pinned scalar initializer-list carrier is required.");
+      const auto Input = listInitializerInput(Operands[0], *List, L);
+      listAssignValueStorage(Place, Input, Owner->Node, L);
+      return AssignmentSyntax ? Place : Expression{};
     }
     if (Operation == UtilityListOperation::AssignRange) {
       const auto Parameter = Method->getParamDecl(0)->getType();

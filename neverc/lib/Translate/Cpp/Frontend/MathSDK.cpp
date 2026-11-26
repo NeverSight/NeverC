@@ -56552,6 +56552,11 @@ std::optional<UtilityListOperation> listMethodSignature(
       return listEmplacementSignature(S, SM, M, *Owner, Context);
     }
     const auto Type = Context.getRecordType(Owner->Record);
+    const auto IsInitializer = [&](QualType Input) {
+      if (Input->isReferenceType() || Input.isVolatileQualified()) return false;
+      const auto List = approvedUtilityInitializerListRecord(S, SM, listRecordType(Input), Context);
+      return List && Context.hasSameType(List->ElementType, Element);
+    };
     if (!M->isConst() && M->getRefQualifier() == RQ_None && M->isOverloadedOperator() &&
         M->getOverloadedOperator() == OO_Equal && M->getNumParams() == 1 &&
         !M->getParamDecl(0)->hasDefaultArg() &&
@@ -56561,6 +56566,7 @@ std::optional<UtilityListOperation> listMethodSignature(
         return UtilityListOperation::CopyAssign;
       if (Context.hasSameType(Argument, Context.getRValueReferenceType(Type)))
         return UtilityListOperation::MoveAssign;
+      if (IsInitializer(Argument)) return UtilityListOperation::AssignInitializer;
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
@@ -56599,6 +56605,9 @@ std::optional<UtilityListOperation> listMethodSignature(
     }
     if (M->isConst()) return std::nullopt;
     if (M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
+      if (Name == "assign" && M->getNumParams() == 1 &&
+          !M->getParamDecl(0)->hasDefaultArg() && IsInitializer(M->getParamDecl(0)->getType()))
+        return UtilityListOperation::AssignInitializer;
       if (Name == "assign" && M->getNumParams() == 2 &&
           !M->getParamDecl(0)->hasDefaultArg() && !M->getParamDecl(1)->hasDefaultArg() &&
           Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) &&
