@@ -1,0 +1,217 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-float-relations-and-signed-zero",
+      "formal_test_name": "TranslateTest.CoreV2VariantFloatRelationsAndSignedZeroRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b44760c71dbf821a2790112f9005bdc58f2453d3a3b50725740742f180904ad1",
+      "original_case_source_sha256": "b44760c71dbf821a2790112f9005bdc58f2453d3a3b50725740742f180904ad1",
+      "gtest_body_sha256": "bdfa224a9475af3b099f9efbb58faa1d5e8f65d2ed30c82590d16f19537fc2a1"
+    },
+    {
+      "name": "variant-double-relations-quiet-nan-and-width",
+      "formal_test_name": "TranslateTest.CoreV2VariantDoubleRelationsQuietNanAndWidthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "46f0f67639aed0b6739fd0d260fc2d490bf6303255a87df8534c6f0bfecf1ccc",
+      "original_case_source_sha256": "46f0f67639aed0b6739fd0d260fc2d490bf6303255a87df8534c6f0bfecf1ccc",
+      "gtest_body_sha256": "588f09bc7ba3172c706c66296bd1d6f5feb17b5df999344f0b6f29035c080c81"
+    },
+    {
+      "name": "variant-comparison-live-and-temporary-operands",
+      "formal_test_name": "TranslateTest.CoreV2VariantComparisonLiveAndTemporaryOperandsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "41d574bfff1211757b36de0eabe0e453299bac8bac78b9094fb4dd475e5d6f3f",
+      "original_case_source_sha256": "41d574bfff1211757b36de0eabe0e453299bac8bac78b9094fb4dd475e5d6f3f",
+      "gtest_body_sha256": "eec1859dd895e45b5f4035087143451ae920633618237d213f0dd0c16097350d"
+    },
+    {
+      "name": "variant-comparison-temporary-operands-evaluate-once",
+      "formal_test_name": "TranslateTest.CoreV2VariantComparisonTemporaryOperandsEvaluateOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5624d7336ac6b799fbb99402590d256d1d2bb6df619e141986664dca8b6c42d1",
+      "original_case_source_sha256": "5624d7336ac6b799fbb99402590d256d1d2bb6df619e141986664dca8b6c42d1",
+      "gtest_body_sha256": "4f66bc04937ee15c0f9f4d8fe6db46c1c3581d18911cb89d53579e8a48dc4833"
+    },
+    {
+      "name": "variant-comparison-temporary-monostate-and-width",
+      "formal_test_name": "TranslateTest.CoreV2VariantComparisonTemporaryMonostateAndWidthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a58d7e6e582668d19d574caa918c6de62fa0bfc0513a3e014e8b53f3c3613cd3",
+      "original_case_source_sha256": "a58d7e6e582668d19d574caa918c6de62fa0bfc0513a3e014e8b53f3c3613cd3",
+      "gtest_body_sha256": "642e32f4a12c0029480de9bc1c5af8766f61b1724ca063f1ae9a44fd0da055ac"
+    },
+    {
+      "name": "variant-monostate-converting-rvalue",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateConvertingRvalueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1ab793b32e0b75abe6f56d84c7e346408757c8f7c2e8cc82e3b14cc8dad4bc7c",
+      "original_case_source_sha256": "1ab793b32e0b75abe6f56d84c7e346408757c8f7c2e8cc82e3b14cc8dad4bc7c",
+      "gtest_body_sha256": "19082dcf642b05b4e9dd620bb6a5b1351902a601488fbe38fdcd2ce71783a9c6"
+    },
+    {
+      "name": "variant-monostate-copy-evaluates-input-once",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateCopyEvaluatesInputOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a323b775478967241d5f77c3d50314eef95321a38821ae5867e86abbc3f0628c",
+      "original_case_source_sha256": "a323b775478967241d5f77c3d50314eef95321a38821ae5867e86abbc3f0628c",
+      "gtest_body_sha256": "ea7ef980e948e376983ec25d5ad51210fe7b55961d2e2d9723b1756e04b19919"
+    },
+    {
+      "name": "variant-monostate-in-place-copy-by-index-and-type",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateInPlaceCopyByIndexAndTypeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0ee1903daf7d703a12c2474dbab6cfbb9233298730bedb69802ed7b23832a6dd",
+      "original_case_source_sha256": "0ee1903daf7d703a12c2474dbab6cfbb9233298730bedb69802ed7b23832a6dd",
+      "gtest_body_sha256": "a0c7e0b27f7e31c4e218b61c5f416ce82bc332513deffbcbe0850d7e43b662d9"
+    },
+    {
+      "name": "variant-monostate-emplace-returns-active-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateEmplaceReturnsActiveAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "062d899f57cb4a0b01696b1a181bd0dc410a58248b901dabae4e6f3d4c291785",
+      "original_case_source_sha256": "062d899f57cb4a0b01696b1a181bd0dc410a58248b901dabae4e6f3d4c291785",
+      "gtest_body_sha256": "a4b3682b5efa2ba0043c57aec38fe68fac24ba4103cb893a8c66b3119811db21"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-comparison-long-double-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2VariantComparisonLongDoubleRemainsUnsupportedRejected",
+      "expected": "reject",
+      "source_sha256": "5f888adfe5e6bc6daee27d693894c49c74c27e55ca0494879ef328431ea8c01a",
+      "original_case_source_sha256": "5f888adfe5e6bc6daee27d693894c49c74c27e55ca0494879ef328431ea8c01a",
+      "gtest_body_sha256": "03300000463d430f2b0c7730843f438eaba5492b06143f19823f5f29111580d9"
+    },
+    {
+      "name": "variant-comparison-escaping-reference-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantComparisonEscapingReferenceGuardRejected",
+      "expected": "reject",
+      "source_sha256": "cb2883bc9c02d155c917469e7e2ed815636e16c2ac9b5d3c84d4ed05eadc61f4",
+      "original_case_source_sha256": "cb2883bc9c02d155c917469e7e2ed815636e16c2ac9b5d3c84d4ed05eadc61f4",
+      "gtest_body_sha256": "a3bdb1028e07736ebfb8540a8726e0122d62fe93c91746b54149bf4825a24edf"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-float-relations-and-signed-zero",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<float, int>;\n\nbool compare(const Value& lower, const Value& higher, const Value& zero,\n             const Value& negativeZero, const Value& integer) {\n  return lower < higher && lower <= higher && higher > lower &&\n         higher >= lower && lower != higher && !(higher == lower) &&\n         zero == negativeZero && !(zero != negativeZero) &&\n         higher < integer && integer > higher && higher != integer;\n}\n\nint main() {\n  const Value lower{-3.5f}, higher{5.25f}, zero{0.0f}, negativeZero{-0.0f}, integer{-99};\n  return compare(lower, higher, zero, negativeZero, integer) ? 0 : 1;\n}\n",
+      "source_sha256": "b44760c71dbf821a2790112f9005bdc58f2453d3a3b50725740742f180904ad1"
+    },
+    {
+      "name": "variant-double-relations-quiet-nan-and-width",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <limits>\n#include <variant>\nusing Value = std::variant<int, std::monostate, double>;\n\nbool compare(const Value& nan, const Value& finite, const Value& adjacent,\n             const Value& emptyValue) {\n  return !(nan == finite) && nan != finite && !(nan < finite) &&\n         !(nan <= finite) && !(nan > finite) && !(nan >= finite) &&\n         finite < adjacent && adjacent > finite && finite != adjacent &&\n         emptyValue < nan && nan > emptyValue;\n}\n\nint main() {\n  const Value nan{std::numeric_limits<double>::quiet_NaN()};\n  const Value finite{1.0}, adjacent{1.0000000000000002};\n  const Value emptyValue{std::in_place_index<1>};\n  return compare(nan, finite, adjacent, emptyValue) ? 0 : 1;\n}\n",
+      "source_sha256": "46f0f67639aed0b6739fd0d260fc2d490bf6303255a87df8534c6f0bfecf1ccc"
+    },
+    {
+      "name": "variant-comparison-live-and-temporary-operands",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\n\nbool compare(const Value& value) {\n  return Value(4) < value && value >= Value(9) && value == Value(9) &&\n         Value(short(90)) < value && Value(short(9)) != value;\n}\n\nint main() { return compare(Value(9)) ? 0 : 1; }\n",
+      "source_sha256": "41d574bfff1211757b36de0eabe0e453299bac8bac78b9094fb4dd475e5d6f3f"
+    },
+    {
+      "name": "variant-comparison-temporary-operands-evaluate-once",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<int, long long>;\n\nint next(int& calls, int value) {\n  ++calls;\n  return value;\n}\n\nint main() {\n  int left = 0, right = 0;\n  bool ordered = Value(next(left, -3)) < Value(next(right, 7));\n  return ordered && left == 1 && right == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "5624d7336ac6b799fbb99402590d256d1d2bb6df619e141986664dca8b6c42d1"
+    },
+    {
+      "name": "variant-comparison-temporary-monostate-and-width",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<std::monostate, long long>;\n\nbool compare(const Value& value) {\n  return value > Value{} && Value{} == Value{} &&\n         Value(-8589934593LL) < value && value == Value(8589934593LL);\n}\n\nint main() {\n  const Value value(8589934593LL);\n  return compare(value) ? 0 : 1;\n}\n",
+      "source_sha256": "a58d7e6e582668d19d574caa918c6de62fa0bfc0513a3e014e8b53f3c3613cd3"
+    },
+    {
+      "name": "variant-monostate-converting-rvalue",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<int, std::monostate>;\n  const Value value{std::monostate{}};\n  return value.index() != 1 || !std::holds_alternative<std::monostate>(value) ||\n         std::get_if<0>(&value) != nullptr || std::get_if<1>(&value) == nullptr;\n}\n",
+      "source_sha256": "1ab793b32e0b75abe6f56d84c7e346408757c8f7c2e8cc82e3b14cc8dad4bc7c"
+    },
+    {
+      "name": "variant-monostate-copy-evaluates-input-once",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nconst std::monostate& read(const std::monostate& source, int& calls) {\n  ++calls;\n  return source;\n}\nint main() {\n  const std::monostate source{};\n  int calls = 0;\n  const std::variant<int, std::monostate> value = read(source, calls);\n  return calls != 1 || value.index() != 1 || value.valueless_by_exception();\n}\n",
+      "source_sha256": "a323b775478967241d5f77c3d50314eef95321a38821ae5867e86abbc3f0628c"
+    },
+    {
+      "name": "variant-monostate-in-place-copy-by-index-and-type",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<int, std::monostate>;\n  const std::monostate source{};\n  const Value left{std::in_place_index<1>, source};\n  const Value right{std::in_place_type<std::monostate>, std::monostate{}};\n  return left.index() != 1 || left != right;\n}\n",
+      "source_sha256": "0ee1903daf7d703a12c2474dbab6cfbb9233298730bedb69802ed7b23832a6dd"
+    },
+    {
+      "name": "variant-monostate-emplace-returns-active-alternative",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, std::monostate> value{25};\n  const std::monostate source{};\n  auto& inserted = value.emplace<1>(source);\n  return value.index() != 1 || &inserted != std::get_if<std::monostate>(&value);\n}\n",
+      "source_sha256": "062d899f57cb4a0b01696b1a181bd0dc410a58248b901dabae4e6f3d4c291785"
+    },
+    {
+      "name": "variant-comparison-long-double-remains-unsupported",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing Value = std::variant<int, long double>;\nbool equal(const Value& a, const Value& b) { return a == b; }\n",
+      "source_sha256": "5f888adfe5e6bc6daee27d693894c49c74c27e55ca0494879ef328431ea8c01a"
+    },
+    {
+      "name": "variant-comparison-escaping-reference-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nconst int& escape() { return std::get<1>(Value(3)); }\n",
+      "source_sha256": "cb2883bc9c02d155c917469e7e2ed815636e16c2ac9b5d3c84d4ed05eadc61f4"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantFloatRelationsAndSignedZeroRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantDoubleRelationsQuietNanAndWidthRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantComparisonLiveAndTemporaryOperandsRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantComparisonTemporaryOperandsEvaluateOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantComparisonTemporaryMonostateAndWidthRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateConvertingRvalueRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateCopyEvaluatesInputOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateInPlaceCopyByIndexAndTypeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateEmplaceReturnsActiveAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantComparisonLongDoubleRemainsUnsupportedRejected",
+    "TranslateTest.CoreV2VariantComparisonEscapingReferenceGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f5b5204fe9f8d1cd6a7c799247f7d597f7d5f0b2b359777fdb734b5d2d3a533e",
+  "maintained_original_sha256": "285343a6f104bdf7b274c691d605bf033b80e13d36a5e2e937536cff7aa2fa9e",
+  "previous_registered_source_sha256": "9a53740d79d62df82fe3fd1efbb81b4e479555d5c6c41815036f82a5e4e844d3",
+  "previous_maintained_original_sha256": "fd6daaebffdceb8456e0d0ad6a42e754ac6e98c4a9fa9ec310991260f1f13a61",
+  "restorer_sha256": "0f373f8325e1c81bf0914a9215407b0a53ff7e2d66c86a93980fd28f248a8c60",
+  "extractor_sha256": "33bc2ae1fcd1996c1ba902759c4f2a2fc4b46c47a6f5d236b7e4ddaddb8bbc30",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8973,
+  "current_python_registry_tests": 278,
+  "native_reference_selected_executions": 18,
+  "planned_generated_c23_executions": 18,
+  "native_reference_proofs": {
+    "variant-comparison-temporary": "7b8764ff63a2bae2d7d12b9e19af6687e050c87b94cf3c368fa27c5c93019971",
+    "variant-floating-comparison-replay": "4f3df93d9f109a50ac4040eb5c6cdcb2377429dc9116294a8fa162efc61b451d",
+    "variant-monostate-forwarding": "f4e54161f8aad55710a77dccb2298feb76fe082fbd3ab52171c42150dade3213"
+  },
+  "native_reference_authentication_sha256": "44f8a67d9b99eac87446a55fe37875470d3c9b26940c47aa3342a24062d5a2f9",
+  "source_proof_sha256": "49fb3eaba9dc40534f2ae0d875a059ec04e3fdfdbad2f17ad8d2ae73be77f868"
+}

@@ -1,0 +1,166 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-lookup-policies-set-hash-value",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedLookupPoliciesSetHashValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "99d4a3c1631175f1b4e7f4db1d0db630dc19bf14a4167b6a75700bf1c36910f9",
+      "original_case_source_sha256": "99d4a3c1631175f1b4e7f4db1d0db630dc19bf14a4167b6a75700bf1c36910f9",
+      "gtest_body_sha256": "41f205b237afad0e39d8e342bc7a3d200faedbcdfb50f7039816832c7e259458"
+    },
+    {
+      "name": "unordered-lookup-policies-multiset-equality-value",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedLookupPoliciesMultisetEqualityValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "359b9c5bb40f5603e9ad9718948bc3c45e46206f91dc70454e3cd45f7d162a20",
+      "original_case_source_sha256": "359b9c5bb40f5603e9ad9718948bc3c45e46206f91dc70454e3cd45f7d162a20",
+      "gtest_body_sha256": "574823208fe9992d917323c3a75eab6b0ebe63a5f71d05f1454b18a981524ed1"
+    },
+    {
+      "name": "unordered-lookup-policies-hash-receiver-evaluated-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedLookupPoliciesHashReceiverEvaluatedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "10619db752c7349ca14a582e0cdde84143c305685ee2cd53bcab509456a5c412",
+      "original_case_source_sha256": "10619db752c7349ca14a582e0cdde84143c305685ee2cd53bcab509456a5c412",
+      "gtest_body_sha256": "dc199e208c4b788b577a0b4c52f9f3775a096f715fadb5b0fd28df5e0903a938"
+    },
+    {
+      "name": "unordered-lookup-policies-equivalent-copies",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedLookupPoliciesEquivalentCopiesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b58d230b094e2a2a8749fb6b71e14a64035bb535efb51df64394e58e6d408091",
+      "original_case_source_sha256": "b58d230b094e2a2a8749fb6b71e14a64035bb535efb51df64394e58e6d408091",
+      "gtest_body_sha256": "79338e1e91f8962e581b2ed8ce1ce2934230a62643cfb4cf60d9426be31af2e1"
+    },
+    {
+      "name": "unordered-lookup-policies-nonempty-owner",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetNonemptyEqualityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7247fefb53a2938a965e43cc9ca992a1b8ed9daffb62f975f8a9d0de9b80c466",
+      "original_case_source_sha256": "7247fefb53a2938a965e43cc9ca992a1b8ed9daffb62f975f8a9d0de9b80c466",
+      "gtest_body_sha256": "f8958cd1597df92ff559223a9d6bfa72623cbfa1bbead29571fc0261eb0f1cbc"
+    },
+    {
+      "name": "unordered-lookup-policies-arrow-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalArrowObserverRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "346a7dd7998c07b0dbd7f4c618c3041545e70fcd9e414ac0a62d1666c4bb9a95",
+      "original_case_source_sha256": "346a7dd7998c07b0dbd7f4c618c3041545e70fcd9e414ac0a62d1666c4bb9a95",
+      "gtest_body_sha256": "3f3bba2df306e430dc3290aabd9af467ec372bc2612946157aff0f7a596f641e"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-lookup-policies-custom-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedLookupPoliciesCustomHashRejected",
+      "expected": "reject",
+      "source_sha256": "5581cd9cc1dbee38691044103edd8d008a2eee0067e3d1c1e5ebfcbf07d7b5b3",
+      "original_case_source_sha256": "5581cd9cc1dbee38691044103edd8d008a2eee0067e3d1c1e5ebfcbf07d7b5b3",
+      "gtest_body_sha256": "49f962487367a319ed6c5f4f703d50e7938fea5b277b64e6cf92600a30b00741"
+    },
+    {
+      "name": "unordered-lookup-policies-custom-equality",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedLookupPoliciesCustomEqualityRejected",
+      "expected": "reject",
+      "source_sha256": "a6ea8348b7e504859a1475408c1953d1896bafd4a9ce9c82a4585539356f26a8",
+      "original_case_source_sha256": "a6ea8348b7e504859a1475408c1953d1896bafd4a9ce9c82a4585539356f26a8",
+      "gtest_body_sha256": "6a10b0bc754a5f7e5c9d882ef534e189ebf9281a03778d685ced993d4cecf8f6"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-lookup-policies-set-hash-value",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  auto hash = values.hash_function();\n  return hash(-7) != std::hash<int>{}(-7) || hash(9) != std::hash<int>{}(9);\n}\n",
+      "source_sha256": "99d4a3c1631175f1b4e7f4db1d0db630dc19bf14a4167b6a75700bf1c36910f9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-lookup-policies-multiset-equality-value",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values;\n  auto same = values.key_eq();\n  return !same(-17, -17) || same(-17, 17) || values.key_eq()(8, 1);\n}\n",
+      "source_sha256": "359b9c5bb40f5603e9ad9718948bc3c45e46206f91dc70454e3cd45f7d162a20",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-lookup-policies-hash-receiver-evaluated-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_multiset<int>;\nconst Set& read(int& calls, const Set& values) {\n  ++calls;\n  return values;\n}\nint main() {\n  const Set values;\n  int calls = 0;\n  auto hash = read(calls, values).hash_function();\n  return calls != 1 || hash(23) != std::hash<int>{}(23);\n}\n",
+      "source_sha256": "10619db752c7349ca14a582e0cdde84143c305685ee2cd53bcab509456a5c412",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-lookup-policies-equivalent-copies",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  auto first = values.key_eq();\n  auto second = first;\n  return !second(1, 1) || first(1, 2) || !values.empty();\n}\n",
+      "source_sha256": "b58d230b094e2a2a8749fb6b71e14a64035bb535efb51df64394e58e6d408091",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-lookup-policies-nonempty-owner",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{1, 1};\n  return !values.key_eq()(1, 1);\n}\n",
+      "source_sha256": "7247fefb53a2938a965e43cc9ca992a1b8ed9daffb62f975f8a9d0de9b80c466",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-lookup-policies-arrow-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return !pointer->key_eq()(2, 2);\n}\n",
+      "source_sha256": "346a7dd7998c07b0dbd7f4c618c3041545e70fcd9e414ac0a62d1666c4bb9a95",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-lookup-policies-custom-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long long operator()(int value) const { return value + 1; } };\nint main() {\n  const std::unordered_set<int, Hash> values;\n  return values.hash_function()(0) != 1;\n}\n",
+      "source_sha256": "5581cd9cc1dbee38691044103edd8d008a2eee0067e3d1c1e5ebfcbf07d7b5b3",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-lookup-policies-custom-equality",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int first, int second) const { return first == second; } };\nint main() {\n  const std::unordered_multiset<int, std::hash<int>, Equal> values;\n  return !values.key_eq()(1, 1);\n}\n",
+      "source_sha256": "a6ea8348b7e504859a1475408c1953d1896bafd4a9ce9c82a4585539356f26a8",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedLookupPoliciesSetHashValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedLookupPoliciesMultisetEqualityValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedLookupPoliciesHashReceiverEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedLookupPoliciesEquivalentCopiesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetNonemptyEqualityRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalArrowObserverRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedLookupPoliciesCustomHashRejected",
+    "TranslateTest.CoreV2UnorderedLookupPoliciesCustomEqualityRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "e543cb1c290298ca024848985498bb44c08cfa2e81e4738ba83e05d7b89c65e2",
+  "maintained_original_sha256": "b4a0dd37f0dde5f034dd8c52c3474b2bd571f0766befa55fbe257312e8ccb2a5",
+  "previous_registered_source_sha256": "98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96",
+  "previous_maintained_original_sha256": "97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6",
+  "restorer_sha256": "8f0ebf6860643acdabc4ef49b84c3b16d0207b0441da036e6fedf856d9a9de95",
+  "extractor_sha256": "084c9476b53c958c8730560a141bc4cef3f8099106925765b349ec3c3a02d82a",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8358,
+  "current_python_registry_tests": 176,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-lookup-policies": "72d94900c87c51c4cebded2adffe7f46e035795eed96e7a77ac1867efd8f88ce",
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a",
+    "unordered-set-observers": "a93e369e9d2f8cb54124b54338a0bf8171892b19d76140656f1e015db976896e"
+  },
+  "native_reference_authentication_sha256": "8e3def06001e622dcfd24d1b61d3ce003b31a751e96604a8027ae787cd89141f",
+  "source_proof_sha256": "49fb3eaba9dc40534f2ae0d875a059ec04e3fdfdbad2f17ad8d2ae73be77f868"
+}

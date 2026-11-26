@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-iterator-erase-position-returns-successor",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorErasePositionReturnsSuccessorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "917ec6bbf98b89a0aabbf1f68fd3de0eb1aee92b75f2719a792e6aac797175c9",
+      "original_case_source_sha256": "917ec6bbf98b89a0aabbf1f68fd3de0eb1aee92b75f2719a792e6aac797175c9",
+      "gtest_body_sha256": "1e3aec371d54c7e4704a837db4366f9de093a8e89c72892b31fc24b7dac1bd32"
+    },
+    {
+      "name": "unordered-set-iterator-erase-multiset-erases-only-the-selected-duplicate",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorEraseMultisetErasesOnlyTheSelectedDuplicateRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e3cfd16113286488e582d5e2dd94c4262e019130bc3c586d27740a2edd7c493d",
+      "original_case_source_sha256": "e3cfd16113286488e582d5e2dd94c4262e019130bc3c586d27740a2edd7c493d",
+      "gtest_body_sha256": "9d08ff0f4114702519ff14a92420c4c3fd3090f62b5cfa7440ee8d478583d70e"
+    },
+    {
+      "name": "unordered-set-iterator-erase-half-open-range-returns-last",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorEraseHalfOpenRangeReturnsLastRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e4803ef4b44cc2312bc506a26627c251aa54a225869f980e5ec618c9c932a842",
+      "original_case_source_sha256": "e4803ef4b44cc2312bc506a26627c251aa54a225869f980e5ec618c9c932a842",
+      "gtest_body_sha256": "a2b3d59048313aaf86d2facf7cde0efb3d7cfa8d963189b335a57fe1198e1884"
+    },
+    {
+      "name": "unordered-set-iterator-erase-empty-and-entire-multiset-ranges",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorEraseEmptyAndEntireMultisetRangesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5fbac47ebcfbe13185b58e456145a6928d6d7f30ec62e41f9a5b615000825d0b",
+      "original_case_source_sha256": "5fbac47ebcfbe13185b58e456145a6928d6d7f30ec62e41f9a5b615000825d0b",
+      "gtest_body_sha256": "fcdf3e148bba439fe52653774bb23c1de30a72ae102967521662d4b661636794"
+    },
+    {
+      "name": "unordered-set-iterator-erase-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerErasePositionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c7d5814fc7926bf4d2a33bce5dceffc2e2440b8f71157ae4432fe7c620c04f51",
+      "original_case_source_sha256": "c7d5814fc7926bf4d2a33bce5dceffc2e2440b8f71157ae4432fe7c620c04f51",
+      "gtest_body_sha256": "3d61d10488b6913ab448450e860665ee4c9f5e20bd6ce9c5475539e5b9a88e97"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-iterator-erase-different-key-iterator",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorEraseDifferentKeyIteratorRejected",
+      "expected": "reject",
+      "source_sha256": "30e48ca7cc5a866ae42909611ea8f5c1bbf2f6ce7387233443d36ff6b89c576c",
+      "original_case_source_sha256": "30e48ca7cc5a866ae42909611ea8f5c1bbf2f6ce7387233443d36ff6b89c576c",
+      "gtest_body_sha256": "2cce3d3dfb3aeb3d0e3628e49280bf5f73ba9cda9e6099e284b831f0e3b79428"
+    },
+    {
+      "name": "unordered-set-iterator-erase-custom-hash-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorEraseCustomHashRangeRejected",
+      "expected": "reject",
+      "source_sha256": "1ca88650a7b62a818996c598f36e14421cf641669f16b2f4a5950ad06ad7c7e3",
+      "original_case_source_sha256": "1ca88650a7b62a818996c598f36e14421cf641669f16b2f4a5950ad06ad7c7e3",
+      "gtest_body_sha256": "84eecd2fe7c89d96e3e59f0344397a313e9bc28ec51f3e06ade9b62b645f82e3"
+    },
+    {
+      "name": "unordered-set-iterator-erase-custom-equality-position",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorEraseCustomEqualityPositionRejected",
+      "expected": "reject",
+      "source_sha256": "8da6e7dc74440751f5eda65961ff7289694856ed70625d1d9d721856e7422234",
+      "original_case_source_sha256": "8da6e7dc74440751f5eda65961ff7289694856ed70625d1d9d721856e7422234",
+      "gtest_body_sha256": "9425f890a083313afd6293d17b88d1cfb99ee91faa3d0de1455862d4defd02d4"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-iterator-erase-position-returns-successor",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{2, 5, 13};\n  const auto position = values.find(5);\n  auto successor = position;\n  ++successor;\n  const auto returned = values.erase(position);\n  return returned != successor || values.size() != 2 || values.count(5) || values.count(13) != 1;\n}\n",
+      "source_sha256": "917ec6bbf98b89a0aabbf1f68fd3de0eb1aee92b75f2719a792e6aac797175c9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-erase-multiset-erases-only-the-selected-duplicate",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{4, 4, 5, 4};\n  auto position = values.find(4);\n  auto successor = position;\n  ++successor;\n  if (values.erase(position) != successor || values.count(4) != 2) return 1;\n  return values.size() != 3 || values.count(5) != 1;\n}\n",
+      "source_sha256": "e3cfd16113286488e582d5e2dd94c4262e019130bc3c586d27740a2edd7c493d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-erase-half-open-range-returns-last",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values{0, 8, 1, 16};\n  values.rehash(8);\n  auto first = values.begin();\n  auto last = first;\n  const int removed = *last;\n  ++last;\n  const int kept = *last;\n  auto next = values.erase(first, last);\n  if (next != last || *next != kept || values.count(removed)) return 1;\n  return values.count(kept) != 1 || values.size() != 3;\n}\n",
+      "source_sha256": "e4803ef4b44cc2312bc506a26627c251aa54a225869f980e5ec618c9c932a842",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-erase-empty-and-entire-multiset-ranges",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{1, -2, 1, -2};\n  const auto end = values.end();\n  if (values.erase(end, end) != end || values.size() != 4) return 1;\n  if (values.erase(values.cbegin(), end) != end || !values.empty()) return 2;\n  values.insert(7);\n  return values.count(7) != 1;\n}\n",
+      "source_sha256": "5fbac47ebcfbe13185b58e456145a6928d6d7f30ec62e41f9a5b615000825d0b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-erase-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values{5}; auto* p=&values; return p->erase(values.cbegin()) != values.end(); }\n",
+      "source_sha256": "c7d5814fc7926bf4d2a33bce5dceffc2e2440b8f71157ae4432fe7c620c04f51",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-erase-different-key-iterator",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<long> values{6L}; return values.erase(values.cbegin()) != values.end(); }\n",
+      "source_sha256": "30e48ca7cc5a866ae42909611ea8f5c1bbf2f6ce7387233443d36ff6b89c576c",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-iterator-erase-custom-hash-range",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int k) const { return static_cast<unsigned long>(k); } };\nint main() { std::unordered_set<int, Hash> values{1, 2}; return values.erase(values.cbegin(), values.cend()) != values.end(); }\n",
+      "source_sha256": "1ca88650a7b62a818996c598f36e14421cf641669f16b2f4a5950ad06ad7c7e3",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-iterator-erase-custom-equality-position",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int a, int b) const { return a == b; } };\nint main() {\n  std::unordered_multiset<int, std::hash<int>, Equal> values{3, 3};\n  const auto selected = values.cbegin();\n  return values.erase(selected) == values.cend();\n}\n",
+      "source_sha256": "8da6e7dc74440751f5eda65961ff7289694856ed70625d1d9d721856e7422234",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetIteratorErasePositionReturnsSuccessorRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorEraseMultisetErasesOnlyTheSelectedDuplicateRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorEraseHalfOpenRangeReturnsLastRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorEraseEmptyAndEntireMultisetRangesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerErasePositionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorEraseDifferentKeyIteratorRejected",
+    "TranslateTest.CoreV2UnorderedSetIteratorEraseCustomHashRangeRejected",
+    "TranslateTest.CoreV2UnorderedSetIteratorEraseCustomEqualityPositionRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "724deef07eb49b8fd2a84f1c9a9e074ca4bffafa652bcd041dcf0cfebc1a8217",
+  "maintained_original_sha256": "6d3886e9bdf1e29f2b9152a585312e5875beb45ef1616cf7c519cba7e76ae0b2",
+  "previous_registered_source_sha256": "8ce9d74ac0d9d4d1810ff9e409a535692b199d5e8c705fa190c864aa4448adff",
+  "previous_maintained_original_sha256": "c5ff82c8dc13eb2e50d661a576629adc82e54a54d6485bf6441f491dacaeac06",
+  "restorer_sha256": "7335e4733c281c961d5c87eee634745b0bbe184a85a12585175fed9c35bcf973",
+  "extractor_sha256": "01ac8dbb76bfe77b5164ba16dfc1a39db0e685664ad5f0d7971e6de9c46a41b5",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8472,
+  "current_python_registry_tests": 204,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-iterator-erase": "e7e652bcbe34dd0b5ed551d05a91af67d4425ed3658347c90256756a7314b210",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "3e5b923d7e8c9018a6b6aea7bc5acf10b8d8b573e4d48a9769f32f407976e71e",
+  "source_proof_sha256": "49fb3eaba9dc40534f2ae0d875a059ec04e3fdfdbad2f17ad8d2ae73be77f868"
+}

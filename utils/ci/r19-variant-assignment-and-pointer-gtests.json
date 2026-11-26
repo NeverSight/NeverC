@@ -1,0 +1,182 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-monostate-assignment-selects-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateAssignmentSelectsAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0f2a37e22acdaca080f9599548c732e35d5046c5181069857435fb093b02d063",
+      "original_case_source_sha256": "0f2a37e22acdaca080f9599548c732e35d5046c5181069857435fb093b02d063",
+      "gtest_body_sha256": "9d152494fdc0576d0491d5cf97d6eec895e2458dc7860d4a8c4cbf23fc989f8c"
+    },
+    {
+      "name": "variant-monostate-assignment-from-active-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateAssignmentFromActiveAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "97e9b9d0b12e6dd4c090802656a2a8a938d656b4e01c0fbc098133a19fb7993c",
+      "original_case_source_sha256": "97e9b9d0b12e6dd4c090802656a2a8a938d656b4e01c0fbc098133a19fb7993c",
+      "gtest_body_sha256": "a2cd2c07197a70de8a6c8bdbf61a8d936f69e7c61975bb97bde592624472f335"
+    },
+    {
+      "name": "variant-monostate-assignment-obeys-operand-sequencing",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateAssignmentObeysOperandSequencingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a980fa70dcc584f279b6fb3939ec52723a5361d770520b4a0981abfa3aedc59b",
+      "original_case_source_sha256": "a980fa70dcc584f279b6fb3939ec52723a5361d770520b4a0981abfa3aedc59b",
+      "gtest_body_sha256": "b1a94478d4f945c2667d3c963e3b7b81dc939516f251fc3c0d3658d6a13b5681"
+    },
+    {
+      "name": "variant-monostate-assignment-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateAssignmentPointerReceiverRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f2cd969000be8c01553d7d26c866372e6dbce2b2fba561ae64423a3949af8edd",
+      "original_case_source_sha256": "f2cd969000be8c01553d7d26c866372e6dbce2b2fba561ae64423a3949af8edd",
+      "gtest_body_sha256": "836848bc88c8c200548841277dc49525491c57a1b0e3dacb6fa95e1cb797d726"
+    },
+    {
+      "name": "variant-pointer-equality-distinct-objects-and-null",
+      "formal_test_name": "TranslateTest.CoreV2VariantPointerEqualityDistinctObjectsAndNullRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "be49a1bd68d94fd0eb6a51452a3b5a8c85a76b225219588f50c7308026c626ff",
+      "original_case_source_sha256": "be49a1bd68d94fd0eb6a51452a3b5a8c85a76b225219588f50c7308026c626ff",
+      "gtest_body_sha256": "f3f86d36962b5512e04ce481ca35d0ef9cb02d4b86a3aa1437fbf04d0cc2c3a1"
+    },
+    {
+      "name": "variant-pointer-equality-compares-the-active-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantPointerEqualityComparesTheActiveIndexRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d1b633a0c54b6fa2e85da388bd1b4e17db078afe2d23d638bcc09aac61868ce4",
+      "original_case_source_sha256": "d1b633a0c54b6fa2e85da388bd1b4e17db078afe2d23d638bcc09aac61868ce4",
+      "gtest_body_sha256": "aea3a0410f12e69284bd86642463dbd473ae91f29a0a24b9dacb8dc0f4690af8"
+    },
+    {
+      "name": "variant-pointer-and-float-equality-preserves-payload-types",
+      "formal_test_name": "TranslateTest.CoreV2VariantPointerAndFloatEqualityPreservesPayloadTypesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c974e796b50b72dd863f3389ec790992dabb7b79998a81886b5bad653d4c1968",
+      "original_case_source_sha256": "c974e796b50b72dd863f3389ec790992dabb7b79998a81886b5bad653d4c1968",
+      "gtest_body_sha256": "db7012ba29fce20b0abd2365d0a6c79b99da8321276d5b62e24c1417377d74e8"
+    },
+    {
+      "name": "variant-void-pointer-equality",
+      "formal_test_name": "TranslateTest.CoreV2VariantVoidPointerEqualityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "79ccbdca8c94f1ecaa47fef779dec20da1b761b58efe6813058b795d35279cb9",
+      "original_case_source_sha256": "79ccbdca8c94f1ecaa47fef779dec20da1b761b58efe6813058b795d35279cb9",
+      "gtest_body_sha256": "5d835f35537f3100d73a66a932221ec965870685a3c95642b0e61716b6d43b25"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-unchecked-pointer-ordering-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantUncheckedPointerOrderingGuardRejected",
+      "expected": "reject",
+      "source_sha256": "9f0bb89684bdffebed8c0b5efebaf3f55bed96caa1f482501b5b5a23dd6541a3",
+      "original_case_source_sha256": "9f0bb89684bdffebed8c0b5efebaf3f55bed96caa1f482501b5b5a23dd6541a3",
+      "gtest_body_sha256": "eef4d7f2c787ae5ff09dbedf5b397d932982b8650611de4aeb7226e07fdff35c"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-monostate-assignment-selects-alternative",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<int, std::monostate>;\n  Value value{45};\n  Value& result = (value = std::monostate{});\n  return &result != &value || value.index() != 1 || std::get_if<1>(&value) == nullptr;\n}\n",
+      "source_sha256": "0f2a37e22acdaca080f9599548c732e35d5046c5181069857435fb093b02d063"
+    },
+    {
+      "name": "variant-monostate-assignment-from-active-alternative",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint main() {\n  using Value = std::variant<int, std::monostate>;\n  Value value{std::in_place_index<1>};\n  const auto* item = std::get_if<1>(&value);\n  if (!item) return 1;\n  value = *item;\n  return value.index() != 1 || std::get_if<1>(&value) != item;\n}\n",
+      "source_sha256": "97e9b9d0b12e6dd4c090802656a2a8a938d656b4e01c0fbc098133a19fb7993c"
+    },
+    {
+      "name": "variant-monostate-assignment-obeys-operand-sequencing",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<int, std::monostate>;\nValue& receiver(Value& value, int& trace) {\n  trace = trace * 10 + 1;\n  return value;\n}\nconst std::monostate& operand(const std::monostate& value, int& trace) {\n  trace = trace * 10 + 2;\n  return value;\n}\nint main() {\n  Value value{5};\n  const std::monostate item{};\n  int trace = 0;\n  receiver(value, trace) = operand(item, trace);\n  if (trace != 21 || value.index() != 1) return 1;\n  trace = 0;\n  receiver(value, trace).operator=(operand(item, trace));\n  return trace != 12 || value.index() != 1;\n}\n",
+      "source_sha256": "a980fa70dcc584f279b6fb3939ec52723a5361d770520b4a0981abfa3aedc59b"
+    },
+    {
+      "name": "variant-monostate-assignment-pointer-receiver",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<int, std::monostate>;\nValue& assign(Value* value, const std::monostate& input) {\n  return value->operator=(input);\n}\nint main() {\n  Value value{6};\n  const std::monostate input{};\n  return &assign(&value, input) != &value || !std::holds_alternative<std::monostate>(value);\n}\n",
+      "source_sha256": "f2cd969000be8c01553d7d26c866372e6dbce2b2fba561ae64423a3949af8edd"
+    },
+    {
+      "name": "variant-pointer-equality-distinct-objects-and-null",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<int, int*>;\nint main() {\n  int left = 3, right = 3;\n  const Value a{&left}, alias{&left}, b{&right}, nil{static_cast<int*>(nullptr)}, scalar{0};\n  return a != alias || !(a == alias) || b == a || nil == a || nil != nil || nil == scalar;\n}\n",
+      "source_sha256": "be49a1bd68d94fd0eb6a51452a3b5a8c85a76b225219588f50c7308026c626ff"
+    },
+    {
+      "name": "variant-pointer-equality-compares-the-active-index",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<short, const int*, const int*>;\nint main() {\n  const int value = 7;\n  const Value a{std::in_place_index<1>, &value};\n  const Value b{std::in_place_index<2>, &value};\n  const Value alias{std::in_place_index<2>, &value};\n  return a == b || !(a != b) || b != alias;\n}\n",
+      "source_sha256": "d1b633a0c54b6fa2e85da388bd1b4e17db078afe2d23d638bcc09aac61868ce4"
+    },
+    {
+      "name": "variant-pointer-and-float-equality-preserves-payload-types",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<float, const int*>;\nbool equal(const Value& a, const Value& b) { return a == b && !(b != a); }\nint main() {\n  const int a = 8, b = 8;\n  const Value first{&a}, alias{&a}, second{&b}, negative{-0.0f}, positive{0.0f};\n  return !equal(first, alias) || equal(first, second) || !equal(negative, positive) || equal(first, positive);\n}\n",
+      "source_sha256": "c974e796b50b72dd863f3389ec790992dabb7b79998a81886b5bad653d4c1968"
+    },
+    {
+      "name": "variant-void-pointer-equality",
+      "public_header": "variant",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Value = std::variant<int, void*>;\nbool compare(const Value& left, const Value& right) {\n  return std::operator==(left, right) && !std::operator!=(right, left);\n}\nint main() {\n  int first = 0, second = 0;\n  const Value a{static_cast<void*>(&first)}, b{static_cast<void*>(&first)}, c{static_cast<void*>(&second)};\n  return !compare(a, b) || compare(a, c);\n}\n",
+      "source_sha256": "79ccbdca8c94f1ecaa47fef779dec20da1b761b58efe6813058b795d35279cb9"
+    },
+    {
+      "name": "variant-unchecked-pointer-ordering-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing Value = std::variant<int, int*>;\nbool less(const Value& a, const Value& b) { return a < b; }\n",
+      "source_sha256": "9f0bb89684bdffebed8c0b5efebaf3f55bed96caa1f482501b5b5a23dd6541a3"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantMonostateAssignmentSelectsAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateAssignmentFromActiveAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateAssignmentObeysOperandSequencingRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateAssignmentPointerReceiverRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantPointerEqualityDistinctObjectsAndNullRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantPointerEqualityComparesTheActiveIndexRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantPointerAndFloatEqualityPreservesPayloadTypesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVoidPointerEqualityRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantUncheckedPointerOrderingGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "5a2f3407ce162e8376d700ba842774a69134f621dea7e5182d44d82ef176a443",
+  "maintained_original_sha256": "1d18ba863fcaff673fc35427a1d69732c4f6ec4c833bdb34774f2e70ce4a9414",
+  "previous_registered_source_sha256": "f5b5204fe9f8d1cd6a7c799247f7d597f7d5f0b2b359777fdb734b5d2d3a533e",
+  "previous_maintained_original_sha256": "285343a6f104bdf7b274c691d605bf033b80e13d36a5e2e937536cff7aa2fa9e",
+  "restorer_sha256": "fc9594b0aa61c3daf8d35005f8c8a0a257bcb7917300115f6ab4d9805c68c302",
+  "extractor_sha256": "ecebbce08e9d61589fbbac2bafbd9d3a84b41ca5dcbc4ae8474478d1cfb4e4ff",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8982,
+  "current_python_registry_tests": 280,
+  "native_reference_selected_executions": 16,
+  "planned_generated_c23_executions": 16,
+  "native_reference_proofs": {
+    "variant-monostate-assignment": "a3d01dc2a81ae7e06917cd15c8eb672c3fae45fbe9d828bcb13c75c7f01206e0",
+    "variant-pointer-equality": "2fd1c40ce1c9d654cbb12c6c78ee4a147dc72e528987da7a7821f62225867f06"
+  },
+  "native_reference_authentication_sha256": "0b962611e2750be5a683372cd1ab3e0394ce41ccb36e1fd559535f38cd539359",
+  "source_proof_sha256": "49fb3eaba9dc40534f2ae0d875a059ec04e3fdfdbad2f17ad8d2ae73be77f868"
+}
