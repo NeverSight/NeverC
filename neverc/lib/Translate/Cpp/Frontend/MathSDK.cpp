@@ -50013,7 +50013,7 @@ bool approvedUtilityReverseIteratorMetadata(const State &S,
 std::optional<UtilityReverseIteratorRecord>
 approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
                                      const CXXRecordDecl *Record,
-                                     const ASTContext &Context, bool AllowOrdered) {
+                                     const ASTContext &Context, bool AllowLinked) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -50047,15 +50047,23 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
   const auto Wrapped = approvedUtilityWrapIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
   UtilityOrderedSetStorage Tree{};
-  const auto *Ordered = AllowOrdered && !Wrapped
+  const auto *Ordered = AllowLinked && !Wrapped
       ? approvedOrderedSetIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, nullptr, &Tree)
       : nullptr;
+  const auto List = AllowLinked && !Wrapped && !Ordered
+      ? approvedUtilityListIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context)
+      : std::nullopt;
+  QualType ListElement;
+  if (List) {
+    ListElement = List->Node.Value->getType();
+    if (List->Const) ListElement = ListElement.withConst();
+  }
   auto OrderedElement = !Ordered ? QualType() : Tree.MappedPairType.isNull()
       ? Context.IntTy.withConst() : Tree.MappedPairType;
   if (Ordered && Ordered->getName() == "__map_const_iterator")
     OrderedElement = OrderedElement.withConst();
-  const auto Pointer = Ordered ? Context.VoidPtrTy : Wrapped ? Wrapped->IteratorType : Iterator;
-  if ((!Ordered && !utilityObjectPointer(Context, Pointer)) ||
+  const auto Pointer = Ordered || List ? Context.VoidPtrTy : Wrapped ? Wrapped->IteratorType : Iterator;
+  if ((!Ordered && !List && !utilityObjectPointer(Context, Pointer)) ||
       Context.getTypeSize(Iterator) != Context.getTypeSize(Pointer) ||
       Context.getTypeAlign(Iterator) != Context.getTypeAlign(Pointer))
     return std::nullopt;
@@ -50132,7 +50140,7 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
   return UtilityReverseIteratorRecord{Specialization, Legacy, Current,
                                       Iterator,
                                       Wrapped ? Wrapped->Current : nullptr,
-                                      Pointer, OrderedElement, Ordered ? Tree.ValueOffsetBytes : 0};
+                                      Pointer, OrderedElement, Ordered ? Tree.ValueOffsetBytes : 0, ListElement};
 }
 
 static bool approvedOrderedReverseQualification(const State &S, const SourceManager &SM,
@@ -50150,11 +50158,26 @@ static bool approvedOrderedReverseQualification(const State &S, const SourceMana
   return To && To->getName() == "__map_const_iterator";
 }
 
+static bool approvedLinkedReverseQualification(const State &S, const SourceManager &SM,
+    const UtilityReverseIteratorRecord &Source, const UtilityReverseIteratorRecord &Destination,
+    const ASTContext &Context) {
+  if (Source.ListElementType.isNull() && Destination.ListElementType.isNull())
+    return approvedOrderedReverseQualification(S, SM, Source, Destination, Context);
+  if (Source.ListElementType.isNull() || Destination.ListElementType.isNull() ||
+      Source.ListElementType.isConstQualified() || !Destination.ListElementType.isConstQualified() ||
+      !Context.hasSameType(Source.ListElementType.withConst(), Destination.ListElementType))
+    return false;
+  const auto From = approvedUtilityListIteratorRecord(S, SM, Source.IteratorType->getAsCXXRecordDecl(), Context);
+  const auto To = approvedUtilityListIteratorRecord(S, SM, Destination.IteratorType->getAsCXXRecordDecl(), Context);
+  return From && To && !From->Const && To->Const &&
+         From->Node.Record->getCanonicalDecl() == To->Node.Record->getCanonicalDecl();
+}
+
 static bool approvedReverseIteratorConversion(const State &S, const SourceManager &SM,
     const UtilityReverseIteratorRecord &Source, const UtilityReverseIteratorRecord &Destination,
     const ASTContext &Context) {
-  if (!Source.OrderedElementType.isNull() || !Destination.OrderedElementType.isNull())
-    return approvedOrderedReverseQualification(S, SM, Source, Destination, Context);
+  if (!Source.linkedElementType().isNull() || !Destination.linkedElementType().isNull())
+    return approvedLinkedReverseQualification(S, SM, Source, Destination, Context);
   return bool(Source.WrappedCurrent) == bool(Destination.WrappedCurrent) &&
       utilityPointerConversion(Context, Source.PointerType, Destination.PointerType);
 }
@@ -54683,6 +54706,23 @@ std::optional<ForwardListObjectOrder> forwardListOrderObject(
   return ForwardListObjectOrder{Method, *Direction};
 }
 
+std::optional<bool> scalarListStandardOrder(const State &S, const SourceManager &SM, QualType Type,
+    QualType Element, const ASTContext &Context) {
+  if (Type.hasLocalQualifiers()) return std::nullopt;
+  const auto *Compare = dyn_cast_or_null<ClassTemplateSpecializationDecl>(forwardListRecordType(Type));
+  const auto Functional = approvedFunctionalObjectRecord(S, SM, Compare, Context);
+  if (!Compare || !Compare->getIdentifier() || !Functional ||
+      Functional->Record != Compare->getDefinition() ||
+      (Compare->getName() != "less" && Compare->getName() != "greater") ||
+      Compare->getTemplateArgs().size() != 1 || Compare->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Compare->isEmpty() || !Compare->hasTrivialDefaultConstructor() ||
+      !Compare->hasTrivialCopyConstructor() || !Compare->hasTrivialDestructor()) return std::nullopt;
+  const auto Operand = Compare->getTemplateArgs()[0].getAsType();
+  if (!Context.hasSameType(Operand, Element) && !Context.hasSameType(Operand, Context.VoidTy))
+    return std::nullopt;
+  return Compare->getName() == "greater";
+}
+
 std::optional<UtilityForwardListOperation> forwardListCustomOrderSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *Method,
     QualType Owner, QualType Element, const ASTContext &Context) {
@@ -54702,7 +54742,8 @@ std::optional<UtilityForwardListOperation> forwardListCustomOrderSignature(
   const auto Callback = Method->getParamDecl(Merge ? 1 : 0)->getType();
   if (Callback->isReferenceType() ||
       (!forwardListCallbackPointer(Callback, Element, 2, Context) &&
-       !forwardListOrderObject(S, SM, Callback, Element, Context)) ||
+       !forwardListOrderObject(S, SM, Callback, Element, Context) &&
+       !scalarListStandardOrder(S, SM, Callback, Element, Context)) ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Callback)) return std::nullopt;
   return Merge ? UtilityForwardListOperation::MergeWithOrder : UtilityForwardListOperation::SortWithOrder;
 }
@@ -56023,6 +56064,7 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   const bool DirectOrder = *Operation == UtilityForwardListOperation::MergeWithOrder ||
                            *Operation == UtilityForwardListOperation::SortWithOrder;
   std::optional<ForwardListObjectOrder> ObjectOrder;
+  std::optional<bool> OrderDirection;
   if (DirectOrder) {
     if (Call->getNumArgs() != Method->getNumParams()) return std::nullopt;
     const auto Index = Call->getNumArgs() - 1;
@@ -56033,12 +56075,17 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       if (!S.owns(SM, Argument->getExprLoc()) || !Context.hasSameType(Argument->getType(), Type))
         return std::nullopt;
       ObjectOrder = forwardListOrderObject(S, SM, Type, Element, Context);
-      if (!ObjectOrder) return std::nullopt;
+      if (ObjectOrder)
+        OrderDirection = ObjectOrder->Descending;
+      else
+        OrderDirection = scalarListStandardOrder(S, SM, Type, Element, Context);
+      if (!OrderDirection) return std::nullopt;
     }
   }
   const bool DirectFilter = *Operation == UtilityForwardListOperation::RemoveIf ||
                             *Operation == UtilityForwardListOperation::UniqueWithPredicate;
-  if (!forwardListSourceGraph(S, SM, Method, Context, *Node, DirectOrder, DirectFilter,
+  const bool SourceOrder = DirectOrder && (!OrderDirection || ObjectOrder);
+  if (!forwardListSourceGraph(S, SM, Method, Context, *Node, SourceOrder, DirectFilter,
                               ObjectOrder ? ObjectOrder->Method : nullptr)) return std::nullopt;
   if (*Operation == UtilityForwardListOperation::GetAllocator && !forwardListGetAllocatorBody(S, SM, Method, *Node, Context))
     return std::nullopt;
@@ -56096,8 +56143,7 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
-  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum,
-      ObjectOrder ? std::optional<bool>(ObjectOrder->Descending) : std::nullopt};
+  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum, OrderDirection};
 }
 
 
@@ -56259,22 +56305,40 @@ bool listLeaves(const State &S, const SourceManager &SM,
   return true;
 }
 
-bool listIntegerVoidArguments(const ClassTemplateSpecializationDecl *R,
+bool listElementType(QualType Type, const ASTContext &Context) {
+  if (Type.isNull() || Type.hasLocalQualifiers()) return false;
+  if (Context.hasSameType(Type, Context.BoolTy))
+    return Context.getTypeSize(Type) == 8 && Context.getTypeAlign(Type) == 8;
+  if (Context.hasSameType(Type, Context.CharTy) || Context.hasSameType(Type, Context.SignedCharTy) ||
+      Context.hasSameType(Type, Context.UnsignedCharTy)) return Context.getTypeSize(Type) == 8;
+  if (Context.hasSameType(Type, Context.ShortTy) || Context.hasSameType(Type, Context.UnsignedShortTy))
+    return Context.getTypeSize(Type) == 16;
+  if (Context.hasSameType(Type, Context.IntTy) || Context.hasSameType(Type, Context.UnsignedIntTy))
+    return Context.getTypeSize(Type) == 32;
+  if (Context.hasSameType(Type, Context.LongTy) || Context.hasSameType(Type, Context.UnsignedLongTy))
+    return Context.getTypeSize(Type) == 32 || Context.getTypeSize(Type) == 64;
+  return (Context.hasSameType(Type, Context.LongLongTy) || Context.hasSameType(Type, Context.UnsignedLongLongTy)) &&
+      Context.getTypeSize(Type) == 64;
+}
+
+bool listElementVoidArguments(const ClassTemplateSpecializationDecl *R,
                                const ASTContext &Context) {
   if (!R || R->getTemplateArgs().size() != 2) return false;
   const auto &Args = R->getTemplateArgs();
   return Args[0].getKind() == TemplateArgument::Type && Args[1].getKind() == TemplateArgument::Type &&
-      Context.hasSameType(Args[0].getAsType(), Context.IntTy) &&
+      listElementType(Args[0].getAsType(), Context) &&
       Context.hasSameType(Args[1].getAsType(), Context.VoidPtrTy);
 }
 std::optional<UtilityListNodeRecord> listNode(const State &S, const SourceManager &SM,
     const CXXRecordDecl *Input, const ASTContext &Context) {
   const auto *R = listSpecialization(S, SM, Input, "__list_node", "list");
-  if (!listTarget(Context) || !listIntegerVoidArguments(R, Context) || R->getNumBases() != 1)
+  if (!listTarget(Context) || !listElementVoidArguments(R, Context) || R->getNumBases() != 1)
     return std::nullopt;
   const auto &B = *R->bases_begin();
   const auto *Base = listSpecialization(S, SM, listRecordType(B.getType()), "__list_node_base", "list");
-  if (B.isVirtual() || !listIntegerVoidArguments(Base, Context) || Base->getNumBases()) return std::nullopt;
+  const auto Element = R->getTemplateArgs()[0].getAsType();
+  if (B.isVirtual() || !listElementVoidArguments(Base, Context) || Base->getNumBases() ||
+      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Element)) return std::nullopt;
   const auto Pointer = Context.getPointerType(Context.getRecordType(Base));
   std::vector<ListLeaf> Leaves;
   unsigned Budget = 0;
@@ -56285,7 +56349,7 @@ std::optional<UtilityListNodeRecord> listNode(const State &S, const SourceManage
       Leaves[0].Field->getParent() != Base || Leaves[1].Field->getParent() != Base ||
       !Context.hasSameType(Leaves[0].Field->getType(), Pointer) ||
       !Context.hasSameType(Leaves[1].Field->getType(), Pointer) ||
-      !Context.hasSameType(Leaves[2].Field->getType(), Context.IntTy)) return std::nullopt;
+      !Context.hasSameType(Leaves[2].Field->getType(), Element)) return std::nullopt;
   const auto &Layout = Context.getASTRecordLayout(R);
   const auto &BaseLayout = Context.getASTRecordLayout(Base);
   if (Layout.getSize().getQuantity() != 24 || Layout.getAlignment().getQuantity() != 8 ||
@@ -56302,15 +56366,16 @@ std::optional<UtilityListRecord> approvedUtilityListRecord(const State &S, const
   const auto &Args = R->getTemplateArgs();
   if (Args.size() != 2 || Args[0].getKind() != TemplateArgument::Type ||
       Args[1].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Args[0].getAsType(), Context.IntTy)) return std::nullopt;
+      !listElementType(Args[0].getAsType(), Context)) return std::nullopt;
+  const auto Element = Args[0].getAsType();
   const auto Allocator = approvedUtilityAllocatorRecord(S, SM, listRecordType(Args[1].getAsType()), Context);
-  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Context.IntTy)) return std::nullopt;
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Element)) return std::nullopt;
   const auto &B = *R->bases_begin();
   const auto *Base = listSpecialization(S, SM, listRecordType(B.getType()), "__list_imp", "list");
   if (B.isVirtual() || !Base || Base->getTemplateArgs().size() != 2 ||
       Base->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
       Base->getTemplateArgs()[1].getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Element) ||
       !Context.hasSameType(Base->getTemplateArgs()[1].getAsType(), Args[1].getAsType())) return std::nullopt;
   const CXXRecordDecl *NodeType = nullptr;
   for (const auto *D : Base->decls())
@@ -56319,7 +56384,7 @@ std::optional<UtilityListRecord> approvedUtilityListRecord(const State &S, const
       NodeType = listRecordType(T->getUnderlyingType());
     }
   const auto Node = listNode(S, SM, NodeType, Context);
-  if (!Node) return std::nullopt;
+  if (!Node || !Context.hasSameType(Node->Value->getType(), Element)) return std::nullopt;
   std::vector<ListLeaf> Leaves;
   unsigned Budget = 0;
   if (!listLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 3 ||
@@ -56341,7 +56406,7 @@ std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
     R = listSpecialization(S, SM, Input, "__list_const_iterator", "list");
     Const = true;
   }
-  if (!listTarget(Context) || !listIntegerVoidArguments(R, Context) || R->getNumBases()) return std::nullopt;
+  if (!listTarget(Context) || !listElementVoidArguments(R, Context) || R->getNumBases()) return std::nullopt;
   std::vector<ListLeaf> Leaves;
   unsigned Budget = 0;
   if (!listLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 1 ||
@@ -56349,7 +56414,9 @@ std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
       !Leaves[0].Field->getType()->isPointerType()) return std::nullopt;
   const auto *Base = listSpecialization(S, SM,
       listRecordType(Leaves[0].Field->getType()->getPointeeType()), "__list_node_base", "list");
-  if (!listIntegerVoidArguments(Base, Context)) return std::nullopt;
+  const auto Element = R->getTemplateArgs()[0].getAsType();
+  if (!listElementVoidArguments(Base, Context) ||
+      !Context.hasSameType(Base->getTemplateArgs()[0].getAsType(), Element)) return std::nullopt;
   const CXXRecordDecl *NodeType = nullptr;
   for (const auto *D : Base->methods()) {
     if (!D->getIdentifier() || D->getName() != "__as_node") continue;
@@ -56360,6 +56427,7 @@ std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
   const auto Node = listNode(S, SM, NodeType, Context);
   const auto &Layout = Context.getASTRecordLayout(R);
   if (!Node || Node->Base->getCanonicalDecl() != Base->getCanonicalDecl() ||
+      !Context.hasSameType(Node->Value->getType(), Element) ||
       Layout.getSize().getQuantity() != 8 || Layout.getAlignment().getQuantity() != 8) return std::nullopt;
   return UtilityListIteratorRecord{R, Leaves[0].Field, *Node, Const};
 }
@@ -56379,17 +56447,17 @@ bool listFunctionDeclarations(const State &S, const SourceManager &SM,
           !listPinned(S, SM, D->getTemplatedDecl(), "list")) return false;
   return true;
 }
-bool listIntegerValueParameter(QualType T, const ASTContext &Context) {
-  return Context.hasSameType(T, Context.getLValueReferenceType(Context.IntTy.withConst())) ||
-         Context.hasSameType(T, Context.getRValueReferenceType(Context.IntTy));
+bool listValueParameter(QualType T, QualType Element, const ASTContext &Context) {
+  return Context.hasSameType(T, Context.getLValueReferenceType(Element.withConst())) ||
+         Context.hasSameType(T, Context.getRValueReferenceType(Element));
 }
-bool listIntegerAllocatorParameter(const State &S, const SourceManager &SM,
-                                         QualType T, const ASTContext &Context) {
+bool listAllocatorParameter(const State &S, const SourceManager &SM,
+                                         QualType T, QualType Element, const ASTContext &Context) {
   if (!T->isLValueReferenceType() || !T->getPointeeType().isConstQualified() ||
       T->getPointeeType().isVolatileQualified()) return false;
   const auto A = approvedUtilityAllocatorRecord(S, SM,
       listRecordType(T->getPointeeType()), Context);
-  return A && Context.hasSameType(A->ElementType, Context.IntTy);
+  return A && Context.hasSameType(A->ElementType, Element);
 }
 bool listIteratorType(const State &S, const SourceManager &SM, QualType T,
                              const UtilityListNodeRecord &Node, bool Const,
@@ -56400,13 +56468,53 @@ bool listIteratorType(const State &S, const SourceManager &SM, QualType T,
   return I && I->Const == Const && I->Node.Record->getCanonicalDecl() == Node.Record->getCanonicalDecl();
 }
 
+bool listRangeInputSignature(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context, unsigned First = 0) {
+  if (M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      M->getParamDecl(First)->hasDefaultArg() || M->getParamDecl(First + 1)->hasDefaultArg())
+    return false;
+  const auto Input = M->getParamDecl(First)->getType();
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Input) ||
+      !Context.hasSameType(M->getParamDecl(First + 1)->getType(), Input))
+    return false;
+  if (Input->isPointerType()) {
+    const auto Value = Input->getPointeeType();
+    return !Value.isVolatileQualified() && listElementType(Value.getUnqualifiedType(), Context);
+  }
+  return listIteratorType(S, SM, Input, Owner.Node, false, Context) ||
+         listIteratorType(S, SM, Input, Owner.Node, true, Context);
+}
+
 std::optional<UtilityListConstruction> listConstructorSignature(
     const State &S, const SourceManager &SM, const CXXConstructorDecl *C,
     const ASTContext &Context) {
-  if (!C || C->getPrimaryTemplate() || !listFunctionDeclarations(S, SM, C))
+  if (!C || !listFunctionDeclarations(S, SM, C))
     return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, C->getParent(), Context)) {
-    if (!C->getNumParams()) return UtilityListConstruction::Default;
+    const auto Element = Owner->Node.Value->getType();
+    const auto Count = C->getNumParams();
+    if (C->getPrimaryTemplate()) {
+      if ((Count == 2 || (Count == 3 && !C->getParamDecl(2)->hasDefaultArg() &&
+              listAllocatorParameter(S, SM, C->getParamDecl(2)->getType(), Element, Context))) &&
+          listRangeInputSignature(S, SM, C, *Owner, Context))
+        return UtilityListConstruction::Range;
+      return std::nullopt;
+    }
+    if (!Count) return UtilityListConstruction::Default;
+    if ((Count == 1 || Count == 2) && !C->getParamDecl(0)->hasDefaultArg() &&
+        Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType())) {
+      if (Count == 1) return UtilityListConstruction::Count;
+      const auto *Argument = C->getParamDecl(1);
+      if (Argument->hasDefaultArg()) return std::nullopt;
+      if (listAllocatorParameter(S, SM, Argument->getType(), Element, Context))
+        return UtilityListConstruction::Count;
+      if (Context.hasSameType(Argument->getType(), Context.getLValueReferenceType(Element.withConst())))
+        return UtilityListConstruction::CountFill;
+      return std::nullopt;
+    }
     if (C->getNumParams() == 1 || C->getNumParams() == 2) {
       const auto Type = Context.getRecordType(Owner->Record);
       const auto Argument = C->getParamDecl(0)->getType();
@@ -56415,24 +56523,25 @@ std::optional<UtilityListConstruction> listConstructorSignature(
       if (Copy || Move) {
         for (const auto *Parameter : C->parameters())
           if (Parameter->hasDefaultArg()) return std::nullopt;
-        if (C->getNumParams() == 2 && !listIntegerAllocatorParameter(S, SM, C->getParamDecl(1)->getType(), Context))
+        if (C->getNumParams() == 2 && !listAllocatorParameter(S, SM, C->getParamDecl(1)->getType(), Element, Context))
           return std::nullopt;
         return Copy ? UtilityListConstruction::Copy : UtilityListConstruction::Move;
       }
     }
     if (C->getNumParams() == 1 &&
-        listIntegerAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Context))
+        listAllocatorParameter(S, SM, C->getParamDecl(0)->getType(), Element, Context))
       return UtilityListConstruction::Allocator;
     if (C->getNumParams() == 1 || C->getNumParams() == 2) {
       const auto ListType = C->getParamDecl(0)->getType();
       if (ListType->isReferenceType() || ListType.isVolatileQualified()) return std::nullopt;
       const auto List = approvedUtilityInitializerListRecord(S, SM, listRecordType(ListType), Context);
-      if (List && Context.hasSameType(List->ElementType, Context.IntTy) &&
-          (C->getNumParams() == 1 || listIntegerAllocatorParameter(S, SM,
-              C->getParamDecl(1)->getType(), Context))) return UtilityListConstruction::InitializerList;
+      if (List && Context.hasSameType(List->ElementType, Element) &&
+          (C->getNumParams() == 1 || listAllocatorParameter(S, SM,
+              C->getParamDecl(1)->getType(), Element, Context))) return UtilityListConstruction::InitializerList;
     }
     return std::nullopt;
   }
+  if (C->getPrimaryTemplate()) return std::nullopt;
   const auto Iterator = approvedUtilityListIteratorRecord(S, SM, C->getParent(), Context);
   if (!Iterator) return std::nullopt;
   if (!C->getNumParams()) return UtilityListConstruction::IteratorDefault;
@@ -56450,13 +56559,218 @@ std::optional<UtilityListConstruction> listConstructorSignature(
   return std::nullopt;
 }
 
+bool listNodeAllocatorMember(const State &S, const SourceManager &SM,
+    const CXXRecordDecl *Storage, const CXXRecordDecl *Node, const Expr *Value, const ASTContext &Context) {
+  const auto *Read = Value ? dyn_cast<MemberExpr>(Value->IgnoreParenImpCasts()) : nullptr;
+  const auto *Member = Read ? dyn_cast<FieldDecl>(Read->getMemberDecl()) : nullptr;
+  if (!Storage || !Node || !Member || !Member->getIdentifier() || Member->getName() != "__node_alloc_" ||
+      !listPinned(S, SM, Member, "list") || Member->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl() ||
+      !isa<CXXThisExpr>(Read->getBase()->IgnoreParenImpCasts()))
+    return false;
+  const auto Allocator = approvedUtilityAllocatorRecord(S, SM, listRecordType(Member->getType()), Context);
+  return Allocator && Context.hasSameType(Allocator->ElementType, Context.getRecordType(Node));
+}
+
+bool listGetAllocatorBody(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context) {
+  const auto *Definition = M->getDefinition();
+  const auto *Body = Definition ? dyn_cast_or_null<CompoundStmt>(Definition->getBody()) : nullptr;
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *Value = Return && Return->getRetValue() ? Return->getRetValue()->IgnoreUnlessSpelledInSource() : nullptr;
+  if (const auto *Cast = dyn_cast_or_null<CXXFunctionalCastExpr>(Value))
+    Value = Cast->getSubExpr()->IgnoreParenImpCasts();
+  const auto *Construction = dyn_cast_or_null<CXXConstructExpr>(Value);
+  const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
+  const auto Allocator = Constructor
+      ? approvedUtilityAllocatorRecord(S, SM, Constructor->getParent(), Context) : std::nullopt;
+  if (!Allocator || !Context.hasSameType(Allocator->ElementType, Owner.Node.Value->getType()) ||
+      !Context.hasSameType(Construction->getType(), M->getReturnType()) ||
+      Construction->getNumArgs() != 1 || Constructor->getNumParams() != 1 ||
+      !listPinned(S, SM, Constructor, "__memory/allocator.h") || Owner.Record->getNumBases() != 1)
+    return false;
+  const auto *Storage = listRecordType(Owner.Record->bases_begin()->getType());
+  return listNodeAllocatorMember(S, SM, Storage, Owner.Node.Record, Construction->getArg(0), Context);
+}
+
+bool listPredicatePointer(QualType Type, QualType Element, unsigned Count, const ASTContext &Context) {
+  const auto *Prototype = Type->isFunctionPointerType()
+      ? Type->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Prototype || Prototype->isVariadic() || Prototype->getCallConv() != CC_C ||
+      Prototype->hasExtParameterInfos() || Prototype->getNumParams() != Count ||
+      !Context.hasSameType(Prototype->getReturnType(), Context.BoolTy)) return false;
+  for (auto Parameter : Prototype->param_types())
+    if (!Context.hasSameType(Parameter, Element)) return false;
+  return true;
+}
+
+std::optional<UtilityListOperation> listPredicateSignature(
+    const CXXMethodDecl *M, QualType Element, const ASTContext &Context) {
+  if (!M->getIdentifier() || M->isConst() || M->getRefQualifier() != RQ_None ||
+      !M->getReturnType()->isVoidType() || M->getNumParams() != 1 ||
+      M->getParamDecl(0)->hasDefaultArg() || M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return std::nullopt;
+  const bool Remove = M->getName() == "remove_if";
+  if (!Remove && M->getName() != "unique") return std::nullopt;
+  const auto Type = M->getParamDecl(0)->getType();
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
+      !listPredicatePointer(Type, Element, Remove ? 1 : 2, Context)) return std::nullopt;
+  return Remove ? UtilityListOperation::RemoveIf : UtilityListOperation::UniqueWithPredicate;
+}
+
+bool listSDKPredicateCall(const CallExpr *Call, const FunctionDecl *Root, QualType Element,
+                          unsigned Count, const ASTContext &Context) {
+  const auto *Definition = Root->getDefinition();
+  if (Call->getDirectCallee() || !Definition || Definition->getNumParams() != 1 ||
+      Call->getNumArgs() != Count || !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      !variantParameter(Call->getCallee(), Definition->getParamDecl(0)) ||
+      !listPredicatePointer(Definition->getParamDecl(0)->getType(), Element, Count, Context)) return false;
+  for (const auto *Value : Call->arguments())
+    if (!Context.hasSameType(Value->getType(), Element)) return false;
+  return true;
+}
+
+bool listPredicateBody(const FunctionDecl *F) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
+  if (!Body || Body->size() != 3) return false;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Cast = Return && Return->getRetValue()
+      ? dyn_cast<CStyleCastExpr>(Return->getRetValue()->IgnoreParens()) : nullptr;
+  return isa<DeclStmt>(Body->body_front()) && isa<ForStmt>(*(Body->body_begin() + 1)) &&
+         Cast && Cast->getCastKind() == CK_ToVoid;
+}
+
+std::optional<UtilityListOperation> listEmplacementSignature(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *M,
+    const UtilityListRecord &Owner, const ASTContext &Context) {
+  if (!M->getIdentifier() || M->isConst() || M->getRefQualifier() != RQ_None ||
+      M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation) return std::nullopt;
+  const auto Name = M->getName();
+  const bool AtPosition = Name == "emplace";
+  if (!AtPosition && Name != "emplace_front" && Name != "emplace_back") return std::nullopt;
+  const auto Element = Owner.Node.Value->getType();
+  const auto *Parameters = M->getPrimaryTemplate()->getTemplateParameters();
+  const auto *TypePack = Parameters->size() == 1
+      ? dyn_cast<TemplateTypeParmDecl>(Parameters->getParam(0)) : nullptr;
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  if (!TypePack || !TypePack->isParameterPack() || !Arguments || Arguments->size() != 1 ||
+      Arguments->get(0).getKind() != TemplateArgument::Pack) return std::nullopt;
+  const auto Pack = Arguments->get(0).pack_elements();
+  const unsigned Offset = AtPosition ? 1 : 0;
+  if (Pack.size() > 1 || M->getNumParams() != Offset + Pack.size()) return std::nullopt;
+  if (AtPosition) {
+    if (M->getParamDecl(0)->hasDefaultArg() ||
+        !listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner.Node, true, Context) ||
+        !listIteratorType(S, SM, M->getReturnType(), Owner.Node, false, Context)) return std::nullopt;
+  } else if (!Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element))) {
+    return std::nullopt;
+  }
+  if (!Pack.empty()) {
+    if (Pack[0].getKind() != TemplateArgument::Type || M->getParamDecl(Offset)->hasDefaultArg())
+      return std::nullopt;
+    const auto Type = Pack[0].getAsType();
+    const auto Source = Type.getNonReferenceType();
+    if (!Context.hasSameType(Source, Element) && !Context.hasSameType(Source, Element.withConst()))
+      return std::nullopt;
+    const auto Parameter = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
+    if (!Context.hasSameType(M->getParamDecl(Offset)->getType(), Parameter)) return std::nullopt;
+  }
+  if (AtPosition) return UtilityListOperation::Emplace;
+  return Name == "emplace_front" ? UtilityListOperation::EmplaceFront : UtilityListOperation::EmplaceBack;
+}
+
+bool listAssignRangeSignature(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context) {
+  if (M->isConst() || M->getRefQualifier() != RQ_None || !M->getIdentifier() ||
+      M->getName() != "assign" || !M->getReturnType()->isVoidType() ||
+      M->getNumParams() != 2)
+    return false;
+  return listRangeInputSignature(S, SM, M, Owner, Context);
+}
+
+std::optional<UtilityListOperation> listOrderSignature(
+    const State &S, const SourceManager &SM, const CXXMethodDecl *M,
+    QualType Owner, QualType Element, const ASTContext &Context) {
+  if (!M->getIdentifier() || M->isConst() || M->getRefQualifier() != RQ_None ||
+      !M->getReturnType()->isVoidType() || M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return std::nullopt;
+  const bool Sort = M->getName() == "sort";
+  if (!Sort && M->getName() != "merge") return std::nullopt;
+  const unsigned Offset = Sort ? 0 : 1;
+  if (M->getNumParams() != Offset + 1 || M->getParamDecl(Offset)->hasDefaultArg()) return std::nullopt;
+  const auto Compare = M->getParamDecl(Offset)->getType();
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Compare) ||
+      (!listPredicatePointer(Compare, Element, 2, Context) &&
+       !scalarListStandardOrder(S, SM, Compare, Element, Context) &&
+       !forwardListOrderObject(S, SM, Compare, Element, Context))) return std::nullopt;
+  if (Sort) return UtilityListOperation::Sort;
+  const auto *Source = M->getParamDecl(0);
+  if (!Source->hasDefaultArg() &&
+      (Context.hasSameType(Source->getType(), Context.getLValueReferenceType(Owner)) ||
+       Context.hasSameType(Source->getType(), Context.getRValueReferenceType(Owner))))
+    return UtilityListOperation::Merge;
+  return std::nullopt;
+}
+
+std::optional<bool> listDirectOrder(const State &S, const SourceManager &SM, const Expr *Value,
+    QualType Element, const ASTContext &Context) {
+  if (!Value || !S.owns(SM, Value->getExprLoc()) || !listPredicatePointer(Value->getType(), Element, 2, Context))
+    return std::nullopt;
+  const Expr *Target = Value->IgnoreParenImpCasts();
+  if (const auto *Address = dyn_cast<UnaryOperator>(Target); Address && Address->getOpcode() == UO_AddrOf)
+    Target = Address->getSubExpr()->IgnoreParenImpCasts();
+  const auto *Reference = dyn_cast<DeclRefExpr>(Target);
+  const auto *Function = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  if (!Definition || Definition->getNumParams() != 2 || Definition->getBuiltinID() ||
+      !S.owns(SM, Definition->getLocation()) || isa<CXXMethodDecl>(Definition) ||
+      Definition->getTemplatedKind() != FunctionDecl::TK_NonTemplate) return std::nullopt;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  const auto *Comparison = Return && Return->getRetValue()
+      ? dyn_cast<BinaryOperator>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
+  if (!Comparison || (Comparison->getOpcode() != BO_LT && Comparison->getOpcode() != BO_GT)) return std::nullopt;
+  const auto *First = Definition->getParamDecl(0);
+  const auto *Second = Definition->getParamDecl(1);
+  const bool Forward = variantParameter(Comparison->getLHS(), First) &&
+                       variantParameter(Comparison->getRHS(), Second);
+  if (!Forward && !(variantParameter(Comparison->getLHS(), Second) &&
+                    variantParameter(Comparison->getRHS(), First))) return std::nullopt;
+  return (Comparison->getOpcode() == BO_GT) == Forward;
+}
+
 std::optional<UtilityListOperation> listMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
-  if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
+  if (!M || M->isStatic() || M->isVolatile() ||
       !listFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, M->getParent(), Context)) {
+    const auto Element = Owner->Node.Value->getType();
+    const auto IsInsertionPosition = [&] {
+      return M->getNumParams() && !M->getParamDecl(0)->hasDefaultArg() &&
+             listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context);
+    };
     const auto Type = Context.getRecordType(Owner->Record);
+    if (M->getPrimaryTemplate()) {
+      if (auto Order = listOrderSignature(S, SM, M, Type, Element, Context)) return Order;
+      if (M->getIdentifier() && M->getName() == "insert" && !M->isConst() &&
+          M->getRefQualifier() == RQ_None && M->getNumParams() == 3 && IsInsertionPosition() &&
+          listIteratorType(S, SM, M->getReturnType(), Owner->Node, false, Context) &&
+          listRangeInputSignature(S, SM, M, *Owner, Context, 1))
+        return UtilityListOperation::InsertRange;
+      if (listAssignRangeSignature(S, SM, M, *Owner, Context))
+        return UtilityListOperation::AssignRange;
+      if (auto Predicate = listPredicateSignature(M, Element, Context)) return Predicate;
+      return listEmplacementSignature(S, SM, M, *Owner, Context);
+    }
+    const auto IsInitializer = [&](QualType Input) {
+      if (Input->isReferenceType() || Input.isVolatileQualified()) return false;
+      const auto List = approvedUtilityInitializerListRecord(S, SM, listRecordType(Input), Context);
+      return List && Context.hasSameType(List->ElementType, Element);
+    };
     if (!M->isConst() && M->getRefQualifier() == RQ_None && M->isOverloadedOperator() &&
         M->getOverloadedOperator() == OO_Equal && M->getNumParams() == 1 &&
         !M->getParamDecl(0)->hasDefaultArg() &&
@@ -56466,6 +56780,7 @@ std::optional<UtilityListOperation> listMethodSignature(
         return UtilityListOperation::CopyAssign;
       if (Context.hasSameType(Argument, Context.getRValueReferenceType(Type)))
         return UtilityListOperation::MoveAssign;
+      if (IsInitializer(Argument)) return UtilityListOperation::AssignInitializer;
     }
     if (!M->getIdentifier()) return std::nullopt;
     const auto Name = M->getName();
@@ -56475,6 +56790,12 @@ std::optional<UtilityListOperation> listMethodSignature(
         Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Type)))
       return UtilityListOperation::Swap;
     if (!M->getNumParams()) {
+      if (Name == "get_allocator" && M->isConst() && M->getRefQualifier() == RQ_None &&
+          listGetAllocatorBody(S, SM, M, *Owner, Context))
+        return UtilityListOperation::GetAllocator;
+      if (Name == "max_size" && M->isConst() && M->getRefQualifier() == RQ_None &&
+          Context.hasSameType(M->getReturnType(), Context.getSizeType()))
+        return UtilityListOperation::MaxSize;
       if (Name == "size" && M->isConst() && Context.hasSameType(M->getReturnType(), Context.getSizeType()))
         return UtilityListOperation::Size;
       if (Name == "empty" && M->isConst() && Context.hasSameType(M->getReturnType(), Context.BoolTy))
@@ -56485,29 +56806,101 @@ std::optional<UtilityListOperation> listMethodSignature(
       if ((Name == "cbegin" || Name == "cend") && M->isConst() &&
           listIteratorType(S, SM, M->getReturnType(), Owner->Node, true, Context))
         return Name == "cbegin" ? UtilityListOperation::Begin : UtilityListOperation::End;
-      const auto ValueType = M->isConst() ? Context.IntTy.withConst() : Context.IntTy;
+      const bool ReverseBegin = Name == "rbegin" || Name == "crbegin";
+      const bool ReverseEnd = Name == "rend" || Name == "crend";
+      const bool ConstReverse = Name == "crbegin" || Name == "crend";
+      if ((ReverseBegin || ReverseEnd) && (!ConstReverse || M->isConst()) && M->getRefQualifier() == RQ_None) {
+        const auto Return = M->getReturnType();
+        const auto Reverse = approvedUtilityReverseIteratorRecord(S, SM, listRecordType(Return), Context, true);
+        if (Reverse && !Reverse->ListElementType.isNull() &&
+            Context.hasSameType(Return, Context.getRecordType(Reverse->Record)) &&
+            listIteratorType(S, SM, Reverse->IteratorType, Owner->Node, M->isConst(), Context))
+          return ReverseBegin ? UtilityListOperation::ReverseBegin : UtilityListOperation::ReverseEnd;
+      }
+      const auto ValueType = M->isConst() ? Element.withConst() : Element;
       if ((Name == "front" || Name == "back") && Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(ValueType)))
         return Name == "front" ? UtilityListOperation::Front : UtilityListOperation::Back;
       if (!M->isConst() && M->getReturnType()->isVoidType()) {
         if (Name == "clear") return UtilityListOperation::Clear;
+        if (Name == "reverse" && M->getRefQualifier() == RQ_None)
+          return UtilityListOperation::Reverse;
         if (Name == "pop_front") return UtilityListOperation::PopFront;
         if (Name == "pop_back") return UtilityListOperation::PopBack;
       }
     }
     if (M->isConst()) return std::nullopt;
+    if (M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
+      if (Name == "assign" && M->getNumParams() == 1 &&
+          !M->getParamDecl(0)->hasDefaultArg() && IsInitializer(M->getParamDecl(0)->getType()))
+        return UtilityListOperation::AssignInitializer;
+      if (Name == "assign" && M->getNumParams() == 2 &&
+          !M->getParamDecl(0)->hasDefaultArg() && !M->getParamDecl(1)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) &&
+          Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(Element.withConst())))
+        return UtilityListOperation::AssignCount;
+      if (Name == "remove" && M->getNumParams() == 1 && !M->getParamDecl(0)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Element.withConst())))
+        return UtilityListOperation::Remove;
+      if (Name == "unique" && !M->getNumParams()) return UtilityListOperation::Unique;
+      if (Name == "sort" && !M->getNumParams()) return UtilityListOperation::Sort;
+      if (Name == "merge" && M->getNumParams() == 1 && !M->getParamDecl(0)->hasDefaultArg()) {
+        const auto Source = M->getParamDecl(0)->getType();
+        if (Context.hasSameType(Source, Context.getLValueReferenceType(Type)) ||
+            Context.hasSameType(Source, Context.getRValueReferenceType(Type)))
+          return UtilityListOperation::Merge;
+      }
+    }
+    if (Name == "resize" && M->getRefQualifier() == RQ_None &&
+        (M->getNumParams() == 1 || M->getNumParams() == 2) && !M->getParamDecl(0)->hasDefaultArg() &&
+        M->getReturnType()->isVoidType() && Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType())) {
+      if (M->getNumParams() == 1) return UtilityListOperation::Resize;
+      if (!M->getParamDecl(1)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(Element.withConst())))
+        return UtilityListOperation::ResizeFill;
+    }
+    if (Name == "splice" && M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
+      const auto Count = M->getNumParams();
+      if (Count < 2 || Count > 4) return std::nullopt;
+      const auto Source = M->getParamDecl(1)->getType();
+      if (!Context.hasSameType(Source, Context.getLValueReferenceType(Type)) &&
+          !Context.hasSameType(Source, Context.getRValueReferenceType(Type)))
+        return std::nullopt;
+      for (unsigned I = 0; I < Count; ++I) {
+        const auto *Param = M->getParamDecl(I);
+        if (Param->hasDefaultArg() || (I != 1 && !listIteratorType(S, SM, Param->getType(), Owner->Node, true, Context)))
+          return std::nullopt;
+      }
+      if (Count == 2) return UtilityListOperation::SpliceAll;
+      if (Count == 3) return UtilityListOperation::SpliceOne;
+      return UtilityListOperation::SpliceRange;
+    }
     if ((Name == "push_front" || Name == "push_back") && M->getNumParams() == 1 && M->getReturnType()->isVoidType() &&
-        listIntegerValueParameter(M->getParamDecl(0)->getType(), Context))
+        listValueParameter(M->getParamDecl(0)->getType(), Element, Context))
       return Name == "push_front" ? UtilityListOperation::PushFront : UtilityListOperation::PushBack;
     if (!listIteratorType(S, SM, M->getReturnType(), Owner->Node, false, Context)) return std::nullopt;
-    if (Name == "erase" && M->getNumParams() == 1 &&
-        listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context))
-      return UtilityListOperation::Erase;
+    if (Name == "erase" && M->getRefQualifier() == RQ_None &&
+        (M->getNumParams() == 1 || M->getNumParams() == 2) &&
+        listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context)) {
+      if (M->getNumParams() == 1) return UtilityListOperation::Erase;
+      if (listIteratorType(S, SM, M->getParamDecl(1)->getType(), Owner->Node, true, Context))
+        return UtilityListOperation::EraseRange;
+    }
+    if (Name == "insert" && M->getRefQualifier() == RQ_None && IsInsertionPosition()) {
+      if (M->getNumParams() == 3 && !M->getParamDecl(1)->hasDefaultArg() && !M->getParamDecl(2)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(1)->getType(), Context.getSizeType()) &&
+          Context.hasSameType(M->getParamDecl(2)->getType(), Context.getLValueReferenceType(Element.withConst())))
+        return UtilityListOperation::InsertCount;
+      if (M->getNumParams() == 2 && !M->getParamDecl(1)->hasDefaultArg() &&
+          IsInitializer(M->getParamDecl(1)->getType()))
+        return UtilityListOperation::InsertInitializer;
+    }
     if (Name == "insert" && M->getNumParams() == 2 &&
         listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&
-        listIntegerValueParameter(M->getParamDecl(1)->getType(), Context))
+        listValueParameter(M->getParamDecl(1)->getType(), Element, Context))
       return UtilityListOperation::Insert;
     return std::nullopt;
   }
+  if (M->getPrimaryTemplate()) return std::nullopt;
   const auto I = approvedUtilityListIteratorRecord(S, SM, M->getParent(), Context);
   if (!I || !M->isOverloadedOperator()) return std::nullopt;
   const auto IteratorType = Context.getRecordType(I->Record);
@@ -56516,7 +56909,7 @@ std::optional<UtilityListOperation> listMethodSignature(
       (Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(IteratorType.withConst())) ||
        Context.hasSameType(M->getParamDecl(0)->getType(), Context.getRValueReferenceType(IteratorType))))
     return UtilityListOperation::IteratorAssign;
-  const auto Element = I->Const ? Context.IntTy.withConst() : Context.IntTy;
+  const auto Element = I->Const ? I->Node.Value->getType().withConst() : I->Node.Value->getType();
   if (M->isConst() && !M->getNumParams()) {
     if (M->getOverloadedOperator() == OO_Star &&
         Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element)))
@@ -56558,10 +56951,48 @@ std::optional<UtilityListOperation> listValueSwapSignature(
   const auto Owner = approvedUtilityListRecord(S, SM, listRecordType(Left->getPointeeType()), Context);
   const auto *Specialization = Owner ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
   if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
-      !Context.hasSameType(Arguments->get(0).getAsType(), Context.IntTy) ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Owner->Node.Value->getType()) ||
       !Context.hasSameType(Arguments->get(1).getAsType(), Specialization->getTemplateArgs().get(1).getAsType()))
     return std::nullopt;
   return UtilityListOperation::Swap;
+}
+
+std::optional<UtilityListOperation> listOwnerComparisonSignature(
+    const State &S, const SourceManager &SM, const FunctionDecl *F, const ASTContext &Context) {
+  if (!F || isa<CXXMethodDecl>(F) || !F->isOverloadedOperator() ||
+      F->getNumParams() != 2 || !Context.hasSameType(F->getReturnType(), Context.BoolTy) ||
+      !listStd(F->getDeclContext()) || !listFunctionDeclarations(S, SM, F)) return std::nullopt;
+  const auto *Template = F->getPrimaryTemplate();
+  const auto *Arguments = F->getTemplateSpecializationArgs();
+  if (!Template || Template->getTemplateParameters()->size() != 2 || !Arguments || Arguments->size() != 2)
+    return std::nullopt;
+  for (const auto *Parameter : *Template->getTemplateParameters()) {
+    const auto *Type = dyn_cast<TemplateTypeParmDecl>(Parameter);
+    if (!Type || Type->isParameterPack() || Type->hasDefaultArgument()) return std::nullopt;
+  }
+  for (const auto &Argument : Arguments->asArray())
+    if (Argument.getKind() != TemplateArgument::Type) return std::nullopt;
+  for (const auto *Parameter : F->parameters())
+    if (Parameter->hasDefaultArg()) return std::nullopt;
+  const auto Left = F->getParamDecl(0)->getType();
+  if (!Left->isLValueReferenceType() || !Left->getPointeeType().isConstQualified() ||
+      Left->getPointeeType().isVolatileQualified() || !Context.hasSameType(Left, F->getParamDecl(1)->getType()))
+    return std::nullopt;
+  const auto Owner = approvedUtilityListRecord(S, SM, listRecordType(Left->getPointeeType()), Context);
+  const auto *Specialization = Owner ? dyn_cast<ClassTemplateSpecializationDecl>(Owner->Record) : nullptr;
+  if (!Specialization || Specialization->getTemplateArgs().size() != 2 ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Owner->Node.Value->getType()) ||
+      !Context.hasSameType(Arguments->get(1).getAsType(), Specialization->getTemplateArgs().get(1).getAsType()))
+    return std::nullopt;
+  switch (F->getOverloadedOperator()) {
+  case OO_EqualEqual: return UtilityListOperation::OwnerEqual;
+  case OO_ExclaimEqual: return UtilityListOperation::OwnerNotEqual;
+  case OO_Less: return UtilityListOperation::OwnerLess;
+  case OO_Greater: return UtilityListOperation::OwnerGreater;
+  case OO_LessEqual: return UtilityListOperation::OwnerLessEqual;
+  case OO_GreaterEqual: return UtilityListOperation::OwnerGreaterEqual;
+  default: return std::nullopt;
+  }
 }
 
 std::optional<UtilityListOperation> listComparisonSignature(
@@ -56628,7 +57059,7 @@ bool listScalarDestruction(const State &S, const SourceManager &SM,
   const auto *D = Call && !Call->getNumArgs()
       ? dyn_cast<CXXPseudoDestructorExpr>(Call->getCallee()->IgnoreParenImpCasts()) : nullptr;
   if (!D || !D->isArrow() || !D->getBase() || !D->getDestroyedTypeInfo() ||
-      !Context.hasSameType(D->getDestroyedType(), Context.IntTy)) return false;
+      !Context.hasSameType(D->getDestroyedType(), Owner.Value->getType())) return false;
   const auto File = S.sdkFile(SM, Call->getExprLoc());
   if (!File || File->Root != "libcxx" ||
       (File->Path != "__memory/construct_at.h" && File->Path != "__memory/allocator.h")) return false;
@@ -56637,7 +57068,7 @@ bool listScalarDestruction(const State &S, const SourceManager &SM,
   const auto *Function = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
   if (!Function || Function->getNumParams() != 1 || Function->getParamDecl(0) != Parameter ||
       !Function->getReturnType()->isVoidType() ||
-      !Context.hasSameType(Parameter->getType(), Context.getPointerType(Context.IntTy))) return false;
+      !Context.hasSameType(Parameter->getType(), Context.getPointerType(Owner.Value->getType()))) return false;
   for (const auto *Redeclaration : Function->redecls())
     if (!listDependencyDeclaration(S, SM, Redeclaration)) return false;
   if (const auto *Method = dyn_cast<CXXMethodDecl>(Function)) {
@@ -56706,9 +57137,57 @@ bool listBuiltinLibraryCast(const State &S, const SourceManager &SM,
       Context.hasSameType(Result, Forwarded);
 }
 
+bool listSDKOrderCall(const State &S, const SourceManager &SM, const CallExpr *Call,
+    const CXXRecordDecl *Owner, QualType Compare, QualType Element, const ASTContext &Context,
+    const CXXMethodDecl *ObjectMethod) {
+  const unsigned Offset = ObjectMethod ? 1 : 0;
+  if (Call->getNumArgs() != 2 + Offset || !Context.hasSameType(Call->getType(), Context.BoolTy))
+    return false;
+  const auto *Callee = Call->getDirectCallee();
+  if (ObjectMethod) {
+    const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+    if (!Operator || Operator->getOperator() != OO_Call || !Callee ||
+        Callee->getCanonicalDecl() != ObjectMethod->getCanonicalDecl()) return false;
+  } else if (Callee) {
+    return false;
+  }
+  const auto *Callable = ObjectMethod ? Call->getArg(0) : Call->getCallee();
+  const auto *Ref = dyn_cast<DeclRefExpr>(Callable->IgnoreParenImpCasts());
+  const auto *Parameter = Ref ? dyn_cast<ParmVarDecl>(Ref->getDecl()) : nullptr;
+  const auto *Method = Parameter ? dyn_cast<CXXMethodDecl>(Parameter->getDeclContext()) : nullptr;
+  if (!Method || !Method->getIdentifier() || Method->getParent()->getCanonicalDecl() != Owner->getCanonicalDecl() ||
+      !listFunctionDeclarations(S, SM, Method) ||
+      !Context.hasSameType(Parameter->getType().getNonReferenceType(), Compare)) return false;
+  if (!(Method->getName() == "__sort" && Method->isStatic() && Method->getNumParams() == 4 &&
+        Method->getParamDecl(3) == Parameter && Parameter->getType()->isLValueReferenceType()) &&
+      !(Method->getName() == "merge" && !Method->isStatic() && Method->getNumParams() == 2 &&
+        Method->getParamDecl(1) == Parameter && !Parameter->getType()->isReferenceType())) return false;
+  return Context.hasSameType(Call->getArg(Offset)->getType(), Element) &&
+         Context.hasSameType(Call->getArg(Offset + 1)->getType(), Element);
+}
+
+bool listForwardedOrderCopy(const CXXConstructExpr *Construct, const FunctionDecl *Root,
+    const CXXMethodDecl *OrderMethod, const ASTContext &Context) {
+  const auto *Merge = dyn_cast_or_null<CXXMethodDecl>(Root);
+  if (!OrderMethod || !Merge || !Merge->getIdentifier() || Merge->getName() != "merge" ||
+      Merge->getNumParams() != 2 || !Merge->getParamDecl(0)->getType()->isRValueReferenceType() ||
+      Construct->getNumArgs() != 1 || Construct->getConstructionKind() != CXXConstructionKind::Complete)
+    return false;
+  const auto *Constructor = Construct->getConstructor();
+  const auto Compare = Context.getRecordType(OrderMethod->getParent());
+  if (!Constructor || !Constructor->isImplicit() || !Constructor->isTrivial() ||
+      !Constructor->isCopyConstructor() ||
+      Constructor->getParent()->getCanonicalDecl() != OrderMethod->getParent()->getCanonicalDecl() ||
+      !Context.hasSameType(Merge->getParamDecl(1)->getType(), Compare) ||
+      !Context.hasSameType(Construct->getType(), Compare)) return false;
+  const auto *Source = dyn_cast<DeclRefExpr>(Construct->getArg(0)->IgnoreParenImpCasts());
+  return Source && Source->getDecl() == Merge->getParamDecl(1);
+}
+
 bool listSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context,
-                         const UtilityListNodeRecord &Owner) {
+                         const UtilityListNodeRecord &Owner, unsigned PredicateCount = 0, QualType Compare = {},
+                         const CXXMethodDecl *OrderMethod = nullptr) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -56800,11 +57279,15 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!listScalarDestruction(S, SM, Call, Context, Owner) &&
+          !(PredicateCount && listSDKPredicateCall(Call, Root, Owner.Value->getType(), PredicateCount, Context)) &&
+          !(!Compare.isNull() && listSDKOrderCall(S, SM, Call, cast<CXXMethodDecl>(Root)->getParent(),
+                                                      Compare, Owner.Value->getType(), Context, OrderMethod)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if (!Function(C->getConstructor(), Depth + 1)) return false;
+      if (!listForwardedOrderCopy(C, Root, OrderMethod, Context) &&
+          !Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
-      if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Context.IntTy) &&
+      if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
            !Context.hasSameType(N->getAllocatedType(), Context.getRecordType(Owner.Record))) ||
           N->getNumPlacementArgs() != 1 ||
           !Function(N->getOperatorNew(), Depth + 1)) return false;
@@ -56882,6 +57365,14 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       return std::nullopt;
     return UtilityListCall{*Swap, nullptr, Function, 0};
   }
+  if (const auto Comparison = listOwnerComparisonSignature(S, SM, Function, Context)) {
+    const auto Type = Function->getParamDecl(0)->getType()->getPointeeType();
+    const auto Node = listReceiverNode(S, SM, listRecordType(Type), Context);
+    if (!Node || !listOperandTypes(Call, Function, 0, Context) || !Call->getCallee() ||
+        !S.owns(SM, Call->getCallee()->getExprLoc()) || !listSourceGraph(S, SM, Function, Context, *Node))
+      return std::nullopt;
+    return UtilityListCall{*Comparison, nullptr, Function, 0};
+  }
   if (const auto Comparison = listComparisonSignature(S, SM, Function, Context)) {
     const auto T = Function->getParamDecl(0)->getType()->getPointeeType();
     const auto Node = listReceiverNode(S, SM, listRecordType(T), Context);
@@ -56893,7 +57384,37 @@ std::optional<UtilityListCall> approvedUtilityListCall(
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
   const auto Operation = listMethodSignature(S, SM, Method, Context);
   const auto Node = Method ? listReceiverNode(S, SM, Method->getParent(), Context) : std::nullopt;
-  if (!Operation || !Node || !listSourceGraph(S, SM, Method, Context, *Node)) return std::nullopt;
+  if (!Operation || !Node) return std::nullopt;
+  const unsigned Predicates = *Operation == UtilityListOperation::RemoveIf ? 1 :
+      *Operation == UtilityListOperation::UniqueWithPredicate ? 2 : 0;
+  std::optional<bool> Descending;
+  QualType Compare;
+  const CXXMethodDecl *OrderMethod = nullptr;
+  if (Method->getPrimaryTemplate() &&
+      (*Operation == UtilityListOperation::Merge || *Operation == UtilityListOperation::Sort)) {
+    if (Call->getNumArgs() != Method->getNumParams() || !Call->getNumArgs()) return std::nullopt;
+    const unsigned Index = Call->getNumArgs() - 1;
+    const auto *Argument = Call->getArg(Index);
+    const auto Element = Node->Value->getType();
+    const auto Type = Method->getParamDecl(Index)->getType();
+    Descending = listDirectOrder(S, SM, Argument, Element, Context);
+    if (Descending) {
+      Compare = Type;
+    } else {
+      if (!S.owns(SM, Argument->getExprLoc()) || !Context.hasSameType(Argument->getType(), Type))
+        return std::nullopt;
+      if (const auto Order = forwardListOrderObject(S, SM, Type, Element, Context)) {
+        Compare = Type;
+        OrderMethod = Order->Method;
+        Descending = Order->Descending;
+      } else {
+        Descending = scalarListStandardOrder(S, SM, Type, Element, Context);
+        if (!Descending) return std::nullopt;
+      }
+    }
+  }
+  if ((Predicates && !listPredicateBody(Method)) ||
+      !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare, OrderMethod)) return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
   if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
@@ -56911,7 +57432,12 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
-  return UtilityListCall{*Operation, Receiver, Function, Offset};
+  std::optional<uint64_t> Maximum;
+  if (*Operation == UtilityListOperation::MaxSize) {
+    Maximum = containerNodeMaximum(S, SM, Method, Context, "list", "__list_node");
+    if (!Maximum) return std::nullopt;
+  }
+  return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum, Descending};
 }
 
 
@@ -61602,8 +62128,10 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       !Function->isInlined() || !Pattern->hasBody() ||
       !approvedStandardSDKDeclaration(S, SM, Function) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
-      !S.owns(SM, Default->getExprLoc()) || !Function->getIdentifier() ||
-      Function->getIdentifier()->getName() != "next")
+      !S.owns(SM, Default->getExprLoc()) || !Function->getIdentifier())
+    return false;
+  const auto Name = Function->getIdentifier()->getName();
+  if (Name != "next" && Name != "prev")
     return false;
   auto Origin = S.sdkFile(SM, Primary->getLocation());
   auto Iterator = Function->getParamDecl(0)->getType();
@@ -61614,11 +62142,13 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
   const auto Unordered = approvedUtilityUnorderedMapIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
+  const bool List = Reverse ? !Reverse->ListElementType.isNull() :
+      approvedUtilityListIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context).has_value();
   const auto *Init = selectedDefaultArgument(Default, Context);
   if (!Origin || Origin->Root != "libcxx" ||
-      Origin->Path != "__iterator/next.h" ||
+      (Name == "prev" ? !List || Origin->Path != "__iterator/prev.h" : Origin->Path != "__iterator/next.h") ||
       (!utilityObjectPointer(Context, Iterator) && !Reverse && !Wrapped &&
-       !Unordered && !approvedOrderedSetIteratorRecord(
+       !List && !Unordered && !approvedOrderedSetIteratorRecord(
                          S, SM, Iterator->getAsCXXRecordDecl(), Context)) ||
       !Distance->isIntegralType(Context) ||
       Context.getTypeSize(Distance) > 64 ||
@@ -128586,8 +129116,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const auto Reverse = approvedUtilityReverseIteratorRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context, true);
   if (Method && Reverse) {
-    const bool Ordered = !Reverse->OrderedElementType.isNull();
-    const auto Pointer = Ordered ? Context.getPointerType(Reverse->OrderedElementType) : Reverse->PointerType;
+    const auto Element = Reverse->linkedElementType();
+    const auto Pointer = Element.isNull() ? Reverse->PointerType : Context.getPointerType(Element);
     const auto *Reference = directMethodReference(Call);
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
@@ -128673,7 +129203,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::ReversePostDecrement;
       }
     }
-    if (Ordered) return std::nullopt;
+    if (!Element.isNull()) return std::nullopt;
     if ((Kind == OO_Plus || Kind == OO_Minus) && Method->isConst() &&
         DifferenceParameter() && Call->isPRValue() &&
         SameReverse(Method->getReturnType()) && SameReverse(Call->getType()))
@@ -136611,7 +137141,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     auto Parameter = Function->getParamDecl(0)->getType();
     if (Result &&
         (utilityObjectPointer(Context, Parameter) ||
-         Result->WrappedCurrent || !Result->OrderedElementType.isNull()) &&
+         Result->WrappedCurrent || !Result->linkedElementType().isNull()) &&
         Same(Parameter, Result->IteratorType) &&
         Same(Call->getArg(0)->getType(), Parameter) &&
         Same(Call->getType(), Function->getReturnType()))
@@ -136622,10 +137152,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto Left = ReverseFor(Call->getArg(0)->getType(), true);
     const auto Right = ReverseFor(Call->getArg(1)->getType(), true);
-    if (Left && Right && (!Left->OrderedElementType.isNull() || !Right->OrderedElementType.isNull()) &&
+    if (Left && Right && (!Left->linkedElementType().isNull() || !Right->linkedElementType().isNull()) &&
         (!(Context.hasSameType(Left->IteratorType, Right->IteratorType) ||
-           approvedOrderedReverseQualification(S, SM, *Left, *Right, Context) ||
-           approvedOrderedReverseQualification(S, SM, *Right, *Left, Context)) ||
+           approvedLinkedReverseQualification(S, SM, *Left, *Right, Context) ||
+           approvedLinkedReverseQualification(S, SM, *Right, *Left, Context)) ||
          !Operator || (Operator->getOperator() != OO_EqualEqual && Operator->getOperator() != OO_ExclaimEqual)))
       return std::nullopt;
     if (Operator && Left && Right && ReverseParameter(0, *Left) &&
@@ -136686,6 +137216,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return std::nullopt;
     return std::pair{Array->ElementType, Array->Size};
   };
+  auto ListOwner = [&](QualType Parameter) -> std::optional<UtilityListRecord> {
+    if (!Parameter->isLValueReferenceType() || !Call->isPRValue() ||
+        !Same(Call->getType(), Function->getReturnType()) ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+      return std::nullopt;
+    const auto Type = Parameter->getPointeeType();
+    const auto *Args = Function->getTemplateSpecializationArgs();
+    if (Type.isVolatileQualified() || !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Type) ||
+        !Args || Args->size() != 1 || Args->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameUnqualifiedType(Args->get(0).getAsType(), Type))
+      return std::nullopt;
+    return approvedUtilityListRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+  };
   auto OrderedOwner = [&](QualType Parameter) -> std::optional<UtilityOrderedSetStorage> {
     if (!Parameter->isLValueReferenceType()) return std::nullopt;
     const auto Type = Parameter->getPointeeType();
@@ -136705,6 +137248,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 1 && Function->getNumParams() == 1) {
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
+    if (const auto Owner = ListOwner(Parameter)) {
+      const bool Const = Parameter->getPointeeType().isConstQualified();
+      const bool ConstantAccess = Name == "cbegin" || Name == "cend";
+      if (Origin->Path == "__iterator/access.h" &&
+          (Name == "begin" || Name == "end" || (ConstantAccess && Const)) &&
+          listIteratorType(S, SM, Result, Owner->Node, Const, Context))
+        return Name == "end" || Name == "cend" ? UtilityOperation::IteratorEnd : UtilityOperation::IteratorBegin;
+      if (Const && Origin->Path == "__iterator/size.h" && Name == "size" && Same(Result, Context.getSizeType()))
+        return UtilityOperation::IteratorSize;
+      if (Const && Origin->Path == "__iterator/empty.h" && Name == "empty" && Same(Result, Context.BoolTy))
+        return UtilityOperation::IteratorEmpty;
+    }
     if (const auto Owner = OrderedOwner(Parameter); Owner && Call->isPRValue() && Same(Call->getType(), Result)) {
       if (Origin->Path == "__iterator/access.h" &&
           (Name == "begin" || Name == "cbegin" || Name == "end" || Name == "cend") &&
@@ -136750,6 +137305,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->isPRValue()) {
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
+    if (const auto Owner = ListOwner(Parameter)) {
+      const bool Const = Parameter->getPointeeType().isConstQualified();
+      const auto Reverse = ReverseFor(Result, true);
+      if ((Const || (Name == "rbegin" || Name == "rend")) && Reverse && !Reverse->ListElementType.isNull() &&
+          listIteratorType(S, SM, Reverse->IteratorType, Owner->Node, Const, Context))
+        return Name == "rend" || Name == "crend" ? UtilityOperation::IteratorREnd : UtilityOperation::IteratorRBegin;
+    }
     if (const auto Owner = OrderedOwner(Parameter); Owner && Same(Call->getType(), Result)) {
       const auto Reverse = ReverseFor(Result, true);
       if (Reverse && !Reverse->OrderedElementType.isNull() &&
@@ -136779,10 +137341,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Type->getPointeeType()->isVoidType();
   };
   auto NavigableIterator = [&](QualType Type) {
+    const auto *Record = Type->getAsCXXRecordDecl();
     return ObjectPointer(Type) || ReverseFor(Type, true).has_value() ||
-           approvedUtilityWrapIteratorRecord(S, SM, Type->getAsCXXRecordDecl(),
-                                             Context).has_value() ||
-           approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+           approvedUtilityWrapIteratorRecord(S, SM, Record, Context).has_value() ||
+           approvedOrderedSetIteratorRecord(S, SM, Record, Context) ||
+           approvedUtilityListIteratorRecord(S, SM, Record, Context).has_value();
   };
   if (Origin->Path == "__iterator/advance.h" && Name == "advance" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
@@ -138764,7 +139327,26 @@ std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager
   if (!utilityCheckedMinimum(S, SM, Min, Context, Size))
     return std::nullopt;
 
-  const auto *TraitsCall = dyn_cast_or_null<CallExpr>(orderedExpression(Min->getArg(0)));
+  const Expr *AllocatorBound = orderedExpression(Min->getArg(0));
+  const CXXRecordDecl *ListAllocatorStorage = nullptr;
+  const CXXRecordDecl *ListNode = nullptr;
+  if (Header == "list") {
+    const auto Owner = approvedUtilityListRecord(S, SM, Method->getParent(), Context);
+    const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(AllocatorBound);
+    const auto *ReadMethod = Read ? Read->getMethodDecl() : nullptr;
+    if (!Owner || Owner->Record->getNumBases() != 1 || !ReadMethod || !ReadMethod->getIdentifier() ||
+        ReadMethod->getName() != "__node_alloc_max_size" || !ReadMethod->isConst() || ReadMethod->isStatic() ||
+        ReadMethod->isVirtual() || ReadMethod->getNumParams() || Read->getNumArgs() || !orderedReceiver(Read) ||
+        !Context.hasSameType(ReadMethod->getReturnType(), Size) || !orderedPinnedFunction(S, SM, ReadMethod, "list"))
+      return std::nullopt;
+    const auto *Storage = listRecordType(Owner->Record->bases_begin()->getType());
+    if (!Storage || ReadMethod->getParent()->getCanonicalDecl() != Storage->getCanonicalDecl())
+      return std::nullopt;
+    AllocatorBound = orderedExpression(orderedReturn(ReadMethod));
+    ListAllocatorStorage = Storage;
+    ListNode = Owner->Node.Record;
+  }
+  const auto *TraitsCall = dyn_cast_or_null<CallExpr>(AllocatorBound);
   const auto *TraitsMethod = TraitsCall ? dyn_cast_or_null<CXXMethodDecl>(TraitsCall->getDirectCallee()) : nullptr;
   if (!TraitsMethod || TraitsMethod->getName() != "max_size" || !TraitsMethod->isStatic() ||
       TraitsCall->getNumArgs() != 1 || TraitsMethod->getNumParams() != 1 ||
@@ -138781,6 +139363,9 @@ std::optional<uint64_t> containerNodeMaximum(const State &S, const SourceManager
   if (ForwardListNode) {
     if (Header != "forward_list" ||
         !forwardListAllocatorMember(S, SM, Storage, ForwardListNode, TraitsCall->getArg(0), Context))
+      return std::nullopt;
+  } else if (ListAllocatorStorage) {
+    if (!listNodeAllocatorMember(S, SM, ListAllocatorStorage, ListNode, TraitsCall->getArg(0), Context))
       return std::nullopt;
   } else {
     const auto *Read = dyn_cast_or_null<CXXMemberCallExpr>(orderedExpression(TraitsCall->getArg(0)));
