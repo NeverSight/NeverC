@@ -56682,7 +56682,10 @@ std::optional<UtilityListOperation> listEmplacementSignature(
       return std::nullopt;
     const auto Type = Pack[0].getAsType();
     const auto Source = Type.getNonReferenceType();
-    if (!Context.hasSameType(Source, Element) && !Context.hasSameType(Source, Element.withConst()))
+    if (Source.isVolatileQualified() ||
+        (!(Context.hasSameType(Source, Element) || Context.hasSameType(Source, Element.withConst())) &&
+         (!Element->isIntegerType() || !Source->isIntegerType() ||
+          !listElementType(Source.getUnqualifiedType(), Context))))
       return std::nullopt;
     const auto Parameter = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
     if (!Context.hasSameType(M->getParamDecl(Offset)->getType(), Parameter)) return std::nullopt;

@@ -29934,14 +29934,16 @@ class FunctionLowering {
       if (Emplace) Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
       const unsigned Offset = Emplace ? 1 : 0;
       Expression Argument;
+      QualType InputElement;
       if (Operands.size() == Offset) {
         auto Zero = temporary(type(Element, L), L);
         initializeZero(Zero, Element, L);
         Argument = address(Zero, Element, L);
       } else {
         Argument = Operands[Offset];
+        InputElement = Method->getParamDecl(Offset)->getType()->getPointeeType().getUnqualifiedType();
       }
-      auto Node = listCreateNode(std::move(Argument), Owner->Node, L);
+      auto Node = listCreateNode(std::move(Argument), Owner->Node, L, InputElement);
       if (!Position) Position = Operation == UtilityListOperation::EmplaceFront
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);
