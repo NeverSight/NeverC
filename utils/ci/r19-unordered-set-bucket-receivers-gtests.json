@@ -1,0 +1,164 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-bucket-receivers-capacity-constants-evaluate-the-const-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetBucketReceiversCapacityConstantsEvaluateTheConstPointerReceiverRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "feb1e6477e10d6cf1dfb16b554e8e334c90184cc6e66c7eeccc3fba43a01e212",
+      "original_case_source_sha256": "feb1e6477e10d6cf1dfb16b554e8e334c90184cc6e66c7eeccc3fba43a01e212",
+      "gtest_body_sha256": "f25e078f10287ee1ed9328cdebfe5a0d2db335b3324bfceadb84fc5ea2d5329d"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-pointer-capacity-and-load-observers-use-the-live-table",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetBucketReceiversPointerCapacityAndLoadObserversUseTheLiveTableRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "32f86e8bfae9bece2859df4f7f82bbb63e80c9b1325c4a18edf3bb7a2e82a7a6",
+      "original_case_source_sha256": "32f86e8bfae9bece2859df4f7f82bbb63e80c9b1325c4a18edf3bb7a2e82a7a6",
+      "gtest_body_sha256": "0292bc2201fa93507be1b2a5d1c986fd73f00c8f6f23852d280373e681812927"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-pointer-reserve-and-rehash-evaluate-the-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetBucketReceiversPointerReserveAndRehashEvaluateTheReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bb6bd8fc69b3e320e7532aac7e523a84ef03d49d300a4409155b9a2c39e657c4",
+      "original_case_source_sha256": "bb6bd8fc69b3e320e7532aac7e523a84ef03d49d300a4409155b9a2c39e657c4",
+      "gtest_body_sha256": "148a338974f0b9859c0129950e9dc30f91b1b53f7d3ef96a5219ff102ebb8713"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-pointer-bucket-and-size-find-an-equivalent-key-group",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetBucketReceiversPointerBucketAndSizeFindAnEquivalentKeyGroupRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f1b29ac30979f01b5b2a488fcb1c247b3b2afdc2c20361f26ca94b1bfac28ff2",
+      "original_case_source_sha256": "f1b29ac30979f01b5b2a488fcb1c247b3b2afdc2c20361f26ca94b1bfac28ff2",
+      "gtest_body_sha256": "830674c80f2f53380d74ecbde3295f2858e91287958ed46b56f7e642b0be42a0"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-pointer-setter-preserves-the-live-load-limit",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetBucketReceiversPointerSetterPreservesTheLiveLoadLimitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "000f38108569427038c1f938944e7be7a55b84e6f9fba3dbef24cf5c34a564da",
+      "original_case_source_sha256": "000f38108569427038c1f938944e7be7a55b84e6f9fba3dbef24cf5c34a564da",
+      "gtest_body_sha256": "01a9cabb8d50ef86af78f5ce722cbb7d0c8532c6f66a510d9e83dd49afbc8577"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-bucket-receivers-other-key-pointer-capacity-observer",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetBucketReceiversOtherKeyPointerCapacityObserverRejected",
+      "expected": "reject",
+      "source_sha256": "c70c997eb7a4984764c0e7e909352c99cb7a854947a9e3c89abcad59d9164f48",
+      "original_case_source_sha256": "c70c997eb7a4984764c0e7e909352c99cb7a854947a9e3c89abcad59d9164f48",
+      "gtest_body_sha256": "63875e66f2f32b213bf3bb9c8217d840cd18b9b1f01c7e431b74eee2edde4d41"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-custom-hash-pointer-rehash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetBucketReceiversCustomHashPointerRehashRejected",
+      "expected": "reject",
+      "source_sha256": "eb4fd3b13727615efa8ff7126363f5dde4df9128e132894157b3f62e32842473",
+      "original_case_source_sha256": "eb4fd3b13727615efa8ff7126363f5dde4df9128e132894157b3f62e32842473",
+      "gtest_body_sha256": "9cb504e14484a6d54d2de0bbec21055d61b8f4ec31c251d50c2696df9b945830"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-custom-equality-pointer-load-limit",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetBucketReceiversCustomEqualityPointerLoadLimitRejected",
+      "expected": "reject",
+      "source_sha256": "7d764c118d4c798bb6ff91d65de4c1072cbaa92521c4a1ea3ef31ba032b188bd",
+      "original_case_source_sha256": "7d764c118d4c798bb6ff91d65de4c1072cbaa92521c4a1ea3ef31ba032b188bd",
+      "gtest_body_sha256": "563675ba9f9bf8d0cd3c386cfb37477e50c627c6ec7ad15edf9d7d3493171f57"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-bucket-receivers-capacity-constants-evaluate-the-const-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nconst Set* observe(const Set& values, int& calls) { ++calls; return &values; }\nint main() {\n  const Set values{2, 3};\n  int calls = 0;\n  const auto keys = observe(values, calls)->max_size();\n  const auto buckets = observe(values, calls)->max_bucket_count();\n  return calls != 2 || keys < 2 || buckets < values.bucket_count();\n}\n",
+      "source_sha256": "feb1e6477e10d6cf1dfb16b554e8e334c90184cc6e66c7eeccc3fba43a01e212",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-pointer-capacity-and-load-observers-use-the-live-table",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3, 7};\n  const auto* p = &values;\n  return p->empty() || p->size() != 3 || p->bucket_count() != values.bucket_count() ||\n         p->load_factor() != values.load_factor() || p->max_load_factor() != 1.0f;\n}\n",
+      "source_sha256": "32f86e8bfae9bece2859df4f7f82bbb63e80c9b1325c4a18edf3bb7a2e82a7a6",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-pointer-reserve-and-rehash-evaluate-the-receiver-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_multiset<int>;\nSet* observe(Set& values, int& calls) { ++calls; return &values; }\nint main() {\n  Set values{7, 7, 5};\n  int calls = 0;\n  observe(values, calls)->reserve(19);\n  if (values.bucket_count() < 19) return 1;\n  observe(values, calls)->rehash(37);\n  return calls != 2 || values.bucket_count() < 37 || values.count(7) != 2;\n}\n",
+      "source_sha256": "bb6bd8fc69b3e320e7532aac7e523a84ef03d49d300a4409155b9a2c39e657c4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-pointer-bucket-and-size-find-an-equivalent-key-group",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{1, 1, 2};\n  values.rehash(8);\n  const auto* p = &values;\n  const auto bucket = p->bucket(1);\n  return bucket >= p->bucket_count() || p->bucket_size(bucket) != 2;\n}\n",
+      "source_sha256": "f1b29ac30979f01b5b2a488fcb1c247b3b2afdc2c20361f26ca94b1bfac28ff2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-pointer-setter-preserves-the-live-load-limit",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nSet* observe(Set& values, int& calls) { ++calls; return &values; }\nint main() {\n  Set values{1, 2};\n  const auto load = values.load_factor();\n  int calls = 0;\n  observe(values, calls)->max_load_factor(load / 2);\n  return calls != 1 || values.max_load_factor() != load || values.size() != 2;\n}\n",
+      "source_sha256": "000f38108569427038c1f938944e7be7a55b84e6f9fba3dbef24cf5c34a564da",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-other-key-pointer-capacity-observer",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<long> values;\n  const auto* p = &values;\n  return p->max_bucket_count() == 0;\n}\n",
+      "source_sha256": "c70c997eb7a4984764c0e7e909352c99cb7a854947a9e3c89abcad59d9164f48",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-custom-hash-pointer-rehash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_multiset<int, Hash> values;\n  auto* p = &values;\n  p->rehash(5);\n  return values.empty();\n}\n",
+      "source_sha256": "eb4fd3b13727615efa8ff7126363f5dde4df9128e132894157b3f62e32842473",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-bucket-receivers-custom-equality-pointer-load-limit",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int x, int y) const { return x == y; } };\nint main() {\n  std::unordered_set<int, std::hash<int>, Equal> values;\n  auto* p = &values;\n  p->max_load_factor(2.0f);\n  return p->size();\n}\n",
+      "source_sha256": "7d764c118d4c798bb6ff91d65de4c1072cbaa92521c4a1ea3ef31ba032b188bd",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetBucketReceiversCapacityConstantsEvaluateTheConstPointerReceiverRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetBucketReceiversPointerCapacityAndLoadObserversUseTheLiveTableRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetBucketReceiversPointerReserveAndRehashEvaluateTheReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetBucketReceiversPointerBucketAndSizeFindAnEquivalentKeyGroupRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetBucketReceiversPointerSetterPreservesTheLiveLoadLimitRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetBucketReceiversOtherKeyPointerCapacityObserverRejected",
+    "TranslateTest.CoreV2UnorderedSetBucketReceiversCustomHashPointerRehashRejected",
+    "TranslateTest.CoreV2UnorderedSetBucketReceiversCustomEqualityPointerLoadLimitRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "62811ae5debb7c6f1f25657823242ba217dafe1d84cfeb3bc6d3c495da26fcb0",
+  "maintained_original_sha256": "965da4c3ce1920bcf0f371fa02e17f56e8fcade8a67b7bbcef60058040053f16",
+  "previous_registered_source_sha256": "b0308b64ace4efb64a2604478a35fe72ff13fa010ae2441d52038ecf5cca67c0",
+  "previous_maintained_original_sha256": "40a07a2f7ba2b85c8d134ae3d3d3a2ae1a52479182df85070c11a53307d580bc",
+  "restorer_sha256": "f515f81c9b47eae4b2a90e3d7de7f52db6419a743e0d9ac988857a1a40501474",
+  "extractor_sha256": "31da53832126b474d712d7414a7e4c2dfc8cbc787e5f1880e953dbd3675f26ca",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8611,
+  "current_python_registry_tests": 236,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-bucket-receivers": "1a0de477baf71caf287cb98e07a1017a3c2a3df8497717c62c00fa1dfc95ed03"
+  },
+  "native_reference_authentication_sha256": "f30fe5234b62e85378acf93b69bce66837b8e2201b36fb1a2f846e6d4df2f94a",
+  "source_proof_sha256": "d59f36aaf9d9156c77b28a6282a2dd0e2de3316624c989cc956c4f48641024ab"
+}

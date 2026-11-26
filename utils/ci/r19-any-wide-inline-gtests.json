@@ -1,0 +1,199 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-wide-inline-double-pointer-precision",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineDoublePointerPrecisionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bb9cc81a230ab2ee57b96e2fe48f5ec485673cc93e31a1666bfd37746a3d9dd0",
+      "original_case_source_sha256": "bb9cc81a230ab2ee57b96e2fe48f5ec485673cc93e31a1666bfd37746a3d9dd0",
+      "gtest_body_sha256": "aecc455d5a6261a720e6d5f5eef17bc71b2f6e09c97d68ab0505f816b0f26bd8"
+    },
+    {
+      "name": "any-wide-inline-double-in-place-default",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineDoubleInPlaceDefaultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "50fcfb7d6d9616682d67295e12be99aa56252548796d6fe699f3f6addd998aaa",
+      "original_case_source_sha256": "50fcfb7d6d9616682d67295e12be99aa56252548796d6fe699f3f6addd998aaa",
+      "gtest_body_sha256": "7fd5db68858e578c8653db2fa94c570cac3ba7d81bc28ea82528b619fdd38fc1"
+    },
+    {
+      "name": "any-wide-inline-wide-signed-value-move",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineWideSignedValueMoveRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2b4740e91c3e0c45925e7c0f1119ae7c25bc4f270cded70107ca85418379ebb6",
+      "original_case_source_sha256": "2b4740e91c3e0c45925e7c0f1119ae7c25bc4f270cded70107ca85418379ebb6",
+      "gtest_body_sha256": "d010505677a52927617e18c1763decc7d137201c1f3c628ba5e7bc5e289485b3"
+    },
+    {
+      "name": "any-wide-inline-wide-unsigned-emplace",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineWideUnsignedEmplaceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "23813b823d4188041f8b4a1d260a6a7e80d62708ee4bdf7a0b15f775a6d600eb",
+      "original_case_source_sha256": "23813b823d4188041f8b4a1d260a6a7e80d62708ee4bdf7a0b15f775a6d600eb",
+      "gtest_body_sha256": "225aebca7eebcbe6463071642ceae9185b5dacdc0cde74bd4e5e9c754a1903c7"
+    },
+    {
+      "name": "any-wide-inline-wide-tags-and-swap",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineWideTagsAndSwapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8f7d826c57db7d62a309aa3c59d80327d91215379f7097a36d8bb595a9f7ae61",
+      "original_case_source_sha256": "8f7d826c57db7d62a309aa3c59d80327d91215379f7097a36d8bb595a9f7ae61",
+      "gtest_body_sha256": "edf6f2387c19d3c5dc76a21f53a23447422ec86e4ac89ec624b91469059d3348"
+    },
+    {
+      "name": "any-wide-inline-wide-input-once",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineWideInputOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2c113d049099dc8e982ee63523a8271aca610ce3d9eaefabb5bbfb49bf5ce57d",
+      "original_case_source_sha256": "2c113d049099dc8e982ee63523a8271aca610ce3d9eaefabb5bbfb49bf5ce57d",
+      "gtest_body_sha256": "48c0d8f61b1c56f2da8f3c560f4156547991545c3c1e872ca1402711e55c137f"
+    },
+    {
+      "name": "any-wide-inline-mutable-wide-reference",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideMutableReferenceAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "410d6adf39af8706ecc5af2062cdd9ea22672774d9c5ba2090ccb08cc9e4560e",
+      "original_case_source_sha256": "410d6adf39af8706ecc5af2062cdd9ea22672774d9c5ba2090ccb08cc9e4560e",
+      "gtest_body_sha256": "06f9c3be7b2dab9b84dc54aaf6012ae5930d65a47ec8eea82cb2baa9faff4be4",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-wide-inline-unknown-wide-value",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineUnknownWideValueRejected",
+      "expected": "reject",
+      "source_sha256": "7b112bd23d9584a36cd6747e37195684760f734fbbafa3d33a97739d0a1e5ae1",
+      "original_case_source_sha256": "7b112bd23d9584a36cd6747e37195684760f734fbbafa3d33a97739d0a1e5ae1",
+      "gtest_body_sha256": "3e5d4381ce5831262301b4531a159b0e593debf4b795e7daa940671cef7f8529"
+    },
+    {
+      "name": "any-wide-inline-mismatched-wide-value",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineMismatchedWideValueRejected",
+      "expected": "reject",
+      "source_sha256": "a6cd88328f6d55bc7164edad43c1c3518a1f92742fb7815c104c975465796028",
+      "original_case_source_sha256": "a6cd88328f6d55bc7164edad43c1c3518a1f92742fb7815c104c975465796028",
+      "gtest_body_sha256": "b1e44417fd611e29819606d2dd8c5ff73b0001b1047e590d1e15815daec007de"
+    },
+    {
+      "name": "any-wide-inline-record-conversion",
+      "formal_test_name": "TranslateTest.CoreV2AnyWideInlineRecordConversionRejected",
+      "expected": "reject",
+      "source_sha256": "797fc5287b898387e8e682ae278682fea0d07a5518dc1502668840a53ad2e2ae",
+      "original_case_source_sha256": "797fc5287b898387e8e682ae278682fea0d07a5518dc1502668840a53ad2e2ae",
+      "gtest_body_sha256": "bcadf4916ba2ca1568a591cbd193e9d6d43b0477c661150d70b9bb57b3db437c"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "any-wide-inline-double-pointer-precision",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any value{1.0000000000000002};\n  const std::any* view = &value;\n  const double* exact = std::any_cast<double>(view);\n  if (!exact || *exact != 1.0000000000000002 || std::any_cast<float>(view)) return 1;\n  double* writable = std::any_cast<double>(&value);\n  if (!writable || writable != exact) return 2;\n  *writable = -2.25;\n  return *exact != -2.25 || std::any_cast<long long>(view) != nullptr;\n}\n",
+      "source_sha256": "bb9cc81a230ab2ee57b96e2fe48f5ec485673cc93e31a1666bfd37746a3d9dd0",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-wide-inline-double-in-place-default",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  const std::any zero(std::in_place_type<double>);\n  const double& borrowed = std::any_cast<const double&>(zero);\n  return !zero.has_value() || borrowed != 0.0 || std::any_cast<double>(zero) != 0.0;\n}\n",
+      "source_sha256": "50fcfb7d6d9616682d67295e12be99aa56252548796d6fe699f3f6addd998aaa",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-wide-inline-wide-signed-value-move",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  const std::any value{(-9223372036854775807LL - 1)};\n  auto copied = value;\n  auto moved = static_cast<std::any&&>(copied);\n  auto* slot = std::any_cast<long long>(&moved);\n  return copied.has_value() || !slot || *slot != (-9223372036854775807LL - 1) ||\n      std::any_cast<long long>(value) != *slot || std::any_cast<unsigned long long>(&moved);\n}\n",
+      "source_sha256": "2b4740e91c3e0c45925e7c0f1119ae7c25bc4f270cded70107ca85418379ebb6",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-wide-inline-wide-unsigned-emplace",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  auto value = std::make_any<unsigned long long>(0xfe123456789abcdeULL);\n  const auto* first = std::any_cast<unsigned long long>(&value);\n  if (!first || *first != 0xfe123456789abcdeULL || std::any_cast<long long>(&value)) return 1;\n  auto& second = value.emplace<unsigned long long>(0x8000000000000000ULL);\n  if (second != 0x8000000000000000ULL || std::any_cast<unsigned long long>(&value) != &second) return 2;\n  value.reset();\n  return value.has_value() || std::any_cast<unsigned long long>(&value);\n}\n",
+      "source_sha256": "23813b823d4188041f8b4a1d260a6a7e80d62708ee4bdf7a0b15f775a6d600eb",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-wide-inline-wide-tags-and-swap",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint main() {\n  std::any a{7LL}, b{7ULL};\n  a.swap(b);\n  const auto* u = std::any_cast<unsigned long long>(&a);\n  const auto* s = std::any_cast<long long>(&b);\n  if (!u || !s || *u != 7ULL || *s != 7LL || std::any_cast<long long>(&a)) return 1;\n  b = 7.0;\n  auto* d = std::any_cast<double>(&b);\n  if (!d || *d != 7.0 || std::any_cast<long long>(&b)) return 2;\n  a = 7u;\n  return !std::any_cast<unsigned int>(&a) || std::any_cast<unsigned long long>(&a);\n}\n",
+      "source_sha256": "8f7d826c57db7d62a309aa3c59d80327d91215379f7097a36d8bb595a9f7ae61",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-wide-inline-wide-input-once",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nint steps;\nunsigned long long input() {\n  ++steps;\n  return 0x0000000100000001ULL;\n}\nint main() {\n  std::any value{input()};\n  auto* saved = std::any_cast<unsigned long long>(&value);\n  if (steps != 1 || !saved || *saved != 0x0000000100000001ULL) return 1;\n  value = input();\n  return steps != 2 || !std::any_cast<unsigned long long>(&value);\n}\n",
+      "source_sha256": "2c113d049099dc8e982ee63523a8271aca610ce3d9eaefabb5bbfb49bf5ce57d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-wide-inline-mutable-wide-reference",
+      "expected": "accept",
+      "public_header": "any",
+      "source": "#include <any>\nlong long edit() {\n  std::any value{5LL};\n  return ++std::any_cast<long long&>(value);\n}\n",
+      "source_sha256": "410d6adf39af8706ecc5af2062cdd9ea22672774d9c5ba2090ccb08cc9e4560e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-wide-inline-unknown-wide-value",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nunsigned long long read(const std::any& value) {\n  return std::any_cast<unsigned long long>(value);\n}\n",
+      "source_sha256": "7b112bd23d9584a36cd6747e37195684760f734fbbafa3d33a97739d0a1e5ae1",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-wide-inline-mismatched-wide-value",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\ndouble read() {\n  const std::any value{1.0f};\n  return std::any_cast<double>(value);\n}\n",
+      "source_sha256": "a6cd88328f6d55bc7164edad43c1c3518a1f92742fb7815c104c975465796028",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "any-wide-inline-record-conversion",
+      "expected": "reject",
+      "public_header": "any",
+      "source": "#include <any>\nstruct Convertible {\n  operator double() const noexcept { return 1.25; }\n};\nint main() {\n  auto value = std::make_any<double>(Convertible{});\n  return !value.has_value();\n}\n",
+      "source_sha256": "797fc5287b898387e8e682ae278682fea0d07a5518dc1502668840a53ad2e2ae",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyWideInlineDoublePointerPrecisionRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyWideInlineDoubleInPlaceDefaultRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyWideInlineWideSignedValueMoveRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyWideInlineWideUnsignedEmplaceRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyWideInlineWideTagsAndSwapRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyWideInlineWideInputOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyWideMutableReferenceAcceptsFunctionBody",
+    "TranslateTest.CoreV2AnyWideInlineUnknownWideValueRejected",
+    "TranslateTest.CoreV2AnyWideInlineMismatchedWideValueRejected",
+    "TranslateTest.CoreV2AnyWideInlineRecordConversionRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "4607f566f60f7230b06677c26a599e1b6c77cd087d7f9e840ad243d584495f13",
+  "maintained_original_sha256": "92d39572e7134da39264c7046fee2ab75315632ce43552ac1d04cf7473a88896",
+  "previous_registered_source_sha256": "e2ba79603249f8a30c053f06becbce4d9b6a09d95fd9980551acf3759916984b",
+  "previous_maintained_original_sha256": "fae0fb9ccf2cc94269c627dfff161db7092c3ae45dbf081309e168a8158fd5da",
+  "restorer_sha256": "fa607d456df0d2ea48956b4becba575bc8dff60366e4e9abd7a47557ab4ebcee",
+  "extractor_sha256": "4e41f30582cf2f4f49b0edb610ebc9aad6697910716b9895e53f8fa367d7a64a",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8376,
+  "current_python_registry_tests": 180,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "any-wide-inline": "41b503dcf958f4c11a294a1d0d53e1f7e495cdb4f582663bfc7a93708d6a909f"
+  },
+  "native_reference_authentication_sha256": "68da5aae40de021f0af799d2193d07a5ee785322354bcbeec21610c8fe07cb40",
+  "source_proof_sha256": "d59f36aaf9d9156c77b28a6282a2dd0e2de3316624c989cc956c4f48641024ab"
+}
