@@ -1,0 +1,200 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-storage-construction-set-bucket-count-default-policies-evaluate-count-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionSetBucketCountDefaultPoliciesEvaluateCountOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "71a92d22d9c48b1a21c75de0a203df173c28f32e7b3976e4b9f191880de9e452",
+      "original_case_source_sha256": "71a92d22d9c48b1a21c75de0a203df173c28f32e7b3976e4b9f191880de9e452",
+      "gtest_body_sha256": "3d35bde475facc295a08574308b855c4aa67cd556afe83c49d715c2d6a7decc6"
+    },
+    {
+      "name": "unordered-set-storage-construction-multiset-explicit-hash-equal-and-allocator-bucket-construction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetExplicitHashEqualAndAllocatorBucketConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bf0f0fd8437702d34aef000ecd4d0e40a405b3b51a98761ea50fa9d2c831a411",
+      "original_case_source_sha256": "bf0f0fd8437702d34aef000ecd4d0e40a405b3b51a98761ea50fa9d2c831a411",
+      "gtest_body_sha256": "f6006dfcf4f526a42301ef17284809374d0707e9a50d3b4b1da18811f10237e2"
+    },
+    {
+      "name": "unordered-set-storage-construction-set-bucket-delegation-with-default-allocator-evaluates-argument-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionSetBucketDelegationWithDefaultAllocatorEvaluatesArgumentOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c57fcd81e441cd5b80b5c570fd6d63664fa9dba281d6c900a34fa2026a7cce37",
+      "original_case_source_sha256": "c57fcd81e441cd5b80b5c570fd6d63664fa9dba281d6c900a34fa2026a7cce37",
+      "gtest_body_sha256": "81f9dcc71decb0d36349919c791670ab4efedda1c00289b9b7844c2b213f0323"
+    },
+    {
+      "name": "unordered-set-storage-construction-multiset-allocator-only-starts-empty-and-owns-inserted-keys",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetAllocatorOnlyStartsEmptyAndOwnsInsertedKeysRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "40da218d6d9c393afcb1245927b6037754562acb5d7ad9862a25b1d78a3dd037",
+      "original_case_source_sha256": "40da218d6d9c393afcb1245927b6037754562acb5d7ad9862a25b1d78a3dd037",
+      "gtest_body_sha256": "595d967e75a15854df16f761b2180ebc4d63455b17417106e5c099df96dad1b4"
+    },
+    {
+      "name": "unordered-set-storage-construction-set-copy-with-default-allocator-owns-a-distinct-node",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionSetCopyWithDefaultAllocatorOwnsADistinctNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8c681f4d441c87c2252d5417772111fd0ccfeae2f8935638d013ff82f6942117",
+      "original_case_source_sha256": "8c681f4d441c87c2252d5417772111fd0ccfeae2f8935638d013ff82f6942117",
+      "gtest_body_sha256": "d4b14fde0a696ef4037197f718b91f29053ff51c83f37eec21797a60adde5a85"
+    },
+    {
+      "name": "unordered-set-storage-construction-multiset-move-with-equal-default-allocator-retains-node-address",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetMoveWithEqualDefaultAllocatorRetainsNodeAddressRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d3ba8b028031fc0005bdd450c501d26031bf330532c70a2e5e0751084a9c291f",
+      "original_case_source_sha256": "d3ba8b028031fc0005bdd450c501d26031bf330532c70a2e5e0751084a9c291f",
+      "gtest_body_sha256": "7908aa8dba01c9b2e51ce43888d0372b4d67018391fa8a4844722d0428b96542"
+    },
+    {
+      "name": "unordered-set-storage-construction-unapproved-key-bucket-construction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalUnsignedBucketConstruction",
+      "expected": "accept",
+      "source_sha256": "ea5c7991202e7835473d4ab0d1fd01cdb41cc98e7a83bd7bc12abdf7f5461ec9",
+      "original_case_source_sha256": "ea5c7991202e7835473d4ab0d1fd01cdb41cc98e7a83bd7bc12abdf7f5461ec9",
+      "gtest_body_sha256": "bbd2c0ecf20b5aaeeffbd68fa46b472f47be362624e7dc85004f2c56360e270c",
+      "expected_exit_code": 1
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-storage-construction-set-custom-hash-bucket-construction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionSetCustomHashBucketConstructionRejected",
+      "expected": "reject",
+      "source_sha256": "12999a7dd813efb230fd440660f3eecb33ceee59d2d590f94d813ca680eebf18",
+      "original_case_source_sha256": "12999a7dd813efb230fd440660f3eecb33ceee59d2d590f94d813ca680eebf18",
+      "gtest_body_sha256": "43624a192f5ac47cba3a1573363f1cc70525a9f0155ce2b24d5b382f256df40e"
+    },
+    {
+      "name": "unordered-set-storage-construction-multiset-custom-equality-bucket-construction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetCustomEqualityBucketConstructionRejected",
+      "expected": "reject",
+      "source_sha256": "4efd683b39d3bf7846cc28220d7bcccda2c2c0f25f92c77510798fa4161161aa",
+      "original_case_source_sha256": "4efd683b39d3bf7846cc28220d7bcccda2c2c0f25f92c77510798fa4161161aa",
+      "gtest_body_sha256": "ed65b191781a2f691adead87e6a1b86bba0508c5ccdd2e7f387e3729384115ac"
+    },
+    {
+      "name": "unordered-set-storage-construction-unapproved-key-allocator-construction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetStorageConstructionUnapprovedKeyAllocatorConstructionRejected",
+      "expected": "reject",
+      "source_sha256": "7199591bdc0cf9e6fa5063d7a0202cba165532832b6d6144640029fc895a0c5a",
+      "original_case_source_sha256": "7199591bdc0cf9e6fa5063d7a0202cba165532832b6d6144640029fc895a0c5a",
+      "gtest_body_sha256": "963f857532bcba073eda38087739079f680f340a3bd38f8cd20d7579b53cc6c6"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-storage-construction-set-bucket-count-default-policies-evaluate-count-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <cstddef>\n#include <unordered_set>\nstd::size_t buckets(int& calls) { ++calls; return 17; }\nint main() {\n  int calls = 0;\n  std::unordered_set<int> values(buckets(calls));\n  return calls != 1 || !values.empty() || values.bucket_count() < 17 || values.max_load_factor() != 1.0f;\n}\n",
+      "source_sha256": "71a92d22d9c48b1a21c75de0a203df173c28f32e7b3976e4b9f191880de9e452",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-storage-construction-multiset-explicit-hash-equal-and-allocator-bucket-construction",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::hash<int> hash;\n  const std::equal_to<int> equal;\n  const std::allocator<int> allocator;\n  std::unordered_multiset<int> values(13u, hash, equal, allocator);\n  values.insert(2);\n  values.insert(2);\n  return values.size() != 2 || values.count(2) != 2 || values.bucket_count() < 13;\n}\n",
+      "source_sha256": "bf0f0fd8437702d34aef000ecd4d0e40a405b3b51a98761ea50fa9d2c831a411",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-storage-construction-set-bucket-delegation-with-default-allocator-evaluates-argument-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Alloc = std::allocator<int>;\nconst Alloc& observe(const Alloc& allocator, int& calls) { ++calls; return allocator; }\nint main() {\n  const Alloc allocator;\n  int calls = 0;\n  std::unordered_set<int> values(11u, observe(allocator, calls));\n  return calls != 1 || !values.empty() || values.bucket_count() < 11;\n}\n",
+      "source_sha256": "c57fcd81e441cd5b80b5c570fd6d63664fa9dba281d6c900a34fa2026a7cce37",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-storage-construction-multiset-allocator-only-starts-empty-and-owns-inserted-keys",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::allocator<int> allocator;\n  std::unordered_multiset<int> values(allocator);\n  if (!values.empty()) return 1;\n  values.insert(7);\n  return values.count(7) != 1;\n}\n",
+      "source_sha256": "40da218d6d9c393afcb1245927b6037754562acb5d7ad9862a25b1d78a3dd037",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-storage-construction-set-copy-with-default-allocator-owns-a-distinct-node",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::allocator<int> allocator;\n  const std::unordered_set<int> source{17, 23};\n  std::unordered_set<int> copy(source, allocator);\n  return copy.size() != 2 || &*copy.find(17) == &*source.find(17) || copy.count(23) != 1;\n}\n",
+      "source_sha256": "8c681f4d441c87c2252d5417772111fd0ccfeae2f8935638d013ff82f6942117",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-storage-construction-multiset-move-with-equal-default-allocator-retains-node-address",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <utility>\nint main() {\n  const std::allocator<int> allocator;\n  std::unordered_multiset<int> source{31, 31, 5};\n  const int* address = &*source.find(5);\n  std::unordered_multiset<int> moved(std::move(source), allocator);\n  return !source.empty() || moved.count(31) != 2 || &*moved.find(5) != address;\n}\n",
+      "source_sha256": "d3ba8b028031fc0005bdd450c501d26031bf330532c70a2e5e0751084a9c291f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-storage-construction-unapproved-key-bucket-construction",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<unsigned> values(7u, std::hash<unsigned>{}, std::equal_to<unsigned>{});\n  return values.empty();\n}\n",
+      "source_sha256": "ea5c7991202e7835473d4ab0d1fd01cdb41cc98e7a83bd7bc12abdf7f5461ec9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-storage-construction-set-custom-hash-bucket-construction",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_set<int, Hash> values(11u);\n  return values.empty();\n}\n",
+      "source_sha256": "12999a7dd813efb230fd440660f3eecb33ceee59d2d590f94d813ca680eebf18",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-storage-construction-multiset-custom-equality-bucket-construction",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int first, int second) const { return first == second; } };\nint main() {\n  std::unordered_multiset<int, std::hash<int>, Equal> values(11u);\n  return values.empty();\n}\n",
+      "source_sha256": "4efd683b39d3bf7846cc28220d7bcccda2c2c0f25f92c77510798fa4161161aa",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-storage-construction-unapproved-key-allocator-construction",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::allocator<long> allocator;\n  std::unordered_set<long> values(allocator);\n  return values.empty();\n}\n",
+      "source_sha256": "7199591bdc0cf9e6fa5063d7a0202cba165532832b6d6144640029fc895a0c5a",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionSetBucketCountDefaultPoliciesEvaluateCountOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetExplicitHashEqualAndAllocatorBucketConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionSetBucketDelegationWithDefaultAllocatorEvaluatesArgumentOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetAllocatorOnlyStartsEmptyAndOwnsInsertedKeysRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionSetCopyWithDefaultAllocatorOwnsADistinctNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetMoveWithEqualDefaultAllocatorRetainsNodeAddressRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalUnsignedBucketConstruction",
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionSetCustomHashBucketConstructionRejected",
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionMultisetCustomEqualityBucketConstructionRejected",
+    "TranslateTest.CoreV2UnorderedSetStorageConstructionUnapprovedKeyAllocatorConstructionRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f5e26a202434cdb9bd8355501131c4a429f332a1562877587e07556f9f6a48d4",
+  "maintained_original_sha256": "8ee172c3bf7dae6f0e65cce5d6c44e5bfda3406278f19ccffadfbdeacbc69edc",
+  "previous_registered_source_sha256": "1e10f7c7f4c2d93d41b5887a77f1541a19d4db26ee6cd9109456360b22156161",
+  "previous_maintained_original_sha256": "600ae75bd4b6ceaa0e9a445adcf96712e00f83a9b504fee7d470953c3aa95f47",
+  "restorer_sha256": "d0b412d9335bc19a8d8db68b003396b7583a43b7a78871125bb79ac24ce17201",
+  "extractor_sha256": "29caec71e869c8688c9301e39f9ea0a424f809c031ce1554bb74d45a48c82ecd",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8588,
+  "current_python_registry_tests": 232,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "unordered-set-storage-construction": "9005a76d9532e4c4a9e301c517dd51fa24734609763fb1008eea27c3ed872306",
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "6d18625f7e9ccfb398b754db1b6f111678e3acfec170a2297d10089b8c90a0c2",
+  "source_proof_sha256": "9765c4799b963b5c62d0789f3a323c7309ed8fbc881a06e279253db07147b552"
+}

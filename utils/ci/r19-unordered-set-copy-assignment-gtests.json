@@ -1,0 +1,166 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-copy-assignment-unique-copy-assignment-reuses-destination-buckets",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetCopyAssignmentUniqueCopyAssignmentReusesDestinationBucketsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "01e2b63a18450ea5f1ffd6262e3b216423ffd03dd6ea99520abba56c9f78973f",
+      "original_case_source_sha256": "01e2b63a18450ea5f1ffd6262e3b216423ffd03dd6ea99520abba56c9f78973f",
+      "gtest_body_sha256": "caf57325fadd1108e363e55bc06efca3ec0c5cfe375deceada9ad009e5c65665"
+    },
+    {
+      "name": "unordered-set-copy-assignment-multiset-copy-assignment-groups-colliding-duplicates",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetCopyAssignmentMultisetCopyAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8d796d4a7eca2e13ad13d75063896f6501795d92c54ffe0a9693bc6bf5afa243",
+      "original_case_source_sha256": "8d796d4a7eca2e13ad13d75063896f6501795d92c54ffe0a9693bc6bf5afa243",
+      "gtest_body_sha256": "7403089ba8ec232f2edf2832d4252187835fe7c35d2808c05d131a8183d58464"
+    },
+    {
+      "name": "unordered-set-copy-assignment-explicit-copy-assignment-evaluates-receiver-before-source",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetCopyAssignmentExplicitCopyAssignmentEvaluatesReceiverBeforeSourceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "48539263b601f0ee9b8f60172d35a1fbf308291fc0efc5d8a00cfe1d072d10eb",
+      "original_case_source_sha256": "48539263b601f0ee9b8f60172d35a1fbf308291fc0efc5d8a00cfe1d072d10eb",
+      "gtest_body_sha256": "f033b93352310e43a86ddea681bf1fffe682a700ccdc3cea2a1ba1fcc88dee71"
+    },
+    {
+      "name": "unordered-set-copy-assignment-self-copy-preserves-addresses-and-equivalent-ranges",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetCopyAssignmentSelfCopyPreservesAddressesAndEquivalentRangesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0d8226013d306eba80ecd37f3cb186f53fa24f81edcf73db5bd1f27da2417e54",
+      "original_case_source_sha256": "0d8226013d306eba80ecd37f3cb186f53fa24f81edcf73db5bd1f27da2417e54",
+      "gtest_body_sha256": "a8b840eabb72fb92155a554b3215fdb1347c8dfd9fe9ac1ef02615f91b5db01a"
+    },
+    {
+      "name": "unordered-set-copy-assignment-unsigned-key-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalUnsignedCopyAssignment",
+      "expected": "accept",
+      "source_sha256": "e451444fd676f9c16dc66b0b845d7ff0b3a11df0d8326e9558459f02fcf18a9a",
+      "original_case_source_sha256": "e451444fd676f9c16dc66b0b845d7ff0b3a11df0d8326e9558459f02fcf18a9a",
+      "gtest_body_sha256": "5e4d118ac20407c2123eefefe7069d399fe9445dfe75bef800112c64a5c6d473",
+      "expected_exit_code": 1
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-copy-assignment-custom-hash-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetCopyAssignmentCustomHashCopyAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "8973a5726a13519500825b91dd468d9bd8794922814b03c02468fbdb5b7eab5d",
+      "original_case_source_sha256": "8973a5726a13519500825b91dd468d9bd8794922814b03c02468fbdb5b7eab5d",
+      "gtest_body_sha256": "8dea9a9b21a7e7f45b390a951ddab4dbf10a8c957425b2d96049986ee1ba3a0c"
+    },
+    {
+      "name": "unordered-set-copy-assignment-custom-equality-multiset-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetCopyAssignmentCustomEqualityMultisetCopyAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "4b07f3291f46da2571d9ab9d657b128c2e4c2d0660a5686a882ca757af334bd3",
+      "original_case_source_sha256": "4b07f3291f46da2571d9ab9d657b128c2e4c2d0660a5686a882ca757af334bd3",
+      "gtest_body_sha256": "933af641f541f9cf2fe0887698e75596d4feeefcfcdba94da88fbb477f76fae6"
+    },
+    {
+      "name": "unordered-set-copy-assignment-long-key-multiset-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetCopyAssignmentLongKeyMultisetCopyAssignmentRejected",
+      "expected": "reject",
+      "source_sha256": "9bd59ff71a8f8cd84c6620cf05cae6f6f53af429a2225237c1581fb2891cda73",
+      "original_case_source_sha256": "9bd59ff71a8f8cd84c6620cf05cae6f6f53af429a2225237c1581fb2891cda73",
+      "gtest_body_sha256": "296b4523499a374c75a0d8cf9ef1e0917e07e05a3fa0e6f953b8a750287ae2bb"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-copy-assignment-unique-copy-assignment-reuses-destination-buckets",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> target{-5, -7, -11, -13};\n  target.rehash(53);\n  const auto buckets = target.bucket_count();\n  std::unordered_set<int> source{100, 18, 6};\n  source.max_load_factor(2.0f);\n  auto& result = (target = source);\n  return &result != &target || target.size() != 3 || target.count(-5) != 0 || target.count(18) != 1 ||\n         target.bucket_count() != buckets || target.max_load_factor() != source.max_load_factor() ||\n         &*target.find(18) == &*source.find(18);\n}\n",
+      "source_sha256": "01e2b63a18450ea5f1ffd6262e3b216423ffd03dd6ea99520abba56c9f78973f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-copy-assignment-multiset-copy-assignment-groups-colliding-duplicates",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> target{-1, -1};\n  target.rehash(2);\n  std::unordered_multiset<int> source{3, 5, 3, 7, 3, 5};\n  source.max_load_factor(5.0f);\n  target = source;\n  auto range = target.equal_range(3);\n  int groups = 0;\n  for (auto it = range.first; it != range.second; ++it) {\n    if (*it != 3) return 1;\n    ++groups;\n  }\n  target.erase(5);\n  return groups != 3 || target.count(5) != 0 || source.count(5) != 2 || target.count(-1) != 0 ||\n         target.count(7) != 1 || target.max_load_factor() != 5.0f;\n}\n",
+      "source_sha256": "8d796d4a7eca2e13ad13d75063896f6501795d92c54ffe0a9693bc6bf5afa243",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-copy-assignment-explicit-copy-assignment-evaluates-receiver-before-source",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nint trace;\nSet* receiver(Set& set) { trace = trace * 10 + 2; return &set; }\nconst Set& input(const Set& set) { trace = trace * 10 + 1; return set; }\nint main() {\n  Set source{19, 29};\n  Set target{23};\n  auto& result = receiver(target)->operator=(input(source));\n  return trace != 21 || &result != &target || target.count(19) != 1 || target.count(23) != 0;\n}\n",
+      "source_sha256": "48539263b601f0ee9b8f60172d35a1fbf308291fc0efc5d8a00cfe1d072d10eb",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-copy-assignment-self-copy-preserves-addresses-and-equivalent-ranges",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{8, -6, 8, 9};\n  values.rehash(31);\n  const auto buckets = values.bucket_count();\n  const int* stored = &*values.find(-6);\n  const auto& alias = values;\n  values = alias;\n  return values.size() != 4 || values.count(8) != 2 || values.bucket_count() != buckets ||\n         &*values.find(-6) != stored;\n}\n",
+      "source_sha256": "0d8226013d306eba80ecd37f3cb186f53fa24f81edcf73db5bd1f27da2417e54",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-copy-assignment-unsigned-key-copy-assignment",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<unsigned> source, target;\n  target = source;\n  return target.empty();\n}\n",
+      "source_sha256": "e451444fd676f9c16dc66b0b845d7ff0b3a11df0d8326e9558459f02fcf18a9a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-copy-assignment-custom-hash-copy-assignment",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int value) const { return static_cast<unsigned>(value); } };\nint main() {\n  std::unordered_set<int, Hash> source, target;\n  target = source;\n  return target.empty();\n}\n",
+      "source_sha256": "8973a5726a13519500825b91dd468d9bd8794922814b03c02468fbdb5b7eab5d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-copy-assignment-custom-equality-multiset-copy-assignment",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Equal { bool operator()(int left, int right) const { return left == right; } };\nint main() {\n  std::unordered_multiset<int, std::hash<int>, Equal> source, target;\n  target = source;\n  return target.empty();\n}\n",
+      "source_sha256": "4b07f3291f46da2571d9ab9d657b128c2e4c2d0660a5686a882ca757af334bd3",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-copy-assignment-long-key-multiset-copy-assignment",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<long> source, target;\n  target = source;\n  return target.empty();\n}\n",
+      "source_sha256": "9bd59ff71a8f8cd84c6620cf05cae6f6f53af429a2225237c1581fb2891cda73",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetCopyAssignmentUniqueCopyAssignmentReusesDestinationBucketsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetCopyAssignmentMultisetCopyAssignmentGroupsCollidingDuplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetCopyAssignmentExplicitCopyAssignmentEvaluatesReceiverBeforeSourceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetCopyAssignmentSelfCopyPreservesAddressesAndEquivalentRangesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalUnsignedCopyAssignment",
+    "TranslateTest.CoreV2UnorderedSetCopyAssignmentCustomHashCopyAssignmentRejected",
+    "TranslateTest.CoreV2UnorderedSetCopyAssignmentCustomEqualityMultisetCopyAssignmentRejected",
+    "TranslateTest.CoreV2UnorderedSetCopyAssignmentLongKeyMultisetCopyAssignmentRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "54aaee4bebce2af63c700ce4c26fc46b08f3e84bc307853ac6083e08fbe2e4ce",
+  "maintained_original_sha256": "59f5c6dc6377471051c60a473bcf81661b95045dc16b598e1c5d0fa55d2ddf79",
+  "previous_registered_source_sha256": "9d45502a38f1ee189fb816f0ffaa6f9a83d66b4c2e00792e08094a09ebf71090",
+  "previous_maintained_original_sha256": "b5861e602fe2e117514cbc02fbff1737609071bd6aa6d4452161039c5c032491",
+  "restorer_sha256": "d0d70ffab5e1c90882d0ac37237bf4fa4f2478b6bac25e0e99cf5b4fb4a53d44",
+  "extractor_sha256": "68937a098ade0a952ba5422d02ba815621f690ff2fbaa413332226b41cded7c1",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8544,
+  "current_python_registry_tests": 222,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-copy-assignment": "e91a1a21f5edeb00b8006068a510e9dc712ea228512c765fc300385a7291bf8e",
+    "unordered-set-unsigned-key": "386554228d60e28dfaaacf0f35307fd7086e06dd9e16bf3dfab9938df15f803e"
+  },
+  "native_reference_authentication_sha256": "3c7af621e42d942af8cc040a189e7fbf1c16614a7f0ad9f8eb49ed0414ec2b2c",
+  "source_proof_sha256": "9765c4799b963b5c62d0789f3a323c7309ed8fbc881a06e279253db07147b552"
+}

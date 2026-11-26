@@ -1,0 +1,198 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-iterator-range-unique-inserts-const-multiset-iterator-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeUniqueInsertsConstMultisetIteratorRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2db07d7066136c168031975bdd5daa28a568574f24a3af8c401315c4b4e8d1b1",
+      "original_case_source_sha256": "2db07d7066136c168031975bdd5daa28a568574f24a3af8c401315c4b4e8d1b1",
+      "gtest_body_sha256": "839d61266a29e4ddd31da5a1483ae22b27e5248d20040c5c3dd3b09f0ed4ab0d"
+    },
+    {
+      "name": "unordered-set-iterator-range-multi-inserts-one-element-from-a-global-iterator-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeMultiInsertsOneElementFromAGlobalIteratorRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3e5e8a0c6f1f499a12107db6fd6123b8ac0d66c8a51111278ab4a8b07bb377dc",
+      "original_case_source_sha256": "3e5e8a0c6f1f499a12107db6fd6123b8ac0d66c8a51111278ab4a8b07bb377dc",
+      "gtest_body_sha256": "05d3f9c6dcb48b9ef9fc659e89ccfec603aaf8dfe091d0d9f24fc022aadbf31b"
+    },
+    {
+      "name": "unordered-set-iterator-range-multi-inserts-one-local-bucket-with-duplicates",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeMultiInsertsOneLocalBucketWithDuplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8956a0e47fa4275379689f4273d8f7c3354600e197a3079b83f4ecb1e79cdea1",
+      "original_case_source_sha256": "8956a0e47fa4275379689f4273d8f7c3354600e197a3079b83f4ecb1e79cdea1",
+      "gtest_body_sha256": "120a07da7cd8e5b509531ddd77aabefe23aa3c8d9d6301add9e22a8748e4c291"
+    },
+    {
+      "name": "unordered-set-iterator-range-unique-constructs-from-multiset-global-iterators",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeUniqueConstructsFromMultisetGlobalIteratorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1a285168baf50188564716838d1490090aa8db53d1eb928b8375a77c68f320f9",
+      "original_case_source_sha256": "1a285168baf50188564716838d1490090aa8db53d1eb928b8375a77c68f320f9",
+      "gtest_body_sha256": "2044a9fc8a816facc1b8838254511e6a282c813a10fa66444e547bf4214abca8"
+    },
+    {
+      "name": "unordered-set-iterator-range-multi-constructs-from-local-iterators",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeMultiConstructsFromLocalIteratorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1680f4966656b0feab2812594d840b122e9c20f7b363e0d857d53ed141f683e3",
+      "original_case_source_sha256": "1680f4966656b0feab2812594d840b122e9c20f7b363e0d857d53ed141f683e3",
+      "gtest_body_sha256": "2aa183ce10dfdca58796984bdf33e1d6e0ffff10bfdd77cf51cf7a9ab737b938"
+    },
+    {
+      "name": "unordered-set-iterator-range-equal-nonnull-endpoints-form-an-empty-iterator-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeEqualNonnullEndpointsFormAnEmptyIteratorRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "48eaf60417bfbdc87fa3d0a821cff268715b4e4d8cc15beb5845e31f65c5f436",
+      "original_case_source_sha256": "48eaf60417bfbdc87fa3d0a821cff268715b4e4d8cc15beb5845e31f65c5f436",
+      "gtest_body_sha256": "91af714f629c97647ce2fbbe20a53bc095a826e562f641588d460504d7223361"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-iterator-range-unrelated-vector-iterator-insertion",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeUnrelatedVectorIteratorInsertionRejected",
+      "expected": "reject",
+      "source_sha256": "8c4788053256e56fdbcd727cd1a4ae0f785ee89a814c22af229d50e1b9319dbd",
+      "original_case_source_sha256": "8c4788053256e56fdbcd727cd1a4ae0f785ee89a814c22af229d50e1b9319dbd",
+      "gtest_body_sha256": "4c33a40f9111972ff13934cd912d5cd824bea41b23cee7b57b95ada5b984b802"
+    },
+    {
+      "name": "unordered-set-iterator-range-unrelated-list-iterator-construction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeUnrelatedListIteratorConstructionRejected",
+      "expected": "reject",
+      "source_sha256": "aeaa9e2677cf5075a8ee3fafc4a85db9166f5d1deaa5af2274183f97edb736a3",
+      "original_case_source_sha256": "aeaa9e2677cf5075a8ee3fafc4a85db9166f5d1deaa5af2274183f97edb736a3",
+      "gtest_body_sha256": "6a8e2ddbd8bed39958798c45421e947a710986645055a9339ee3d00cd9a37466"
+    },
+    {
+      "name": "unordered-set-iterator-range-unsigned-key-iterator-insertion",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeUnsignedKeyIteratorInsertionRejected",
+      "expected": "reject",
+      "source_sha256": "0c1c25603ac1ccd95b37e91247b8b61ea61ab2e003d9ff5e0d49c947c1e01868",
+      "original_case_source_sha256": "0c1c25603ac1ccd95b37e91247b8b61ea61ab2e003d9ff5e0d49c947c1e01868",
+      "gtest_body_sha256": "3075596a97370c12c03e1f354d50dd42f0e7be05e826732cc7d44ac97e81ca23"
+    },
+    {
+      "name": "unordered-set-iterator-range-custom-hash-iterator-construction",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetIteratorRangeCustomHashIteratorConstructionRejected",
+      "expected": "reject",
+      "source_sha256": "23014309cca32cb9c2627419f1f8ea4fcf40cfd646af9f2dfdef3f49a3265778",
+      "original_case_source_sha256": "23014309cca32cb9c2627419f1f8ea4fcf40cfd646af9f2dfdef3f49a3265778",
+      "gtest_body_sha256": "b392fbc767ce364f0b653d549ef12987ec5203b4d78f6712036b1886f7dadc0c"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-iterator-range-unique-inserts-const-multiset-iterator-range",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source{13, 3, 13, 5, 13, 5, 7};\n  std::unordered_set<int> target{19, 5};\n  target.insert(source.cbegin(), source.cend());\n  return target.size() != 5 || target.count(13) != 1 || target.count(3) != 1 ||\n         target.count(7) != 1 || target.count(19) != 1 || source.count(13) != 3;\n}\n",
+      "source_sha256": "2db07d7066136c168031975bdd5daa28a568574f24a3af8c401315c4b4e8d1b1",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-range-multi-inserts-one-element-from-a-global-iterator-range",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> source{11, 13};\n  std::unordered_multiset<int> target{11, 13, 13};\n  auto first = source.begin();\n  const auto key = *first;\n  const auto old_count = target.count(key);\n  auto stop = first;\n  ++stop;\n  target.insert(first, stop);\n  return target.size() != 4 || target.count(key) != old_count + 1 || source.size() != 2;\n}\n",
+      "source_sha256": "3e5e8a0c6f1f499a12107db6fd6123b8ac0d66c8a51111278ab4a8b07bb377dc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-range-multi-inserts-one-local-bucket-with-duplicates",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source;\n  source.rehash(2);\n  source.max_load_factor(4.0f);\n  source.insert({3, 3, 7, 8});\n  const auto bucket = source.bucket(3);\n  std::unordered_multiset<int> target{3};\n  target.insert(source.cbegin(bucket), source.cend(bucket));\n  return target.size() != 4 || target.count(3) != 3 || target.count(7) != 1 || target.count(8) != 0;\n}\n",
+      "source_sha256": "8956a0e47fa4275379689f4273d8f7c3354600e197a3079b83f4ecb1e79cdea1",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-range-unique-constructs-from-multiset-global-iterators",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> source{3, 3, 7, -5, 7, 19};\n  std::unordered_set<int> target(source.begin(), source.end());\n  return target.size() != 4 || target.count(3) != 1 || target.count(7) != 1 ||\n         target.count(-5) != 1 || target.count(19) != 1 || target.count(0) != 0;\n}\n",
+      "source_sha256": "1a285168baf50188564716838d1490090aa8db53d1eb928b8375a77c68f320f9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-range-multi-constructs-from-local-iterators",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source;\n  source.rehash(2);\n  source.max_load_factor(4.0f);\n  source.insert({23, 23, 27, 24});\n  const auto bucket = source.bucket(23);\n  std::unordered_multiset<int> target(source.begin(bucket), source.end(bucket));\n  return target.size() != 3 || target.count(23) != 2 || target.count(27) != 1 || target.count(24) != 0;\n}\n",
+      "source_sha256": "1680f4966656b0feab2812594d840b122e9c20f7b363e0d857d53ed141f683e3",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-range-equal-nonnull-endpoints-form-an-empty-iterator-range",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> source{5};\n  const auto position = source.cbegin();\n  std::unordered_set<int> target{7};\n  target.insert(position, position);\n  std::unordered_multiset<int> constructed(position, position);\n  return !constructed.empty() || target.size() != 1 || target.count(7) != 1;\n}\n",
+      "source_sha256": "48eaf60417bfbdc87fa3d0a821cff268715b4e4d8cc15beb5845e31f65c5f436",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-iterator-range-unrelated-vector-iterator-insertion",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\n#include <vector>\nint main() {\n  const std::vector<int> source{3, 5};\n  std::unordered_set<int> target;\n  target.insert(source.begin(), source.end());\n  return target.count(3) != 1;\n}\n",
+      "source_sha256": "8c4788053256e56fdbcd727cd1a4ae0f785ee89a814c22af229d50e1b9319dbd",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-iterator-range-unrelated-list-iterator-construction",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <list>\n#include <unordered_set>\nint main() {\n  const std::list<int> source{3, 3, 5};\n  std::unordered_multiset<int> target(source.cbegin(), source.cend());\n  return target.count(3) != 2;\n}\n",
+      "source_sha256": "aeaa9e2677cf5075a8ee3fafc4a85db9166f5d1deaa5af2274183f97edb736a3",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-iterator-range-unsigned-key-iterator-insertion",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<unsigned> source{5u, 7u};\n  std::unordered_set<int> target;\n  target.insert(source.begin(), source.end());\n  return target.count(5) != 1;\n}\n",
+      "source_sha256": "0c1c25603ac1ccd95b37e91247b8b61ea61ab2e003d9ff5e0d49c947c1e01868",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-iterator-range-custom-hash-iterator-construction",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int value) const { return static_cast<unsigned>(value); } };\nint main() {\n  const std::unordered_set<int> source{1, 2};\n  std::unordered_set<int, Hash> target(source.begin(), source.end());\n  return target.empty();\n}\n",
+      "source_sha256": "23014309cca32cb9c2627419f1f8ea4fcf40cfd646af9f2dfdef3f49a3265778",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeUniqueInsertsConstMultisetIteratorRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeMultiInsertsOneElementFromAGlobalIteratorRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeMultiInsertsOneLocalBucketWithDuplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeUniqueConstructsFromMultisetGlobalIteratorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeMultiConstructsFromLocalIteratorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeEqualNonnullEndpointsFormAnEmptyIteratorRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeUnrelatedVectorIteratorInsertionRejected",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeUnrelatedListIteratorConstructionRejected",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeUnsignedKeyIteratorInsertionRejected",
+    "TranslateTest.CoreV2UnorderedSetIteratorRangeCustomHashIteratorConstructionRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "9b7d4cac8fbb215fad4d796e7e7cfd7cfcecc7d84384cff249ccbb08f68d9621",
+  "maintained_original_sha256": "128ff7799af546d360def0abcb3e0ba34a382cd3629da0794750c8e444e5434c",
+  "previous_registered_source_sha256": "0a3e74d58b7b14a41049e2a8ad8f513413e5ef6b2426a30625103d46c6befdf6",
+  "previous_maintained_original_sha256": "376aa6cafedc4544350af55c4762116affe6ffb8a1e3283ac406b8c9db064275",
+  "restorer_sha256": "ced8f7ebaebfeb2bb2a58dbc97a7cd1cb482e1ffc3f46ec8147366769c40984e",
+  "extractor_sha256": "842363a4e03debe4438c306084c5bcc28c4007c90f09947f86175a02982ff3e6",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8562,
+  "current_python_registry_tests": 226,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-iterator-range": "bf4e91471cfb1b103493171bb1b986df60e494b969beefe7fb497d9cfa5c48bf"
+  },
+  "native_reference_authentication_sha256": "df924412b577fd3141ea587be901d547a1eb934a3c5192dbdf88abf08b5e61cd",
+  "source_proof_sha256": "9765c4799b963b5c62d0789f3a323c7309ed8fbc881a06e279253db07147b552"
+}

@@ -1,0 +1,113 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-unsigned-sort-and-order",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUnsignedSortAndOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "221156f4d64a5bafc745deb7fee5abdd7b8e27915c644b4a2fda4b0d96f3813e",
+      "original_case_source_sha256": "221156f4d64a5bafc745deb7fee5abdd7b8e27915c644b4a2fda4b0d96f3813e",
+      "gtest_body_sha256": "e6a6f5ce475d27f7731900317c5a4f4aeec17cf0b18f6a9153d0e9cea33f9c31"
+    },
+    {
+      "name": "forward-list-unsigned-long-merge-and-copy",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUnsignedLongMergeAndCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bcc141d542785cf5a2d29b044a58707437a6cb02d1694cd30e78ee9ace87fd38",
+      "original_case_source_sha256": "bcc141d542785cf5a2d29b044a58707437a6cb02d1694cd30e78ee9ace87fd38",
+      "gtest_body_sha256": "97a6d8380a423f59812ce90f3a332004ef2ec660fc6d8d9d640de4fd10899911"
+    },
+    {
+      "name": "forward-list-unsigned-range-and-emplacement",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUnsignedRangeAndEmplacementRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0d388de154044f23568d3875764dc4ec20bae9463356801791e92419406039b4",
+      "original_case_source_sha256": "0d388de154044f23568d3875764dc4ec20bae9463356801791e92419406039b4",
+      "gtest_body_sha256": "eb19e14e981e987bcc2834c02cecb6464f9553dfb5a2062e433821239143ac6d"
+    },
+    {
+      "name": "forward-list-signed-owner-from-unsigned-pointer-range",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSignedOwnerFromUnsignedPointerRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fec763940a2847a83764643c87bf2e19ea4f0daf808216f7e62adf8d15500a67",
+      "original_case_source_sha256": "fec763940a2847a83764643c87bf2e19ea4f0daf808216f7e62adf8d15500a67",
+      "gtest_body_sha256": "0a2c1632d437bcb96dde883427a95ef1397a8e9fb3eb92f4fb37018556ff99d7"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "forward-list-unsigned-volatile-pointer-range-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUnsignedVolatilePointerRangeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "abbcfb008ab55fafe79d5b617d2d9798097357739f3366d2ba0618b586875ee5",
+      "original_case_source_sha256": "abbcfb008ab55fafe79d5b617d2d9798097357739f3366d2ba0618b586875ee5",
+      "gtest_body_sha256": "20725464130a670567abb48803385c04fb54b2aec654424fb8c2a1b88b583593"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "forward-list-unsigned-sort-and-order",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  constexpr unsigned max = static_cast<unsigned>(-1);\n  std::forward_list<unsigned> values{max, 1u, 3u, max};\n  auto first_max = values.begin();\n  values.sort();\n  auto item = values.begin();\n  const std::forward_list<unsigned> expected{1u, 3u, max, max};\n  if (values != expected || *item++ != 1u || *item++ != 3u || item != first_max)\n    return 1;\n  if (*item++ != max || *item++ != max || item != values.end())\n    return 2;\n  const std::forward_list<unsigned> smaller{1u, 3u, max - 1u, max};\n  return !(smaller < values) || values < smaller;\n}\n",
+      "source_sha256": "221156f4d64a5bafc745deb7fee5abdd7b8e27915c644b4a2fda4b0d96f3813e",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-unsigned-long-merge-and-copy",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nint main() {\n  constexpr unsigned long max = static_cast<unsigned long>(-1);\n  constexpr unsigned long high = max / 2 + 1;\n  std::forward_list<unsigned long> left{1UL, high};\n  std::forward_list<unsigned long> right{high, max};\n  auto left_high = left.begin();\n  ++left_high;\n  auto right_high = right.begin();\n  left.merge(std::move(right));\n  auto item = left.begin();\n  if (!right.empty() || *item++ != 1UL || item != left_high || *item++ != high)\n    return 1;\n  if (item != right_high || *item++ != high || *item++ != max || item != left.end())\n    return 2;\n  auto copy = left;\n  left.front() = 3UL;\n  right.push_front(7UL);\n  return copy.front() != 1UL || left.front() != 3UL || right.front() != 7UL;\n}\n",
+      "source_sha256": "bcc141d542785cf5a2d29b044a58707437a6cb02d1694cd30e78ee9ace87fd38",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-unsigned-range-and-emplacement",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const short original[] = {7, -1, -2, 13};\n  std::forward_list<unsigned long> values(original + 1, original + 3);\n  auto item = values.cbegin();\n  if (*item++ != static_cast<unsigned long>(-1) ||\n      *item++ != static_cast<unsigned long>(-2) || item != values.cend())\n    return 1;\n  const unsigned short inputs[] = {9, static_cast<unsigned short>(-1), 51, 33};\n  values.assign(inputs + 1, inputs + 3);\n  auto pos = values.emplace_after(values.cbegin(), inputs[3]);\n  item = values.cbegin();\n  if (*item++ != inputs[1] || item != pos || *item++ != 33UL || *item++ != 51UL || item != values.cend())\n    return 2;\n  return 0;\n}\n",
+      "source_sha256": "0d388de154044f23568d3875764dc4ec20bae9463356801791e92419406039b4",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-signed-owner-from-unsigned-pointer-range",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const unsigned long inputs[] = {12UL, 2147483666UL, 19UL, 24UL};\n  std::forward_list<int> list{6, 7};\n  const auto tail = list.insert_after(list.cbegin(), inputs + 1, inputs + 3);\n  auto item = list.cbegin();\n  if (*item++ != 6 || *item++ != static_cast<int>(inputs[1]) || item != tail)\n    return 1;\n  return *item++ != 19 || *item++ != 7 || item != list.cend();\n}\n",
+      "source_sha256": "fec763940a2847a83764643c87bf2e19ea4f0daf808216f7e62adf8d15500a67",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-unsigned-volatile-pointer-range-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint main() {\n  volatile unsigned short inputs[] = {4, 13};\n  std::forward_list<unsigned> values;\n  values.assign(inputs, inputs + 2);\n  return values.front() != 4u;\n}\n",
+      "source_sha256": "abbcfb008ab55fafe79d5b617d2d9798097357739f3366d2ba0618b586875ee5",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListUnsignedSortAndOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListUnsignedLongMergeAndCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListUnsignedRangeAndEmplacementRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSignedOwnerFromUnsignedPointerRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListUnsignedVolatilePointerRangeGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "d21c62d01a15fd6090e297a8319691dd40cd2cbee5a2a6f8d38da6d96731f895",
+  "maintained_original_sha256": "3441751b94a0f994016ef5bc936adebd867e52331ea969aafab490e4dc7e2ad8",
+  "previous_registered_source_sha256": "dc1c07a397692bbb10bfc4a51a1f954168862de4f4ca2dc5e0ed3e958265c202",
+  "previous_maintained_original_sha256": "198a13d3a038c4c8d03cb37f27abf8a9f18dc8722be329e39d13088c9a575fbc",
+  "restorer_sha256": "0d0a1776e1aea27554fe1e75ac3b78ba5324f3e4c95fa61df7c01845fc4865e5",
+  "extractor_sha256": "39aea0ef91283a7f0a22db79df55ff13eb539f758392fa9d34daa51adc82e907",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9260,
+  "current_python_registry_tests": 332,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "forward-list-unsigned-elements": "e774635c451a11038293800c6d4d6261f23656634dfbe20378be8993b5ff9089"
+  },
+  "native_reference_authentication_sha256": "fad7991cb9efec52a1caa70e1d858371d45fc05b21f5e366fe24a2a8e8580cd4",
+  "source_proof_sha256": "9765c4799b963b5c62d0789f3a323c7309ed8fbc881a06e279253db07147b552"
+}

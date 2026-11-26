@@ -1,0 +1,131 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-unsigned-conversion-through-const-copy-and-alias",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionThroughConstCopyAndAliasRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d5164115bd72fbb0fccfd3a80eed2f08748d8230befc941c45badf118a9d5016",
+      "original_case_source_sha256": "d5164115bd72fbb0fccfd3a80eed2f08748d8230befc941c45badf118a9d5016",
+      "gtest_body_sha256": "203e47a5ba6727356ab90563d249081e15ee8cf7a346065a934f1126decb1a14"
+    },
+    {
+      "name": "bitset-unsigned-conversion-selects-one-immutable-receiver",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionSelectsOneImmutableReceiverRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b6b85f9f21cd69b52d91c4cb4ba5a9a52fd02f7bc192d7a9498380e3bbf5c10a",
+      "original_case_source_sha256": "b6b85f9f21cd69b52d91c4cb4ba5a9a52fd02f7bc192d7a9498380e3bbf5c10a",
+      "gtest_body_sha256": "532a6e7c20a4a586915a4b7e05d6a5141f3cb519252d072ab9f896ff6e39ba92"
+    },
+    {
+      "name": "variant-visit-nonowning-static-cast-preserves-owner",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitNonowningStaticCastPreservesOwnerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "daa469caa5f753e0e16a807c26dd0201a28006bb7e2abb49fe2384335b9b9b85",
+      "original_case_source_sha256": "daa469caa5f753e0e16a807c26dd0201a28006bb7e2abb49fe2384335b9b9b85",
+      "gtest_body_sha256": "bf14750e8fafee711a8374c011408c460958888a6d2d80f0453502fd2ca4a44a"
+    },
+    {
+      "name": "variant-visit-nonowning-move-const-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitNonowningMoveConstOperandRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "68e854919b6ebc9698dd95aca17dc8810397da69f0d596ea421952c7f64cf52d",
+      "original_case_source_sha256": "68e854919b6ebc9698dd95aca17dc8810397da69f0d596ea421952c7f64cf52d",
+      "gtest_body_sha256": "1061fd8a796dfd0cc7d9fef723304032c97273b7374b1ceb7a58a04a97162892"
+    },
+    {
+      "name": "variant-visit-mixed-bound-and-xvalue-operands",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitMixedBoundAndXvalueOperandsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "61c5d345eb4be08db62c8bf136c676a0d7296c077e41c7a2ece08af04146e41c",
+      "original_case_source_sha256": "61c5d345eb4be08db62c8bf136c676a0d7296c077e41c7a2ece08af04146e41c",
+      "gtest_body_sha256": "060c63b65727630ab5b953d844b18f5694d852a0a044d8495e0697c22cf1352e"
+    },
+    {
+      "name": "variant-visit-unverified-xvalue-returning-call",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitUsesCheckedSourceXvalueReturn",
+      "expected": "accept",
+      "source_sha256": "efbf45a652be61dd3507647e8735ed57806040721b14a3349ab46de86c0a9b86",
+      "original_case_source_sha256": "efbf45a652be61dd3507647e8735ed57806040721b14a3349ab46de86c0a9b86",
+      "gtest_body_sha256": "2e0e0589c53c0d15ea8fffb1c92026aa3ca129d806234a7c263f15e6403bc1af",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [],
+  "source_cases": [
+    {
+      "name": "bitset-unsigned-conversion-through-const-copy-and-alias",
+      "public_header": "bitset",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  const Bits initial(5);\n  const Bits copied(initial);\n  const Bits& alias = copied;\n  return alias.to_ullong() != 5ULL;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "d5164115bd72fbb0fccfd3a80eed2f08748d8230befc941c45badf118a9d5016"
+    },
+    {
+      "name": "bitset-unsigned-conversion-selects-one-immutable-receiver",
+      "public_header": "bitset",
+      "expected": "accept",
+      "source": "#include <bitset>\nstatic bool select(int& calls) { ++calls; return calls == 1; }\nint main() {\n  using Bits = std::bitset<129>;\n  const Bits first(0x80000000ULL), second(7ULL);\n  int calls = 0;\n  unsigned long a = (select(calls) ? first : second).to_ulong();\n  unsigned long b = (select(calls) ? first : second).to_ulong();\n  return calls != 2 || a != 0x80000000UL || b != 7UL;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "b6b85f9f21cd69b52d91c4cb4ba5a9a52fd02f7bc192d7a9498380e3bbf5c10a"
+    },
+    {
+      "name": "variant-visit-nonowning-static-cast-preserves-owner",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Value = std::variant<int, short>;\nint read(int value) { return value; }\nint main() {\n  Value item(std::in_place_index<1>, short{7});\n  int before = std::visit(read, static_cast<Value&&>(item));\n  item.emplace<0>(11);\n  return before != 7 || std::visit(read, item) != 11;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "daa469caa5f753e0e16a807c26dd0201a28006bb7e2abb49fe2384335b9b9b85"
+    },
+    {
+      "name": "variant-visit-nonowning-move-const-operand",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <utility>\n#include <variant>\nusing Value = std::variant<int, short>;\nint read(int value) { return value; }\nint main() {\n  const Value item(std::in_place_index<0>, 13);\n  return std::visit(read, std::move(item)) != 13;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "68e854919b6ebc9698dd95aca17dc8810397da69f0d596ea421952c7f64cf52d"
+    },
+    {
+      "name": "variant-visit-mixed-bound-and-xvalue-operands",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <utility>\n#include <variant>\nusing Value = std::variant<int, short>;\nint subtract(int left, int right) { return left - right; }\nint main() {\n  Value left(std::in_place_index<1>, short{17});\n  Value right(std::in_place_index<0>, 5);\n  return std::visit(subtract, left, std::move(right)) != 12;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "61c5d345eb4be08db62c8bf136c676a0d7296c077e41c7a2ece08af04146e41c"
+    },
+    {
+      "name": "variant-visit-unverified-xvalue-returning-call",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nusing Value = std::variant<int>;\nValue&& produce(Value& value) { return static_cast<Value&&>(value); }\nint read(int value) { return value; }\nint test(Value& item) { return std::visit(read, produce(item)); }\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "efbf45a652be61dd3507647e8735ed57806040721b14a3349ab46de86c0a9b86"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetUnsignedConversionThroughConstCopyAndAliasRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionSelectsOneImmutableReceiverRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitNonowningStaticCastPreservesOwnerRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitNonowningMoveConstOperandRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitMixedBoundAndXvalueOperandsRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitUsesCheckedSourceXvalueReturn"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "4e25448c3737b6d941a9fd6c8361f4a8da049914fe631fbb789dd0f91e117959",
+  "maintained_original_sha256": "7a62958b4afb394c3c67940a01e9b0d679bd505b74c5610b01df523e304f1137",
+  "previous_registered_source_sha256": "8dd2c7054ddf9f1f4365d54e7600c39f9214dd6f6f24b7c2962cbfbad1719409",
+  "previous_maintained_original_sha256": "cdcab2839c2508cdd7656a81b5fb658e683cb8d6d4adbb32abb007ee62df3941",
+  "restorer_sha256": "ac5e2d38481456ea66e2b04e321e46b351a4f6d2b03ab4debf6ff2d672a81c2f",
+  "extractor_sha256": "0d87f079b96c386c70d09a766bf94fe18e1f8eea5c8b303b090b37743610720b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9064,
+  "current_python_registry_tests": 292,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "bitset-reference-materialization": "81867ed88acbf1edd6052562dfe20dfc33a45dd67a18ddb7aaf31e6913b7b521",
+    "variant-visit-borrowed-xvalues": "1f94b16e7ffb3dda60d1960bc273f71d0cca5052c5a28ff8c69cbe9c51c465a5"
+  },
+  "native_reference_authentication_sha256": "137766e9577c839cbc0399c97d8693c158fe7fe9693ffea9b27f96f984f6d6f6",
+  "source_proof_sha256": "9765c4799b963b5c62d0789f3a323c7309ed8fbc881a06e279253db07147b552"
+}
