@@ -56317,14 +56317,53 @@ bool listIteratorType(const State &S, const SourceManager &SM, QualType T,
   return I && I->Const == Const && I->Node.Record->getCanonicalDecl() == Node.Record->getCanonicalDecl();
 }
 
+bool listRangeInputSignature(const State &S, const SourceManager &SM,
+    const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context) {
+  if (M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
+      M->getParamDecl(0)->hasDefaultArg() || M->getParamDecl(1)->hasDefaultArg())
+    return false;
+  const auto Input = M->getParamDecl(0)->getType();
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 2 ||
+      Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Input) ||
+      !Context.hasSameType(M->getParamDecl(1)->getType(), Input))
+    return false;
+  if (Input->isPointerType()) {
+    const auto Value = Input->getPointeeType();
+    return !Value.isVolatileQualified() && listElementType(Value.getUnqualifiedType(), Context);
+  }
+  return listIteratorType(S, SM, Input, Owner.Node, false, Context) ||
+         listIteratorType(S, SM, Input, Owner.Node, true, Context);
+}
+
 std::optional<UtilityListConstruction> listConstructorSignature(
     const State &S, const SourceManager &SM, const CXXConstructorDecl *C,
     const ASTContext &Context) {
-  if (!C || C->getPrimaryTemplate() || !listFunctionDeclarations(S, SM, C))
+  if (!C || !listFunctionDeclarations(S, SM, C))
     return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, C->getParent(), Context)) {
     const auto Element = Owner->Node.Value->getType();
-    if (!C->getNumParams()) return UtilityListConstruction::Default;
+    const auto Count = C->getNumParams();
+    if (C->getPrimaryTemplate()) {
+      if ((Count == 2 || (Count == 3 && !C->getParamDecl(2)->hasDefaultArg() &&
+              listAllocatorParameter(S, SM, C->getParamDecl(2)->getType(), Element, Context))) &&
+          listRangeInputSignature(S, SM, C, *Owner, Context))
+        return UtilityListConstruction::Range;
+      return std::nullopt;
+    }
+    if (!Count) return UtilityListConstruction::Default;
+    if ((Count == 1 || Count == 2) && !C->getParamDecl(0)->hasDefaultArg() &&
+        Context.hasSameType(C->getParamDecl(0)->getType(), Context.getSizeType())) {
+      if (Count == 1) return UtilityListConstruction::Count;
+      const auto *Argument = C->getParamDecl(1);
+      if (Argument->hasDefaultArg()) return std::nullopt;
+      if (listAllocatorParameter(S, SM, Argument->getType(), Element, Context))
+        return UtilityListConstruction::Count;
+      if (Context.hasSameType(Argument->getType(), Context.getLValueReferenceType(Element.withConst())))
+        return UtilityListConstruction::CountFill;
+      return std::nullopt;
+    }
     if (C->getNumParams() == 1 || C->getNumParams() == 2) {
       const auto Type = Context.getRecordType(Owner->Record);
       const auto Argument = C->getParamDecl(0)->getType();
@@ -56351,6 +56390,7 @@ std::optional<UtilityListConstruction> listConstructorSignature(
     }
     return std::nullopt;
   }
+  if (C->getPrimaryTemplate()) return std::nullopt;
   const auto Iterator = approvedUtilityListIteratorRecord(S, SM, C->getParent(), Context);
   if (!Iterator) return std::nullopt;
   if (!C->getNumParams()) return UtilityListConstruction::IteratorDefault;
@@ -56493,22 +56533,9 @@ bool listAssignRangeSignature(const State &S, const SourceManager &SM,
     const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context) {
   if (M->isConst() || M->getRefQualifier() != RQ_None || !M->getIdentifier() ||
       M->getName() != "assign" || !M->getReturnType()->isVoidType() ||
-      M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation || M->getNumParams() != 2 ||
-      M->getParamDecl(0)->hasDefaultArg() || M->getParamDecl(1)->hasDefaultArg())
+      M->getNumParams() != 2)
     return false;
-  const auto Input = M->getParamDecl(0)->getType();
-  const auto *Arguments = M->getTemplateSpecializationArgs();
-  if (!Arguments || Arguments->size() != 2 ||
-      Arguments->get(0).getKind() != TemplateArgument::Type ||
-      !Context.hasSameType(Arguments->get(0).getAsType(), Input) ||
-      !Context.hasSameType(M->getParamDecl(1)->getType(), Input))
-    return false;
-  if (Input->isPointerType()) {
-    const auto Value = Input->getPointeeType();
-    return !Value.isVolatileQualified() && listElementType(Value.getUnqualifiedType(), Context);
-  }
-  return listIteratorType(S, SM, Input, Owner.Node, false, Context) ||
-         listIteratorType(S, SM, Input, Owner.Node, true, Context);
+  return listRangeInputSignature(S, SM, M, Owner, Context);
 }
 
 std::optional<UtilityListOperation> listMethodSignature(

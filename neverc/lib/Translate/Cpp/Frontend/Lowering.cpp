@@ -29156,23 +29156,6 @@ class FunctionLowering {
     jump(Check, L); label(Done, L);
   }
 
-  void listCopyValueStorage(Expression Place, Expression Source,
-      const UtilityListNodeRecord &Info, SourceLocation L) {
-    auto Current = temporary("ptr:void", L);
-    assign(Current, listMember(Source, "nct_list_next", L), L);
-    auto End = snapshot(listSentinel(Source, L, true), L);
-    const auto Check = labelName(), Append = labelName(), Done = labelName();
-    jump(Check, L); label(Check, L);
-    branch(binary("!=", Current, End, "bool", L), Append, Done, L);
-    label(Append, L);
-    const auto Element = Info.Value->getType();
-    auto Value = address(listValue(Current, Element, true, L), Element.withConst(), L);
-    auto Node = listCreateNode(Value, Info, L);
-    listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
-    assign(Current, snapshot(listLink(Current, false, L), L), L);
-    jump(Check, L); label(Done, L);
-  }
-
   void listSpliceAllValueStorage(Expression Place, Expression Source, Expression Position, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Transfer = labelName(), Done = labelName();
@@ -29514,6 +29497,46 @@ class FunctionLowering {
     assign(Input.Current, address(std::move(Value), Input.PointerElement.withConst(), L), L);
   }
 
+  ListAssignmentInput listRangeInput(Expression First, Expression Last, QualType Type, SourceLocation L) {
+    if (Type->isPointerType())
+      return listAssignmentInput(std::move(First), std::move(Last),
+                                 Type->getPointeeType().getUnqualifiedType(), L);
+    return listAssignmentInput(listIteratorMember(dereference(std::move(First), L), L),
+                               listIteratorMember(dereference(std::move(Last), L), L), {}, L);
+  }
+
+  void listConstructRangeStorage(Expression Place, const ListAssignmentInput &Input,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Check = labelName(), Append = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Input.Current, Input.End, "bool", L), Append, Done, L);
+    label(Append, L);
+    auto Value = listAssignmentReference(Input, Info.Value->getType(), L);
+    auto Node = listCreateNode(std::move(Value), Info, L, Input.PointerElement);
+    listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
+    advanceListAssignmentInput(Input, L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
+  void listConstructCountStorage(Expression Place, Expression Count, Expression Value,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Remaining = temporary(Size, L);
+    assign(Remaining, std::move(Count), L);
+    const auto Check = labelName(), Append = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Append, Done, L);
+    label(Append, L);
+    auto Node = listCreateNode(Value, Info, L);
+    listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
   void listAssignValueStorage(Expression Place, const ListAssignmentInput &Input,
       const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
@@ -29811,10 +29834,7 @@ class FunctionLowering {
     }
     if (Operation == UtilityListOperation::AssignRange) {
       const auto Parameter = Method->getParamDecl(0)->getType();
-      const auto Input = Parameter->isPointerType()
-          ? listAssignmentInput(Operands[0], Operands[1], Parameter->getPointeeType().getUnqualifiedType(), L)
-          : listAssignmentInput(listIteratorMember(dereference(Operands[0], L), L),
-                                listIteratorMember(dereference(Operands[1], L), L), {}, L);
+      const auto Input = listRangeInput(Operands[0], Operands[1], Parameter, L);
       listAssignValueStorage(Place, Input, Owner->Node, L);
       return Expression{};
     }
@@ -42397,8 +42417,29 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       initializeListStorage(Place, L);
       if (*Kind == UtilityListConstruction::Copy || *Kind == UtilityListConstruction::Move) {
         auto Source = dereference(Operands[0], L);
-        if (*Kind == UtilityListConstruction::Copy) listCopyValueStorage(Place, Source, Owner->Node, L);
-        else listSpliceAllValueStorage(Place, Source, snapshot(listSentinel(Place, L), L), L);
+        if (*Kind == UtilityListConstruction::Copy) {
+          auto Input = listAssignmentInput(listMember(Source, "nct_list_next", L),
+                                           listSentinel(Source, L, true), {}, L);
+          listConstructRangeStorage(Place, Input, Owner->Node, L);
+        } else {
+          listSpliceAllValueStorage(Place, Source, snapshot(listSentinel(Place, L), L), L);
+        }
+        return;
+      }
+      if (*Kind == UtilityListConstruction::Range) {
+        const auto Parameter = C->getConstructor()->getParamDecl(0)->getType();
+        auto Input = listRangeInput(Operands[0], Operands[1], Parameter, L);
+        listConstructRangeStorage(Place, Input, Owner->Node, L);
+        return;
+      }
+      if (*Kind == UtilityListConstruction::Count || *Kind == UtilityListConstruction::CountFill) {
+        if (*Kind == UtilityListConstruction::CountFill) {
+          listConstructCountStorage(Place, Operands[0], Operands[1], Owner->Node, L);
+        } else {
+          auto Zero = temporary(type(Element, L), L);
+          initializeZero(Zero, Element, L);
+          listConstructCountStorage(Place, Operands[0], address(Zero, Element, L), Owner->Node, L);
+        }
         return;
       }
       if (*Kind != UtilityListConstruction::InitializerList) return;

@@ -4067,7 +4067,7 @@ std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
 enum class UtilityListConstruction {
-  Default, Allocator, InitializerList, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
+  Default, Allocator, Count, CountFill, Range, InitializerList, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityListOperation {
   CopyAssign, MoveAssign, AssignCount, AssignRange, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, GetAllocator, MaxSize, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, Emplace, EmplaceFront, EmplaceBack, Erase, EraseRange, Resize, ResizeFill, Clear, Reverse, Remove, Unique, RemoveIf, UniqueWithPredicate, Merge, Sort,
