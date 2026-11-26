@@ -3366,9 +3366,6 @@ R19_FORWARD_LIST_LONG_ELEMENT_OPERATIONS_ADDITIONS_SIZE = 7933
 def restore_forward_list_long_element_operations_history(source):
     """Remove the exact combined layout fixture batch from the registry."""
     sha = lambda data: hashlib.sha256(data).hexdigest()
-    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
-        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
-        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     digest = sha(source)
     assert digest in {R19_FORWARD_LIST_LONG_ELEMENT_OPERATIONS_REGISTERED_SHA256, R19_FORWARD_LIST_LONG_ELEMENT_OPERATIONS_MAINTAINED_SHA256}
     stop = R19_FORWARD_LIST_LONG_ELEMENT_OPERATIONS_MAINTAINED_SIZE
@@ -3429,6 +3426,33 @@ def restore_forward_list_long_element_operations_history(source):
     return restored
 
 
+R19_FORWARD_LIST_ELEMENT_CALLBACKS_REGISTERED_SHA256 = '15a0134f14126e35b7dce5c52a324c86a84018c44d4aa68c8af96acb80581708'
+R19_FORWARD_LIST_ELEMENT_CALLBACKS_MAINTAINED_SHA256 = '0b9c08beda36fd633a11daba0d4789227967b08b9bd62ff600c71b3cee5863a1'
+R19_FORWARD_LIST_ELEMENT_CALLBACKS_PREVIOUS_REGISTERED_SHA256 = 'e534f92d839b314727db5907cab992fa77a7e995dd1b3b3531be94a65e0c2d48'
+R19_FORWARD_LIST_ELEMENT_CALLBACKS_PREVIOUS_MAINTAINED_SHA256 = '6d6d5adfeb2cf579f58dad05187ca43c047246bf56b09600d06adce5cf808a0c'
+R19_FORWARD_LIST_ELEMENT_CALLBACKS_ADDITIONS_SHA256 = 'ea8c39a30e1fd848fdfba976348a8d8e3752669226495c55070e54936812dcee'
+R19_FORWARD_LIST_ELEMENT_CALLBACKS_MAINTAINED_SIZE = 21023294
+R19_FORWARD_LIST_ELEMENT_CALLBACKS_ADDITIONS_SIZE = 6813
+
+
+def restore_forward_list_element_callbacks_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
+        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    digest = sha(source)
+    assert digest in {R19_FORWARD_LIST_ELEMENT_CALLBACKS_REGISTERED_SHA256, R19_FORWARD_LIST_ELEMENT_CALLBACKS_MAINTAINED_SHA256}
+    stop = R19_FORWARD_LIST_ELEMENT_CALLBACKS_MAINTAINED_SIZE
+    start = stop - R19_FORWARD_LIST_ELEMENT_CALLBACKS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_FORWARD_LIST_ELEMENT_CALLBACKS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_FORWARD_LIST_ELEMENT_CALLBACKS_PREVIOUS_REGISTERED_SHA256 if digest == R19_FORWARD_LIST_ELEMENT_CALLBACKS_REGISTERED_SHA256
+             else R19_FORWARD_LIST_ELEMENT_CALLBACKS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -3471,12 +3495,12 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
-    if source_digest == '5344128d626ac53e42486152a304dc3f3b5272b04a0e22fd56e5795ac70c39ed':
+    if source_digest == '39e7b6310bd644b5d7264b217d0069163a74a2fbfa3efc7efa3e81217c1b4aa8':
         return source
-    if source_digest == '4b57113c85682b6cc7dddd97829dd60fab1c1cf76abdc23ebe182ada2d8ad8ff':
+    if source_digest == '36c847f1b606f40df8bd286646e4763cf14e450c1629b1d987440d44e4ca3860':
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         current = source[:-len(additions)]
-        assert digest(current) == '5344128d626ac53e42486152a304dc3f3b5272b04a0e22fd56e5795ac70c39ed'
+        assert digest(current) == '39e7b6310bd644b5d7264b217d0069163a74a2fbfa3efc7efa3e81217c1b4aa8'
         return current
     if source_digest == R19_VARIANT_SCALAR_MAINTAINED_SHA256:
         return source
@@ -4198,6 +4222,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_FORWARD_LIST_LONG_ELEMENT_OPERATIONS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_FORWARD_LIST_ELEMENT_CALLBACKS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_FORWARD_LIST_ELEMENT_CALLBACKS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_FORWARD_LIST_ELEMENT_CALLBACKS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

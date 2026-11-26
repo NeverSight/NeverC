@@ -18673,3 +18673,9 @@ removal by a two-argument predicate.
 The default-allocator forward_list<long> uses the target's signed long
 element type for checked construction, iterators, assignment, splices,
 removal, default comparison and ordering, and range modifiers.
+
+## Forward list callbacks for signed long elements
+
+The default-allocator forward_list<long> accepts checked signed long
+function pointers for stable sort and merge and for removal and
+adjacent uniqueness predicates.

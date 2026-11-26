@@ -410289,6 +410289,153 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2ForwardListLongTypedDescendingSortRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-long-typed-descending-sort.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool descending(long left, long right) { return left > right; }
+int main() {
+  const long high = sizeof(long) == 8 ? static_cast<long>(4294967301LL) : 21L;
+  std::forward_list<long> list{1L, -3L, high, high};
+  auto first_high = list.begin();
+  ++first_high;
+  ++first_high;
+  list.sort(descending);
+  auto item = list.begin();
+  if (item != first_high || *item++ != high || *item++ != high)
+    return 1;
+  return *item++ != 1L || *item++ != -3L || item != list.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-long-typed-descending-sort.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-long-typed-descending-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListLongTypedDescendingMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-long-typed-descending-merge.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+bool descending(long left, long right) { return right < left; }
+int main() {
+  const long high = sizeof(long) == 8 ? static_cast<long>(4294967301LL) : 21L;
+  std::forward_list<long> left{high, 5L};
+  std::forward_list<long> right{high, -3L};
+  auto left_node = left.begin();
+  auto right_node = right.begin();
+  left.merge(std::move(right), &descending);
+  auto item = left.begin();
+  if (!right.empty() || item != left_node || *item++ != high)
+    return 1;
+  if (item != right_node || *item++ != high || *item++ != 5L)
+    return 2;
+  return *item++ != -3L || item != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-long-typed-descending-merge.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-long-typed-descending-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListLongTypedRemovePredicateRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-long-typed-remove-predicate.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool above(long v) { return v > 10L; }
+int main() {
+  const long high = sizeof(long) == 8 ? static_cast<long>(4294967301LL) : 21L;
+  std::forward_list<long> list{1L, high, high, -3L};
+  auto first = list.begin();
+  bool (*predicate)(long) = above;
+  list.remove_if(predicate);
+  auto item = list.begin();
+  return item != first || *item++ != 1L || *item++ != -3L || item != list.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-long-typed-remove-predicate.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-long-typed-remove-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListLongTypedAdjacentPredicateRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-long-typed-adjacent-predicate.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool parity(long left, long right) { return (left & 1L) == (right & 1L); }
+int main() {
+  const long high = sizeof(long) == 8 ? static_cast<long>(4294967301LL) : 21L;
+  std::forward_list<long> list{high, 3L, 2L, 4L, 5L, 7L};
+  list.unique(&parity);
+  auto item = list.begin();
+  return *item++ != high || *item++ != 2L || *item++ != 5L || item != list.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-long-typed-adjacent-predicate.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-long-typed-adjacent-predicate" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListIntWideningOrderFunctionGuardRejected) {
+  const auto Source = tmpFile("forward-list-int-widening-order-function-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool less(long left, long right) { return left < right; }
+int main() {
+  std::forward_list<int> list{2, 1};
+  list.sort(&less);
+  return list.front() != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListLongNarrowingFilterFunctionGuardRejected) {
+  const auto Source = tmpFile("forward-list-long-narrowing-filter-function-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool remove(int value) { return value == 1; }
+int main() {
+  std::forward_list<long> list{1L, 2L};
+  list.remove_if(&remove);
+  return list.front() != 2L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
