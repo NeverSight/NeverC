@@ -29243,6 +29243,51 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
+  void listFilterPredicateStorage(Expression Place, const UtilityListRecord &Info,
+      Expression Predicate, QualType PredicateType, bool Adjacent, SourceLocation L) {
+    const auto Element = Info.Node.Value->getType();
+    auto Removed = temporary(type(A.Context.getRecordType(Info.Record), L), L);
+    initializeListStorage(Removed, L);
+    auto RemovedEnd = snapshot(listSentinel(Removed, L), L);
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto Current = temporary("ptr:void", L), Next = temporary("ptr:void", L);
+    assign(Current, listMember(Place, "nct_list_next", L), L);
+    const auto Check = labelName(), Visit = labelName(), Scan = labelName(), Compare = labelName();
+    const auto Advance = labelName(), Transfer = labelName(), Finish = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, End, "bool", L), Visit, Finish, L);
+    label(Visit, L);
+    auto Start = snapshot(Adjacent ? listLink(Current, false, L) : Current, L);
+    assign(Next, Start, L);
+    jump(Scan, L);
+    label(Scan, L);
+    branch(binary("!=", Next, End, "bool", L), Compare, Transfer, L);
+    label(Compare, L);
+    auto Candidate = listValue(Next, Element, true, L);
+    auto Match = Adjacent
+        ? emitBinaryPredicate(Predicate, PredicateType, listValue(Current, Element, true, L), std::move(Candidate), L)
+        : emitUnaryPredicate(Predicate, PredicateType, std::move(Candidate), L);
+    branch(Match, Advance, Transfer, L);
+    label(Advance, L);
+    assign(Next, snapshot(listLink(Next, false, L), L), L);
+    jump(Scan, L);
+    label(Transfer, L);
+    // Callbacks can observe the owner. Move each matched run only after the scan.
+    listSpliceRangeValueStorage(Removed, Place, RemovedEnd, Start, Next, L);
+    if (Adjacent) {
+      assign(Current, Next, L);
+    } else {
+      const auto Skip = labelName();
+      branch(binary("!=", Next, End, "bool", L), Skip, Finish, L);
+      label(Skip, L);
+      assign(Current, snapshot(listLink(Next, false, L), L), L);
+    }
+    jump(Check, L);
+    label(Finish, L);
+    destroyListStorage(Removed, Info.Node, L);
+  }
+
   void listFilterValueStorage(Expression Place, const UtilityListRecord &Info,
       const std::optional<Expression> &Value, SourceLocation L) {
     auto Removed = temporary(type(A.Context.getRecordType(Info.Record), L), L);
@@ -29625,6 +29670,11 @@ class FunctionLowering {
           listSpliceRangeValueStorage(Place, Source, Position, First, After, L);
         }
       }
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::RemoveIf || Operation == UtilityListOperation::UniqueWithPredicate) {
+      listFilterPredicateStorage(Place, *Owner, Operands[0], Method->getParamDecl(0)->getType(),
+          Operation == UtilityListOperation::UniqueWithPredicate, L);
       return Expression{};
     }
     if (Operation == UtilityListOperation::Remove || Operation == UtilityListOperation::Unique) {

@@ -56395,13 +56395,63 @@ bool listGetAllocatorBody(const State &S, const SourceManager &SM,
   return listNodeAllocatorMember(S, SM, Storage, Owner.Node.Record, Construction->getArg(0), Context);
 }
 
+bool listPredicatePointer(QualType Type, QualType Element, unsigned Count, const ASTContext &Context) {
+  const auto *Prototype = Type->isFunctionPointerType()
+      ? Type->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Prototype || Prototype->isVariadic() || Prototype->getCallConv() != CC_C ||
+      Prototype->hasExtParameterInfos() || Prototype->getNumParams() != Count ||
+      !Context.hasSameType(Prototype->getReturnType(), Context.BoolTy)) return false;
+  for (auto Parameter : Prototype->param_types())
+    if (!Context.hasSameType(Parameter, Element)) return false;
+  return true;
+}
+
+std::optional<UtilityListOperation> listPredicateSignature(
+    const CXXMethodDecl *M, QualType Element, const ASTContext &Context) {
+  if (!M->getIdentifier() || M->isConst() || M->getRefQualifier() != RQ_None ||
+      !M->getReturnType()->isVoidType() || M->getNumParams() != 1 ||
+      M->getParamDecl(0)->hasDefaultArg() || M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+    return std::nullopt;
+  const bool Remove = M->getName() == "remove_if";
+  if (!Remove && M->getName() != "unique") return std::nullopt;
+  const auto Type = M->getParamDecl(0)->getType();
+  const auto *Arguments = M->getTemplateSpecializationArgs();
+  if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
+      !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
+      !listPredicatePointer(Type, Element, Remove ? 1 : 2, Context)) return std::nullopt;
+  return Remove ? UtilityListOperation::RemoveIf : UtilityListOperation::UniqueWithPredicate;
+}
+
+bool listSDKPredicateCall(const CallExpr *Call, const FunctionDecl *Root, QualType Element,
+                          unsigned Count, const ASTContext &Context) {
+  const auto *Definition = Root->getDefinition();
+  if (Call->getDirectCallee() || !Definition || Definition->getNumParams() != 1 ||
+      Call->getNumArgs() != Count || !Context.hasSameType(Call->getType(), Context.BoolTy) ||
+      !variantParameter(Call->getCallee(), Definition->getParamDecl(0)) ||
+      !listPredicatePointer(Definition->getParamDecl(0)->getType(), Element, Count, Context)) return false;
+  for (const auto *Value : Call->arguments())
+    if (!Context.hasSameType(Value->getType(), Element)) return false;
+  return true;
+}
+
+bool listPredicateBody(const FunctionDecl *F) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(F->getBody());
+  if (!Body || Body->size() != 3) return false;
+  const auto *Return = dyn_cast<ReturnStmt>(Body->body_back());
+  const auto *Cast = Return && Return->getRetValue()
+      ? dyn_cast<CStyleCastExpr>(Return->getRetValue()->IgnoreParens()) : nullptr;
+  return isa<DeclStmt>(Body->body_front()) && isa<ForStmt>(*(Body->body_begin() + 1)) &&
+         Cast && Cast->getCastKind() == CK_ToVoid;
+}
+
 std::optional<UtilityListOperation> listMethodSignature(
     const State &S, const SourceManager &SM, const CXXMethodDecl *M,
     const ASTContext &Context) {
-  if (!M || M->isStatic() || M->isVolatile() || M->getPrimaryTemplate() ||
+  if (!M || M->isStatic() || M->isVolatile() ||
       !listFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, M->getParent(), Context)) {
     const auto Element = Owner->Node.Value->getType();
+    if (M->getPrimaryTemplate()) return listPredicateSignature(M, Element, Context);
     const auto Type = Context.getRecordType(Owner->Record);
     if (!M->isConst() && M->getRefQualifier() == RQ_None && M->isOverloadedOperator() &&
         M->getOverloadedOperator() == OO_Equal && M->getNumParams() == 1 &&
@@ -56503,6 +56553,7 @@ std::optional<UtilityListOperation> listMethodSignature(
       return UtilityListOperation::Insert;
     return std::nullopt;
   }
+  if (M->getPrimaryTemplate()) return std::nullopt;
   const auto I = approvedUtilityListIteratorRecord(S, SM, M->getParent(), Context);
   if (!I || !M->isOverloadedOperator()) return std::nullopt;
   const auto IteratorType = Context.getRecordType(I->Record);
@@ -56741,7 +56792,7 @@ bool listBuiltinLibraryCast(const State &S, const SourceManager &SM,
 
 bool listSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context,
-                         const UtilityListNodeRecord &Owner) {
+                         const UtilityListNodeRecord &Owner, unsigned PredicateCount = 0) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -56833,6 +56884,7 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!listScalarDestruction(S, SM, Call, Context, Owner) &&
+          !(PredicateCount && listSDKPredicateCall(Call, Root, Owner.Value->getType(), PredicateCount, Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
       if (!Function(C->getConstructor(), Depth + 1)) return false;
@@ -56934,7 +56986,11 @@ std::optional<UtilityListCall> approvedUtilityListCall(
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
   const auto Operation = listMethodSignature(S, SM, Method, Context);
   const auto Node = Method ? listReceiverNode(S, SM, Method->getParent(), Context) : std::nullopt;
-  if (!Operation || !Node || !listSourceGraph(S, SM, Method, Context, *Node)) return std::nullopt;
+  if (!Operation || !Node) return std::nullopt;
+  const unsigned Predicates = *Operation == UtilityListOperation::RemoveIf ? 1 :
+      *Operation == UtilityListOperation::UniqueWithPredicate ? 2 : 0;
+  if ((Predicates && !listPredicateBody(Method)) ||
+      !listSourceGraph(S, SM, Method, Context, *Node, Predicates)) return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
   if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
