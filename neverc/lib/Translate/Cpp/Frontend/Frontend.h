@@ -4032,7 +4032,7 @@ struct UtilityForwardListCall {
   unsigned ArgumentOffset = 0;
   std::optional<uint64_t> Maximum = std::nullopt;
   std::optional<bool> ObjectOrderDescending = std::nullopt;
-  const clang::FunctionDecl *DefaultRecordOrder = nullptr;
+  const clang::FunctionDecl *DefaultRecordComparison = nullptr;
 };
 std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruction(
     const State &S, const clang::SourceManager &SM,
@@ -4085,7 +4085,7 @@ struct UtilityListCall {
   unsigned ArgumentOffset = 0;
   std::optional<uint64_t> Maximum = std::nullopt;
   std::optional<bool> Descending = std::nullopt;
-  const clang::FunctionDecl *DefaultRecordOrder = nullptr;
+  const clang::FunctionDecl *DefaultRecordComparison = nullptr;
 };
 std::optional<UtilityListConstruction> approvedUtilityListConstruction(
     const State &S, const clang::SourceManager &SM,

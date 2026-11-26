@@ -27361,12 +27361,21 @@ class FunctionLowering {
     assign(Link, Following, L);
     return Following;
   }
+  Expression compareLinkedListElementEquality(Expression Left, Expression Right,
+      const FunctionDecl *Comparison, SourceLocation L) {
+    if (Comparison)
+      return emitBinaryPredicate(A.functionAddress(Comparison, L), A.Context.getPointerType(Comparison->getType()),
+                                 std::move(Left), std::move(Right), L);
+    return binary("==", std::move(Left), std::move(Right), "bool", L);
+  }
+
   void removeForwardListValues(Expression Place, Expression Filter, QualType PredicateType,
-                               const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+                               const UtilityForwardListNodeRecord &Info,
+                               const FunctionDecl *Equality, SourceLocation L) {
     const auto Matches = [&](const Expression &Node) {
       auto Value = forwardListValue(Node, Info.Value->getType().withConst(), L);
       return PredicateType.isNull()
-          ? binary("==", std::move(Value), dereference(Filter, L), "bool", L)
+          ? compareLinkedListElementEquality(std::move(Value), dereference(Filter, L), Equality, L)
           : emitUnaryPredicate(Filter, PredicateType, std::move(Value), L);
     };
     auto Removed = temporary("ptr:void", L);
@@ -27758,7 +27767,7 @@ class FunctionLowering {
     if (Operation == UtilityForwardListOperation::RemoveValue || Operation == UtilityForwardListOperation::RemoveIf) {
       const auto PredicateType = Operation == UtilityForwardListOperation::RemoveIf
           ? Method->getParamDecl(0)->getType() : QualType{};
-      removeForwardListValues(Place, Operands[0], PredicateType, Owner->Node, L);
+      removeForwardListValues(Place, Operands[0], PredicateType, Owner->Node, Proof->DefaultRecordComparison, L);
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::Unique || Operation == UtilityForwardListOperation::UniqueWithPredicate) {
@@ -27767,6 +27776,9 @@ class FunctionLowering {
       if (Operation == UtilityForwardListOperation::UniqueWithPredicate) {
         Predicate = Operands[0];
         PredicateType = Method->getParamDecl(0)->getType();
+      } else if (const auto *Comparison = Proof->DefaultRecordComparison) {
+        Predicate = A.functionAddress(Comparison, L);
+        PredicateType = A.Context.getPointerType(Comparison->getType());
       }
       uniqueForwardListValues(Place, std::move(Predicate), PredicateType, Owner->Node, L);
       return Expression{};
@@ -27776,7 +27788,7 @@ class FunctionLowering {
     std::optional<Expression> Comparator;
     QualType ComparatorType;
     const bool Descending = Proof->ObjectOrderDescending.value_or(false);
-    if (const auto *Order = Proof->DefaultRecordOrder) {
+    if (const auto *Order = Proof->DefaultRecordComparison) {
       Comparator = A.functionAddress(Order, L);
       ComparatorType = A.Context.getPointerType(Order->getType());
     } else if ((CustomSort || CustomMerge) && !Proof->ObjectOrderDescending) {
@@ -29341,7 +29353,7 @@ class FunctionLowering {
   }
 
   void listFilterValueStorage(Expression Place, const UtilityListRecord &Info,
-      const std::optional<Expression> &Value, SourceLocation L) {
+      const std::optional<Expression> &Value, const FunctionDecl *Equality, SourceLocation L) {
     auto Removed = temporary(type(A.Context.getRecordType(Info.Record), L), L);
     initializeListStorage(Removed, L);
     auto RemovedEnd = snapshot(listSentinel(Removed, L), L);
@@ -29366,7 +29378,8 @@ class FunctionLowering {
     auto Next = snapshot(listLink(Node, false, L), L);
     const auto Element = Info.Node.Value->getType();
     auto Compare = Value ? *Value : listValue(*Previous, Element, true, L);
-    branch(binary("==", listValue(Node, Element, true, L), Compare, "bool", L), Transfer, Keep, L);
+    branch(compareLinkedListElementEquality(listValue(Node, Element, true, L), std::move(Compare), Equality, L),
+           Transfer, Keep, L);
     label(Transfer, L);
     // Keep unlinked nodes alive while the value can still alias one of them.
     listRelinkSpliceRange(RemovedEnd, Node, Node, Next, L);
@@ -29893,14 +29906,14 @@ class FunctionLowering {
     if (Operation == UtilityListOperation::Remove || Operation == UtilityListOperation::Unique) {
       std::optional<Expression> Value;
       if (Operation == UtilityListOperation::Remove) Value = dereference(Operands[0], L);
-      listFilterValueStorage(Place, *Owner, Value, L);
+      listFilterValueStorage(Place, *Owner, Value, Proof->DefaultRecordComparison, L);
       return Expression{};
     }
     if (Operation == UtilityListOperation::Merge || Operation == UtilityListOperation::Sort) {
       const bool Merge = Operation == UtilityListOperation::Merge;
       std::optional<Expression> Comparator;
       QualType ComparatorType;
-      if (const auto *Order = Proof->DefaultRecordOrder) {
+      if (const auto *Order = Proof->DefaultRecordComparison) {
         Comparator = A.functionAddress(Order, L);
         ComparatorType = A.Context.getPointerType(Order->getType());
       } else if (Method->getPrimaryTemplate() && !Proof->Descending) {
