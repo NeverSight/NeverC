@@ -56158,6 +56158,10 @@ bool listLeaves(const State &S, const SourceManager &SM,
 
 bool listElementType(QualType Type, const ASTContext &Context) {
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
+  if (Context.hasSameType(Type, Context.CharTy) || Context.hasSameType(Type, Context.SignedCharTy) ||
+      Context.hasSameType(Type, Context.UnsignedCharTy)) return Context.getTypeSize(Type) == 8;
+  if (Context.hasSameType(Type, Context.ShortTy) || Context.hasSameType(Type, Context.UnsignedShortTy))
+    return Context.getTypeSize(Type) == 16;
   if (Context.hasSameType(Type, Context.IntTy) || Context.hasSameType(Type, Context.UnsignedIntTy))
     return Context.getTypeSize(Type) == 32;
   if (Context.hasSameType(Type, Context.LongTy) || Context.hasSameType(Type, Context.UnsignedLongTy))
