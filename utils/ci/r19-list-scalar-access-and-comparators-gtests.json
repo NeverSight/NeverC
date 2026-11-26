@@ -671,6 +671,38 @@
       "source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
       "original_case_source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
       "gtest_body_sha256": "8e6fe3b32c6b62dc52fd9b6fc1d2943312d3a4b399f17b24ec47435722815fb7"
+    },
+    {
+      "name": "list-emplace-converting-long-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplacesWithIntegerConversionAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
+      "original_case_source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
+      "gtest_body_sha256": "42fabb61c32c2966c1cba26fe7d3363d92f118b7bd9f4b534cbb10b3a54d5926"
+    },
+    {
+      "name": "list-floating-initializer-assignment-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListAssignsDoubleInitializerAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
+      "original_case_source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
+      "gtest_body_sha256": "86090d5459834769c1467bc54c921093567ee7388a7aa7484ef167c566cce275"
+    },
+    {
+      "name": "list-floating-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListStoresDoubleElementsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
+      "original_case_source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
+      "gtest_body_sha256": "717ec0c87a59a62e81c852f35158bd49603b99c65eef94c965366e20d2dab5a4"
+    },
+    {
+      "name": "list-free-reverse-access-floating-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListReadsDoubleThroughFreeReverseAccess",
+      "expected": "accept",
+      "source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
+      "original_case_source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
+      "gtest_body_sha256": "22c272c92f435842b8da4d5e6a4b32e37fc49c47c7e9795249e10c3c6d628f64"
     }
   ],
   "negative_cases": [
@@ -705,22 +737,6 @@
       "source_sha256": "96bd4175d0306c16fd49e2f04091ff9efa5f3fc4ccf397633afb551c6f87ffe6",
       "original_case_source_sha256": "96bd4175d0306c16fd49e2f04091ff9efa5f3fc4ccf397633afb551c6f87ffe6",
       "gtest_body_sha256": "346ee52aa623d334eac389441a427e099ff1522666287a6c458ce74f57dddcb1"
-    },
-    {
-      "name": "list-floating-payload-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListFloatingPayloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
-      "original_case_source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
-      "gtest_body_sha256": "7801a40adb528c67cd764c0bd61b14ef4dd2c002e2c9ac2df494b0e1ca3719d4"
-    },
-    {
-      "name": "list-emplace-converting-long-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListEmplaceConvertingLongGuardRejected",
-      "expected": "reject",
-      "source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
-      "original_case_source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
-      "gtest_body_sha256": "5723fcd0e6d45a9c1cc86d042a0104f9a4e33d0d813b534aebaa8b042c6921ed"
     },
     {
       "name": "list-emplace-user-conversion-guard",
@@ -761,14 +777,6 @@
       "source_sha256": "1e7b710634f7713b3528863b276760322941f51c97011f66513dc8e397232827",
       "original_case_source_sha256": "1e7b710634f7713b3528863b276760322941f51c97011f66513dc8e397232827",
       "gtest_body_sha256": "f5ed7e3b002d8a7e049b0d298c25b71468bc5c186565d70d8646a21a97263530"
-    },
-    {
-      "name": "list-floating-initializer-assignment-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListFloatingInitializerAssignmentGuardRejected",
-      "expected": "reject",
-      "source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
-      "original_case_source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
-      "gtest_body_sha256": "6a9b84ea0a94520988879ca2fb27774664b9bc4886948c27105ee8197c92e46b"
     },
     {
       "name": "list-insert-volatile-pointer-range-guard",
@@ -817,14 +825,6 @@
       "source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
       "original_case_source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
       "gtest_body_sha256": "a182aa36fe8e741dbe01236603badf8cb5666781e761ec9565882945c3026b5e"
-    },
-    {
-      "name": "list-free-reverse-access-floating-payload-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListFreeReverseAccessFloatingPayloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
-      "original_case_source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
-      "gtest_body_sha256": "778b0bc39f4833cbb421637167b2910a34a5d66dc6a091d3718f56c31a1291c2"
     },
     {
       "name": "list-bool-user-proxy-payload-guard",
@@ -1517,6 +1517,38 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "list-emplace-converting-long-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values;\n  const long value = 9;\n  return values.emplace_front(value) != 9;\n}\n",
+      "source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-floating-initializer-assignment-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<double> values;\n  values = {1.5, 2.25};\n  return values.size() != 2;\n}\n",
+      "source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-floating-payload-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<double> values{3.0, 5.0};\n  values.push_back(7.0);\n  return values.back() != 7.0;\n}\n",
+      "source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-free-reverse-access-floating-payload-guard",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  const std::list<double> values{2.0, 3.0};\n  return *std::crbegin(values) == 3.0 ? 0 : 1;\n}\n",
+      "source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "list-user-defined-integer-allocator-guard",
       "expected": "reject",
       "source": "#include <list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n  LocalAllocator() noexcept = default;\n  template <class U> LocalAllocator(const LocalAllocator<U>&) noexcept {}\n};\nint main() {\n  std::list<long, LocalAllocator<long>> items{3L, 7L};\n  items.reverse();\n  return items.front() != 7L;\n}\n",
@@ -1545,22 +1577,6 @@
       "expected": "reject",
       "source": "#include <list>\nstruct Matches {\n  unsigned value;\n  bool operator()(unsigned item) const { return item == value; }\n};\nint main() {\n  std::list<unsigned> items{1u, 2u};\n  items.remove_if(Matches{2u});\n  return items.front() != 1u;\n}\n",
       "source_sha256": "96bd4175d0306c16fd49e2f04091ff9efa5f3fc4ccf397633afb551c6f87ffe6",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-floating-payload-guard",
-      "expected": "reject",
-      "source": "#include <list>\nint main() {\n  std::list<double> values{3.0, 5.0};\n  values.push_back(7.0);\n  return values.back() != 7.0;\n}\n",
-      "source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-emplace-converting-long-guard",
-      "expected": "reject",
-      "source": "#include <list>\nint main() {\n  std::list<int> values;\n  const long value = 9;\n  return values.emplace_front(value) != 9;\n}\n",
-      "source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
       "public_header": "list",
       "kind": "source-body-guard"
     },
@@ -1601,14 +1617,6 @@
       "expected": "reject",
       "source": "#include <list>\nint main() {\n  volatile short source[]{3, 4};\n  const std::list<int> values(source, source + 2);\n  return values.size() != 2;\n}\n",
       "source_sha256": "1e7b710634f7713b3528863b276760322941f51c97011f66513dc8e397232827",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-floating-initializer-assignment-guard",
-      "expected": "reject",
-      "source": "#include <list>\nint main() {\n  std::list<double> values;\n  values = {1.5, 2.25};\n  return values.size() != 2;\n}\n",
-      "source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
       "public_header": "list",
       "kind": "source-body-guard"
     },
@@ -1657,14 +1665,6 @@
       "expected": "reject",
       "source": "#include <iterator>\n#include <list>\nstruct Record { int field; };\nint main() {\n  std::list<Record> values{Record{2}};\n  return std::begin(values)->field == 2 ? 0 : 1;\n}\n",
       "source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-free-reverse-access-floating-payload-guard",
-      "expected": "reject",
-      "source": "#include <iterator>\n#include <list>\nint main() {\n  const std::list<double> values{2.0, 3.0};\n  return *std::crbegin(values) == 3.0 ? 0 : 1;\n}\n",
-      "source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
       "public_header": "list",
       "kind": "source-body-guard"
     },
@@ -1770,25 +1770,25 @@
     "TranslateTest.CoreV2ListTransparentGreaterMoveMergePreservesTiesRunAtBothOptimizations",
     "TranslateTest.CoreV2ListExplicitStandardLessOrdersLvalueMergeRunAtBothOptimizations",
     "TranslateTest.CoreV2ListSortsWithSameTypeEmptyComparator",
+    "TranslateTest.CoreV2ListEmplacesWithIntegerConversionAtBothOptimizations",
+    "TranslateTest.CoreV2ListAssignsDoubleInitializerAtBothOptimizations",
+    "TranslateTest.CoreV2ListStoresDoubleElementsAtBothOptimizations",
+    "TranslateTest.CoreV2ListReadsDoubleThroughFreeReverseAccess",
     "TranslateTest.CoreV2ListUserDefinedIntegerAllocatorGuardRejected",
     "TranslateTest.CoreV2ListIndirectCapacityGuardRejected",
     "TranslateTest.CoreV2ListRemoveIfNarrowingPredicateGuardRejected",
     "TranslateTest.CoreV2ListRemoveIfStatefulObjectGuardRejected",
-    "TranslateTest.CoreV2ListFloatingPayloadGuardRejected",
-    "TranslateTest.CoreV2ListEmplaceConvertingLongGuardRejected",
     "TranslateTest.CoreV2ListEmplaceUserConversionGuardRejected",
     "TranslateTest.CoreV2ListUserEnumPayloadGuardRejected",
     "TranslateTest.CoreV2ListAssignRangeVolatileInputGuardRejected",
     "TranslateTest.CoreV2ListAssignRangeFloatingInputGuardRejected",
     "TranslateTest.CoreV2ListConstructRangeVolatileInputGuardRejected",
-    "TranslateTest.CoreV2ListFloatingInitializerAssignmentGuardRejected",
     "TranslateTest.CoreV2ListInsertVolatilePointerRangeGuardRejected",
     "TranslateTest.CoreV2ListOrderFunctionWithObservableBodyGuardRejected",
     "TranslateTest.CoreV2ListOrderFunctionWithConvertingSignatureGuardRejected",
     "TranslateTest.CoreV2ListReverseIteratorUnsupportedPayloadGuardRejected",
     "TranslateTest.CoreV2ListIteratorNonScalarNavigationGuardRejected",
     "TranslateTest.CoreV2ListFreeAccessRecordPayloadGuardRejected",
-    "TranslateTest.CoreV2ListFreeReverseAccessFloatingPayloadGuardRejected",
     "TranslateTest.CoreV2ListBoolUserProxyPayloadGuardRejected",
     "TranslateTest.CoreV2ListStandardOrderWidthConversionGuardRejected"
   ],
@@ -1803,13 +1803,15 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9365,
   "current_python_registry_tests": 334,
-  "native_reference_selected_executions": 168,
-  "planned_generated_c23_executions": 168,
+  "native_reference_selected_executions": 176,
+  "planned_generated_c23_executions": 176,
   "native_reference_proofs": {
     "forward-list-unsigned-elements": "e774635c451a11038293800c6d4d6261f23656634dfbe20378be8993b5ff9089",
+    "linked-list-floating-elements": "502dd6fd3e2e30b842111938720b1d038f62c9c19d71bd1280f96182d362a4bb",
     "linked-list-order-and-short-payload": "ce66053be3a3ab0ab14d3f0e8a24de543892c1e9b66ecb4ae0f256c2dc666c53",
     "list-bool-payload": "547031ac6a07136ffcc275265b960d3f294e307de9c1bac6b317a8c9bbb516ad",
     "list-bulk-insertion": "739e9ac51cb5b6798e044745b77039727830c03c2451587ea038cf2c65fe21fb",
+    "list-converting-emplace": "b01fc933796ba878497fe433b0bb3877fd3bfbf0b4c4e347dc1b765fac6275ad",
     "list-count-assignment": "22ec32ea3109fc859250957c2e823445c7934e76e63140e5d2b03eec0707f641",
     "list-direct-order": "a439cc15c0c1c91df052ff3a5efe55f3d6a9b9040fde2aefa4d0e9b159dcba0c",
     "list-filter-and-order": "b5fed1a1a50d4f20a9cadf79d9d3a9af1283b952672f41881deca40e03552302",
@@ -1831,6 +1833,6 @@
     "list-typed-predicates": "0a67c2e592e69bb11710d45ffdca0a1b4ce94e1fd5110bb01b662245284feda7",
     "list-wide-payloads": "52f656e5f176ab3892cf34a611ce75f0a78ee28d1548a3c92b3eda1c10c36a11"
   },
-  "native_reference_authentication_sha256": "5d7ade3231033619026e2e662efd30e3fa3d3b08193efede7fb6720b66145f52",
-  "source_proof_sha256": "49fb3eaba9dc40534f2ae0d875a059ec04e3fdfdbad2f17ad8d2ae73be77f868"
+  "native_reference_authentication_sha256": "72a4f0d14f4fc7720eab9753952b8cbe2a7970abffc1c96154f6525f11037d4d",
+  "source_proof_sha256": "0d248c934883d54810ce5979dd56b3efc875aa1ec821f0cb386577c777f8f784"
 }

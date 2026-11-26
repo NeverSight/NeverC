@@ -1186,3 +1186,10 @@ The combined compiler passes 8,928 source requests across six 64-bit targets
 and 1592 formal tests on Linux x86-64. All 1113 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Floating-point linked-list elements and converting emplacement
+
+The combined compiler passes 8,988 source requests across six 64-bit targets
+and 1602 formal tests on Linux x86-64. All 1123 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

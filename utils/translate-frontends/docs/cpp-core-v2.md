@@ -18727,3 +18727,8 @@ and long long element types, including the corresponding unsigned types.
 The translator checks element widths and keeps each value at the pinned node
 offset. Checked list sort and merge accept empty source comparators.
 The checked less and greater objects also preserve stable forward_list order.
+
+## Floating-point linked-list elements and converting emplacement
+
+The checked default-allocator list and forward_list operations support float and double.
+List emplacement also converts supported scalar arguments through the pinned element layout.

@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_floating_and_converting_registered = cls.registered
+        cls.list_floating_and_converting_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_floating_and_converting_original = cls.adapter.restore_original_gtests(cls.list_floating_and_converting_registered,
+                                                                        cls.list_floating_and_converting_suffix)
+        cls.registered = cls.adapter.restore_list_floating_and_converting_history(cls.list_floating_and_converting_registered)
         cls.list_extended_scalar_registered = cls.registered
         cls.list_extended_scalar_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_extended_scalar_original = cls.adapter.restore_original_gtests(cls.list_extended_scalar_registered,
@@ -4303,6 +4308,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_extended_scalar_history(self.list_extended_scalar_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_extended_scalar_registered, self.list_extended_scalar_suffix + b' ')
+
+
+    def test_list_floating_and_converting_retains_published_bodies(self):
+        self.assertEqual(self.list_floating_and_converting_original + self.list_floating_and_converting_suffix, self.list_floating_and_converting_registered)
+        self.assertEqual(self.adapter.restore_list_floating_and_converting_history(self.list_floating_and_converting_original),
+                         self.list_extended_scalar_original)
+        output, evidence = self.extractor.extract(self.list_floating_and_converting_original, ['TranslateTest.CoreV2ListEmplaceConversionKeepsPositionAndUnsignedResidueRunAtBothOptimizations', 'TranslateTest.CoreV2ListEmplaceLoadsConvertingReferenceAfterAllocationRunAtBothOptimizations', 'TranslateTest.CoreV2ListFloatStableMergeRetainsTheOriginalNodesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListFloatConstructAssignAndEmplaceSameTypeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDoubleStableSortKeepsFractionalValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDoubleInitializerInsertRetainsPositionRunAtBothOptimizations', 'TranslateTest.CoreV2ListEmplaceFloatingToIntegerGuardRejected', 'TranslateTest.CoreV2ListEmplaceVolatileIntegerConversionGuardRejected', 'TranslateTest.CoreV2ListDoubleRangeDoesNotAdmitFloatConversionRejected', 'TranslateTest.CoreV2ForwardListDoubleEmplaceVolatileArgumentGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9390)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-emplace-conversion-keeps-position-and-unsigned-residue', output)
+        self.assertIn(b'list-emplace-floating-to-integer-guard', output)
+
+    def test_list_floating_and_converting_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_floating_and_converting_history(self.list_floating_and_converting_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_floating_and_converting_registered, self.list_floating_and_converting_suffix + b' ')
 
 
 if __name__ == '__main__':

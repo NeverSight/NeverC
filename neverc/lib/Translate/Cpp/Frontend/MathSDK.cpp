@@ -54204,6 +54204,14 @@ struct ForwardListLeaf {
 };
 // Only by-value fields and nonvirtual bases are traversed. Pointer edges do not
 // recurse, so a node's next pointer cannot turn this into an unbounded graph.
+bool linkedListFloatingElement(QualType Type, const ASTContext &Context) {
+  if (Type.isNull() || Type.hasLocalQualifiers()) return false;
+  if (Context.hasSameType(Type, Context.FloatTy))
+    return Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32;
+  return Context.hasSameType(Type, Context.DoubleTy) &&
+         Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
+}
+
 bool forwardListLeaves(const State &S, const SourceManager &SM,
                        const ASTContext &Context, const CXXRecordDecl *Input,
                        uint64_t Offset, unsigned Depth, unsigned &Budget,
@@ -54228,7 +54236,8 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
       if (!forwardListLeaves(S, SM, Context, Nested, Position, Depth + 1, Budget, Leaves))
         return false;
     } else {
-      if (!F->getType()->isPointerType() && !F->getType()->isIntegerType()) return false;
+      if (!F->getType()->isPointerType() && !F->getType()->isIntegerType() &&
+          !linkedListFloatingElement(F->getType(), Context)) return false;
       if (Leaves.size() == 8) return false;
       Leaves.push_back({F, Position});
     }
@@ -54236,6 +54245,7 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
   return true;
 }
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
+  if (linkedListFloatingElement(Type, Context)) return true;
   if (Context.hasSameType(Type, Context.BoolTy) ||
       Context.hasSameType(Type, Context.CharTy) ||
       Context.hasSameType(Type, Context.SignedCharTy) ||
@@ -54387,19 +54397,19 @@ bool forwardListIteratorType(const State &S, const SourceManager &SM, QualType T
   return I && I->Const == Const && I->Node.Record->getCanonicalDecl() == Node.Record->getCanonicalDecl();
 }
 
-bool forwardListIntegerInput(QualType Type, const ASTContext &Context) {
-  return Context.hasSameType(Type, Context.ShortTy) ||
-         Context.hasSameType(Type, Context.UnsignedShortTy) ||
-         forwardListElementType(Type, Context);
+bool forwardListInputType(QualType Type, QualType Element, const ASTContext &Context) {
+  if (linkedListFloatingElement(Element, Context))
+    return Context.hasSameType(Type, Element);
+  return Type->isIntegerType() && forwardListElementType(Type, Context);
 }
 bool forwardListPointerInputSignature(const CXXMethodDecl *M, unsigned First,
-                                      const ASTContext &Context, unsigned Trailing = 0) {
+    QualType Element, const ASTContext &Context, unsigned Trailing = 0) {
   if (M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation || M->getNumParams() != First + 2 + Trailing)
     return false;
   const auto Type = M->getParamDecl(First)->getType();
   if (!Type->isPointerType() || Type->getPointeeType().isVolatileQualified()) return false;
   const auto Input = Type->getPointeeType().getUnqualifiedType();
-  if (!forwardListIntegerInput(Input, Context)) return false;
+  if (!forwardListInputType(Input, Element, Context)) return false;
   const auto *Arguments = M->getTemplateSpecializationArgs();
   return Arguments && Arguments->size() == 2 && Arguments->get(0).getKind() == TemplateArgument::Type &&
          Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
@@ -54427,8 +54437,8 @@ std::optional<UtilityForwardListConstruction> forwardListConstructorSignature(
   if (const auto Owner = approvedUtilityForwardListRecord(S, SM, C->getParent(), Context)) {
     const auto Element = Owner->Node.Value->getType();
     if (C->getPrimaryTemplate()) {
-      if (forwardListPointerInputSignature(C, 0, Context) ||
-          (C->getNumParams() == 3 && forwardListPointerInputSignature(C, 0, Context, 1) &&
+      if (forwardListPointerInputSignature(C, 0, Element, Context) ||
+          (C->getNumParams() == 3 && forwardListPointerInputSignature(C, 0, Element, Context, 1) &&
            forwardListIntegerAllocatorParameter(S, SM, C->getParamDecl(2)->getType(), Element, Context)))
         return UtilityForwardListConstruction::PointerRange;
       if (forwardListIteratorInputSignature(S, SM, C, 0, Owner->Node, Context) ||
@@ -54540,7 +54550,7 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
     if (Pack[0].getKind() != TemplateArgument::Type) return std::nullopt;
     const auto Type = Pack[0].getAsType();
     const auto Input = Type.getNonReferenceType().getUnqualifiedType();
-    if (!forwardListIntegerInput(Input, Context)) return std::nullopt;
+    if (!forwardListInputType(Input, Element, Context)) return std::nullopt;
     const auto LValue = Context.getLValueReferenceType(Input);
     const auto ConstLValue = Context.getLValueReferenceType(Input.withConst());
     const bool IsValue = Context.hasSameType(Type, Input);
@@ -54563,7 +54573,7 @@ std::optional<UtilityForwardListOperation> forwardListInsertRangeSignature(
       !forwardListIteratorType(S, SM, M->getReturnType(), Owner.Node, false, Context))
     return std::nullopt;
   if (M->getPrimaryTemplate()) {
-    if (forwardListPointerInputSignature(M, 1, Context))
+    if (forwardListPointerInputSignature(M, 1, Element, Context))
       return UtilityForwardListOperation::InsertAfterPointerRange;
     if (forwardListIteratorInputSignature(S, SM, M, 1, Owner.Node, Context))
       return UtilityForwardListOperation::InsertAfterIteratorRange;
@@ -54819,7 +54829,7 @@ std::optional<UtilityForwardListOperation> forwardListMethodSignature(
       return Insert;
     if (M->getPrimaryTemplate() && !M->isConst() && M->getIdentifier() && M->getName() == "assign" &&
         M->getReturnType()->isVoidType()) {
-      if (forwardListPointerInputSignature(M, 0, Context))
+      if (forwardListPointerInputSignature(M, 0, Element, Context))
         return UtilityForwardListOperation::AssignPointerRange;
       if (forwardListIteratorInputSignature(S, SM, M, 0, Owner->Node, Context))
         return UtilityForwardListOperation::AssignIteratorRange;
@@ -55527,7 +55537,7 @@ bool forwardListInsertRangeBody(const State &S, const SourceManager &SM,
     return true;
   }
   if (Selected->getName() != "insert_after" || !Selected->getPrimaryTemplate() ||
-      !forwardListPointerInputSignature(Selected, 1, Context))
+      !forwardListPointerInputSignature(Selected, 1, Node.Value->getType(), Context))
     return false;
   const auto *Parameter = Definition->getParamDecl(1);
   const auto List = approvedUtilityInitializerListRecord(S, SM, forwardListRecordType(Parameter->getType()), Context);
@@ -55695,7 +55705,7 @@ bool forwardListRangeConstructionBody(const State &S, const SourceManager &SM,
   if (!Selected || !Selected->getIdentifier() || Selected->getName() != "insert_after" ||
       !Selected->getPrimaryTemplate() || !forwardListFunctionDeclarations(S, SM, Selected) ||
       !(Iterator ? forwardListIteratorInputSignature(S, SM, Selected, 1, Node, Context)
-                 : forwardListPointerInputSignature(Selected, 1, Context)) ||
+                 : forwardListPointerInputSignature(Selected, 1, Node.Value->getType(), Context)) ||
       Insert->getNumArgs() != 3 || !Receiver || !isa<CXXThisExpr>(Receiver->IgnoreParenImpCasts()) ||
       Selected->getParent()->getCanonicalDecl() != Definition->getParent()->getCanonicalDecl() ||
       !forwardListBoundParameter(Insert->getArg(1), Definition->getParamDecl(0), Iterator, Context) ||
@@ -56308,7 +56318,8 @@ bool listLeaves(const State &S, const SourceManager &SM,
       if (!listLeaves(S, SM, Context, Nested, Position, Depth + 1, Budget, Leaves))
         return false;
     } else {
-      if (!F->getType()->isPointerType() && !F->getType()->isIntegerType()) return false;
+      if (!F->getType()->isPointerType() && !F->getType()->isIntegerType() &&
+          !linkedListFloatingElement(F->getType(), Context)) return false;
       if (Leaves.size() == 8) return false;
       Leaves.push_back({F, Position});
     }
@@ -56317,6 +56328,7 @@ bool listLeaves(const State &S, const SourceManager &SM,
 }
 
 bool listElementType(QualType Type, const ASTContext &Context) {
+  if (linkedListFloatingElement(Type, Context)) return true;
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
   if (Context.hasSameType(Type, Context.BoolTy))
     return Context.getTypeSize(Type) == 8 && Context.getTypeAlign(Type) == 8;
@@ -56493,7 +56505,10 @@ bool listRangeInputSignature(const State &S, const SourceManager &SM,
     return false;
   if (Input->isPointerType()) {
     const auto Value = Input->getPointeeType();
-    return !Value.isVolatileQualified() && listElementType(Value.getUnqualifiedType(), Context);
+    const auto Element = Owner.Node.Value->getType();
+    return !Value.isVolatileQualified() && listElementType(Value.getUnqualifiedType(), Context) &&
+           (Context.hasSameUnqualifiedType(Value, Element) ||
+            (Value->isIntegerType() && Element->isIntegerType()));
   }
   return listIteratorType(S, SM, Input, Owner.Node, false, Context) ||
          listIteratorType(S, SM, Input, Owner.Node, true, Context);
@@ -56682,7 +56697,10 @@ std::optional<UtilityListOperation> listEmplacementSignature(
       return std::nullopt;
     const auto Type = Pack[0].getAsType();
     const auto Source = Type.getNonReferenceType();
-    if (!Context.hasSameType(Source, Element) && !Context.hasSameType(Source, Element.withConst()))
+    if (Source.isVolatileQualified() ||
+        (!(Context.hasSameType(Source, Element) || Context.hasSameType(Source, Element.withConst())) &&
+         (!Element->isIntegerType() || !Source->isIntegerType() ||
+          !listElementType(Source.getUnqualifiedType(), Context))))
       return std::nullopt;
     const auto Parameter = Type->isLValueReferenceType() ? Type : Context.getRValueReferenceType(Type);
     if (!Context.hasSameType(M->getParamDecl(Offset)->getType(), Parameter)) return std::nullopt;

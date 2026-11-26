@@ -412369,7 +412369,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListFloatingPayloadGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListStoresDoubleElementsAtBothOptimizations) {
   const auto Source = tmpFile("list-floating-payload-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 int main() {
@@ -412378,10 +412378,17 @@ int main() {
   return values.back() != 7.0;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-floating-payload-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-floating-payload-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ListEmplaceEndsReturnMutableReferencesRunAtBothOptimizations) {
@@ -412487,7 +412494,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListEmplaceConvertingLongGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListEmplacesWithIntegerConversionAtBothOptimizations) {
   const auto Source = tmpFile("list-emplace-converting-long-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 int main() {
@@ -412496,10 +412503,17 @@ int main() {
   return values.emplace_front(value) != 9;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-emplace-converting-long-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-emplace-converting-long-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ListEmplaceUserConversionGuardRejected) {
@@ -413047,7 +413061,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListFloatingInitializerAssignmentGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListAssignsDoubleInitializerAtBothOptimizations) {
   const auto Source = tmpFile("list-floating-initializer-assignment-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 int main() {
@@ -413056,10 +413070,17 @@ int main() {
   return values.size() != 2;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-floating-initializer-assignment-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-floating-initializer-assignment-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ListInsertCountValueAndEmptyRangeReturnPositionRunAtBothOptimizations) {
@@ -413636,7 +413657,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2ListFreeReverseAccessFloatingPayloadGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListReadsDoubleThroughFreeReverseAccess) {
   const auto Source = tmpFile("list-free-reverse-access-floating-payload-guard.cpp");
   writeFile(Source, R"r19containers(#include <iterator>
 #include <list>
@@ -413645,10 +413666,17 @@ int main() {
   return *std::crbegin(values) == 3.0 ? 0 : 1;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-free-reverse-access-floating-payload-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-free-reverse-access-floating-payload-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ListBoolAddressableReferencesAndNodeIdentityRunAtBothOptimizations) {
@@ -414289,6 +414317,241 @@ int main() {
     auto Run = exec(Executable.string(), {});
     EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
   }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceConversionKeepsPositionAndUnsignedResidueRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-emplace-conversion-keeps-position-and-unsigned-residue.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<unsigned short> values{7, 9};
+  auto first = values.begin();
+  auto position = values.cbegin();
+  ++position;
+  const signed char negative = -2;
+  auto added = values.emplace(position, negative);
+  unsigned short& back = values.emplace_back(65539UL);
+  auto item = values.begin();
+  return values.size() != 4 || item != first || *item++ != 7 || item != added ||
+         *item++ != 65534 || *item++ != 9 || &*item != &back || *item++ != 3 || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-emplace-conversion-keeps-position-and-unsigned-residue.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-emplace-conversion-keeps-position-and-unsigned-residue" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceLoadsConvertingReferenceAfterAllocationRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-emplace-loads-converting-reference-after-allocation.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static std::list<long long>* observed;
+static int source = 13, allocations, previous_size;
+void* operator new(Size count) {
+  if (observed) {
+    ++allocations;
+    previous_size = static_cast<int>(observed->size());
+    source = -17;
+  }
+  return ::malloc(count);
+}
+void operator delete(void* p) noexcept { ::free(p); }
+int main() {
+  std::list<long long> values{7LL};
+  observed = &values;
+  const int& input = source;
+  auto& first = values.emplace_front(input);
+  observed = nullptr;
+  return allocations != 1 || previous_size != 1 || &first != &values.front() ||
+         first != -17LL || values.size() != 2 || values.back() != 7LL;
+}
+)r19containers");
+  const auto Output = tmpFile("list-emplace-loads-converting-reference-after-allocation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-emplace-loads-converting-reference-after-allocation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceFloatingToIntegerGuardRejected) {
+  const auto Source = tmpFile("list-emplace-floating-to-integer-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values;
+  const double value = -3.25;
+  return values.emplace_back(value) != -3;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceVolatileIntegerConversionGuardRejected) {
+  const auto Source = tmpFile("list-emplace-volatile-integer-conversion-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<long> values{4L};
+  volatile short value = -3;
+  auto inserted = values.emplace(values.cbegin(), value);
+  return *inserted != -3L || values.size() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListFloatStableMergeRetainsTheOriginalNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-float-stable-merge-retains-the-original-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<float> left{-1.25f, 2.5f}, right{-1.25f, 9.75f};
+  auto first = left.cbegin();
+  auto second = right.cbegin();
+  left.merge(right);
+  auto it = left.cbegin();
+  return !right.empty() || it != first || *it++ != -1.25f || it != second ||
+         *it++ != -1.25f || *it++ != 2.5f || *it++ != 9.75f || it != left.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("list-float-stable-merge-retains-the-original-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-float-stable-merge-retains-the-original-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListFloatConstructAssignAndEmplaceSameTypeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-float-construct-assign-and-emplace-same-type.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  float input[]{1.25f, -6.5f, 3.0f};
+  std::forward_list<float> values(input, input + 3);
+  if (values.front() != 1.25f)
+    return 1;
+  values.assign(input + 1, input + 3);
+  float& first = values.emplace_front(input[0]);
+  auto it = values.cbegin();
+  return &first != &values.front() || *it++ != 1.25f || *it++ != -6.5f ||
+         *it++ != 3.0f || it != values.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-float-construct-assign-and-emplace-same-type.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-float-construct-assign-and-emplace-same-type" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDoubleStableSortKeepsFractionalValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-double-stable-sort-keeps-fractional-values.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  std::forward_list<double> values{4.125, -0.25, 4.125, -6.5};
+  auto first_equal = values.begin();
+  values.sort();
+  auto it = values.begin();
+  return *it++ != -6.5 || *it++ != -0.25 || it != first_equal ||
+         *it++ != 4.125 || *it++ != 4.125 || it != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-double-stable-sort-keeps-fractional-values.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-double-stable-sort-keeps-fractional-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDoubleInitializerInsertRetainsPositionRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-double-initializer-insert-retains-position.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  std::forward_list<double> values{1.125, 4.25};
+  auto old = values.begin();
+  auto last = values.insert_after(values.cbegin(), {2.25, 3.5});
+  auto item = values.begin();
+  return item != old || *item++ != 1.125 || *item++ != 2.25 ||
+         item != last || *item++ != 3.5 || *item++ != 4.25 || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-double-initializer-insert-retains-position.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-double-initializer-insert-retains-position" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListDoubleRangeDoesNotAdmitFloatConversionRejected) {
+  const auto Source = tmpFile("list-double-range-does-not-admit-float-conversion.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const float data[]{2.25f, 3.0f};
+  std::list<double> values(data, data + 2);
+  return values.front() != 2.25;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDoubleEmplaceVolatileArgumentGuardRejected) {
+  const auto Source = tmpFile("forward-list-double-emplace-volatile-argument-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  volatile double input = -2.25;
+  std::forward_list<double> values;
+  return values.emplace_front(input) != -2.25;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
 
