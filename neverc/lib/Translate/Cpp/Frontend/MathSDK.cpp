@@ -54236,6 +54236,9 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
   return true;
 }
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
+  if (Context.hasSameType(Type, Context.ShortTy) ||
+      Context.hasSameType(Type, Context.UnsignedShortTy))
+    return Context.getTypeSize(Type) == 16;
   if (Context.hasSameType(Type, Context.IntTy) ||
       Context.hasSameType(Type, Context.UnsignedIntTy))
     return Context.getTypeSize(Type) == 32;
