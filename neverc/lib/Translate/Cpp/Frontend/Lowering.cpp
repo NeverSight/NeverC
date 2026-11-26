@@ -27361,12 +27361,12 @@ class FunctionLowering {
     assign(Link, Following, L);
     return Following;
   }
-  Expression compareLinkedListElementEquality(Expression Left, Expression Right,
+  Expression compareLinkedListElements(StringRef Operator, Expression Left, Expression Right,
       const FunctionDecl *Comparison, SourceLocation L) {
     if (Comparison)
       return emitBinaryPredicate(A.functionAddress(Comparison, L), A.Context.getPointerType(Comparison->getType()),
                                  std::move(Left), std::move(Right), L);
-    return binary("==", std::move(Left), std::move(Right), "bool", L);
+    return binary(Operator, std::move(Left), std::move(Right), "bool", L);
   }
 
   void removeForwardListValues(Expression Place, Expression Filter, QualType PredicateType,
@@ -27375,7 +27375,7 @@ class FunctionLowering {
     const auto Matches = [&](const Expression &Node) {
       auto Value = forwardListValue(Node, Info.Value->getType().withConst(), L);
       return PredicateType.isNull()
-          ? compareLinkedListElementEquality(std::move(Value), dereference(Filter, L), Equality, L)
+          ? compareLinkedListElements("==", std::move(Value), dereference(Filter, L), Equality, L)
           : emitUnaryPredicate(Filter, PredicateType, std::move(Value), L);
     };
     auto Removed = temporary("ptr:void", L);
@@ -27615,7 +27615,8 @@ class FunctionLowering {
     assign(forwardListNext(First, L), End, L);
     jump(Done, L); label(Done, L);
   }
-  Expression compareForwardListOwners(Expression Left, Expression Right, bool Ordered, bool Invert, QualType Element, SourceLocation L) {
+  Expression compareForwardListOwners(Expression Left, Expression Right, bool Ordered, bool Invert, QualType Element, const FunctionDecl *ElementComparison,
+      SourceLocation L) {
     auto LeftNode = snapshot(forwardListMember(Left, false, L), L);
     auto RightNode = snapshot(forwardListMember(Right, false, L), L);
     auto Result = temporary("bool", L);
@@ -27625,15 +27626,26 @@ class FunctionLowering {
     label(Check, L);
     branch(combineForwardListConditions("&", cast(LeftNode, "bool", L), cast(RightNode, "bool", L), L), Compare, End, L);
     label(Compare, L);
-    branch(binary("==", forwardListValue(LeftNode, Element.withConst(), L), forwardListValue(RightNode, Element.withConst(), L), "bool", L),
-        Advance, Different, L);
+    const auto LValue = forwardListValue(LeftNode, Element.withConst(), L);
+    const auto RValue = forwardListValue(RightNode, Element.withConst(), L);
+    if (Ordered) {
+      // The elements tie when neither ordered comparison is true.
+      const auto Reverse = labelName(), Less = labelName();
+      branch(compareLinkedListElements("<", LValue, RValue, ElementComparison, L), Less, Reverse, L);
+      label(Less, L);
+      assign(Result, boolean(true, L), L);
+      jump(Done, L);
+      label(Reverse, L);
+      branch(compareLinkedListElements("<", RValue, LValue, ElementComparison, L), Different, Advance, L);
+    } else {
+      branch(compareLinkedListElements("==", LValue, RValue, ElementComparison, L), Advance, Different, L);
+    }
     label(Advance, L);
     assign(LeftNode, forwardListNext(LeftNode, L), L);
     assign(RightNode, forwardListNext(RightNode, L), L);
     jump(Check, L);
     label(Different, L);
-    assign(Result, Ordered ? binary("<", forwardListValue(LeftNode, Element.withConst(), L),
-        forwardListValue(RightNode, Element.withConst(), L), "bool", L) : boolean(false, L), L);
+    assign(Result, boolean(false, L), L);
     jump(Done, L);
     label(End, L);
     assign(Result, Ordered ? combineForwardListConditions("&", binary("==", LeftNode, A.zero(A.Context.VoidPtrTy, L), "bool", L),
@@ -27673,7 +27685,7 @@ class FunctionLowering {
           Operation == UtilityForwardListOperation::OwnerLessEqual || Operation == UtilityForwardListOperation::OwnerGreaterEqual;
       const auto Element = Proof->Function->getTemplateSpecializationArgs()->get(0).getAsType();
       return compareForwardListOwners(dereference(Operands[Swap ? 1 : 0], L), dereference(Operands[Swap ? 0 : 1], L),
-          Ordered, Invert, Element, L);
+          Ordered, Invert, Element, Proof->DefaultRecordComparison, L);
     }
     if (Operation == UtilityForwardListOperation::IteratorEqual ||
         Operation == UtilityForwardListOperation::IteratorNotEqual) {
@@ -29378,7 +29390,7 @@ class FunctionLowering {
     auto Next = snapshot(listLink(Node, false, L), L);
     const auto Element = Info.Node.Value->getType();
     auto Compare = Value ? *Value : listValue(*Previous, Element, true, L);
-    branch(compareLinkedListElementEquality(listValue(Node, Element, true, L), std::move(Compare), Equality, L),
+    branch(compareLinkedListElements("==", listValue(Node, Element, true, L), std::move(Compare), Equality, L),
            Transfer, Keep, L);
     label(Transfer, L);
     // Keep unlinked nodes alive while the value can still alias one of them.
@@ -29733,7 +29745,8 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
-  Expression compareListOwners(Expression Left, Expression Right, QualType Element, bool Ordered, bool Invert, SourceLocation L) {
+  Expression compareListOwners(Expression Left, Expression Right, QualType Element, bool Ordered, bool Invert, const FunctionDecl *ElementComparison,
+      SourceLocation L) {
     auto LEnd = snapshot(listSentinel(Left, L, true), L);
     auto REnd = snapshot(listSentinel(Right, L, true), L);
     auto LNode = temporary("ptr:void", L), RNode = temporary("ptr:void", L);
@@ -29754,9 +29767,19 @@ class FunctionLowering {
     branch(binary("!=", RNode, REnd, "bool", L), Compare, Done, L);
     label(Compare, L);
     const auto LValue = listValue(LNode, Element, true, L), RValue = listValue(RNode, Element, true, L);
-    branch(binary("==", LValue, RValue, "bool", L), Advance, Different, L);
+    if (Ordered) {
+      // The elements tie when neither ordered comparison is true.
+      const auto Reverse = labelName(), Less = labelName();
+      branch(compareLinkedListElements("<", LValue, RValue, ElementComparison, L), Less, Reverse, L);
+      label(Less, L);
+      assign(Result, boolean(true, L), L);
+      jump(Done, L);
+      label(Reverse, L);
+      branch(compareLinkedListElements("<", RValue, LValue, ElementComparison, L), Different, Advance, L);
+    } else {
+      branch(compareLinkedListElements("==", LValue, RValue, ElementComparison, L), Advance, Different, L);
+    }
     label(Different, L);
-    if (Ordered) assign(Result, binary("<", LValue, RValue, "bool", L), L);
     jump(Done, L);
     label(Advance, L);
     assign(LNode, snapshot(listLink(LNode, false, L), L), L);
@@ -29827,9 +29850,9 @@ class FunctionLowering {
           Operation == UtilityListOperation::OwnerLessEqual || Operation == UtilityListOperation::OwnerGreaterEqual;
       const auto Type = Proof->Function->getParamDecl(0)->getType()->getPointeeType();
       const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context);
-      if (!Owner) reject(L, "list comparison", "The compared integer owner layout is required.");
+      if (!Owner) reject(L, "list comparison", "The compared list owner layout is required.");
       return compareListOwners(dereference(Operands[Swap ? 1 : 0], L), dereference(Operands[Swap ? 0 : 1], L),
-          Owner->Node.Value->getType(), Ordered, Invert, L);
+          Owner->Node.Value->getType(), Ordered, Invert, Proof->DefaultRecordComparison, L);
     }
     if (!Receiver && Operation == UtilityListOperation::Swap) {
       listSwapValueStorage(dereference(Operands[0], L), dereference(Operands[1], L), L);

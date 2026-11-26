@@ -56314,15 +56314,21 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
     const auto T = Function->getParamDecl(0)->getType()->getPointeeType();
     const auto Node = forwardListReceiverNode(S, SM, forwardListRecordType(T), Context);
     if (!Node || !forwardListOperandTypes(Call, Function, 0, Context) ||
-        !Call->getCallee() || !S.owns(SM, Call->getCallee()->getExprLoc()) ||
-        !forwardListSourceGraph(S, SM, Function, Context, *Node)) return std::nullopt;
-    if ((*Comparison == UtilityForwardListOperation::OwnerEqual || *Comparison == UtilityForwardListOperation::OwnerNotEqual) &&
-        !forwardListOwnerEqualityBody(S, SM, Function, *Comparison)) return std::nullopt;
+        !Call->getCallee() || !S.owns(SM, Call->getCallee()->getExprLoc())) return std::nullopt;
+    const bool RecordOwner = Function->getPrimaryTemplate() && Node->Value->getType()->isRecordType();
+    const bool Equality = *Comparison == UtilityForwardListOperation::OwnerEqual ||
+                          *Comparison == UtilityForwardListOperation::OwnerNotEqual;
+    const FunctionDecl *ElementComparison = nullptr;
+    if (!forwardListSourceGraph(S, SM, Function, Context, *Node, false, false, nullptr,
+                               RecordOwner ? &ElementComparison : nullptr, Equality ? OO_EqualEqual : OO_Less) ||
+        (RecordOwner && !ElementComparison)) return std::nullopt;
+    if (Equality && !forwardListOwnerEqualityBody(S, SM, Function, *Comparison)) return std::nullopt;
     if ((*Comparison == UtilityForwardListOperation::OwnerLess || *Comparison == UtilityForwardListOperation::OwnerGreater ||
          *Comparison == UtilityForwardListOperation::OwnerLessEqual || *Comparison == UtilityForwardListOperation::OwnerGreaterEqual) &&
         !forwardListOwnerOrderBody(S, SM, Function, *Comparison, *Node, Context))
       return std::nullopt;
-    return UtilityForwardListCall{*Comparison, nullptr, Function, 0};
+    return UtilityForwardListCall{*Comparison, nullptr, Function, 0,
+                                  std::nullopt, std::nullopt, ElementComparison};
   }
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
   const auto Operation = forwardListMethodSignature(S, SM, Method, Context);
@@ -57661,9 +57667,15 @@ std::optional<UtilityListCall> approvedUtilityListCall(
     const auto Type = Function->getParamDecl(0)->getType()->getPointeeType();
     const auto Node = listReceiverNode(S, SM, listRecordType(Type), Context);
     if (!Node || !listOperandTypes(Call, Function, 0, Context) || !Call->getCallee() ||
-        !S.owns(SM, Call->getCallee()->getExprLoc()) || !listSourceGraph(S, SM, Function, Context, *Node))
-      return std::nullopt;
-    return UtilityListCall{*Comparison, nullptr, Function, 0};
+        !S.owns(SM, Call->getCallee()->getExprLoc())) return std::nullopt;
+    const bool RecordOwner = Node->Value->getType()->isRecordType();
+    const bool Equality = *Comparison == UtilityListOperation::OwnerEqual ||
+                          *Comparison == UtilityListOperation::OwnerNotEqual;
+    const FunctionDecl *ElementComparison = nullptr;
+    if (!listSourceGraph(S, SM, Function, Context, *Node, 0, {}, nullptr,
+                         RecordOwner ? &ElementComparison : nullptr, Equality ? OO_EqualEqual : OO_Less) ||
+        (RecordOwner && !ElementComparison)) return std::nullopt;
+    return UtilityListCall{*Comparison, nullptr, Function, 0, std::nullopt, std::nullopt, ElementComparison};
   }
   if (const auto Comparison = listComparisonSignature(S, SM, Function, Context)) {
     const auto T = Function->getParamDecl(0)->getType()->getPointeeType();
