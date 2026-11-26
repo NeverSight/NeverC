@@ -412621,7 +412621,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListUserEnumPayloadGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListStoresAFixedUnderlyingEnum) {
   const auto Source = tmpFile("list-user-enum-payload-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 enum Code : unsigned char { First = 1, Second = 2 };
@@ -412631,10 +412631,17 @@ int main() {
   return values.back() != Second;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-user-enum-payload-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-user-enum-payload-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ListCountAssignmentShrinksAndOverwritesRunAtBothOptimizations) {
@@ -414546,6 +414553,340 @@ int main() {
   volatile double input = -2.25;
   std::forward_list<double> values;
   return values.emplace_front(input) != -2.25;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListWideCharNativeSignednessAndIteratorIdentityRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-wide-char-native-signedness-and-iterator-identity.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  static_assert(sizeof(wchar_t) == 2 || sizeof(wchar_t) == 4);
+  const wchar_t high_or_negative = static_cast<wchar_t>(-2);
+  std::list<wchar_t> letters{L'\u03bb', high_or_negative};
+  auto saved = letters.begin();
+  auto* original = &*saved;
+  letters.sort();
+  const wchar_t first = high_or_negative < L'\u03bb' ? high_or_negative : L'\u03bb';
+  const wchar_t second = high_or_negative < L'\u03bb' ? L'\u03bb' : high_or_negative;
+  return letters.front() != first || letters.back() != second || &*saved != original || *saved != L'\u03bb';
+}
+)r19containers");
+  const auto Output = tmpFile("list-wide-char-native-signedness-and-iterator-identity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-wide-char-native-signedness-and-iterator-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListWideCharResizeAndMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-wide-char-resize-and-merge.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  std::forward_list<wchar_t> left{L'\u03bb'}, right{L'\u6c34'};
+  const wchar_t* old = &right.front();
+  left.merge(right);
+  left.resize(3);
+  auto value = left.cbegin();
+  if (!right.empty() || *value++ != L'\u03bb' || &*value != old || *value++ != L'\u6c34')
+    return 1;
+  return *value++ != wchar_t{} || value != left.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-wide-char-resize-and-merge.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-wide-char-resize-and-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUtf16PointerRangeWidensToUtf32RunAtBothOptimizations) {
+  const auto Source = tmpFile("list-utf16-pointer-range-widens-to-utf32.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const char16_t input[] = {u'A', u'\u03bb', u'\u6c34'};
+  std::list<char32_t> letters(input, input + 3);
+  auto value = letters.cbegin();
+  return letters.size() != 3 || *value++ != U'A' || *value++ != U'\u03bb' ||
+         *value++ != U'\u6c34' || value != letters.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("list-utf16-pointer-range-widens-to-utf32.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-utf16-pointer-range-widens-to-utf32" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUtf16KeepsStoredAddressRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-utf16-keeps-stored-address.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const char16_t first = u'\ufffd';
+  std::forward_list<char16_t> letters{u'\u03bb'};
+  auto& added = letters.emplace_front(first);
+  auto* saved = &added;
+  letters.sort();
+  auto value = letters.begin();
+  if (*value++ != u'\u03bb' || &*value != saved || *value != first)
+    return 1;
+  *value++ = u'\u6c34';
+  return value != letters.end() || added != u'\u6c34';
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-utf16-keeps-stored-address.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-utf16-keeps-stored-address" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUtf16ConstReverseIteratorRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-utf16-const-reverse-iterator.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::list<char16_t> letters{u'A', u'\u03bb'};
+  auto value = letters.crbegin();
+  if (&*value != &letters.back() || *value != u'\u03bb')
+    return 1;
+  ++value;
+  if (&*value != &letters.front() || *value != u'A')
+    return 2;
+  ++value;
+  return value != letters.crend();
+}
+)r19containers");
+  const auto Output = tmpFile("list-utf16-const-reverse-iterator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-utf16-const-reverse-iterator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUtf32SplicePreservesNodeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-utf32-splice-preserves-node.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  std::forward_list<char32_t> left{U'A'}, right{U'\U0001f642'};
+  auto saved = right.begin();
+  auto* address = &*saved;
+  left.splice_after(left.cbefore_begin(), right);
+  auto value = left.begin();
+  return !right.empty() || value != saved || &*value != address ||
+         *value++ != U'\U0001f642' || *value++ != U'A' || value != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-utf32-splice-preserves-node.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-utf32-splice-preserves-node" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUtf16VolatilePointerRangeGuardRejected) {
+  const auto Source = tmpFile("list-utf16-volatile-pointer-range-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  volatile char16_t input[] = {u'\u03bb'};
+  std::list<char16_t> letters(input, input + 1);
+  return letters.front() != u'\u03bb';
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListWideCharVolatileEmplacementGuardRejected) {
+  const auto Source = tmpFile("forward-list-wide-char-volatile-emplacement-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  volatile wchar_t input = L'\u03bb';
+  std::forward_list<wchar_t> letters;
+  return letters.emplace_front(input) != L'\u03bb';
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListFixedSignedEnumSortPreservesReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-fixed-signed-enum-sort-preserves-references.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+enum class Status : signed char { missing = -2, present = 3 };
+int main() {
+  std::list<Status> values{Status::present, Status::missing};
+  auto saved = values.begin();
+  Status* address = &*saved;
+  values.sort();
+  return values.front() != Status::missing || values.back() != Status::present ||
+         &values.back() != address || &*saved != address;
+}
+)r19containers");
+  const auto Output = tmpFile("list-fixed-signed-enum-sort-preserves-references.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-fixed-signed-enum-sort-preserves-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListFixedWideEnumRangeAndComparisonRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-fixed-wide-enum-range-and-comparison.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+enum class Tag : unsigned long long { empty = 0, high = 0x8000000000000000ULL };
+int main() {
+  const Tag input[] = {Tag::high, Tag::empty};
+  std::list<Tag> values(input, input + 2);
+  std::list<Tag> copy(values);
+  values.remove(Tag::high);
+  return values.size() != 1 || values.front() != Tag::empty ||
+         copy.size() != 2 || copy.front() != Tag::high || !(values < copy);
+}
+)r19containers");
+  const auto Output = tmpFile("list-fixed-wide-enum-range-and-comparison.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-fixed-wide-enum-range-and-comparison" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListFixedEnumRangeAndDefaultInitializationRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-fixed-enum-range-and-default-initialization.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+enum Code : unsigned short { first = 3, second = 65531 };
+int main() {
+  const Code input[] = {first, second};
+  std::forward_list<Code> values;
+  values.assign(input, input + 2);
+  values.resize(3);
+  auto item = values.cbegin();
+  return *item++ != first || *item++ != second || *item++ != Code{} || item != values.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-fixed-enum-range-and-default-initialization.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-fixed-enum-range-and-default-initialization" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListFixedEnumMergePreservesStoredAddressRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-fixed-enum-merge-preserves-stored-address.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+enum class Rank : short { lowest = -15, next = 7, highest = 61 };
+int main() {
+  std::forward_list<Rank> left{Rank::lowest, Rank::highest}, right{Rank::next};
+  Rank* original = &right.front();
+  left.merge(right);
+  auto item = left.begin();
+  return !right.empty() || *item++ != Rank::lowest || &*item != original ||
+         *item++ != Rank::next || *item++ != Rank::highest || item != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-fixed-enum-merge-preserves-stored-address.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-fixed-enum-merge-preserves-stored-address" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListFixedEnumCustomEqualityGuardRejected) {
+  const auto Source = tmpFile("list-fixed-enum-custom-equality-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+enum class Code : unsigned short { a = 1, b = 3 };
+bool operator==(Code left, Code right) {
+  return (static_cast<unsigned short>(left) & 1) ==
+         (static_cast<unsigned short>(right) & 1);
+}
+int main() {
+  std::list<Code> left{Code::a}, right{Code::b};
+  return !(left == right);
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListFixedEnumCustomDefaultOrderGuardRejected) {
+  const auto Source = tmpFile("forward-list-fixed-enum-custom-default-order-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+enum class Rank : int { lowest = -30, highest = 47 };
+bool operator<(Rank left, Rank right) {
+  return static_cast<int>(left) > static_cast<int>(right);
+}
+int main() {
+  std::forward_list<Rank> ranks{Rank::lowest, Rank::highest};
+  ranks.sort();
+  return ranks.front() != Rank::highest;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

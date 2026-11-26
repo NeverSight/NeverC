@@ -1193,3 +1193,10 @@ The combined compiler passes 8,988 source requests across six 64-bit targets
 and 1602 formal tests on Linux x86-64. All 1123 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Wide character and enum linked-list elements
+
+The combined compiler passes 9,072 source requests across six 64-bit targets
+and 1616 formal tests on Linux x86-64. All 1134 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

@@ -160,5 +160,5 @@
     "variant-guarded-get": "4fa92518aae9e483cf1788860a8239cd4ab6c79227e4ff663496454c569f7514"
   },
   "native_reference_authentication_sha256": "1b7a53858b36ae08c4d9466d047443b81a34cf2c5d9524b595bd393a20a6a284",
-  "source_proof_sha256": "0d248c934883d54810ce5979dd56b3efc875aa1ec821f0cb386577c777f8f784"
+  "source_proof_sha256": "da8b3aac87f0aed207d92d50edd4d89315a8d74ee6ede25ba694b250b15b0729"
 }

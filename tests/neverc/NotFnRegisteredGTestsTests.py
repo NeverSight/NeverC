@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_characters_and_enum_registered = cls.registered
+        cls.list_characters_and_enum_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_characters_and_enum_original = cls.adapter.restore_original_gtests(cls.list_characters_and_enum_registered,
+                                                                        cls.list_characters_and_enum_suffix)
+        cls.registered = cls.adapter.restore_list_characters_and_enum_history(cls.list_characters_and_enum_registered)
         cls.list_floating_and_converting_registered = cls.registered
         cls.list_floating_and_converting_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_floating_and_converting_original = cls.adapter.restore_original_gtests(cls.list_floating_and_converting_registered,
@@ -4326,6 +4331,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_floating_and_converting_history(self.list_floating_and_converting_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_floating_and_converting_registered, self.list_floating_and_converting_suffix + b' ')
+
+
+    def test_list_characters_and_enum_retains_published_bodies(self):
+        self.assertEqual(self.list_characters_and_enum_original + self.list_characters_and_enum_suffix, self.list_characters_and_enum_registered)
+        self.assertEqual(self.adapter.restore_list_characters_and_enum_history(self.list_characters_and_enum_original),
+                         self.list_floating_and_converting_original)
+        output, evidence = self.extractor.extract(self.list_characters_and_enum_original, ['TranslateTest.CoreV2ListWideCharNativeSignednessAndIteratorIdentityRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListWideCharResizeAndMergeRunAtBothOptimizations', 'TranslateTest.CoreV2ListUtf16PointerRangeWidensToUtf32RunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUtf16KeepsStoredAddressRunAtBothOptimizations', 'TranslateTest.CoreV2ListUtf16ConstReverseIteratorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUtf32SplicePreservesNodeRunAtBothOptimizations', 'TranslateTest.CoreV2ListFixedSignedEnumSortPreservesReferencesRunAtBothOptimizations', 'TranslateTest.CoreV2ListFixedWideEnumRangeAndComparisonRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListFixedEnumRangeAndDefaultInitializationRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListFixedEnumMergePreservesStoredAddressRunAtBothOptimizations', 'TranslateTest.CoreV2ListUtf16VolatilePointerRangeGuardRejected', 'TranslateTest.CoreV2ForwardListWideCharVolatileEmplacementGuardRejected', 'TranslateTest.CoreV2ListFixedEnumCustomEqualityGuardRejected', 'TranslateTest.CoreV2ForwardListFixedEnumCustomDefaultOrderGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9404)
+        self.assertEqual(evidence['selected_count'], 14)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-fixed-enum-merge-preserves-stored-address', output)
+        self.assertIn(b'forward-list-fixed-enum-custom-default-order-guard', output)
+
+    def test_list_characters_and_enum_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_characters_and_enum_history(self.list_characters_and_enum_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_characters_and_enum_registered, self.list_characters_and_enum_suffix + b' ')
 
 
 if __name__ == '__main__':

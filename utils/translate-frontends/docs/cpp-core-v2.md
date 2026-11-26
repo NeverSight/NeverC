@@ -18732,3 +18732,9 @@ The checked less and greater objects also preserve stable forward_list order.
 
 The checked default-allocator list and forward_list operations support float and double.
 List emplacement also converts supported scalar arguments through the pinned element layout.
+
+## Wide character and enum linked-list elements
+
+The checked default-allocator list and forward_list operations support wchar_t, char16_t,
+char32_t and enums with a fixed underlying integer type. The translator checks the
+target element width and preserves node addresses across the supported relinking operations.
