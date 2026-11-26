@@ -54224,6 +54224,13 @@ bool linkedListFixedEnumElement(QualType Type, const ASTContext &Context) {
          Context.getTypeAlign(Underlying) == Bits;
 }
 
+bool linkedListObjectPointerElement(QualType Type, const ASTContext &Context) {
+  return !Type.isNull() && !Type.hasLocalQualifiers() &&
+         utilityObjectPointer(Context, Type) &&
+         utilityScalar(Context, Type->getPointeeType().getUnqualifiedType()) &&
+         Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
+}
+
 const CXXRecordDecl *linkedListTrivialRecordElement(QualType Type,
                                                    const ASTContext &Context) {
   if (Type.isNull() || Type.hasLocalQualifiers()) return nullptr;
@@ -54240,8 +54247,13 @@ const CXXRecordDecl *linkedListTrivialRecordElement(QualType Type,
   unsigned Index = 0;
   for (const auto *Field : Record->fields()) {
     const auto FieldType = Field->getType();
-    if (Field->isBitField() || Field->hasAttrs() || FieldType.hasLocalQualifiers() ||
-        !FieldType->isBuiltinType() || !FieldType->isIntegerType()) return nullptr;
+    if (Field->isBitField() || Field->hasAttrs() || FieldType.hasLocalQualifiers())
+      return nullptr;
+    if (!(FieldType->isBuiltinType() && FieldType->isIntegerType()) &&
+        !linkedListFloatingElement(FieldType, Context) &&
+        !linkedListFixedEnumElement(FieldType, Context) &&
+        !linkedListObjectPointerElement(FieldType, Context))
+      return nullptr;
     const uint64_t Size = Context.getTypeSize(FieldType);
     const uint64_t Align = Context.getTypeAlign(FieldType);
     if ((Size != 8 && Size != 16 && Size != 32 && Size != 64) || Size != Align)
@@ -54319,13 +54331,6 @@ bool linkedListWideCharacterElement(QualType Type, const ASTContext &Context) {
     return Context.getTypeSize(Type) == 16 && Context.getTypeAlign(Type) == 16;
   return Context.hasSameType(Type, Context.Char32Ty) &&
          Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32;
-}
-
-bool linkedListObjectPointerElement(QualType Type, const ASTContext &Context) {
-  return !Type.isNull() && !Type.hasLocalQualifiers() &&
-         utilityObjectPointer(Context, Type) &&
-         utilityScalar(Context, Type->getPointeeType().getUnqualifiedType()) &&
-         Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
 }
 
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
