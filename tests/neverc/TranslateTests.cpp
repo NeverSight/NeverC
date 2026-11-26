@@ -408931,7 +408931,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListSortCustomObjectGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListSortsWithAnEmptyComparator) {
   const auto Source = tmpFile("forward-list-sort-custom-object-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 struct Greater {
@@ -408943,10 +408943,17 @@ int main() {
   return list.front() != 2;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-sort-custom-object-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-sort-custom-object-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListLongSortsNodes) {
@@ -410665,6 +410672,107 @@ int main() {
   std::forward_list<long> list;
   list.emplace_front(value);
   return list.front() != 1L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListEmptyOrderObjectEvaluatedOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-empty-order-object-evaluated-once.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Greater { bool operator()(int left, int right) const { return right < left; } };
+int calls = 0;
+Greater get_order() { ++calls; return {}; }
+int main() {
+  std::forward_list<int> values{1, 8, 8, -3};
+  auto first_eight = values.begin();
+  ++first_eight;
+  values.sort(get_order());
+  auto item = values.begin();
+  if (calls != 1 || item != first_eight || *item++ != 8 || *item++ != 8)
+    return 1;
+  return *item++ != 1 || *item++ != -3 || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-empty-order-object-evaluated-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-empty-order-object-evaluated-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListEmptyLongOrderObjectMergesEqualNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-empty-long-order-object-merges-equal-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+struct Ascending { bool operator()(long left, long right) const { return right > left; } };
+int main() {
+  const long low = sizeof(long) == 8 ? static_cast<long>(-4294967289LL) : -17L;
+  std::forward_list<long> left{low, 9L};
+  std::forward_list<long> right{low, 12L};
+  auto left_node = left.begin();
+  auto right_node = right.begin();
+  left.merge(std::move(right), Ascending{});
+  auto item = left.begin();
+  if (!right.empty() || item != left_node || *item++ != low)
+    return 1;
+  if (item != right_node || *item++ != low)
+    return 2;
+  return *item++ != 9L || *item++ != 12L || item != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-empty-long-order-object-merges-equal-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-empty-long-order-object-merges-equal-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListOrderObjectWithStateGuardRejected) {
+  const auto Source = tmpFile("forward-list-order-object-with-state-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Order {
+  bool descending;
+  bool operator()(int a, int b) const { return descending ? a > b : a < b; }
+};
+int main() {
+  std::forward_list<int> values{1, 2};
+  values.sort(Order{true});
+  return values.front() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListOrderObjectEffectGuardRejected) {
+  const auto Source = tmpFile("forward-list-order-object-effect-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int calls = 0;
+struct Order {
+  bool operator()(int a, int b) const { ++calls; return a < b; }
+};
+int main() {
+  std::forward_list<int> values{2, 1};
+  values.sort(Order{});
+  return calls == 0 || values.front() != 1;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

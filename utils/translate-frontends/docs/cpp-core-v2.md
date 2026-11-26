@@ -18691,3 +18691,10 @@ assignment and insertion, with the input stride preserved.
 The default-allocator forward_list<int> and forward_list<long> accept
 checked signed short, int and long arguments to emplace_front
 and emplace_after. The new element reads its argument after allocation.
+
+## Forward list sorting and merging with empty comparator objects
+
+Default-allocator forward_list<int> and forward_list<long> can sort
+and merge with a source-defined empty comparator whose const call operator
+directly compares two element values using < or >. The argument expression
+is evaluated once and equal nodes keep their stable order.

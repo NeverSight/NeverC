@@ -87,18 +87,17 @@
       "source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
       "original_case_source_sha256": "483615a4894170eb8debd00473fc443f2b3fda542ec839d3a4d9c4f58be9f3e2",
       "gtest_body_sha256": "d5e907584970825bb751c8f2ee83dee70fbc096bdae6fc0c2b94558177fce367"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "forward-list-sort-custom-object-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListSortCustomObjectGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSortsWithAnEmptyComparator",
+      "expected": "accept",
       "source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
       "original_case_source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
-      "gtest_body_sha256": "7f163ca4ef9f42808691e12432b5707258726ce9fc81b6537774c4be00aeced6"
+      "gtest_body_sha256": "70945962576cad09b58e176094ed88900efdce67e6176d300d7132bf4fad477b"
     }
   ],
+  "negative_cases": [],
   "source_cases": [
     {
       "name": "forward-list-default-merge-is-stable-across-owners",
@@ -190,11 +189,11 @@
     },
     {
       "name": "forward-list-sort-custom-object-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nstruct Greater {\n  bool operator()(int left, int right) const { return left > right; }\n};\nint main() {\n  std::forward_list<int> list{1, 2};\n  list.sort(Greater{});\n  return list.front() != 2;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "616f03880f99a2c2701163fe4186841aee284a03829ff168d2bff3210f31a79f",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -209,7 +208,7 @@
     "TranslateTest.CoreV2ForwardListMergesRvalueWithFunctionComparison",
     "TranslateTest.CoreV2ForwardListLongMergesNodes",
     "TranslateTest.CoreV2ForwardListLongSortsNodes",
-    "TranslateTest.CoreV2ForwardListSortCustomObjectGuardRejected"
+    "TranslateTest.CoreV2ForwardListSortsWithAnEmptyComparator"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -222,14 +221,15 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9181,
   "current_python_registry_tests": 314,
-  "native_reference_selected_executions": 22,
-  "planned_generated_c23_executions": 22,
+  "native_reference_selected_executions": 24,
+  "planned_generated_c23_executions": 24,
   "native_reference_proofs": {
+    "forward-list-empty-order-objects": "d20f7163f63898212bfbdbbfde570a459791102d215e12e7161fa2a0043c1bb0",
     "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
     "forward-list-merge": "bf98bd8e05ba20330a3d24d8a1804a7fc022387f57ab3eab174daa06d7b3694e",
     "forward-list-order-function": "110db9e05085ccab8d58ac4007605516614a6f70bec3665d380865bd08c04442",
     "forward-list-sort": "a0eaf80972e814c989310c40267fa9ac1f2b88f3624e05611cf1cd6dda84152a"
   },
-  "native_reference_authentication_sha256": "8d896e9d6562bbe63f9c0db3ee021a79e752edb8cc2fe8b7bc88cb9f886b0dc0",
-  "source_proof_sha256": "0ab9dce2fff2f3039ddb6ec2b43d6d1ed707f655777ab1b5239f9ee263d90208"
+  "native_reference_authentication_sha256": "b4ecad1414d0f40b525e6e0f8dcbce0a9303bd274b49a297dd990467a26e2b0a",
+  "source_proof_sha256": "9d42e5ad5c0a96435f23f5067a963cd87eb5e149f880cf19e9704d6e270bca07"
 }
