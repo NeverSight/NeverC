@@ -54244,8 +54244,21 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
   }
   return true;
 }
+bool linkedListWideCharacterElement(QualType Type, const ASTContext &Context) {
+  if (Type.isNull() || Type.hasLocalQualifiers()) return false;
+  if (Context.hasSameType(Type, Context.WCharTy)) {
+    const auto Bits = Context.getTypeSize(Type);
+    return (Bits == 16 || Bits == 32) && Context.getTypeAlign(Type) == Bits;
+  }
+  if (Context.hasSameType(Type, Context.Char16Ty))
+    return Context.getTypeSize(Type) == 16 && Context.getTypeAlign(Type) == 16;
+  return Context.hasSameType(Type, Context.Char32Ty) &&
+         Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32;
+}
+
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
-  if (linkedListFloatingElement(Type, Context)) return true;
+  if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context))
+    return true;
   if (Context.hasSameType(Type, Context.BoolTy) ||
       Context.hasSameType(Type, Context.CharTy) ||
       Context.hasSameType(Type, Context.SignedCharTy) ||
@@ -56328,7 +56341,8 @@ bool listLeaves(const State &S, const SourceManager &SM,
 }
 
 bool listElementType(QualType Type, const ASTContext &Context) {
-  if (linkedListFloatingElement(Type, Context)) return true;
+  if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context))
+    return true;
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
   if (Context.hasSameType(Type, Context.BoolTy))
     return Context.getTypeSize(Type) == 8 && Context.getTypeAlign(Type) == 8;
