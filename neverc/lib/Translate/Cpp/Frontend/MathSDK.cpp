@@ -54213,9 +54213,12 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
   return true;
 }
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
-  return Context.hasSameType(Type, Context.IntTy) ||
-         (Context.hasSameType(Type, Context.LongTy) &&
-          (Context.getTypeSize(Type) == 32 || Context.getTypeSize(Type) == 64));
+  if (Context.hasSameType(Type, Context.IntTy) ||
+      Context.hasSameType(Type, Context.UnsignedIntTy))
+    return Context.getTypeSize(Type) == 32;
+  return (Context.hasSameType(Type, Context.LongTy) ||
+          Context.hasSameType(Type, Context.UnsignedLongTy)) &&
+         (Context.getTypeSize(Type) == 32 || Context.getTypeSize(Type) == 64);
 }
 std::optional<UtilityForwardListNodeRecord> forwardListNode(
     const State &S, const SourceManager &SM, const CXXRecordDecl *Input,
@@ -54350,8 +54353,10 @@ bool forwardListIteratorType(const State &S, const SourceManager &SM, QualType T
   return I && I->Const == Const && I->Node.Record->getCanonicalDecl() == Node.Record->getCanonicalDecl();
 }
 
-bool forwardListSignedInput(QualType Type, const ASTContext &Context) {
-  return Context.hasSameType(Type, Context.ShortTy) || forwardListElementType(Type, Context);
+bool forwardListIntegerInput(QualType Type, const ASTContext &Context) {
+  return Context.hasSameType(Type, Context.ShortTy) ||
+         Context.hasSameType(Type, Context.UnsignedShortTy) ||
+         forwardListElementType(Type, Context);
 }
 bool forwardListPointerInputSignature(const CXXMethodDecl *M, unsigned First,
                                       const ASTContext &Context, unsigned Trailing = 0) {
@@ -54360,7 +54365,7 @@ bool forwardListPointerInputSignature(const CXXMethodDecl *M, unsigned First,
   const auto Type = M->getParamDecl(First)->getType();
   if (!Type->isPointerType() || Type->getPointeeType().isVolatileQualified()) return false;
   const auto Input = Type->getPointeeType().getUnqualifiedType();
-  if (!forwardListSignedInput(Input, Context)) return false;
+  if (!forwardListIntegerInput(Input, Context)) return false;
   const auto *Arguments = M->getTemplateSpecializationArgs();
   return Arguments && Arguments->size() == 2 && Arguments->get(0).getKind() == TemplateArgument::Type &&
          Context.hasSameType(Arguments->get(0).getAsType(), Type) &&
@@ -54501,7 +54506,7 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
     if (Pack[0].getKind() != TemplateArgument::Type) return std::nullopt;
     const auto Type = Pack[0].getAsType();
     const auto Input = Type.getNonReferenceType().getUnqualifiedType();
-    if (!forwardListSignedInput(Input, Context)) return std::nullopt;
+    if (!forwardListIntegerInput(Input, Context)) return std::nullopt;
     const auto LValue = Context.getLValueReferenceType(Input);
     const auto ConstLValue = Context.getLValueReferenceType(Input.withConst());
     const bool IsValue = Context.hasSameType(Type, Input);
