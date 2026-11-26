@@ -1,0 +1,166 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-pointer-construction-unique-range-construction-deduplicates",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionUniqueRangeConstructionDeduplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4ba02ac943eefd3eea0c1a80d7c3d871a3dbc3fd1ed7e43c3dc74b6fd8b4d3bf",
+      "original_case_source_sha256": "4ba02ac943eefd3eea0c1a80d7c3d871a3dbc3fd1ed7e43c3dc74b6fd8b4d3bf",
+      "gtest_body_sha256": "0d0ed8a9bb1c25c652aea85dd76f121a6340020bdc04931bcc232fd6fa18463b"
+    },
+    {
+      "name": "unordered-set-pointer-construction-multiset-construction-retains-duplicates",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionMultisetConstructionRetainsDuplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ea94e0f4e417c7e935a8e52786493a35a5c636c59746125f8726ec6692305497",
+      "original_case_source_sha256": "ea94e0f4e417c7e935a8e52786493a35a5c636c59746125f8726ec6692305497",
+      "gtest_body_sha256": "2aabc7e51f479200115948c25c1fcd5064ac4ac7f9c251a3dce4f540e3b807e6"
+    },
+    {
+      "name": "unordered-set-pointer-construction-empty-range-uses-empty-default-state",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionEmptyRangeUsesEmptyDefaultStateRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "03e5141c7e2672b248786d2fd300a56a46925790007ba26270b1d0a26d3ca1dc",
+      "original_case_source_sha256": "03e5141c7e2672b248786d2fd300a56a46925790007ba26270b1d0a26d3ca1dc",
+      "gtest_body_sha256": "e92200a4b146be540a0aa1fbded2e95227b860f5b7b7fa9bc64014459cd1da29"
+    },
+    {
+      "name": "unordered-set-pointer-construction-range-arguments-are-evaluated-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionRangeArgumentsAreEvaluatedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cb614a9661c73863faffe1e36f29439b62fd1b61def11a45e60043cbfb7fef07",
+      "original_case_source_sha256": "cb614a9661c73863faffe1e36f29439b62fd1b61def11a45e60043cbfb7fef07",
+      "gtest_body_sha256": "ca3fb932494299e0ae24653eedfb6400d4f170f88cee8a17ab6d66c57f5ee54c"
+    },
+    {
+      "name": "unordered-set-pointer-construction-explicit-bucket-count-and-policies",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalBucketedPointerRangeConstructionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
+      "original_case_source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
+      "gtest_body_sha256": "46ccb9c6f0674b9ed0cff7faccf23e45d484293a460e8c319fdb7d882c3dd796"
+    },
+    {
+      "name": "unordered-set-pointer-construction-converted-short-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetConvertsShortConstructionRange",
+      "expected": "accept",
+      "source_sha256": "a363e0a7e844f8834e76ab9c712fb453fe056c9fb1ee9ef28770acd7e5a5cef0",
+      "original_case_source_sha256": "a363e0a7e844f8834e76ab9c712fb453fe056c9fb1ee9ef28770acd7e5a5cef0",
+      "gtest_body_sha256": "e7c8f90857321e364929720957ef5a0fc166701ef44e2362f125704715322a01"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-pointer-construction-custom-hash-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionCustomHashRangeRejected",
+      "expected": "reject",
+      "source_sha256": "c3f7f2fbaed97381cffc6a28d5fff222cd915060d1a7cff3a83509cfe4d8d8be",
+      "original_case_source_sha256": "c3f7f2fbaed97381cffc6a28d5fff222cd915060d1a7cff3a83509cfe4d8d8be",
+      "gtest_body_sha256": "232e25c94467c0a8cec2c52c72529497b795a65307a58b64022166c0bf7ecb7b"
+    },
+    {
+      "name": "unordered-set-pointer-construction-class-iterator-range",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetPointerConstructionClassIteratorRangeRejected",
+      "expected": "reject",
+      "source_sha256": "3a44fc3358083853ec3a20054f1ad454066b42f87060c8556d0fa2878eeb4c76",
+      "original_case_source_sha256": "3a44fc3358083853ec3a20054f1ad454066b42f87060c8556d0fa2878eeb4c76",
+      "gtest_body_sha256": "d5ee1dc1b0603311ead6d781aa38426cb034760e0bfe94946bdd211453371ece"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-pointer-construction-unique-range-construction-deduplicates",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  int data[] = {4, 12, 4, -3, 20, 12};\n  const std::unordered_set<int> set(data, data + 6);\n  return set.size() != 4 || set.count(4) != 1 || set.count(-3) != 1 || set.count(20) != 1;\n}\n",
+      "source_sha256": "4ba02ac943eefd3eea0c1a80d7c3d871a3dbc3fd1ed7e43c3dc74b6fd8b4d3bf",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-pointer-construction-multiset-construction-retains-duplicates",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  const int data[] = {6, 6, 14, 6, -2};\n  std::unordered_multiset<int> bag(data, data + 5);\n  return bag.size() != 5 || bag.count(6) != 3 || bag.count(14) != 1 || bag.count(-2) != 1;\n}\n",
+      "source_sha256": "ea94e0f4e417c7e935a8e52786493a35a5c636c59746125f8726ec6692305497",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-pointer-construction-empty-range-uses-empty-default-state",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  int data[] = {1, 2};\n  std::unordered_set<int> set(data + 1, data + 1);\n  std::unordered_multiset<int> bag(data, data);\n  return !set.empty() || !bag.empty() || set.bucket_count() != 0 || bag.bucket_count() != 0;\n}\n",
+      "source_sha256": "03e5141c7e2672b248786d2fd300a56a46925790007ba26270b1d0a26d3ca1dc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-pointer-construction-range-arguments-are-evaluated-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint first_calls, last_calls;\nconst int data[] = {9, -7, 9};\nconst int* first() { ++first_calls; return data; }\nconst int* last() { ++last_calls; return data + 3; }\nint main() {\n  std::unordered_multiset<int> bag(first(), last());\n  return first_calls != 1 || last_calls != 1 || bag.size() != 3 || bag.count(9) != 2;\n}\n",
+      "source_sha256": "cb614a9661c73863faffe1e36f29439b62fd1b61def11a45e60043cbfb7fef07",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-pointer-construction-explicit-bucket-count-and-policies",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  int data[] = {1, 2};\n  std::unordered_set<int> set(data, data + 2, 31, std::hash<int>{}, std::equal_to<int>{});\n  return set.empty();\n}\n",
+      "source_sha256": "bc70e35beb412efd617a0d2743a28e1a7e756c295eea909ab73d572a24db42f2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-pointer-construction-converted-short-range",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { short data[] = {1, 2}; std::unordered_multiset<int> bag(data, data + 2); return bag.empty(); }\n",
+      "source_sha256": "a363e0a7e844f8834e76ab9c712fb453fe056c9fb1ee9ef28770acd7e5a5cef0",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-pointer-construction-custom-hash-range",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int value) const { return static_cast<unsigned long>(value); } };\nint main() { int data[] = {1, 2}; std::unordered_set<int, Hash> set(data, data + 2); return set.empty(); }\n",
+      "source_sha256": "c3f7f2fbaed97381cffc6a28d5fff222cd915060d1a7cff3a83509cfe4d8d8be",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-pointer-construction-class-iterator-range",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <list>\n#include <unordered_set>\nint main() { std::list<int> data{1, 2}; std::unordered_multiset<int> bag(data.begin(), data.end()); return bag.empty(); }\n",
+      "source_sha256": "3a44fc3358083853ec3a20054f1ad454066b42f87060c8556d0fa2878eeb4c76",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetPointerConstructionUniqueRangeConstructionDeduplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetPointerConstructionMultisetConstructionRetainsDuplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetPointerConstructionEmptyRangeUsesEmptyDefaultStateRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetPointerConstructionRangeArgumentsAreEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalBucketedPointerRangeConstructionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetConvertsShortConstructionRange",
+    "TranslateTest.CoreV2UnorderedSetPointerConstructionCustomHashRangeRejected",
+    "TranslateTest.CoreV2UnorderedSetPointerConstructionClassIteratorRangeRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "9cb7ceb21565984eeb74ecb04de81d829a7d4044e642eac1474b7bf9eb3196da",
+  "maintained_original_sha256": "83193b7e67658eecd8f05e1f39207b4c07eea93fabaf11c3fdfaa4259719510a",
+  "previous_registered_source_sha256": "47d55896696dc2a7f80d29c0cf075f63e4e251eef3aab7eacad4ef14e1358fbb",
+  "previous_maintained_original_sha256": "0a65cf385c60ea9997fa815565a9cb56465fffddae54c41396bf63707b83fc46",
+  "restorer_sha256": "1b137de76f9775cf782b8a03f898a8d4b245fdcff0831a0fd3aa4f70e38e05b6",
+  "extractor_sha256": "f0e21043e835ebefd4c32900e2cf50a9418bb185178d83a0ce0acd728e2d19c8",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8520,
+  "current_python_registry_tests": 216,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-set-converted-input": "a1e2ec71a39a7abb4a49a0250b68e068892b32b04057b3ceaf963d94a2abd4ee",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f",
+    "unordered-set-pointer-construction": "2e9180690029cb6d6117a8018ed9fcfe78668647ece9486f2bea6b464f33a74e"
+  },
+  "native_reference_authentication_sha256": "9dc61a8bcc953f831e4de5ae6434ee112952a2212eb0dbf6e33ce5beba3d97ec",
+  "source_proof_sha256": "1a91c38c889de7a76471a90306d10339a88b1aa6f2c583a23686bc27823bddfe"
+}

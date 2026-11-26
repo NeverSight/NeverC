@@ -1,0 +1,251 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-set-merge-transfers-original-addresses-without-allocating",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetMergeTransfersOriginalAddressesWithoutAllocatingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a0a33b2b4695ee8993b0be3c2b817899f39d0a7d664b7a187f240da3fb785cd",
+      "original_case_source_sha256": "6a0a33b2b4695ee8993b0be3c2b817899f39d0a7d664b7a187f240da3fb785cd",
+      "gtest_body_sha256": "ee9b393df3dc85a7ef07b5bc2acfcb325b9445d088fbcc1ebcb3c571f05bab0f"
+    },
+    {
+      "name": "ordered-map-merge-multimap-keeps-conflicts-in-the-source",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapMergeMultimapKeepsConflictsInTheSourceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cfd86f35680fb96c7c74615cac9d8b1192c0d9cba2a586bb586019e84963e001",
+      "original_case_source_sha256": "cfd86f35680fb96c7c74615cac9d8b1192c0d9cba2a586bb586019e84963e001",
+      "gtest_body_sha256": "aa359a1191e46e8deb9920320a7f0d36eb0961ca0e5e1292e60c38b4737f0dba"
+    },
+    {
+      "name": "ordered-multimap-merge-rvalue-map-appends-equivalent-node",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapMergeRvalueMapAppendsEquivalentNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "314418abbf612426c983d70b2bde39ab2025e99797e9eabedbddddd66c31ee37",
+      "original_case_source_sha256": "314418abbf612426c983d70b2bde39ab2025e99797e9eabedbddddd66c31ee37",
+      "gtest_body_sha256": "fffbe06647d266a02169caf7c4ebb1ebb9368150159755fbf818fc7345367ffb"
+    },
+    {
+      "name": "ordered-set-self-merge-preserves-its-nodes-and-size",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetSelfMergePreservesItsNodesAndSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f132b6377183eff375182b8bc81dc73a1f7ae30f7a447c7744f1748b531d0c8e",
+      "original_case_source_sha256": "f132b6377183eff375182b8bc81dc73a1f7ae30f7a447c7744f1748b531d0c8e",
+      "gtest_body_sha256": "e86b8745f2d26819f288db3f7a13632b67528d2cb39395ce84a4516c4fa376c3"
+    },
+    {
+      "name": "ordered-set-comparison-const-prefix-and-all-relations",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetComparisonConstPrefixAndAllRelationsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "35d559106042e48bca45a0f2ed5ddb3805900e2852d1494b0761f7fc464b7908",
+      "original_case_source_sha256": "35d559106042e48bca45a0f2ed5ddb3805900e2852d1494b0761f7fc464b7908",
+      "gtest_body_sha256": "a4db2da7ea13b054d437c0234ff4aab5add469587f3c09f9d8a69a76df01aa9f"
+    },
+    {
+      "name": "ordered-map-comparison-uses-mapped-values-after-equal-keys",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapComparisonUsesMappedValuesAfterEqualKeysRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b517a81c08240fe6360778bb454254651f04909534cbc7c60a2c8933e78f9b07",
+      "original_case_source_sha256": "b517a81c08240fe6360778bb454254651f04909534cbc7c60a2c8933e78f9b07",
+      "gtest_body_sha256": "c7c8cdf75f99a74f0b2d42e344db4d81cc29ce9e6e848d2600d4f8be0aaafb4c"
+    },
+    {
+      "name": "ordered-multimap-comparison-retains-equivalent-node-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapComparisonRetainsEquivalentNodeOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bf8f5f0bb7060ce0701a7717370e292fac67918e2593c5e8fd9f616a0e34098e",
+      "original_case_source_sha256": "bf8f5f0bb7060ce0701a7717370e292fac67918e2593c5e8fd9f616a0e34098e",
+      "gtest_body_sha256": "19d67a1ad1e155b8cc17060ee5f39541cad5dbb7706b5f3c6b4cce22a9ac0bd5"
+    },
+    {
+      "name": "ordered-multiset-comparison-distinguishes-duplicate-counts",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetComparisonDistinguishesDuplicateCountsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "493a49b8fb8e0dd6eb8f809087245f3496c0d4e48a0a535262bc2f358d85030a",
+      "original_case_source_sha256": "493a49b8fb8e0dd6eb8f809087245f3496c0d4e48a0a535262bc2f358d85030a",
+      "gtest_body_sha256": "81b8624ef82acde06ade74c5ecf81e4bcdb1bef02134fcf2ba0d1c566cf5faf2"
+    },
+    {
+      "name": "ordered-map-emplace-int-does-not-replace-an-existing-value",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapEmplaceIntDoesNotReplaceAnExistingValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c2fb3396a3fc69898fbced506a91852ade262c63e5ca9769052478f3df0f86c2",
+      "original_case_source_sha256": "c2fb3396a3fc69898fbced506a91852ade262c63e5ca9769052478f3df0f86c2",
+      "gtest_body_sha256": "912887c87120c89e049ac92a36a2a85bd798e96fa9e29fc09818a84d3878115c"
+    },
+    {
+      "name": "ordered-multimap-emplace-int-keeps-equivalent-insertion-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapEmplaceIntKeepsEquivalentInsertionOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cec3455990acfa9e00e151dc509c50c0e752be79ea056cf70a0649925e302547",
+      "original_case_source_sha256": "cec3455990acfa9e00e151dc509c50c0e752be79ea056cf70a0649925e302547",
+      "gtest_body_sha256": "5672237b580ad2fb89cd3b2840ab530ad001b6e4cb478a7162db0e0caa72beea"
+    },
+    {
+      "name": "ordered-map-emplace-converting-mapped-argument-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
+      "original_case_source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
+      "gtest_body_sha256": "4446d272251f6bfc284cb902ce11a05eb8f684b762ee1d252fd692214d8b14f2",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-map-merge-custom-comparator-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapMergeCustomComparatorRemainsUnsupportedRejected",
+      "expected": "reject",
+      "source_sha256": "e03e6b35362b23e4acdd1074148a3a6084193c9bab1f559ee9a7c6ba468b585e",
+      "original_case_source_sha256": "e03e6b35362b23e4acdd1074148a3a6084193c9bab1f559ee9a7c6ba468b585e",
+      "gtest_body_sha256": "c28108b125859810afe6277d226f9cf995d53094ab47916187079a6a55e7277f"
+    },
+    {
+      "name": "ordered-comparison-custom-comparator-remains-unsupported",
+      "formal_test_name": "TranslateTest.CoreV2OrderedComparisonCustomComparatorRemainsUnsupportedRejected",
+      "expected": "reject",
+      "source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
+      "original_case_source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
+      "gtest_body_sha256": "39540e122532927042d96901cab479101f9bd0dad95dda44da4d4ca641092b29"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-set-merge-transfers-original-addresses-without-allocating",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <cstddef>\n#include <cstdlib>\nstatic unsigned allocations;\nstatic unsigned releases;\nvoid *operator new(std::size_t count) {\n  ++allocations;\n  return std::malloc(count);\n}\nvoid operator delete(void *storage) noexcept {\n  if (storage) ++releases;\n  std::free(storage);\n}\nint main() {\n  {\n    std::set<int> output{4, 2};\n    std::set<int> input{1, 4, 7, 6};\n    const int *key = &*input.find(7);\n    output.merge(input);\n    if (allocations != 6 || releases || output.size() != 5 || input.size() != 1 ||\n        &*output.find(7) != key || *input.begin() != 4 || *output.begin() != 1) return 1;\n  }\n  return allocations == 6 && releases == 6 ? 0 : 2;\n}\n",
+      "source_sha256": "6a0a33b2b4695ee8993b0be3c2b817899f39d0a7d664b7a187f240da3fb785cd",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-merge-multimap-keeps-conflicts-in-the-source",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> output{{2, 20}};\n  std::multimap<int, int> input{{1, 11}, {1, 12}, {2, 99}, {3, 33}};\n  const int *transferred = &input.find(1)->second;\n  output.merge(input);\n  if (output.size() != 3 || input.size() != 2 ||\n      output.find(1)->second != 11 || &output.find(1)->second != transferred) return 1;\n  return input.find(1)->second == 12 && input.find(2)->second == 99 &&\n         output.find(2)->second == 20 && output.find(3)->second == 33 ? 0 : 2;\n}\n",
+      "source_sha256": "cfd86f35680fb96c7c74615cac9d8b1192c0d9cba2a586bb586019e84963e001",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-merge-rvalue-map-appends-equivalent-node",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::multimap<int, int> output{{2, 20}, {2, 21}};\n  std::map<int, int> input{{1, 11}, {2, 22}};\n  auto *transferred = &input.find(2)->second;\n  auto *owner = &output;\n  owner->merge(static_cast<std::map<int, int>&&>(input));\n  if (!input.empty() || input.begin() != input.end() || owner->size() != 4) return 1;\n  auto range = output.equal_range(2);\n  auto cursor = range.first;\n  if (cursor->second != 20 || (++cursor)->second != 21 || (++cursor)->second != 22) return 2;\n  if (&cursor->second != transferred || ++cursor != range.second) return 3;\n  return output.begin()->second == 11 ? 0 : 4;\n}\n",
+      "source_sha256": "314418abbf612426c983d70b2bde39ab2025e99797e9eabedbddddd66c31ee37",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-self-merge-preserves-its-nodes-and-size",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::set<int> values{3, 4, 5};\n  const int *identity = &*values.find(4);\n  values.merge(values);\n  return values.size() == 3 && &*values.find(4) == identity && *values.begin() == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "f132b6377183eff375182b8bc81dc73a1f7ae30f7a447c7744f1748b531d0c8e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-comparison-const-prefix-and-all-relations",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::set<int> prefix{-4, 2};\n  const std::set<int> longer{8, 2, -4};\n  const std::set<int> equal{2, -4};\n  const std::set<int> empty;\n  if (!(empty < prefix && prefix < longer && longer > prefix && prefix <= longer &&\n        longer >= prefix && prefix != longer)) return 1;\n  return prefix == equal && !(prefix != equal) && prefix <= equal && prefix >= equal &&\n         !(prefix < equal) && !(prefix > equal) ? 0 : 2;\n}\n",
+      "source_sha256": "35d559106042e48bca45a0f2ed5ddb3805900e2852d1494b0761f7fc464b7908",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-comparison-uses-mapped-values-after-equal-keys",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::map<int, int> left{{3, 20}, {-1, 53}};\n  const std::map<int, int> right{{3, 21}, {-1, 53}};\n  const std::map<int, int> other{{4, -200}, {-1, 53}};\n  return left != right && left < right && right < other && other > left &&\n         !(left == right) && left >= left ? 0 : 1;\n}\n",
+      "source_sha256": "b517a81c08240fe6360778bb454254651f04909534cbc7c60a2c8933e78f9b07",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-comparison-retains-equivalent-node-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nusing Table = std::multimap<int, int>;\nconst Table &read(const Table &values, int &calls) { ++calls; return values; }\nint main() {\n  const Table left{{2, 10}, {2, 11}, {-3, 99}};\n  const Table right{{2, 11}, {2, 10}, {-3, 99}};\n  int first = 0;\n  int second = 0;\n  bool compare = read(left, first) < read(right, second);\n  return compare && first == 1 && second == 1 && left != right && !(right <= left) ? 0 : 1;\n}\n",
+      "source_sha256": "bf8f5f0bb7060ce0701a7717370e292fac67918e2593c5e8fd9f616a0e34098e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multiset-comparison-distinguishes-duplicate-counts",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::multiset<int> left{3, -2, 3};\n  const std::multiset<int> right{-2, 3, 4};\n  const std::multiset<int> equal{3, 3, -2};\n  return left == equal && left != right && left < right &&\n         right >= left && !(right <= left) ? 0 : 1;\n}\n",
+      "source_sha256": "493a49b8fb8e0dd6eb8f809087245f3496c0d4e48a0a535262bc2f358d85030a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-emplace-int-does-not-replace-an-existing-value",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\n#include <cstddef>\n#include <cstdlib>\nstatic unsigned allocations;\nstatic unsigned releases;\nvoid *operator new(std::size_t bytes) {\n  ++allocations;\n  return std::malloc(bytes);\n}\nvoid operator delete(void *storage) noexcept {\n  if (storage) ++releases;\n  std::free(storage);\n}\nint main() {\n  {\n    std::map<int, int> values;\n    const int key = 3;\n    auto first = values.emplace(key, 17);\n    int mapped = 33;\n    auto *receiver = &values;\n    auto duplicate = receiver->emplace(3, mapped);\n    if (!first.second || duplicate.second || first.first != duplicate.first ||\n        duplicate.first->second != 17 || allocations != 1 || releases) return 1;\n  }\n  return allocations == 1 && releases == 1 ? 0 : 2;\n}\n",
+      "source_sha256": "c2fb3396a3fc69898fbced506a91852ade262c63e5ca9769052478f3df0f86c2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-emplace-int-keeps-equivalent-insertion-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint bounded(int value, int &calls) { ++calls; return value; }\nint main() {\n  std::multimap<int, int> values{{2, 20}, {-1, 11}};\n  int key_calls = 0;\n  int mapped_calls = 0;\n  auto added = values.emplace(bounded(2, key_calls), bounded(21, mapped_calls));\n  auto next = values.emplace(2, 22);\n  auto range = values.equal_range(2);\n  auto cursor = range.first;\n  if (key_calls != 1 || mapped_calls != 1 || cursor->second != 20) return 1;\n  if (++cursor != added || cursor->second != 21) return 2;\n  if (++cursor != next || cursor->second != 22) return 3;\n  return ++cursor == range.second && values.size() == 4 ? 0 : 4;\n}\n",
+      "source_sha256": "cec3455990acfa9e00e151dc509c50c0e752be79ea056cf70a0649925e302547",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-emplace-converting-mapped-argument-remains-unsupported",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nvoid insert(std::map<int, int> &values) {\n  short converted = 3;\n  values.emplace(1, converted);\n}\n",
+      "source_sha256": "2ff254d066bee09f58b1324777c577e4817f037d28fe06a5c8f077a67ca9d666",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-merge-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "map",
+      "source": "#include <map>\nstruct Reverse {\n  bool operator()(int a, int b) const { return a > b; }\n};\nvoid merge(std::map<int, int> &output, std::map<int, int, Reverse> &input) { output.merge(input); }\n",
+      "source_sha256": "e03e6b35362b23e4acdd1074148a3a6084193c9bab1f559ee9a7c6ba468b585e",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-comparison-custom-comparator-remains-unsupported",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Reverse {\n  bool operator()(int left, int right) const { return left > right; }\n};\nbool equal(const std::set<int, Reverse> &a, const std::set<int, Reverse> &b) { return a == b; }\n",
+      "source_sha256": "6880a32a7a610645d7be6ba2e5cb8d63ec1f2e44e29b73779488339188e532b4",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedSetMergeTransfersOriginalAddressesWithoutAllocatingRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapMergeMultimapKeepsConflictsInTheSourceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapMergeRvalueMapAppendsEquivalentNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetSelfMergePreservesItsNodesAndSizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetComparisonConstPrefixAndAllRelationsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapComparisonUsesMappedValuesAfterEqualKeysRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapComparisonRetainsEquivalentNodeOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetComparisonDistinguishesDuplicateCountsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapEmplaceIntDoesNotReplaceAnExistingValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapEmplaceIntKeepsEquivalentInsertionOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapEmplaceConvertingMappedArgumentAcceptsFunctionBody",
+    "TranslateTest.CoreV2OrderedMapMergeCustomComparatorRemainsUnsupportedRejected",
+    "TranslateTest.CoreV2OrderedComparisonCustomComparatorRemainsUnsupportedRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "87d62b8ae6d3cd26907c1cb089fed8be44025c7a302565fd0aa4e15ec2e58955",
+  "maintained_original_sha256": "8807f2fc6c47f571b715521d18d1c2f1aca6885e38b2de6260559ec67831e18d",
+  "previous_registered_source_sha256": "045b8bf332dc81fa11c018ca5e0360fe683be8e2808d3e61e89dac547bce4905",
+  "previous_maintained_original_sha256": "7f999b85b761decd27f7e336a4ae778552062c84936b797d0d834c864a31f26a",
+  "restorer_sha256": "73c16c397be46816b36decc147c8741c29c53561d29b096157fda5ae129da871",
+  "extractor_sha256": "121710eda4d6f3b44288e559f97d8822d311112c4c08f9e3a9ea4e09938dafdb",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8770,
+  "current_python_registry_tests": 258,
+  "native_reference_selected_executions": 20,
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "ordered-map-emplace": "455c13bdffa150a07ed7e139b48f0c20510a556dadc74d8481344537d5a058c1",
+    "ordered-merge-and-comparison": "f90cc9fb8817a57ef3b8bfb7c3ba12ecd7e55e185b95f3ab6bd37265264b1794"
+  },
+  "native_reference_authentication_sha256": "a8426f4bff1fa7c2ee342d56db6b358a520c8ed92494f19d293a67a8ce37484d",
+  "source_proof_sha256": "1a91c38c889de7a76471a90306d10339a88b1aa6f2c583a23686bc27823bddfe"
+}
