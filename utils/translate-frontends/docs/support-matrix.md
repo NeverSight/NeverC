@@ -1179,3 +1179,10 @@ The combined compiler passes 8,838 source requests across six 64-bit targets
 and 1577 formal tests on Linux x86-64. All 1101 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Extended scalar linked-list elements and comparators
+
+The combined compiler passes 8,928 source requests across six 64-bit targets
+and 1592 formal tests on Linux x86-64. All 1113 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

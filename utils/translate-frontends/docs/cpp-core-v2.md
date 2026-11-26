@@ -18719,3 +18719,11 @@ iterators retain base and const conversion, and checked list
 iterators support advance, distance, next and prev. Free range access
 preserves endpoints, element references, size and empty queries.
 Bool elements retain their own addresses. Pinned less and greater preserve stable ordering.
+
+## Extended scalar linked-list elements and comparators
+
+The default-allocator forward_list supports checked bool, character, short,
+and long long element types, including the corresponding unsigned types.
+The translator checks element widths and keeps each value at the pinned node
+offset. Checked list sort and merge accept empty source comparators.
+The checked less and greater objects also preserve stable forward_list order.

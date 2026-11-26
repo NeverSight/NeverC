@@ -413877,7 +413877,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2ListStandardOrderUserLookalikeGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListSortsWithSameTypeEmptyComparator) {
   const auto Source = tmpFile("list-standard-order-user-lookalike-guard.cpp");
   writeFile(Source, R"r19containers(#include <functional>
 #include <list>
@@ -413890,10 +413890,405 @@ int main() {
   return values.front() != 4;
 }
 )r19containers");
+  const auto Output = tmpFile("list-standard-order-user-lookalike-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-standard-order-user-lookalike-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmptyOrderSignedWideSortPreservesNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-empty-order-signed-wide-sort-preserves-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Descending {
+  bool operator()(long long left, long long right) const { return right < left; }
+};
+int main() {
+  const long long low = -4294967301LL;
+  std::list<long long> values{low, 7LL, 7LL, -3LL};
+  auto first_equal = values.begin();
+  ++first_equal;
+  const Descending compare{};
+  values.sort(compare);
+  auto it = values.begin();
+  return it != first_equal || *it++ != 7LL || *it++ != 7LL || *it++ != -3LL ||
+         *it++ != low || it != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-empty-order-signed-wide-sort-preserves-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-empty-order-signed-wide-sort-preserves-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmptyOrderRvalueMergeCopiesAndKeepsEqualNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-empty-order-rvalue-merge-copies-and-keeps-equal-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+struct Ascending {
+  bool operator()(short left, short right) const { return left < right; }
+};
+int main() {
+  std::list<short> left{-4, 2}, right{-4, 1};
+  auto left_first = left.begin();
+  auto right_first = right.begin();
+  left.merge(std::move(right), Ascending{});
+  auto it = left.begin();
+  return !right.empty() || it != left_first || *it++ != -4 || it != right_first ||
+         *it++ != -4 || *it++ != 1 || *it++ != 2 || it != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-empty-order-rvalue-merge-copies-and-keeps-equal-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-empty-order-rvalue-merge-copies-and-keeps-equal-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmptyOrderObservableBodyGuardRejected) {
+  const auto Source = tmpFile("list-empty-order-observable-body-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+static int calls;
+struct Compare {
+  bool operator()(int left, int right) const {
+    ++calls;
+    return left < right;
+  }
+};
+int main() {
+  std::list<int> values{4, 1};
+  values.sort(Compare{});
+  return calls == 0 || values.front() != 1;
+}
+)r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
   ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
   EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
               Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListEmptyOrderObservableCopyGuardRejected) {
+  const auto Source = tmpFile("list-empty-order-observable-copy-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+static int copies;
+struct Compare {
+  Compare() = default;
+  Compare(const Compare&) { ++copies; }
+  bool operator()(int left, int right) const { return left < right; }
+};
+int main() {
+  std::list<int> left{1}, right{2};
+  left.merge(std::move(right), Compare{});
+  return copies != 1 || left.back() != 2 || !right.empty();
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListStandardGreaterTypedStableSortRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-standard-greater-typed-stable-sort.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <functional>
+int main() {
+  std::forward_list<short> values{-3, 12, 12, -8};
+  auto first_equal = values.begin();
+  ++first_equal;
+  const std::greater<short> order{};
+  values.sort(order);
+  auto it = values.begin();
+  return it != first_equal || *it++ != 12 || *it++ != 12 || *it++ != -3 ||
+         *it++ != -8 || it != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-standard-greater-typed-stable-sort.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-standard-greater-typed-stable-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListTransparentGreaterMoveMergePreservesTiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-transparent-greater-move-merge-preserves-ties.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <functional>
+#include <utility>
+int main() {
+  const unsigned long high = static_cast<unsigned long>(-1) / 2 + 1;
+  std::forward_list<unsigned long> left{high, 7UL}, right{high, 9UL, 0UL};
+  auto left_first = left.begin();
+  auto right_first = right.begin();
+  left.merge(std::move(right), std::greater<>{});
+  auto it = left.begin();
+  return !right.empty() || it != left_first || *it++ != high || it != right_first ||
+         *it++ != high || *it++ != 9UL || *it++ != 7UL || *it++ != 0UL || it != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-transparent-greater-move-merge-preserves-ties.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-transparent-greater-move-merge-preserves-ties" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListStandardLessLvalueMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-standard-less-lvalue-merge.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <functional>
+int main() {
+  std::forward_list<long> left{-6L, 2L}, right{-3L, 4L};
+  left.merge(right, std::less<long>{});
+  auto it = left.begin();
+  return !right.empty() || *it++ != -6L || *it++ != -3L || *it++ != 2L ||
+         *it++ != 4L || it != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-standard-less-lvalue-merge.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-standard-less-lvalue-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListStandardOrderSignednessConversionGuardRejected) {
+  const auto Source = tmpFile("forward-list-standard-order-signedness-conversion-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <functional>
+int main() {
+  std::forward_list<int> values{-4, 1};
+  values.sort(std::greater<unsigned int>{});
+  return values.front() != -4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListReferenceWrappedStandardOrderGuardRejected) {
+  const auto Source = tmpFile("forward-list-reference-wrapped-standard-order-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <functional>
+int main() {
+  std::forward_list<long> values{4L, -1L, 6L};
+  std::less<long> compare{};
+  values.sort(std::ref(compare));
+  return values.front() != -1L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListShortReferenceCopyAndConvertingEmplacementRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-short-reference-copy-and-converting-emplacement.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const long input[] = {-30000L, 7L, 32760L};
+  std::forward_list<short> values(input, input + 3);
+  const short* first = &values.front();
+  auto copy = values;
+  auto inserted = values.emplace_after(values.cbegin(), input[2]);
+  if (&values.front() != first || *inserted != 32760 || copy.front() != -30000)
+    return 1;
+  *inserted = -32768;
+  auto it = values.cbegin();
+  return *it++ != -30000 || it != inserted || *it++ != -32768 ||
+         *it++ != 7 || *it++ != 32760 || it != values.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-short-reference-copy-and-converting-emplacement.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-short-reference-copy-and-converting-emplacement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUnsignedShortSortPreservesHighDuplicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-unsigned-short-sort-preserves-high-duplicates.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const unsigned short high = 65535;
+  std::forward_list<unsigned short> values{high, 2, high, 3};
+  auto first_high = values.begin();
+  values.sort();
+  auto it = values.begin();
+  return *it++ != 2 || *it++ != 3 || it != first_high ||
+         *it++ != high || *it++ != high || it != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-unsigned-short-sort-preserves-high-duplicates.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-unsigned-short-sort-preserves-high-duplicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListBoolFrontRemainsAddressableAfterSortingRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-bool-front-remains-addressable-after-sorting.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  std::forward_list<bool> values{true, false};
+  bool* first = &values.front();
+  values.insert_after(values.cbegin(), true);
+  *first = false;
+  values.sort();
+  auto it = values.begin();
+  return &*it != first || *it++ || *it++ || !*it++ || it != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-bool-front-remains-addressable-after-sorting.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-bool-front-remains-addressable-after-sorting" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCharacterTypesPreserveWidthAndOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-character-types-preserve-width-and-order.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const char edge = static_cast<char>(0xfe);
+  std::forward_list<char> plain{edge, 'A'};
+  std::forward_list<signed char> signed_values{63, -127};
+  std::forward_list<unsigned char> unsigned_values{254, 10};
+  plain.sort();
+  signed_values.sort();
+  unsigned_values.sort();
+  auto plain_item = plain.begin();
+  auto signed_item = signed_values.begin();
+  auto unsigned_item = unsigned_values.begin();
+  return *plain_item++ != (edge < 'A' ? edge : 'A') ||
+         *plain_item++ != (edge < 'A' ? 'A' : edge) || plain_item != plain.end() ||
+         *signed_item++ != -127 || *signed_item++ != 63 || signed_item != signed_values.end() ||
+         *unsigned_item++ != 10 || *unsigned_item++ != 254 || unsigned_item != unsigned_values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-character-types-preserve-width-and-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-character-types-preserve-width-and-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListLongLongMergeKeepsLargeNegativeDuplicatesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-long-long-merge-keeps-large-negative-duplicates.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const long long low = -4294967301LL;
+  std::forward_list<long long> left{low, 7LL}, right{low, 1LL};
+  auto left_first = left.begin();
+  auto right_first = right.begin();
+  left.merge(right);
+  auto it = left.begin();
+  return !right.empty() || it != left_first || *it++ != low || it != right_first ||
+         *it++ != low || *it++ != 1LL || *it++ != 7LL || it != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-long-long-merge-keeps-large-negative-duplicates.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-long-long-merge-keeps-large-negative-duplicates" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUnsignedLongLongSortKeepsTopBitRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-unsigned-long-long-sort-keeps-top-bit.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const unsigned long long upper = 9223372036854775817ULL;
+  std::forward_list<unsigned long long> values{upper, 7ULL, upper, 0ULL};
+  auto first_upper = values.begin();
+  values.sort();
+  auto it = values.begin();
+  return *it++ != 0ULL || *it++ != 7ULL || it != first_upper ||
+         *it++ != upper || *it++ != upper || it != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-unsigned-long-long-sort-keeps-top-bit.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-unsigned-long-long-sort-keeps-top-bit" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 

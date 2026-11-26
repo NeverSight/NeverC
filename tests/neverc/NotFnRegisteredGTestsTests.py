@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_extended_scalar_registered = cls.registered
+        cls.list_extended_scalar_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_extended_scalar_original = cls.adapter.restore_original_gtests(cls.list_extended_scalar_registered,
+                                                                        cls.list_extended_scalar_suffix)
+        cls.registered = cls.adapter.restore_list_extended_scalar_history(cls.list_extended_scalar_registered)
         cls.list_scalar_access_and_comparators_registered = cls.registered
         cls.list_scalar_access_and_comparators_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_scalar_access_and_comparators_original = cls.adapter.restore_original_gtests(cls.list_scalar_access_and_comparators_registered,
@@ -4280,6 +4285,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_scalar_access_and_comparators_history(self.list_scalar_access_and_comparators_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_scalar_access_and_comparators_registered, self.list_scalar_access_and_comparators_suffix + b' ')
+
+
+    def test_list_extended_scalar_retains_published_bodies(self):
+        self.assertEqual(self.list_extended_scalar_original + self.list_extended_scalar_suffix, self.list_extended_scalar_registered)
+        self.assertEqual(self.adapter.restore_list_extended_scalar_history(self.list_extended_scalar_original),
+                         self.list_scalar_access_and_comparators_original)
+        output, evidence = self.extractor.extract(self.list_extended_scalar_original, ['TranslateTest.CoreV2ListEmptyOrderSignedWideSortPreservesNodesRunAtBothOptimizations', 'TranslateTest.CoreV2ListEmptyOrderRvalueMergeCopiesAndKeepsEqualNodesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListStandardGreaterTypedStableSortRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListTransparentGreaterMoveMergePreservesTiesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListStandardLessLvalueMergeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListShortReferenceCopyAndConvertingEmplacementRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUnsignedShortSortPreservesHighDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListBoolFrontRemainsAddressableAfterSortingRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListCharacterTypesPreserveWidthAndOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListLongLongMergeKeepsLargeNegativeDuplicatesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUnsignedLongLongSortKeepsTopBitRunAtBothOptimizations', 'TranslateTest.CoreV2ListEmptyOrderObservableBodyGuardRejected', 'TranslateTest.CoreV2ListEmptyOrderObservableCopyGuardRejected', 'TranslateTest.CoreV2ForwardListStandardOrderSignednessConversionGuardRejected', 'TranslateTest.CoreV2ForwardListReferenceWrappedStandardOrderGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9380)
+        self.assertEqual(evidence['selected_count'], 15)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-bool-front-remains-addressable-after-sorting', output)
+        self.assertIn(b'forward-list-standard-order-signedness-conversion-guard', output)
+
+    def test_list_extended_scalar_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_extended_scalar_history(self.list_extended_scalar_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_extended_scalar_registered, self.list_extended_scalar_suffix + b' ')
 
 
 if __name__ == '__main__':

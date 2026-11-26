@@ -663,6 +663,14 @@
       "source_sha256": "65dffc3c444095086dc77132bf9f37c16b41b1f9b41182d638f60f000f3f92d9",
       "original_case_source_sha256": "65dffc3c444095086dc77132bf9f37c16b41b1f9b41182d638f60f000f3f92d9",
       "gtest_body_sha256": "59b1c2b44e13d2f0f050b5a4c515126e5035428d7e9500a81308c6315e658b02"
+    },
+    {
+      "name": "list-standard-order-user-lookalike-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListSortsWithSameTypeEmptyComparator",
+      "expected": "accept",
+      "source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
+      "original_case_source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
+      "gtest_body_sha256": "8e6fe3b32c6b62dc52fd9b6fc1d2943312d3a4b399f17b24ec47435722815fb7"
     }
   ],
   "negative_cases": [
@@ -833,14 +841,6 @@
       "source_sha256": "f1b8eba67c0b42bd2ff2ca4593ed2ac62402aaca98b102e2aacf2d29dfa130d8",
       "original_case_source_sha256": "f1b8eba67c0b42bd2ff2ca4593ed2ac62402aaca98b102e2aacf2d29dfa130d8",
       "gtest_body_sha256": "24127ecc135891c2704d787e2e870285d19b6f01044487944fec2c16a935aaec"
-    },
-    {
-      "name": "list-standard-order-user-lookalike-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListStandardOrderUserLookalikeGuardRejected",
-      "expected": "reject",
-      "source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
-      "original_case_source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
-      "gtest_body_sha256": "793ad76c1a07a33a1ab025730079fab8fcca80898b10dee0e26b9d4fe5263be5"
     }
   ],
   "source_cases": [
@@ -1509,6 +1509,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "list-standard-order-user-lookalike-guard",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <list>\nstruct greater {\n  bool operator()(int left, int right) const { return left > right; }\n};\nint main() {\n  std::list<int> values{1, 4};\n  values.sort(greater{});\n  return values.front() != 4;\n}\n",
+      "source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "list-user-defined-integer-allocator-guard",
       "expected": "reject",
       "source": "#include <list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n  LocalAllocator() noexcept = default;\n  template <class U> LocalAllocator(const LocalAllocator<U>&) noexcept {}\n};\nint main() {\n  std::list<long, LocalAllocator<long>> items{3L, 7L};\n  items.reverse();\n  return items.front() != 7L;\n}\n",
@@ -1675,14 +1683,6 @@
       "source_sha256": "f1b8eba67c0b42bd2ff2ca4593ed2ac62402aaca98b102e2aacf2d29dfa130d8",
       "public_header": "list",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "list-standard-order-user-lookalike-guard",
-      "expected": "reject",
-      "source": "#include <functional>\n#include <list>\nstruct greater {\n  bool operator()(int left, int right) const { return left > right; }\n};\nint main() {\n  std::list<int> values{1, 4};\n  values.sort(greater{});\n  return values.front() != 4;\n}\n",
-      "source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
-      "public_header": "list",
-      "kind": "source-body-guard"
     }
   ],
   "new_gtest_names": [
@@ -1769,6 +1769,7 @@
     "TranslateTest.CoreV2ListStandardGreaterKeepsSignedNodeOrderRunAtBothOptimizations",
     "TranslateTest.CoreV2ListTransparentGreaterMoveMergePreservesTiesRunAtBothOptimizations",
     "TranslateTest.CoreV2ListExplicitStandardLessOrdersLvalueMergeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSortsWithSameTypeEmptyComparator",
     "TranslateTest.CoreV2ListUserDefinedIntegerAllocatorGuardRejected",
     "TranslateTest.CoreV2ListIndirectCapacityGuardRejected",
     "TranslateTest.CoreV2ListRemoveIfNarrowingPredicateGuardRejected",
@@ -1789,8 +1790,7 @@
     "TranslateTest.CoreV2ListFreeAccessRecordPayloadGuardRejected",
     "TranslateTest.CoreV2ListFreeReverseAccessFloatingPayloadGuardRejected",
     "TranslateTest.CoreV2ListBoolUserProxyPayloadGuardRejected",
-    "TranslateTest.CoreV2ListStandardOrderWidthConversionGuardRejected",
-    "TranslateTest.CoreV2ListStandardOrderUserLookalikeGuardRejected"
+    "TranslateTest.CoreV2ListStandardOrderWidthConversionGuardRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -1803,9 +1803,11 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9365,
   "current_python_registry_tests": 334,
-  "native_reference_selected_executions": 166,
-  "planned_generated_c23_executions": 166,
+  "native_reference_selected_executions": 168,
+  "planned_generated_c23_executions": 168,
   "native_reference_proofs": {
+    "forward-list-unsigned-elements": "e774635c451a11038293800c6d4d6261f23656634dfbe20378be8993b5ff9089",
+    "linked-list-order-and-short-payload": "ce66053be3a3ab0ab14d3f0e8a24de543892c1e9b66ecb4ae0f256c2dc666c53",
     "list-bool-payload": "547031ac6a07136ffcc275265b960d3f294e307de9c1bac6b317a8c9bbb516ad",
     "list-bulk-insertion": "739e9ac51cb5b6798e044745b77039727830c03c2451587ea038cf2c65fe21fb",
     "list-count-assignment": "22ec32ea3109fc859250957c2e823445c7934e76e63140e5d2b03eec0707f641",
@@ -1829,6 +1831,6 @@
     "list-typed-predicates": "0a67c2e592e69bb11710d45ffdca0a1b4ce94e1fd5110bb01b662245284feda7",
     "list-wide-payloads": "52f656e5f176ab3892cf34a611ce75f0a78ee28d1548a3c92b3eda1c10c36a11"
   },
-  "native_reference_authentication_sha256": "25393d2805ccfc94d4b87a79a216bf15e93f31c2ef7b02b4a0d00ccebd6ba1ea",
-  "source_proof_sha256": "bfdb308cccd283e79ed0d466b3d03fc2eb3115ffc0f4c6a09822bf04f0330b4a"
+  "native_reference_authentication_sha256": "5d7ade3231033619026e2e662efd30e3fa3d3b08193efede7fb6720b66145f52",
+  "source_proof_sha256": "49fb3eaba9dc40534f2ae0d875a059ec04e3fdfdbad2f17ad8d2ae73be77f868"
 }
