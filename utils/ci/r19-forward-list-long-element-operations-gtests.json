@@ -31,17 +31,17 @@
       "source_sha256": "6f67d45d7839de08b1456b324dd598bc24853a852f85c5a6dddf0324a7f164a7",
       "original_case_source_sha256": "6f67d45d7839de08b1456b324dd598bc24853a852f85c5a6dddf0324a7f164a7",
       "gtest_body_sha256": "7a7153d5381c1f8189d8b2d743bf638a6f09eb1f4334e78703dfa0698c58a9f7"
+    },
+    {
+      "name": "forward-list-unsigned-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListConstructsUnsignedElements",
+      "expected": "accept",
+      "source_sha256": "dae81a1137826e0928d6cc3232845ea755124350eefae5bb9b866d48a7909c24",
+      "original_case_source_sha256": "dae81a1137826e0928d6cc3232845ea755124350eefae5bb9b866d48a7909c24",
+      "gtest_body_sha256": "93531ff745ee896aff47a65c5cd1684dfe10a5220f204c4a754716038ba4da1a"
     }
   ],
   "negative_cases": [
-    {
-      "name": "forward-list-unsigned-element-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListUnsignedElementGuardRejected",
-      "expected": "reject",
-      "source_sha256": "dae81a1137826e0928d6cc3232845ea755124350eefae5bb9b866d48a7909c24",
-      "original_case_source_sha256": "dae81a1137826e0928d6cc3232845ea755124350eefae5bb9b866d48a7909c24",
-      "gtest_body_sha256": "fd6fcb659d3209613510c8693fa1257fedce6590a710d429da5eb89b25618433"
-    },
     {
       "name": "forward-list-long-source-allocator-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListLongSourceAllocatorGuardRejected",
@@ -94,11 +94,11 @@
     },
     {
       "name": "forward-list-unsigned-element-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<unsigned> values{3u, 5u};\n  return values.front() != 3u;\n}\n",
       "source_sha256": "dae81a1137826e0928d6cc3232845ea755124350eefae5bb9b866d48a7909c24",
       "public_header": "forward_list",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-long-source-allocator-guard",
@@ -122,7 +122,7 @@
     "TranslateTest.CoreV2ForwardListLongAssignAndInsertExactRangesRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListLongSortMergeRemoveAndCompareRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListConstructsLongsFromIntPointers",
-    "TranslateTest.CoreV2ForwardListUnsignedElementGuardRejected",
+    "TranslateTest.CoreV2ForwardListConstructsUnsignedElements",
     "TranslateTest.CoreV2ForwardListLongSourceAllocatorGuardRejected",
     "TranslateTest.CoreV2ForwardListLongNarrowingOrderFunctionGuardRejected"
   ],
@@ -137,12 +137,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9236,
   "current_python_registry_tests": 322,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
     "forward-list-converting-ranges": "f379518da11a77fd7b63b6f5cf926e446bb8ca934ae68832dd1b5f0e6614d288",
-    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832"
+    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
+    "forward-list-unsigned-elements": "e774635c451a11038293800c6d4d6261f23656634dfbe20378be8993b5ff9089"
   },
-  "native_reference_authentication_sha256": "ac5f4265b2e49d1aaaaa6b6dc297db217fc4f51bb8873984637519cec77ac3a6",
-  "source_proof_sha256": "9d42e5ad5c0a96435f23f5067a963cd87eb5e149f880cf19e9704d6e270bca07"
+  "native_reference_authentication_sha256": "aa2995eff4a6a9f6f5fe31c5223585543636a6285338bb2d265108669a448a37",
+  "source_proof_sha256": "d59f36aaf9d9156c77b28a6282a2dd0e2de3316624c989cc956c4f48641024ab"
 }

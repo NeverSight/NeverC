@@ -18698,3 +18698,10 @@ Default-allocator forward_list<int> and forward_list<long> can sort
 and merge with a source-defined empty comparator whose const call operator
 directly compares two element values using < or >. The argument expression
 is evaluated once and equal nodes keep their stable order.
+
+## Forward list unsigned elements and conversions
+
+Default-allocator forward_list<unsigned> and forward_list<unsigned long>
+preserve each target's element width and unsigned order. Supported pointer
+ranges and scalar emplacement convert nonvolatile signed or unsigned short,
+int, and long inputs to the container's element type.

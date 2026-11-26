@@ -410186,7 +410186,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListUnsignedElementGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListConstructsUnsignedElements) {
   const auto Source = tmpFile("forward-list-unsigned-element-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int main() {
@@ -410194,10 +410194,17 @@ int main() {
   return values.front() != 3u;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-unsigned-element-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-unsigned-element-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListLongSourceAllocatorGuardRejected) {
@@ -410773,6 +410780,148 @@ int main() {
   std::forward_list<int> values{2, 1};
   values.sort(Order{});
   return calls == 0 || values.front() != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUnsignedSortAndOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-unsigned-sort-and-order.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  constexpr unsigned max = static_cast<unsigned>(-1);
+  std::forward_list<unsigned> values{max, 1u, 3u, max};
+  auto first_max = values.begin();
+  values.sort();
+  auto item = values.begin();
+  const std::forward_list<unsigned> expected{1u, 3u, max, max};
+  if (values != expected || *item++ != 1u || *item++ != 3u || item != first_max)
+    return 1;
+  if (*item++ != max || *item++ != max || item != values.end())
+    return 2;
+  const std::forward_list<unsigned> smaller{1u, 3u, max - 1u, max};
+  return !(smaller < values) || values < smaller;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-unsigned-sort-and-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-unsigned-sort-and-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUnsignedLongMergeAndCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-unsigned-long-merge-and-copy.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+#include <utility>
+int main() {
+  constexpr unsigned long max = static_cast<unsigned long>(-1);
+  constexpr unsigned long high = max / 2 + 1;
+  std::forward_list<unsigned long> left{1UL, high};
+  std::forward_list<unsigned long> right{high, max};
+  auto left_high = left.begin();
+  ++left_high;
+  auto right_high = right.begin();
+  left.merge(std::move(right));
+  auto item = left.begin();
+  if (!right.empty() || *item++ != 1UL || item != left_high || *item++ != high)
+    return 1;
+  if (item != right_high || *item++ != high || *item++ != max || item != left.end())
+    return 2;
+  auto copy = left;
+  left.front() = 3UL;
+  right.push_front(7UL);
+  return copy.front() != 1UL || left.front() != 3UL || right.front() != 7UL;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-unsigned-long-merge-and-copy.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-unsigned-long-merge-and-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUnsignedRangeAndEmplacementRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-unsigned-range-and-emplacement.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const short original[] = {7, -1, -2, 13};
+  std::forward_list<unsigned long> values(original + 1, original + 3);
+  auto item = values.cbegin();
+  if (*item++ != static_cast<unsigned long>(-1) ||
+      *item++ != static_cast<unsigned long>(-2) || item != values.cend())
+    return 1;
+  const unsigned short inputs[] = {9, static_cast<unsigned short>(-1), 51, 33};
+  values.assign(inputs + 1, inputs + 3);
+  auto pos = values.emplace_after(values.cbegin(), inputs[3]);
+  item = values.cbegin();
+  if (*item++ != inputs[1] || item != pos || *item++ != 33UL || *item++ != 51UL || item != values.cend())
+    return 2;
+  return 0;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-unsigned-range-and-emplacement.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-unsigned-range-and-emplacement" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListSignedOwnerFromUnsignedPointerRangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-signed-owner-from-unsigned-pointer-range.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const unsigned long inputs[] = {12UL, 2147483666UL, 19UL, 24UL};
+  std::forward_list<int> list{6, 7};
+  const auto tail = list.insert_after(list.cbegin(), inputs + 1, inputs + 3);
+  auto item = list.cbegin();
+  if (*item++ != 6 || *item++ != static_cast<int>(inputs[1]) || item != tail)
+    return 1;
+  return *item++ != 19 || *item++ != 7 || item != list.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-signed-owner-from-unsigned-pointer-range.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-signed-owner-from-unsigned-pointer-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUnsignedVolatilePointerRangeGuardRejected) {
+  const auto Source = tmpFile("forward-list-unsigned-volatile-pointer-range-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  volatile unsigned short inputs[] = {4, 13};
+  std::forward_list<unsigned> values;
+  values.assign(inputs, inputs + 2);
+  return values.front() != 4u;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

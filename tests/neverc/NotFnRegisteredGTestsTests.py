@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.forward_list_unsigned_elements_registered = cls.registered
+        cls.forward_list_unsigned_elements_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.forward_list_unsigned_elements_original = cls.adapter.restore_original_gtests(cls.forward_list_unsigned_elements_registered,
+                                                                        cls.forward_list_unsigned_elements_suffix)
+        cls.registered = cls.adapter.restore_forward_list_unsigned_elements_history(cls.forward_list_unsigned_elements_registered)
         cls.forward_list_empty_order_objects_registered = cls.registered
         cls.forward_list_empty_order_objects_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.forward_list_empty_order_objects_original = cls.adapter.restore_original_gtests(cls.forward_list_empty_order_objects_registered,
@@ -4234,6 +4239,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_forward_list_empty_order_objects_history(self.forward_list_empty_order_objects_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.forward_list_empty_order_objects_registered, self.forward_list_empty_order_objects_suffix + b' ')
+
+
+    def test_forward_list_unsigned_elements_retains_published_bodies(self):
+        self.assertEqual(self.forward_list_unsigned_elements_original + self.forward_list_unsigned_elements_suffix, self.forward_list_unsigned_elements_registered)
+        self.assertEqual(self.adapter.restore_forward_list_unsigned_elements_history(self.forward_list_unsigned_elements_original),
+                         self.forward_list_empty_order_objects_original)
+        output, evidence = self.extractor.extract(self.forward_list_unsigned_elements_original, ['TranslateTest.CoreV2ForwardListUnsignedSortAndOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUnsignedLongMergeAndCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUnsignedRangeAndEmplacementRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListSignedOwnerFromUnsignedPointerRangeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUnsignedVolatilePointerRangeGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9260)
+        self.assertEqual(evidence['selected_count'], 5)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-unsigned-sort-and-order', output)
+        self.assertIn(b'forward-list-unsigned-volatile-pointer-range-guard', output)
+
+    def test_forward_list_unsigned_elements_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_forward_list_unsigned_elements_history(self.forward_list_unsigned_elements_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.forward_list_unsigned_elements_registered, self.forward_list_unsigned_elements_suffix + b' ')
 
 
 if __name__ == '__main__':
