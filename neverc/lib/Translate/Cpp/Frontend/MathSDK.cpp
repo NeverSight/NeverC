@@ -137038,6 +137038,19 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       return std::nullopt;
     return std::pair{Array->ElementType, Array->Size};
   };
+  auto ListOwner = [&](QualType Parameter) -> std::optional<UtilityListRecord> {
+    if (!Parameter->isLValueReferenceType() || !Call->isPRValue() ||
+        !Same(Call->getType(), Function->getReturnType()) ||
+        Function->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
+      return std::nullopt;
+    const auto Type = Parameter->getPointeeType();
+    const auto *Args = Function->getTemplateSpecializationArgs();
+    if (Type.isVolatileQualified() || !Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Type) ||
+        !Args || Args->size() != 1 || Args->get(0).getKind() != TemplateArgument::Type ||
+        !Context.hasSameUnqualifiedType(Args->get(0).getAsType(), Type))
+      return std::nullopt;
+    return approvedUtilityListRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+  };
   auto OrderedOwner = [&](QualType Parameter) -> std::optional<UtilityOrderedSetStorage> {
     if (!Parameter->isLValueReferenceType()) return std::nullopt;
     const auto Type = Parameter->getPointeeType();
@@ -137057,6 +137070,18 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->getNumArgs() == 1 && Function->getNumParams() == 1) {
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
+    if (const auto Owner = ListOwner(Parameter)) {
+      const bool Const = Parameter->getPointeeType().isConstQualified();
+      const bool ConstantAccess = Name == "cbegin" || Name == "cend";
+      if (Origin->Path == "__iterator/access.h" &&
+          (Name == "begin" || Name == "end" || (ConstantAccess && Const)) &&
+          listIteratorType(S, SM, Result, Owner->Node, Const, Context))
+        return Name == "end" || Name == "cend" ? UtilityOperation::IteratorEnd : UtilityOperation::IteratorBegin;
+      if (Const && Origin->Path == "__iterator/size.h" && Name == "size" && Same(Result, Context.getSizeType()))
+        return UtilityOperation::IteratorSize;
+      if (Const && Origin->Path == "__iterator/empty.h" && Name == "empty" && Same(Result, Context.BoolTy))
+        return UtilityOperation::IteratorEmpty;
+    }
     if (const auto Owner = OrderedOwner(Parameter); Owner && Call->isPRValue() && Same(Call->getType(), Result)) {
       if (Origin->Path == "__iterator/access.h" &&
           (Name == "begin" || Name == "cbegin" || Name == "end" || Name == "cend") &&
@@ -137102,6 +137127,13 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
       Call->isPRValue()) {
     auto Parameter = Function->getParamDecl(0)->getType();
     auto Result = Function->getReturnType();
+    if (const auto Owner = ListOwner(Parameter)) {
+      const bool Const = Parameter->getPointeeType().isConstQualified();
+      const auto Reverse = ReverseFor(Result, true);
+      if ((Const || (Name == "rbegin" || Name == "rend")) && Reverse && !Reverse->ListElementType.isNull() &&
+          listIteratorType(S, SM, Reverse->IteratorType, Owner->Node, Const, Context))
+        return Name == "rend" || Name == "crend" ? UtilityOperation::IteratorREnd : UtilityOperation::IteratorRBegin;
+    }
     if (const auto Owner = OrderedOwner(Parameter); Owner && Same(Call->getType(), Result)) {
       const auto Reverse = ReverseFor(Result, true);
       if (Reverse && !Reverse->OrderedElementType.isNull() &&

@@ -18315,6 +18315,20 @@ class FunctionLowering {
         assign(orderedIteratorCursor(Output, L), std::move(Node), L);
         return Output;
       }
+      if (approvedUtilityListRecord(A.S, A.Sources, Source->getType()->getAsCXXRecordDecl(), A.Context)) {
+        const auto Parameter = Call->getDirectCallee()->getParamDecl(0)->getType();
+        auto Place = dereference(argument(Source, Parameter), L);
+        if (Operation == UtilityOperation::IteratorSize || Operation == UtilityOperation::IteratorEmpty) {
+          auto Size = listMember(std::move(Place), "nct_list_size", L);
+          if (Operation == UtilityOperation::IteratorSize) return Size;
+          return binary("==", std::move(Size), A.zero(A.Context.getSizeType(), L), "bool", L);
+        }
+        auto Node = listIteratorBoundary(std::move(Place), Operation == UtilityOperation::IteratorEnd,
+                                         Parameter->getPointeeType().isConstQualified(), L);
+        auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        assign(listIteratorMember(Output, L), std::move(Node), L);
+        return Output;
+      }
       const auto *Native = A.Context.getAsConstantArrayType(Source->getType());
       auto Array = ArrayFor(Source->getType());
       if (!Native && !Array)
@@ -18498,6 +18512,17 @@ class FunctionLowering {
         assign(reverseIteratorSlot(Output, Reverse->Legacy, *Reverse, L), Node, L);
         assign(reverseIteratorSlot(Output, Reverse->Current, *Reverse, L), std::move(Node), L);
         return Output;
+      }
+      if (!Member &&
+          approvedUtilityListRecord(A.S, A.Sources, Source->getType()->getAsCXXRecordDecl(), A.Context)) {
+        const auto Reverse = ReverseFor(Call->getType(), true);
+        if (!Reverse || Reverse->ListElementType.isNull())
+          reject(L, "list reverse access", "The checked list reverse iterator layout is required.");
+        const auto Parameter = Call->getDirectCallee()->getParamDecl(0)->getType();
+        auto Place = dereference(argument(Source, Parameter), L);
+        auto Base = listIteratorBoundary(std::move(Place), Operation == UtilityOperation::IteratorRBegin,
+                                         Parameter->getPointeeType().isConstQualified(), L);
+        return ReverseValue(std::move(Base), *Reverse);
       }
       const auto *Native =
           Source ? A.Context.getAsConstantArrayType(Source->getType())
@@ -29032,6 +29057,10 @@ class FunctionLowering {
     return cast(address(listMember(std::move(Place), "nct_list_prev", L),
         ReadOnly ? A.Context.VoidPtrTy.withConst() : A.Context.VoidPtrTy, L), "ptr:void", L);
   }
+  Expression listIteratorBoundary(Expression Place, bool AtEnd, bool ReadOnly, SourceLocation L) {
+    return AtEnd ? listSentinel(std::move(Place), L, ReadOnly) :
+        listMember(std::move(Place), "nct_list_next", L);
+  }
   Expression listIteratorMember(Expression Place, SourceLocation L) {
     return Expression{{"kind", "member"}, {"type", "ptr:void"}, {"name", "nct_list_iterator"},
         {"args", json::Array{std::move(Place)}}, {"loc", A.loc(L)}};
@@ -29858,15 +29887,15 @@ class FunctionLowering {
       const auto Reverse = approvedUtilityReverseIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context, true);
       if (!Reverse || Reverse->ListElementType.isNull())
         reject(L, "list reverse iterator", "The selected pinned reverse iterator layout is required.");
-      auto Cursor = Operation == UtilityListOperation::ReverseBegin
-          ? listSentinel(Place, L, Method->isConst()) : listMember(Place, "nct_list_next", L);
+      auto Cursor = listIteratorBoundary(Place, Operation == UtilityListOperation::ReverseBegin,
+                                         Method->isConst(), L);
       auto Result = objectTemporary(Type, L);
       initializeReverseIteratorSlots(Result, std::move(Cursor), *Reverse, L);
       return Result;
     }
     if (Operation == UtilityListOperation::Begin || Operation == UtilityListOperation::End)
-      return listIterator(Method->getReturnType(), Operation == UtilityListOperation::Begin
-          ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L, Method->isConst()), L), L);
+      return listIterator(Method->getReturnType(), snapshot(listIteratorBoundary(
+          Place, Operation == UtilityListOperation::End, Method->isConst(), L), L), L);
     if (Operation == UtilityListOperation::Front || Operation == UtilityListOperation::Back)
       return listValue(snapshot(listMember(Place,
           Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Element, Method->isConst(), L);
