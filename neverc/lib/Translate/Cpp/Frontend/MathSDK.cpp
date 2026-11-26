@@ -56160,8 +56160,10 @@ bool listElementType(QualType Type, const ASTContext &Context) {
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
   if (Context.hasSameType(Type, Context.IntTy) || Context.hasSameType(Type, Context.UnsignedIntTy))
     return Context.getTypeSize(Type) == 32;
-  return (Context.hasSameType(Type, Context.LongTy) || Context.hasSameType(Type, Context.UnsignedLongTy)) &&
-      (Context.getTypeSize(Type) == 32 || Context.getTypeSize(Type) == 64);
+  if (Context.hasSameType(Type, Context.LongTy) || Context.hasSameType(Type, Context.UnsignedLongTy))
+    return Context.getTypeSize(Type) == 32 || Context.getTypeSize(Type) == 64;
+  return (Context.hasSameType(Type, Context.LongLongTy) || Context.hasSameType(Type, Context.UnsignedLongLongTy)) &&
+      Context.getTypeSize(Type) == 64;
 }
 
 bool listElementVoidArguments(const ClassTemplateSpecializationDecl *R,
