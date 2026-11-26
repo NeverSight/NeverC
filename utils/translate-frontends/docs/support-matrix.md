@@ -1200,3 +1200,10 @@ The combined compiler passes 9,072 source requests across six 64-bit targets
 and 1616 formal tests on Linux x86-64. All 1134 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Linked-list object pointer elements
+
+The combined compiler passes 9,108 source requests across six 64-bit targets
+and 1622 formal tests on Linux x86-64. All 1138 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

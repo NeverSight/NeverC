@@ -18738,3 +18738,9 @@ List emplacement also converts supported scalar arguments through the pinned ele
 The checked default-allocator list and forward_list operations support wchar_t, char16_t,
 char32_t and enums with a fixed underlying integer type. The translator checks the
 target element width and preserves node addresses across the supported relinking operations.
+
+## Linked-list object pointer elements
+
+The checked default-allocator list and forward_list operations support pointers to ordinary
+scalar objects, including const pointees. Pointer ranges copy pointer values and relinking
+operations preserve the addresses of stored elements.

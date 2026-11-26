@@ -3654,9 +3654,6 @@ R19_LIST_CHARACTERS_AND_ENUM_ADDITIONS_SIZE = 15801
 def restore_list_characters_and_enum_history(source):
     """Remove the exact combined layout fixture batch from the registry."""
     sha = lambda data: hashlib.sha256(data).hexdigest()
-    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
-        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
-        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     digest = sha(source)
     assert digest in {R19_LIST_CHARACTERS_AND_ENUM_REGISTERED_SHA256, R19_LIST_CHARACTERS_AND_ENUM_MAINTAINED_SHA256}
     stop = R19_LIST_CHARACTERS_AND_ENUM_MAINTAINED_SIZE
@@ -3667,6 +3664,33 @@ def restore_list_characters_and_enum_history(source):
     restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ListStoresAFixedUnderlyingEnum) {\n  const auto Source = tmpFile("list-user-enum-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nenum Code : unsigned char { First = 1, Second = 2 };\nint main() {\n  std::list<Code> values{First};\n  values.push_back(Second);\n  return values.back() != Second;\n}\n)r19containers");\n  const auto Output = tmpFile("list-user-enum-payload-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-user-enum-payload-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListUserEnumPayloadGuardRejected) {\n  const auto Source = tmpFile("list-user-enum-payload-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nenum Code : unsigned char { First = 1, Second = 2 };\nint main() {\n  std::list<Code> values{First};\n  values.push_back(Second);\n  return values.back() != Second;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     prior = (R19_LIST_CHARACTERS_AND_ENUM_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_CHARACTERS_AND_ENUM_REGISTERED_SHA256
              else R19_LIST_CHARACTERS_AND_ENUM_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_OBJECT_POINTERS_REGISTERED_SHA256 = 'a85c839074da01d91fd0955bd1fc2010a1c90a9cf491aa2904ee501ec6c3f16b'
+R19_LIST_OBJECT_POINTERS_MAINTAINED_SHA256 = '82c3e8fd35854a8dfabd9dbea578d1002a66362ec90cca0468e4182f043e3b99'
+R19_LIST_OBJECT_POINTERS_PREVIOUS_REGISTERED_SHA256 = '40a6e51e56ec10e097a204aee78ac79ac4e0cae95816d88177cf680f8f15df92'
+R19_LIST_OBJECT_POINTERS_PREVIOUS_MAINTAINED_SHA256 = '1f14c4e4c5ec608d657e66cb6cde6e196af14b69f7351276915636e7ab3441a7'
+R19_LIST_OBJECT_POINTERS_ADDITIONS_SHA256 = 'fa4218ba7a83487d4e3450e38f485c5f8806ac7315a491d1642b4ff5ce93aaa4'
+R19_LIST_OBJECT_POINTERS_MAINTAINED_SIZE = 21230568
+R19_LIST_OBJECT_POINTERS_ADDITIONS_SIZE = 6507
+
+
+def restore_list_object_pointers_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
+        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    digest = sha(source)
+    assert digest in {R19_LIST_OBJECT_POINTERS_REGISTERED_SHA256, R19_LIST_OBJECT_POINTERS_MAINTAINED_SHA256}
+    stop = R19_LIST_OBJECT_POINTERS_MAINTAINED_SIZE
+    start = stop - R19_LIST_OBJECT_POINTERS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_OBJECT_POINTERS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LIST_OBJECT_POINTERS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_OBJECT_POINTERS_REGISTERED_SHA256
+             else R19_LIST_OBJECT_POINTERS_PREVIOUS_MAINTAINED_SHA256)
     assert sha(restored) == prior
     return restored
 
@@ -3713,12 +3737,12 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
-    if source_digest == '3f6c0b5661919a84d706119f2773fb8a3a495c94b54ba6ab043f909e283facd4':
+    if source_digest == 'b7d2b8ae6534fa7ac5a71ff2cb775e2fde892ef5562ff3661f838b1c4d286b1d':
         return source
-    if source_digest == 'b5468655f513cf535846ec09b47f4752d3722bd1d767ef9070f8d6c2e27257e5':
+    if source_digest == '0c7710d1bd1567d11cffdb25e7d50aa93c1e6f9dc5b3364da38d34c99b7052a7':
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         current = source[:-len(additions)]
-        assert digest(current) == '3f6c0b5661919a84d706119f2773fb8a3a495c94b54ba6ab043f909e283facd4'
+        assert digest(current) == 'b7d2b8ae6534fa7ac5a71ff2cb775e2fde892ef5562ff3661f838b1c4d286b1d'
         return current
     if source_digest == R19_VARIANT_SCALAR_MAINTAINED_SHA256:
         return source
@@ -4503,6 +4527,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LIST_CHARACTERS_AND_ENUM_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_OBJECT_POINTERS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_OBJECT_POINTERS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_OBJECT_POINTERS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

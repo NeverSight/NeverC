@@ -414895,6 +414895,149 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2ListObjectPointerSortingKeepsStoredSlotRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-object-pointer-sorting-keeps-stored-slot.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  int data[] = {11, 22, 33};
+  std::list<int*> pointers{&data[2], &data[0]};
+  auto old = pointers.begin();
+  int** slot = &*old;
+  pointers.sort();
+  if (pointers.front() != &data[0] || pointers.back() != &data[2] || &pointers.back() != slot)
+    return 1;
+  *old = &data[1];
+  **old = 42;
+  return pointers.back() != &data[1] || data[1] != 42 || data[2] != 33;
+}
+)r19containers");
+  const auto Output = tmpFile("list-object-pointer-sorting-keeps-stored-slot.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-object-pointer-sorting-keeps-stored-slot" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListConstPointeeRangeCopiesPointerValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-const-pointee-range-copies-pointer-values.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const char data[] = {'a', 'b', 'c'};
+  const char* input[] = {data, data + 2};
+  std::list<const char*> pointers(input, input + 2);
+  input[0] = data + 1;
+  const auto& observed = pointers;
+  auto cursor = observed.crbegin();
+  if (*cursor != &data[2] || **cursor != 'c')
+    return 1;
+  ++cursor;
+  return *cursor != &data[0] || **cursor != 'a' || pointers.size() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-const-pointee-range-copies-pointer-values.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-const-pointee-range-copies-pointer-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListConstPointerAssignmentAndNullResizeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-const-pointer-assignment-and-null-resize.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const int data[] = {5, 8};
+  const int* const input[] = {data, data + 1};
+  std::forward_list<const int*> pointers;
+  pointers.assign(input, input + 2);
+  pointers.resize(3);
+  auto item = pointers.cbegin();
+  return *item++ != &data[0] || *item++ != &data[1] || *item++ != nullptr || item != pointers.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-const-pointer-assignment-and-null-resize.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-const-pointer-assignment-and-null-resize" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListPointerMergeKeepsNodeAndPointeeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-pointer-merge-keeps-node-and-pointee.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  double data[] = {1.5, 2.5, 3.5};
+  std::forward_list<double*> left{data, data + 2}, right{data + 1};
+  auto saved = right.begin();
+  double** slot = &*saved;
+  left.merge(right);
+  auto item = left.begin();
+  if (!right.empty() || *item++ != data || item != saved || &*item != slot)
+    return 1;
+  **item++ = 4.25;
+  return *item++ != data + 2 || item != left.end() || data[1] != 4.25;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-pointer-merge-keeps-node-and-pointee.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-pointer-merge-keeps-node-and-pointee" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListFunctionPointerElementGuardRejected) {
+  const auto Source = tmpFile("list-function-pointer-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int identity(int value) { return value; }
+int main() {
+  std::list<int (*)(int)> callbacks{&identity};
+  return callbacks.front()(7) != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListVolatilePointeeElementGuardRejected) {
+  const auto Source = tmpFile("forward-list-volatile-pointee-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  volatile int value = 5;
+  std::forward_list<volatile int*> pointers{&value};
+  return **pointers.begin() != 5;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

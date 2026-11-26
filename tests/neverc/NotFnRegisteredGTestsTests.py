@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_object_pointers_registered = cls.registered
+        cls.list_object_pointers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_object_pointers_original = cls.adapter.restore_original_gtests(cls.list_object_pointers_registered,
+                                                                        cls.list_object_pointers_suffix)
+        cls.registered = cls.adapter.restore_list_object_pointers_history(cls.list_object_pointers_registered)
         cls.list_characters_and_enum_registered = cls.registered
         cls.list_characters_and_enum_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_characters_and_enum_original = cls.adapter.restore_original_gtests(cls.list_characters_and_enum_registered,
@@ -4349,6 +4354,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_characters_and_enum_history(self.list_characters_and_enum_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_characters_and_enum_registered, self.list_characters_and_enum_suffix + b' ')
+
+
+    def test_list_object_pointers_retains_published_bodies(self):
+        self.assertEqual(self.list_object_pointers_original + self.list_object_pointers_suffix, self.list_object_pointers_registered)
+        self.assertEqual(self.adapter.restore_list_object_pointers_history(self.list_object_pointers_original),
+                         self.list_characters_and_enum_original)
+        output, evidence = self.extractor.extract(self.list_object_pointers_original, ['TranslateTest.CoreV2ListObjectPointerSortingKeepsStoredSlotRunAtBothOptimizations', 'TranslateTest.CoreV2ListConstPointeeRangeCopiesPointerValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListConstPointerAssignmentAndNullResizeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPointerMergeKeepsNodeAndPointeeRunAtBothOptimizations', 'TranslateTest.CoreV2ListFunctionPointerElementGuardRejected', 'TranslateTest.CoreV2ForwardListVolatilePointeeElementGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9410)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-object-pointer-sorting-keeps-stored-slot', output)
+        self.assertIn(b'forward-list-volatile-pointee-element-guard', output)
+
+    def test_list_object_pointers_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_object_pointers_history(self.list_object_pointers_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_object_pointers_registered, self.list_object_pointers_suffix + b' ')
 
 
 if __name__ == '__main__':
