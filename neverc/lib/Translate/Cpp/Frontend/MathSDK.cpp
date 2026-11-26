@@ -54231,32 +54231,43 @@ bool linkedListObjectPointerElement(QualType Type, const ASTContext &Context) {
          Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
 }
 
-const CXXRecordDecl *linkedListTrivialRecordElement(QualType Type,
-                                                   const ASTContext &Context) {
-  if (Type.isNull() || Type.hasLocalQualifiers()) return nullptr;
+struct LinkedListRecordSource {
+  const State &Program;
+  const SourceManager &Sources;
+};
+
+const CXXRecordDecl *linkedListTrivialRecordLayout(
+    QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
+    unsigned Depth, unsigned &RemainingFields) {
+  if (Type.isNull() || Type.hasLocalQualifiers() || Depth == 16) return nullptr;
   const auto *Record = Type->getAsCXXRecordDecl();
   Record = Record ? Record->getDefinition() : nullptr;
   if (!Record || Record->isInvalidDecl() || Record->isDependentContext() ||
       Record->isUnion() || Record->getNumBases() || !Record->isStandardLayout() ||
       !Record->isAggregate() || !Record->isTrivial() || Record->field_empty())
     return nullptr;
-  const auto &Layout = Context.getASTRecordLayout(Record);
-  if (Layout.getAlignment().getQuantity() > 8 || Layout.getFieldCount() > 4096)
+  if (Source && !Source->Program.owns(Source->Sources, Record->getLocation()))
     return nullptr;
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  if (Layout.getAlignment().getQuantity() > 8 || Layout.getFieldCount() > RemainingFields)
+    return nullptr;
+  RemainingFields -= Layout.getFieldCount();
   uint64_t Offset = 0, Alignment = 8;
   unsigned Index = 0;
   for (const auto *Field : Record->fields()) {
     const auto FieldType = Field->getType();
     if (Field->isBitField() || Field->hasAttrs() || FieldType.hasLocalQualifiers())
       return nullptr;
-    if (!(FieldType->isBuiltinType() && FieldType->isIntegerType()) &&
-        !linkedListFloatingElement(FieldType, Context) &&
-        !linkedListFixedEnumElement(FieldType, Context) &&
-        !linkedListObjectPointerElement(FieldType, Context))
+    const bool Scalar = (FieldType->isBuiltinType() && FieldType->isIntegerType()) ||
+                        linkedListFloatingElement(FieldType, Context) ||
+                        linkedListFixedEnumElement(FieldType, Context) ||
+                        linkedListObjectPointerElement(FieldType, Context);
+    if (!Scalar && !linkedListTrivialRecordLayout(
+                       FieldType, Context, Source, Depth + 1, RemainingFields))
       return nullptr;
     const uint64_t Size = Context.getTypeSize(FieldType);
     const uint64_t Align = Context.getTypeAlign(FieldType);
-    if ((Size != 8 && Size != 16 && Size != 32 && Size != 64) || Size != Align)
+    if (Scalar && ((Size != 8 && Size != 16 && Size != 32 && Size != 64) || Size != Align))
       return nullptr;
     Offset = llvm::alignTo(Offset, Align);
     if (Layout.getFieldOffset(Index++) != Offset) return nullptr;
@@ -54268,6 +54279,12 @@ const CXXRecordDecl *linkedListTrivialRecordElement(QualType Type,
   return Record;
 }
 
+const CXXRecordDecl *linkedListTrivialRecordElement(
+    QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source = nullptr) {
+  unsigned RemainingFields = 4096;
+  return linkedListTrivialRecordLayout(Type, Context, Source, 0, RemainingFields);
+}
+
 bool linkedListTrivialElementMember(const State &S, const SourceManager &SM,
                                     const ASTContext &Context, QualType Element,
                                     const FunctionDecl *Function) {
@@ -54276,8 +54293,9 @@ bool linkedListTrivialElementMember(const State &S, const SourceManager &SM,
       !(isa<CXXConstructorDecl>(Method) || isa<CXXDestructorDecl>(Method) ||
         Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()))
     return false;
-  const auto *Record = linkedListTrivialRecordElement(Element, Context);
-  return Record && S.owns(SM, Record->getLocation()) &&
+  const LinkedListRecordSource Source{S, SM};
+  const auto *Record = linkedListTrivialRecordElement(Element, Context, &Source);
+  return Record &&
          Record->getCanonicalDecl() == Method->getParent()->getCanonicalDecl();
 }
 
@@ -54302,8 +54320,9 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
     if (!forwardListPinned(S, SM, F) || F->isBitField() || ++Budget > 4096) return false;
     const auto Position = Offset + Layout.getFieldOffset(Index++);
     if (F->getName() == "__value_") {
-      if (const auto *Record = linkedListTrivialRecordElement(F->getType(), Context)) {
-        if (!S.owns(SM, Record->getLocation()) || Leaves.size() == 8) return false;
+      const LinkedListRecordSource Source{S, SM};
+      if (linkedListTrivialRecordElement(F->getType(), Context, &Source)) {
+        if (Leaves.size() == 8) return false;
         Leaves.push_back({F, Position});
         continue;
       }
@@ -56412,8 +56431,9 @@ bool listLeaves(const State &S, const SourceManager &SM,
     if (!listPinned(S, SM, F) || F->isBitField() || ++Budget > 4096) return false;
     const auto Position = Offset + Layout.getFieldOffset(Index++);
     if (F->getName() == "__value_") {
-      if (const auto *Record = linkedListTrivialRecordElement(F->getType(), Context)) {
-        if (!S.owns(SM, Record->getLocation()) || Leaves.size() == 8) return false;
+      const LinkedListRecordSource Source{S, SM};
+      if (linkedListTrivialRecordElement(F->getType(), Context, &Source)) {
+        if (Leaves.size() == 8) return false;
         Leaves.push_back({F, Position});
         continue;
       }
