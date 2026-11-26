@@ -29295,7 +29295,7 @@ class FunctionLowering {
     destroyListStorage(Removed, Info.Node, L);
   }
 
-  void listMergeValueStorage(Expression Place, Expression Source, QualType Element, SourceLocation L) {
+  void listMergeValueStorage(Expression Place, Expression Source, QualType Element, bool Descending, SourceLocation L) {
     auto End = snapshot(listSentinel(Place, L), L);
     auto SourceEnd = snapshot(listSentinel(Source, L), L);
     const auto Start = labelName(), CheckLeft = labelName(), CheckRight = labelName();
@@ -29310,7 +29310,7 @@ class FunctionLowering {
     label(CheckRight, L);
     branch(binary("!=", Right, SourceEnd, "bool", L), Compare, Done, L);
     label(Compare, L);
-    branch(binary("<", listValue(Right, Element, true, L), listValue(Left, Element, true, L), "bool", L), Move, Keep, L);
+    branch(binary(Descending ? ">" : "<", listValue(Right, Element, true, L), listValue(Left, Element, true, L), "bool", L), Move, Keep, L);
     label(Move, L);
     auto Node = snapshot(Right, L);
     assign(Right, snapshot(listLink(Node, false, L), L), L);
@@ -29324,7 +29324,7 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
-  void listSortValueStorage(Expression Place, QualType Element, SourceLocation L) {
+  void listSortValueStorage(Expression Place, QualType Element, bool Descending, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     auto Length = snapshot(listMember(Place, "nct_list_size", L), L);
     auto End = snapshot(listSentinel(Place, L), L);
@@ -29360,7 +29360,7 @@ class FunctionLowering {
     label(CheckLeft, L);
     branch(binary("!=", LeftCount, quantity(0, Size, L), "bool", L), Compare, Advance, L);
     label(Compare, L);
-    branch(binary("<", listValue(Right, Element, true, L), listValue(Left, Element, true, L), "bool", L), Transfer, Keep, L);
+    branch(binary(Descending ? ">" : "<", listValue(Right, Element, true, L), listValue(Left, Element, true, L), "bool", L), Transfer, Keep, L);
     label(Transfer, L);
     auto Node = snapshot(Right, L);
     auto After = snapshot(listLink(Node, false, L), L);
@@ -29795,11 +29795,11 @@ class FunctionLowering {
       return Expression{};
     }
     if (Operation == UtilityListOperation::Merge) {
-      listMergeValueStorage(Place, dereference(Operands[0], L), Element, L);
+      listMergeValueStorage(Place, dereference(Operands[0], L), Element, Proof->Descending.value_or(false), L);
       return Expression{};
     }
     if (Operation == UtilityListOperation::Sort) {
-      listSortValueStorage(Place, Element, L);
+      listSortValueStorage(Place, Element, Proof->Descending.value_or(false), L);
       return Expression{};
     }
     if (Operation == UtilityListOperation::Swap) {
