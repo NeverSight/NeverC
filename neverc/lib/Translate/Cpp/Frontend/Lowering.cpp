@@ -27139,10 +27139,14 @@ class FunctionLowering {
       return cast(std::move(Value), type(Element, L), L);
     return Value;
   }
+  Expression linkedListNodeSize(const CXXRecordDecl *Node, SourceLocation L) {
+    return quantity(A.Context.getTypeSizeInChars(A.Context.getRecordType(Node)).getQuantity(),
+                    type(A.Context.getSizeType(), L), L);
+  }
   Expression forwardListCreateNode(Expression ValueReference, Expression Next,
       const UtilityForwardListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
-        quantity(16, "u64", L), L), "ptr:void", L), L);
+        linkedListNodeSize(Info.Record, L), L), "ptr:void", L), L);
     assign(forwardListNext(Node, L), std::move(Next), L);
     // The SDK constructs the element after allocation, so an aliased reference
     // observes any source-defined allocation callback before this load.
@@ -27236,7 +27240,7 @@ class FunctionLowering {
   void forwardListReleaseNode(Expression Node, const UtilityForwardListNodeRecord &Info,
                               SourceLocation L) {
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
-        quantity(16, "u64", L), L);
+        linkedListNodeSize(Info.Record, L), L);
   }
   void releaseForwardListChain(Expression Head, Expression End, const UtilityForwardListNodeRecord &Info,
                                SourceLocation L) {
@@ -29100,7 +29104,7 @@ class FunctionLowering {
   }
   Expression listCreateNode(Expression ValueReference, const UtilityListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
-        quantity(24, type(A.Context.getSizeType(), L), L), L), "ptr:void", L), L);
+        linkedListNodeSize(Info.Record, L), L), "ptr:void", L), L);
     initializeZero(listLink(Node, true, L), A.Context.VoidPtrTy, L);
     initializeZero(listLink(Node, false, L), A.Context.VoidPtrTy, L);
     const auto Element = Info.Value->getType();
@@ -29112,7 +29116,7 @@ class FunctionLowering {
   }
   void listReleaseNode(Expression Node, const UtilityListNodeRecord &Info, SourceLocation L) {
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
-        quantity(24, type(A.Context.getSizeType(), L), L), L);
+        linkedListNodeSize(Info.Record, L), L);
   }
   void listInsertNode(Expression Place, Expression Position, Expression Node, SourceLocation L) {
     auto Prev = snapshot(listLink(Position, true, L), L);

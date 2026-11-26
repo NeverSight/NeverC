@@ -54234,7 +54234,7 @@ const CXXRecordDecl *linkedListTrivialRecordElement(QualType Type,
       !Record->isAggregate() || !Record->isTrivial() || Record->field_empty())
     return nullptr;
   const auto &Layout = Context.getASTRecordLayout(Record);
-  if (Layout.getSize().getQuantity() > 8 || Layout.getAlignment().getQuantity() > 8)
+  if (Layout.getAlignment().getQuantity() > 8 || Layout.getFieldCount() > 4096)
     return nullptr;
   uint64_t Offset = 0, Alignment = 8;
   unsigned Index = 0;
@@ -54367,7 +54367,10 @@ std::optional<UtilityForwardListNodeRecord> forwardListNode(
   if (!forwardListLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 2)
     return std::nullopt;
   const auto &Layout = Context.getASTRecordLayout(R);
-  if (Layout.getSize().getQuantity() != 16 || Layout.getAlignment().getQuantity() != 8 ||
+  const uint64_t PayloadSize = Context.getTypeSizeInChars(Element).getQuantity();
+  const uint64_t NodeSize = llvm::alignTo(8 + PayloadSize, 8);
+  if (static_cast<uint64_t>(Layout.getSize().getQuantity()) != NodeSize ||
+      Layout.getAlignment().getQuantity() != 8 ||
       Leaves[0].Offset != 0 || Leaves[1].Offset != 64 ||
       Leaves[0].Field->getName() != "__next_" || Leaves[1].Field->getName() != "__value_" ||
       !Context.hasSameType(Leaves[0].Field->getType(), Context.getPointerType(Context.getRecordType(R))) ||
@@ -56475,7 +56478,10 @@ std::optional<UtilityListNodeRecord> listNode(const State &S, const SourceManage
       !Context.hasSameType(Leaves[2].Field->getType(), Element)) return std::nullopt;
   const auto &Layout = Context.getASTRecordLayout(R);
   const auto &BaseLayout = Context.getASTRecordLayout(Base);
-  if (Layout.getSize().getQuantity() != 24 || Layout.getAlignment().getQuantity() != 8 ||
+  const uint64_t PayloadSize = Context.getTypeSizeInChars(Element).getQuantity();
+  const uint64_t NodeSize = llvm::alignTo(16 + PayloadSize, 8);
+  if (static_cast<uint64_t>(Layout.getSize().getQuantity()) != NodeSize ||
+      Layout.getAlignment().getQuantity() != 8 ||
       BaseLayout.getSize().getQuantity() != 16 || BaseLayout.getAlignment().getQuantity() != 8)
     return std::nullopt;
   return UtilityListNodeRecord{R, Base, Leaves[0].Field, Leaves[1].Field, Leaves[2].Field};
