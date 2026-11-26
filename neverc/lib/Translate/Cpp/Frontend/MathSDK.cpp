@@ -61950,8 +61950,10 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       !Function->isInlined() || !Pattern->hasBody() ||
       !approvedStandardSDKDeclaration(S, SM, Function) ||
       !approvedStandardSDKDeclaration(S, SM, Primary) ||
-      !S.owns(SM, Default->getExprLoc()) || !Function->getIdentifier() ||
-      Function->getIdentifier()->getName() != "next")
+      !S.owns(SM, Default->getExprLoc()) || !Function->getIdentifier())
+    return false;
+  const auto Name = Function->getIdentifier()->getName();
+  if (Name != "next" && Name != "prev")
     return false;
   auto Origin = S.sdkFile(SM, Primary->getLocation());
   auto Iterator = Function->getParamDecl(0)->getType();
@@ -61962,11 +61964,13 @@ bool approvedUtilityDefaultArgument(const State &S, const SourceManager &SM,
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
   const auto Unordered = approvedUtilityUnorderedMapIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
+  const bool List = Reverse ? !Reverse->ListElementType.isNull() :
+      approvedUtilityListIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context).has_value();
   const auto *Init = selectedDefaultArgument(Default, Context);
   if (!Origin || Origin->Root != "libcxx" ||
-      Origin->Path != "__iterator/next.h" ||
+      (Name == "prev" ? !List || Origin->Path != "__iterator/prev.h" : Origin->Path != "__iterator/next.h") ||
       (!utilityObjectPointer(Context, Iterator) && !Reverse && !Wrapped &&
-       !Unordered && !approvedOrderedSetIteratorRecord(
+       !List && !Unordered && !approvedOrderedSetIteratorRecord(
                          S, SM, Iterator->getAsCXXRecordDecl(), Context)) ||
       !Distance->isIntegralType(Context) ||
       Context.getTypeSize(Distance) > 64 ||
@@ -137127,11 +137131,11 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Type->getPointeeType()->isVoidType();
   };
   auto NavigableIterator = [&](QualType Type) {
-    const auto Reverse = ReverseFor(Type, true);
-    return ObjectPointer(Type) || (Reverse && Reverse->ListElementType.isNull()) ||
-           approvedUtilityWrapIteratorRecord(S, SM, Type->getAsCXXRecordDecl(),
-                                             Context).has_value() ||
-           approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
+    const auto *Record = Type->getAsCXXRecordDecl();
+    return ObjectPointer(Type) || ReverseFor(Type, true).has_value() ||
+           approvedUtilityWrapIteratorRecord(S, SM, Record, Context).has_value() ||
+           approvedOrderedSetIteratorRecord(S, SM, Record, Context) ||
+           approvedUtilityListIteratorRecord(S, SM, Record, Context).has_value();
   };
   if (Origin->Path == "__iterator/advance.h" && Name == "advance" &&
       Call->getNumArgs() == 2 && Function->getNumParams() == 2 &&
