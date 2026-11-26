@@ -54212,6 +54212,18 @@ bool linkedListFloatingElement(QualType Type, const ASTContext &Context) {
          Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
 }
 
+bool linkedListFixedEnumElement(QualType Type, const ASTContext &Context) {
+  if (Type.isNull() || Type.hasLocalQualifiers()) return false;
+  const auto *Enum = Type->getAs<EnumType>();
+  if (!Enum || !Enum->getDecl()->isFixed()) return false;
+  const auto Underlying = enumHashUnderlyingType(Type, Context);
+  if (Underlying.isNull()) return false;
+  const auto Bits = Context.getTypeSize(Underlying);
+  return (Bits == 8 || Bits == 16 || Bits == 32 || Bits == 64) &&
+         Context.getTypeSize(Type) == Bits && Context.getTypeAlign(Type) == Bits &&
+         Context.getTypeAlign(Underlying) == Bits;
+}
+
 bool forwardListLeaves(const State &S, const SourceManager &SM,
                        const ASTContext &Context, const CXXRecordDecl *Input,
                        uint64_t Offset, unsigned Depth, unsigned &Budget,
@@ -54237,7 +54249,8 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
         return false;
     } else {
       if (!F->getType()->isPointerType() && !F->getType()->isIntegerType() &&
-          !linkedListFloatingElement(F->getType(), Context)) return false;
+          !linkedListFloatingElement(F->getType(), Context) &&
+          !linkedListFixedEnumElement(F->getType(), Context)) return false;
       if (Leaves.size() == 8) return false;
       Leaves.push_back({F, Position});
     }
@@ -54257,7 +54270,8 @@ bool linkedListWideCharacterElement(QualType Type, const ASTContext &Context) {
 }
 
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
-  if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context))
+  if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context) ||
+      linkedListFixedEnumElement(Type, Context))
     return true;
   if (Context.hasSameType(Type, Context.BoolTy) ||
       Context.hasSameType(Type, Context.CharTy) ||
@@ -54411,9 +54425,9 @@ bool forwardListIteratorType(const State &S, const SourceManager &SM, QualType T
 }
 
 bool forwardListInputType(QualType Type, QualType Element, const ASTContext &Context) {
-  if (linkedListFloatingElement(Element, Context))
+  if (Element->isEnumeralType() || linkedListFloatingElement(Element, Context))
     return Context.hasSameType(Type, Element);
-  return Type->isIntegerType() && forwardListElementType(Type, Context);
+  return Type->isIntegerType() && !Type->isEnumeralType() && forwardListElementType(Type, Context);
 }
 bool forwardListPointerInputSignature(const CXXMethodDecl *M, unsigned First,
     QualType Element, const ASTContext &Context, unsigned Trailing = 0) {
@@ -56332,7 +56346,8 @@ bool listLeaves(const State &S, const SourceManager &SM,
         return false;
     } else {
       if (!F->getType()->isPointerType() && !F->getType()->isIntegerType() &&
-          !linkedListFloatingElement(F->getType(), Context)) return false;
+          !linkedListFloatingElement(F->getType(), Context) &&
+          !linkedListFixedEnumElement(F->getType(), Context)) return false;
       if (Leaves.size() == 8) return false;
       Leaves.push_back({F, Position});
     }
@@ -56341,7 +56356,8 @@ bool listLeaves(const State &S, const SourceManager &SM,
 }
 
 bool listElementType(QualType Type, const ASTContext &Context) {
-  if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context))
+  if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context) ||
+      linkedListFixedEnumElement(Type, Context))
     return true;
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
   if (Context.hasSameType(Type, Context.BoolTy))
@@ -56522,7 +56538,8 @@ bool listRangeInputSignature(const State &S, const SourceManager &SM,
     const auto Element = Owner.Node.Value->getType();
     return !Value.isVolatileQualified() && listElementType(Value.getUnqualifiedType(), Context) &&
            (Context.hasSameUnqualifiedType(Value, Element) ||
-            (Value->isIntegerType() && Element->isIntegerType()));
+            (Value->isIntegerType() && !Value->isEnumeralType() &&
+             Element->isIntegerType() && !Element->isEnumeralType()));
   }
   return listIteratorType(S, SM, Input, Owner.Node, false, Context) ||
          listIteratorType(S, SM, Input, Owner.Node, true, Context);
