@@ -27163,7 +27163,7 @@ class FunctionLowering {
                                                 QualType Element, SourceLocation L) {
     const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources, Record, A.Context);
     if (!List || !A.Context.hasSameType(List->ElementType, Element))
-      reject(L, "forward-list initializer", "The pinned integer initializer-list carrier is required.");
+      reject(L, "forward-list initializer", "The pinned initializer-list carrier must match the node element type.");
     auto Current = snapshot(fieldStorage(Carrier, List->Begin, L), L);
     auto Remaining = snapshot(cast(fieldStorage(std::move(Carrier), List->Size, L), "u64", L), L);
     return {std::move(Current), std::move(Remaining), ForwardListInput::CountedArray};
