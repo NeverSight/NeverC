@@ -54236,12 +54236,20 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
   return true;
 }
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
+  if (Context.hasSameType(Type, Context.BoolTy) ||
+      Context.hasSameType(Type, Context.CharTy) ||
+      Context.hasSameType(Type, Context.SignedCharTy) ||
+      Context.hasSameType(Type, Context.UnsignedCharTy))
+    return Context.getTypeSize(Type) == 8;
   if (Context.hasSameType(Type, Context.ShortTy) ||
       Context.hasSameType(Type, Context.UnsignedShortTy))
     return Context.getTypeSize(Type) == 16;
   if (Context.hasSameType(Type, Context.IntTy) ||
       Context.hasSameType(Type, Context.UnsignedIntTy))
     return Context.getTypeSize(Type) == 32;
+  if (Context.hasSameType(Type, Context.LongLongTy) ||
+      Context.hasSameType(Type, Context.UnsignedLongLongTy))
+    return Context.getTypeSize(Type) == 64;
   return (Context.hasSameType(Type, Context.LongTy) ||
           Context.hasSameType(Type, Context.UnsignedLongTy)) &&
          (Context.getTypeSize(Type) == 32 || Context.getTypeSize(Type) == 64);
