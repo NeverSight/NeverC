@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-emplacement-unique-emplacement-returns-result",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEmplacementUniqueEmplacementReturnsResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d5bedb4578299a22350cc6ec0d503b8f2d0524dad140d618a1605d7f9ca82cb1",
+      "original_case_source_sha256": "d5bedb4578299a22350cc6ec0d503b8f2d0524dad140d618a1605d7f9ca82cb1",
+      "gtest_body_sha256": "6f0d276bcef3abe78dfc7e43226cd68c0b9034ff7461baaa2a74fec9b9e8efb7"
+    },
+    {
+      "name": "unordered-set-emplacement-equivalent-hint-before-existing-after-growth",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEmplacementEquivalentHintBeforeExistingAfterGrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "278d8410db44b59c88e52ff3f6f856514b93f15a489c0b9127759b4462a33010",
+      "original_case_source_sha256": "278d8410db44b59c88e52ff3f6f856514b93f15a489c0b9127759b4462a33010",
+      "gtest_body_sha256": "e42e0800174166bfdb129d209bbdf458b21d727f5360637a8e22dc6b76dbc069"
+    },
+    {
+      "name": "unordered-set-emplacement-hinted-value-initialization-and-unrelated-hint",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEmplacementHintedValueInitializationAndUnrelatedHintRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "28d275c66ac6bfa7fb46167914e244f0d6b883b7014b78005cd32966ca853232",
+      "original_case_source_sha256": "28d275c66ac6bfa7fb46167914e244f0d6b883b7014b78005cd32966ca853232",
+      "gtest_body_sha256": "cbd64d0af7cac3cd4a46983317420450ab64ed32d7df38550d225683f1225b30"
+    },
+    {
+      "name": "unordered-set-emplacement-receiver-hint-and-argument-evaluated-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEmplacementReceiverHintAndArgumentEvaluatedOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1cb0aee20ffebda4f9da2fe31a043e4f0093ba21aa03aa7f39bc48b2f4d15361",
+      "original_case_source_sha256": "1cb0aee20ffebda4f9da2fe31a043e4f0093ba21aa03aa7f39bc48b2f4d15361",
+      "gtest_body_sha256": "0a59f9e8bc83ed7573e4f081839a70f8de8a0476fa6a74fbcb7f79aad44ca9c8"
+    },
+    {
+      "name": "unordered-set-emplacement-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerEmplaceRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "316e07406a67b6772bc5ba9b6712020c9883a8b3284579f02271b1aa78ec1c3f",
+      "original_case_source_sha256": "316e07406a67b6772bc5ba9b6712020c9883a8b3284579f02271b1aa78ec1c3f",
+      "gtest_body_sha256": "de47a832df9be6ddb69f4eb35c0e7d16139ad421b17617915c2fe8cad72e0f70"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-emplacement-different-constructor-type",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEmplacementDifferentConstructorTypeRejected",
+      "expected": "reject",
+      "source_sha256": "2e909d27a5a8fc698b86b355d197c1728df9e6b7489b08f5b958a14019a0f983",
+      "original_case_source_sha256": "2e909d27a5a8fc698b86b355d197c1728df9e6b7489b08f5b958a14019a0f983",
+      "gtest_body_sha256": "96dcf3fe4b3425e32d0e2d8a612381de90ce5a894fe432e73df194a28a839acc"
+    },
+    {
+      "name": "unordered-set-emplacement-different-key-type",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEmplacementDifferentKeyTypeRejected",
+      "expected": "reject",
+      "source_sha256": "19b99c4519a6af8c199484688d1bf6ce6e6e4b058e27cd1adb7f7f33915a07bb",
+      "original_case_source_sha256": "19b99c4519a6af8c199484688d1bf6ce6e6e4b058e27cd1adb7f7f33915a07bb",
+      "gtest_body_sha256": "38550be814f0bd71c6516e60830d0ecb8c6d7f08dcdf4787fb4afaaea9207353"
+    },
+    {
+      "name": "unordered-set-emplacement-custom-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetEmplacementCustomHashRejected",
+      "expected": "reject",
+      "source_sha256": "1f66ecdae9cf5e62dfbcbd0537843da0f50694e20d9e2f0d61c716bacc2fa642",
+      "original_case_source_sha256": "1f66ecdae9cf5e62dfbcbd0537843da0f50694e20d9e2f0d61c716bacc2fa642",
+      "gtest_body_sha256": "765f751b965550aa7d00458ec91180c02f10d61c7f8627921f6e2c5890070a2b"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-emplacement-unique-emplacement-returns-result",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  int key = -4;\n  auto added = values.emplace(key);\n  if (!added.second || *added.first != -4) return 1;\n  const int equal = -4;\n  auto existing = values.emplace(equal);\n  if (existing.second || existing.first != added.first) return 2;\n  auto zero = values.emplace();\n  const auto* original = &*zero.first;\n  auto again = values.emplace();\n  return !zero.second || again.second || *again.first != 0 || &*again.first != original || values.size() != 2;\n}\n",
+      "source_sha256": "d5bedb4578299a22350cc6ec0d503b8f2d0524dad140d618a1605d7f9ca82cb1",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-emplacement-equivalent-hint-before-existing-after-growth",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 4};\n  values.rehash(2);\n  const auto hint = values.find(3);\n  const int* existing = &*hint;\n  auto added = values.emplace_hint(hint, 3);\n  if (&*added == existing || values.count(3) != 2) return 1;\n  auto successor = added;\n  ++successor;\n  if (successor == values.end() || &*successor != existing) return 2;\n  const int key = 3;\n  auto inserted = values.insert(successor, key);\n  ++inserted;\n  return inserted == values.end() || &*inserted != existing || values.count(3) != 3;\n}\n",
+      "source_sha256": "278d8410db44b59c88e52ff3f6f856514b93f15a489c0b9127759b4462a33010",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-emplacement-hinted-value-initialization-and-unrelated-hint",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> set{6};\n  auto zero = set.emplace_hint(set.cend());\n  if (*zero != 0 || set.size() != 2) return 1;\n  std::unordered_multiset<int> values{1, 2};\n  const int value = 2;\n  auto other = values.emplace_hint(values.find(1), value);\n  if (*other != 2 || values.count(2) != 2) return 2;\n  auto default_value = values.emplace();\n  return *default_value != 0 || values.count(0) != 1;\n}\n",
+      "source_sha256": "28d275c66ac6bfa7fb46167914e244f0d6b883b7014b78005cd32966ca853232",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-emplacement-receiver-hint-and-argument-evaluated-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nint accesses, hints, keys;\nSet& receiver(Set& values) { ++accesses; return values; }\nSet::const_iterator hint(const Set& values) { hints += accesses; return values.cend(); }\nint key() { keys += accesses; return 9; }\nint main() {\n  Set values{9};\n  auto position = receiver(values).emplace_hint(hint(values), key());\n  return accesses != 1 || hints != 1 || keys != 1 || *position != 9 || values.size() != 1;\n}\n",
+      "source_sha256": "1cb0aee20ffebda4f9da2fe31a043e4f0093ba21aa03aa7f39bc48b2f4d15361",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-emplacement-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* p=&values; return !p->emplace(3).second; }\n",
+      "source_sha256": "316e07406a67b6772bc5ba9b6712020c9883a8b3284579f02271b1aa78ec1c3f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-emplacement-different-constructor-type",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; short key=3; return *values.emplace(key).first != 3; }\n",
+      "source_sha256": "2e909d27a5a8fc698b86b355d197c1728df9e6b7489b08f5b958a14019a0f983",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-emplacement-different-key-type",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<long> values; return *values.emplace(3L) != 3L; }\n",
+      "source_sha256": "19b99c4519a6af8c199484688d1bf6ce6e6e4b058e27cd1adb7f7f33915a07bb",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-emplacement-custom-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long operator()(int value) const { return static_cast<unsigned long>(value); } };\nint main() { std::unordered_multiset<int, Hash> values; return *values.emplace_hint(values.cend(), 3) != 3; }\n",
+      "source_sha256": "1f66ecdae9cf5e62dfbcbd0537843da0f50694e20d9e2f0d61c716bacc2fa642",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetEmplacementUniqueEmplacementReturnsResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetEmplacementEquivalentHintBeforeExistingAfterGrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetEmplacementHintedValueInitializationAndUnrelatedHintRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetEmplacementReceiverHintAndArgumentEvaluatedOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerEmplaceRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetEmplacementDifferentConstructorTypeRejected",
+    "TranslateTest.CoreV2UnorderedSetEmplacementDifferentKeyTypeRejected",
+    "TranslateTest.CoreV2UnorderedSetEmplacementCustomHashRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "83641ab21afe299e1102dbfcb7aa665e4bacb76903a037642188a6d31ba3c089",
+  "maintained_original_sha256": "5755793b0747f53c69ae511749f7e732123906f01e4b86cf93288415cb2fa7a9",
+  "previous_registered_source_sha256": "0ef88a0571d525b7d64559b6af9a40ca1b7c8753b94cf130f6ec3397ed438b62",
+  "previous_maintained_original_sha256": "7103b1330261f496dad389a54d80f8d6be1864a02ae967b62c2fb4e32b06340a",
+  "restorer_sha256": "8c0c91301a7bae6a7341b5395930e9e4136bc3d3d45a51da41bba1d0fa8fc57c",
+  "extractor_sha256": "15c34b8db3e0bfd251ecdd65fad5716865eda7e27be6cac6f07298232382ada9",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8496,
+  "current_python_registry_tests": 210,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "unordered-set-emplacement": "32dd635864a3d0d64c89ec5b2d1dda20dcab38d7b75c5a6e3159ab7b10df717d",
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "ed8e85e9835731c6f1699f6231517354998db82e3d0221a365972ed0ba4f97cc",
+  "source_proof_sha256": "0ab9dce2fff2f3039ddb6ec2b43d6d1ed707f655777ab1b5239f9ee263d90208"
+}
