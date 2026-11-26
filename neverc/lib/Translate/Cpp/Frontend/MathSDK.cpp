@@ -54240,6 +54240,26 @@ bool linkedListTrivialRecordField(
     QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
     unsigned Depth, unsigned &RemainingFields);
 
+bool linkedListLiteralMemberDefaults(const CXXRecordDecl *Record,
+    const LinkedListRecordSource *Source) {
+  if (!Record->isTriviallyCopyable() || !Record->hasTrivialDestructor()) return false;
+  bool HasDefault = false;
+  for (const auto *Field : Record->fields()) {
+    if (!Field->hasInClassInitializer()) continue;
+    const auto *Init = Field->getInClassInitializer();
+    if (!Init || (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())))
+      return false;
+    const auto *Value = Init->IgnoreParenImpCasts();
+    const auto *Reference = dyn_cast<DeclRefExpr>(Value);
+    if (!isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral,
+             CXXNullPtrLiteralExpr>(Value) &&
+        !(Reference && isa<EnumConstantDecl>(Reference->getDecl())))
+      return false;
+    HasDefault = true;
+  }
+  return HasDefault;
+}
+
 const CXXRecordDecl *linkedListTrivialRecordLayout(
     QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
     unsigned Depth, unsigned &RemainingFields) {
@@ -54248,7 +54268,9 @@ const CXXRecordDecl *linkedListTrivialRecordLayout(
   Record = Record ? Record->getDefinition() : nullptr;
   if (!Record || Record->isInvalidDecl() || Record->isDependentContext() ||
       Record->isUnion() || Record->getNumBases() || !Record->isStandardLayout() ||
-      !Record->isAggregate() || !Record->isTrivial() || Record->field_empty())
+      !Record->isAggregate() || Record->field_empty())
+    return nullptr;
+  if (!Record->isTrivial() && (Depth || !linkedListLiteralMemberDefaults(Record, Source)))
     return nullptr;
   if (Source && !Source->Program.owns(Source->Sources, Record->getLocation()))
     return nullptr;
@@ -54313,14 +54335,17 @@ bool linkedListTrivialElementMember(const State &S, const SourceManager &SM,
                                     const ASTContext &Context, QualType Element,
                                     const FunctionDecl *Function) {
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
-  if (!Method || !Method->isImplicit() || !Method->isTrivial() || Method->isDeleted() ||
-      !(isa<CXXConstructorDecl>(Method) || isa<CXXDestructorDecl>(Method) ||
+  if (!Method || !Method->isImplicit() || Method->isDeleted()) return false;
+  const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
+  if (!(Constructor || isa<CXXDestructorDecl>(Method) ||
         Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()))
+    return false;
+  if (!Method->isTrivial() && !(Constructor && Constructor->isDefaultConstructor()))
     return false;
   const LinkedListRecordSource Source{S, SM};
   const auto *Record = linkedListTrivialRecordElement(Element, Context, &Source);
-  return Record &&
-         Record->getCanonicalDecl() == Method->getParent()->getCanonicalDecl();
+  return Record && Record->getCanonicalDecl() == Method->getParent()->getCanonicalDecl() &&
+      (Method->isTrivial() || linkedListLiteralMemberDefaults(Record, &Source));
 }
 
 bool forwardListLeaves(const State &S, const SourceManager &SM,
