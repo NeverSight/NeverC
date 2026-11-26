@@ -1,0 +1,219 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-move-assignment-retains-nodes",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListMoveAssignmentRetainsNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ec569a4d95c47ffe66d85e5a2627a6a4611c0751f77fc9a3354b48960ab6f1ea",
+      "original_case_source_sha256": "ec569a4d95c47ffe66d85e5a2627a6a4611c0751f77fc9a3354b48960ab6f1ea",
+      "gtest_body_sha256": "c2ec1169ee4c2730b4bc959d62dbce96c5381d903655b47e420f0693d7436d3c"
+    },
+    {
+      "name": "forward-list-move-assignment-evaluation-order",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListMoveAssignmentEvaluationOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "41ecb63d0caed466eb6d03902bd855222367d5124c5901348b9560c9e70971fa",
+      "original_case_source_sha256": "41ecb63d0caed466eb6d03902bd855222367d5124c5901348b9560c9e70971fa",
+      "gtest_body_sha256": "c93841b27f44b9064bae7718c230b9cc70f086817a977b4f9c6f09e06650cd5c"
+    },
+    {
+      "name": "forward-list-move-assignment-empty-source",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListMoveAssignmentEmptySourceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b95ac0cf089162c933ff5782ce123ccb763c2042b543684d8afdffd809224287",
+      "original_case_source_sha256": "b95ac0cf089162c933ff5782ce123ccb763c2042b543684d8afdffd809224287",
+      "gtest_body_sha256": "cf16c1281352b03c73f3488069b9de82eb5ee319781d5af95235b8ba1b9f4b39"
+    },
+    {
+      "name": "forward-list-copy-reads-const-owner-in-order",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListCopyReadsConstOwnerInOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3de56e9a247093c1dba0c40031657de25549e2244712802a81455d6a30909369",
+      "original_case_source_sha256": "3de56e9a247093c1dba0c40031657de25549e2244712802a81455d6a30909369",
+      "gtest_body_sha256": "d6a2e7033a4513d3d474621c5c5c1eb1140f21c225b9ca9fceede4f71f310729"
+    },
+    {
+      "name": "forward-list-copy-empty-independent-owner",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListCopyEmptyIndependentOwnerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ce01b50439fb18038e4e8ce224646ed4fcb64adcdebf3b6ef7185c0a310a1179",
+      "original_case_source_sha256": "ce01b50439fb18038e4e8ce224646ed4fcb64adcdebf3b6ef7185c0a310a1179",
+      "gtest_body_sha256": "48d77e55db206f9ee5217bf05eb9b1b36530b69348fefb98aa75e330c3f46466"
+    },
+    {
+      "name": "forward-list-copy-assignment-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListCopiesValuesByAssignment",
+      "expected": "accept",
+      "source_sha256": "5cba3e6665e12ba721968be746d480a53673287e58b0e1fd3fe5672b1b9c82a4",
+      "original_case_source_sha256": "5cba3e6665e12ba721968be746d480a53673287e58b0e1fd3fe5672b1b9c82a4",
+      "gtest_body_sha256": "6e477e89a42a2343696183fb48d442d112f75c304f70f5ae3395c9976608831f"
+    },
+    {
+      "name": "forward-list-move-assignment-const-source-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListConstXvalueSelectsCopyAssignment",
+      "expected": "accept",
+      "source_sha256": "5a860d8189d2e8e1a2ed16db984acbc532fdb5f65b6684f5a2cc097c85192292",
+      "original_case_source_sha256": "5a860d8189d2e8e1a2ed16db984acbc532fdb5f65b6684f5a2cc097c85192292",
+      "gtest_body_sha256": "b5d4fcd726273b2ee2fe2fb91368654c9553ae8144cd9e395968ae5cfd35a832"
+    },
+    {
+      "name": "forward-list-copy-explicit-allocator-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListCopiesWithExplicitAllocator",
+      "expected": "accept",
+      "source_sha256": "06fde6e3282e097d0e4551a55e85db81b0f6fcbea321a1a311d36c2646b26992",
+      "original_case_source_sha256": "06fde6e3282e097d0e4551a55e85db81b0f6fcbea321a1a311d36c2646b26992",
+      "gtest_body_sha256": "6eb75a7a6fdbbd9b50c5a8f06f408cf7e614f836519c4d68c644cf4b5efb4ce5"
+    },
+    {
+      "name": "forward-list-move-assignment-non-int-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongAssignsMovedOwners",
+      "expected": "accept",
+      "source_sha256": "47ef1334eb8a1f120caa88e2e2ed3f9f85a01cc6f21d5ceecc4aa27c87aa739b",
+      "original_case_source_sha256": "47ef1334eb8a1f120caa88e2e2ed3f9f85a01cc6f21d5ceecc4aa27c87aa739b",
+      "gtest_body_sha256": "d5514914143de9ae66b64fa4071f9bb41ba72ad1700ac9de7ffb4504e08cb912"
+    },
+    {
+      "name": "forward-list-copy-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongCopiesOwners",
+      "expected": "accept",
+      "source_sha256": "3f10b84d6124cdb11d69d715101bd463a391f73a0a3163e151f024e3f9a24588",
+      "original_case_source_sha256": "3f10b84d6124cdb11d69d715101bd463a391f73a0a3163e151f024e3f9a24588",
+      "gtest_body_sha256": "e5d5dfe0c9787af5b90ded1da460b9eaef4f780d709fe75a41221562924ba4a8"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "forward-list-copy-source-allocator-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListCopySourceAllocatorGuardRejected",
+      "expected": "reject",
+      "source_sha256": "0e03829cafb7fbe90b5c25870ef2697f5d8ca335470f12cd148867348e7a6def",
+      "original_case_source_sha256": "0e03829cafb7fbe90b5c25870ef2697f5d8ca335470f12cd148867348e7a6def",
+      "gtest_body_sha256": "c98051381b1a1a80da6c22354ba3963e6a7983dee9045c766b05a2003db8dd7d"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "forward-list-move-assignment-retains-nodes",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\n\nint main() {\n  std::forward_list<int> input{3, 4};\n  std::forward_list<int> output{9, 8};\n  const int *first = &input.front();\n  auto &assigned = (output = std::move(input));\n  if (&assigned != &output || &output.front() != first || !input.empty())\n    return 1;\n  auto cursor = output.begin();\n  ++cursor;\n  if (*cursor != 4)\n    return 2;\n  input.push_front(7);\n  return input.front() != 7 || output.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "ec569a4d95c47ffe66d85e5a2627a6a4611c0751f77fc9a3354b48960ab6f1ea",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-move-assignment-evaluation-order",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\n\nusing List = std::forward_list<int>;\n\nList &mark(List &owner, int &trace, int digit) {\n  trace = trace * 10 + digit;\n  return owner;\n}\n\nint main() {\n  List from{4};\n  List into{5};\n  int trace = 0;\n  mark(into, trace, 2) = std::move(mark(from, trace, 1));\n  if (trace != 12 || !from.empty() || into.front() != 4)\n    return 1;\n  trace = 0;\n  mark(from, trace, 2).operator=(std::move(mark(into, trace, 1)));\n  return trace != 21 || !into.empty() || from.front() != 4;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "41ecb63d0caed466eb6d03902bd855222367d5124c5901348b9560c9e70971fa",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-move-assignment-empty-source",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\n\nint main() {\n  std::forward_list<int> from;\n  std::forward_list<int> into{9, 10};\n  into = std::move(from);\n  if (!into.empty() || !from.empty())\n    return 1;\n  into.push_front(11);\n  return into.front() != 11 || !from.empty();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "b95ac0cf089162c933ff5782ce123ccb763c2042b543684d8afdffd809224287",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-copy-reads-const-owner-in-order",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const std::forward_list<int> source{3, 7, 11};\n  std::forward_list<int> copy(source);\n  auto cursor = copy.begin();\n  if (*cursor != 3 || &*cursor == &source.front()) return 1;\n  ++cursor;\n  if (*cursor != 7) return 2;\n  *cursor = 9;\n  auto sourceCursor = source.begin();\n  ++sourceCursor;\n  if (*sourceCursor != 7) return 3;\n  ++cursor;\n  if (*cursor != 11) return 4;\n  ++cursor;\n  return cursor != copy.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "3de56e9a247093c1dba0c40031657de25549e2244712802a81455d6a30909369",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-copy-empty-independent-owner",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> source;\n  std::forward_list<int> copy(source);\n  if (!source.empty() || !copy.empty()) return 1;\n  source.push_front(13);\n  copy.push_front(17);\n  return source.front() != 13 || copy.front() != 17;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "ce01b50439fb18038e4e8ce224646ed4fcb64adcdebf3b6ef7185c0a310a1179",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-copy-assignment-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> from{3};\n  std::forward_list<int> into{8};\n  into = from;\n  return into.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "5cba3e6665e12ba721968be746d480a53673287e58b0e1fd3fe5672b1b9c82a4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-move-assignment-const-source-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nint main() {\n  const std::forward_list<int> from{3};\n  std::forward_list<int> into{8};\n  into = std::move(from);\n  return into.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "5a860d8189d2e8e1a2ed16db984acbc532fdb5f65b6684f5a2cc097c85192292",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-copy-explicit-allocator-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <memory>\nint main() {\n  std::forward_list<int> source{2, 4};\n  std::forward_list<int> copy(source, std::allocator<int>{});\n  return copy.front() != 2;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "06fde6e3282e097d0e4551a55e85db81b0f6fcbea321a1a311d36c2646b26992",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-move-assignment-non-int-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nint main() {\n  std::forward_list<long> from{3};\n  std::forward_list<long> into;\n  into = std::move(from);\n  return into.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "47ef1334eb8a1f120caa88e2e2ed3f9f85a01cc6f21d5ceecc4aa27c87aa739b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-copy-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const std::forward_list<long> source{7L};\n  std::forward_list<long> copy(source);\n  return copy.front() != 7L;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "3f10b84d6124cdb11d69d715101bd463a391f73a0a3163e151f024e3f9a24588",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-copy-source-allocator-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  LocalAllocator() = default;\n  template <class U> LocalAllocator(const LocalAllocator<U> &) {}\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n};\nint main() {\n  std::forward_list<int, LocalAllocator<int>> source{7};\n  std::forward_list<int, LocalAllocator<int>> copy(source);\n  return copy.front() != 7;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "0e03829cafb7fbe90b5c25870ef2697f5d8ca335470f12cd148867348e7a6def",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListMoveAssignmentRetainsNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListMoveAssignmentEvaluationOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListMoveAssignmentEmptySourceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListCopyReadsConstOwnerInOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListCopyEmptyIndependentOwnerRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListCopiesValuesByAssignment",
+    "TranslateTest.CoreV2ForwardListConstXvalueSelectsCopyAssignment",
+    "TranslateTest.CoreV2ForwardListCopiesWithExplicitAllocator",
+    "TranslateTest.CoreV2ForwardListLongAssignsMovedOwners",
+    "TranslateTest.CoreV2ForwardListLongCopiesOwners",
+    "TranslateTest.CoreV2ForwardListCopySourceAllocatorGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "6bed7ea76fc43df2842a0cf8c6def0142e623f3b5b84d47780343892c47528f8",
+  "maintained_original_sha256": "b0264074fd8440779021558cec6ca62e93dba04362b42ac0a5fef7022d4a07ac",
+  "previous_registered_source_sha256": "7d3022604584c657ae100d06e6ce3e001368aecaa3ff8ac6368ac72a20c72b7d",
+  "previous_maintained_original_sha256": "37540a9921a83999a2068dd07614b05289449ecb248b4e23823ca9d40970bf51",
+  "restorer_sha256": "f7b29665c971f72e80e36d92aa7617854c3be37a7d600961ca6555860f82ea9b",
+  "extractor_sha256": "04287b15e918e23c2fe46a142518eb39a886319a37a6c790f8a3d5578cee32f9",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9109,
+  "current_python_registry_tests": 306,
+  "native_reference_selected_executions": 20,
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "forward-list-allocator-construction": "886a3b2dada00de22afd59bffe60cba8ebe4194b4763f6e232b28575807e8b21",
+    "forward-list-copy-assignment": "66d27527a526956ff022539f3ad3da6b7abd1c1021e1d62d4ba2a025a7696bfa",
+    "forward-list-copy-construction": "249c85116cfea0315bbafd7b806d9ee69743cf91defc23b76d96b37f2ea294a0",
+    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
+    "forward-list-move-assignment": "1a3dde7a08d8051243ce503e53139f7b417ef16b1d64f6ad06c0494ec314bcd5"
+  },
+  "native_reference_authentication_sha256": "fac0de9147aaa28826ed00bcf2aa6b5babad883f3171970287550fc5e3403ab9",
+  "source_proof_sha256": "da8b3aac87f0aed207d92d50edd4d89315a8d74ee6ede25ba694b250b15b0729"
+}

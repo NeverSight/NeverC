@@ -1,0 +1,190 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-empty-owner-map-observers",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerMapObserversRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f32bdc11190e987094746777d927989c0adfde6094e5f314b7f90281ca15f636",
+      "original_case_source_sha256": "f32bdc11190e987094746777d927989c0adfde6094e5f314b7f90281ca15f636",
+      "gtest_body_sha256": "749a2d872ef2a4b86026efa216e450512f7c1f2fdd9238216ca7b5afbd9f31e6"
+    },
+    {
+      "name": "ordered-empty-owner-const-multimap",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerConstMultimapRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "610bc7220df1dd6fe5631aab7c2b1911ab53aee11e806a8469bb8d365d107465",
+      "original_case_source_sha256": "610bc7220df1dd6fe5631aab7c2b1911ab53aee11e806a8469bb8d365d107465",
+      "gtest_body_sha256": "bb18752de4689b0b16fd4f759cc2b03d655c90ce3fc0f1d52996e3cd16d03a72"
+    },
+    {
+      "name": "ordered-empty-owner-set-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerSetReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e59a4232d9300d1aa054eaf801be21d9c0761e1e9c8e7031b890a633cf56e685",
+      "original_case_source_sha256": "e59a4232d9300d1aa054eaf801be21d9c0761e1e9c8e7031b890a633cf56e685",
+      "gtest_body_sha256": "0577c577c45af17fdfd3db7515223391b5b1882ad2dc2ae16b2196e3bee468ab"
+    },
+    {
+      "name": "ordered-empty-owner-multiset-scoped-owners",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerMultisetScopedOwnersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "093ef3d483f885e7639eb5ab779c3f50993ef6408d1f368124376be48622fdbf",
+      "original_case_source_sha256": "093ef3d483f885e7639eb5ab779c3f50993ef6408d1f368124376be48622fdbf",
+      "gtest_body_sha256": "56df8bd8e0d79339a7f610c49422cea5aa570a169cf0fefcc20ce965c6d75fc1"
+    },
+    {
+      "name": "ordered-empty-owner-set-insert",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetOriginalInsertionRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7",
+      "original_case_source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7",
+      "gtest_body_sha256": "f60b4028a2e96ab2a4b7355c99ab2a6f7924f89b4f0e1655087764ccb7bc7e9c"
+    },
+    {
+      "name": "ordered-empty-owner-map-copy",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerMapCopyRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378",
+      "original_case_source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378",
+      "gtest_body_sha256": "94e391c4a6b2cf9a1cfa6b4fc3f000141567d19bb1b129769eb97c57bdc437e7"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-empty-owner-custom-comparator",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerCustomComparatorRejected",
+      "expected": "reject",
+      "source_sha256": "1972f0da4189fa64bb8dea672912b60d15cc6af58dbd42dcf07a9618ee14ae6c",
+      "original_case_source_sha256": "1972f0da4189fa64bb8dea672912b60d15cc6af58dbd42dcf07a9618ee14ae6c",
+      "gtest_body_sha256": "199b2944be9eb3a4b8dc461ebda47e6e6b4bee4d010b01b84b81fcc4e60610a4"
+    },
+    {
+      "name": "ordered-empty-owner-different-key",
+      "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerDifferentKeyRejected",
+      "expected": "reject",
+      "source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250",
+      "original_case_source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250",
+      "gtest_body_sha256": "71fdae62c7f8197346af5b0a02e051377f728863e079607789ca2d38e8a037ea"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-empty-owner-map-observers",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  return !values.empty() || values.size() != 0;\n}\n",
+      "source_sha256": "f32bdc11190e987094746777d927989c0adfde6094e5f314b7f90281ca15f636"
+    },
+    {
+      "name": "ordered-empty-owner-const-multimap",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nunsigned long long empty_size(const std::multimap<int, int>& values) {\n  return values.empty() ? values.size() : 1;\n}\nint main() {\n  const std::multimap<int, int> values;\n  return empty_size(values) != 0;\n}\n",
+      "source_sha256": "610bc7220df1dd6fe5631aab7c2b1911ab53aee11e806a8469bb8d365d107465"
+    },
+    {
+      "name": "ordered-empty-owner-set-receiver-once",
+      "expected": "accept",
+      "public_header": "set",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nconst std::set<int>& selected(int& calls, const std::set<int>& values) {\n  ++calls;\n  return values;\n}\nint main() {\n  std::set<int> values;\n  int calls = 0;\n  bool empty = selected(calls, values).empty();\n  auto count = selected(calls, values).size();\n  return !empty || count || calls != 2;\n}\n",
+      "source_sha256": "e59a4232d9300d1aa054eaf801be21d9c0761e1e9c8e7031b890a633cf56e685"
+    },
+    {
+      "name": "ordered-empty-owner-multiset-scoped-owners",
+      "expected": "accept",
+      "public_header": "set",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nbool empty_at_exit(int flag) {\n  std::multiset<int> outer;\n  if (flag) {\n    const std::multiset<int> inner;\n    return inner.empty() && outer.size() == 0;\n  }\n  return outer.empty();\n}\nint main() {\n  return !empty_at_exit(0) || !empty_at_exit(1);\n}\n",
+      "source_sha256": "093ef3d483f885e7639eb5ab779c3f50993ef6408d1f368124376be48622fdbf"
+    },
+    {
+      "name": "ordered-empty-owner-set-insert",
+      "expected": "accept",
+      "public_header": "set",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nint main() {\n  std::set<int> values;\n  values.insert(9);\n  return values.size() != 1;\n}\n",
+      "source_sha256": "3b7543b6d77ee18d9b64b3d92e51ff5d917fc93a73adb084797623dedd8359d7"
+    },
+    {
+      "name": "ordered-empty-owner-map-copy",
+      "expected": "accept",
+      "public_header": "map",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values;\n  std::map<int, int> copy(values);\n  return !copy.empty();\n}\n",
+      "source_sha256": "8ab69a5b5152cb7af90870f37d65c8864019393379b2109d03f49fe2ef415378"
+    },
+    {
+      "name": "ordered-empty-owner-custom-comparator",
+      "expected": "reject",
+      "public_header": "set",
+      "kind": "source-body-guard",
+      "source": "#include <set>\nstruct Reverse { bool operator()(int lhs, int rhs) const { return lhs > rhs; } };\nint main() {\n  std::set<int, Reverse> values;\n  return values.empty();\n}\n",
+      "source_sha256": "1972f0da4189fa64bb8dea672912b60d15cc6af58dbd42dcf07a9618ee14ae6c"
+    },
+    {
+      "name": "ordered-empty-owner-different-key",
+      "expected": "reject",
+      "public_header": "map",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint main() {\n  std::map<long long, int> values;\n  return values.size() != 0;\n}\n",
+      "source_sha256": "fc5467e008a21a0203c597956ae48de3b5be73306c5b89ff2172da0a297c7250"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedEmptyOwnerMapObserversRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedEmptyOwnerConstMultimapRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedEmptyOwnerSetReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedEmptyOwnerMultisetScopedOwnersRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetOriginalInsertionRunsAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedEmptyOwnerMapCopyRunsAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedEmptyOwnerCustomComparatorRejected",
+    "TranslateTest.CoreV2OrderedEmptyOwnerDifferentKeyRejected"
+  ],
+  "prior_construction_guard": {
+    "name": "ordered-observer-query-observer-does-not-admit-storage",
+    "formal_test_name": "TranslateTest.CoreV2OrderedObserverQueryObserverDoesNotAdmitStorageRejected",
+    "expected": "reject",
+    "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9",
+    "original_case_source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9",
+    "gtest_body_sha256": "7ae122ca31bfee61051df92d94229cac8b6970842f503ee6476203361989f66e"
+  },
+  "active_construction_test": {
+    "name": "ordered-observer-query-observer-does-not-admit-storage",
+    "formal_test_name": "TranslateTest.CoreV2OrderedEmptyOwnerOriginalMapRunsAtBothOptimizations",
+    "expected": "accept",
+    "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9",
+    "original_case_source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9",
+    "gtest_body_sha256": "0845bc3e16b7f66832438803ffb03ade685fe3072e9f306ae4a77252ce05c660"
+  },
+  "admitted_construction_fixture": {
+    "name": "ordered-observer-query-observer-does-not-admit-storage",
+    "expected": "accept",
+    "public_header": "map",
+    "kind": "cpp17-operation",
+    "source": "#include <map>\nint main() { std::map<int, int> values; return values.empty() ? 0 : 1; }\n",
+    "source_sha256": "d673637f6f413ec62b7710b07539b79393a21cf28ca2e20864aa2646826fb8d9"
+  },
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "e6e9318724925862ef9c95da3085f26dfd4d5321cc5eb56aeab4fc9b4ebae34e",
+  "maintained_original_sha256": "b9b9b2935d5da5039a8934541b708a06a32b58e0f1070850b729cdc9b9f76a6d",
+  "previous_registered_source_sha256": "ca10fe2c6d399699f3abde240483e99e62650288e7eacdaede4afd89e0f4ad16",
+  "previous_maintained_original_sha256": "1df1f37351188954c2cd051342565e4e2ee0ec53ede1404d9eeb971f05c29ae4",
+  "restorer_sha256": "831313dbccddc0f27e80583048485c9806c5182826018399a15ac2946e131992",
+  "extractor_sha256": "9f0b2f6f88fe3e91f55ba9e89a849b045d867eb44dfa1a877884ccc194bce2c9",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8302,
+  "current_python_registry_tests": 162,
+  "native_reference_selected_executions": 14,
+  "planned_generated_c23_executions": 14,
+  "native_reference_proofs": {
+    "ordered-empty-owner": "5924748fdcb2ab437464396281f9dbebaa6383a04af842824749d3299a793fc9",
+    "ordered-empty-owner-map-copy": "48d3c1d73a8b4a81781036ffe09637fae86c63c8a972d5e6ba55732a60c067fb",
+    "ordered-set-core": "1c2f471258c24fa552d0702893167e6543b8e3a6e6be5d499e9e0f6be5786d4e"
+  },
+  "native_reference_authentication_sha256": "3994a56820662632ed0070abac004038796fd20d49b4e529bd4a2a3b46f6caa6",
+  "source_proof_sha256": "da8b3aac87f0aed207d92d50edd4d89315a8d74ee6ede25ba694b250b15b0729"
+}

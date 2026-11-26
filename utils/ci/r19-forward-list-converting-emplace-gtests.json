@@ -1,0 +1,96 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-emplace-after-converts-const-short",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceAfterConvertsConstShortRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e1709f5bc2c26052881ea9727970c17b5435174317c0816f6821babd2340e8d7",
+      "original_case_source_sha256": "e1709f5bc2c26052881ea9727970c17b5435174317c0816f6821babd2340e8d7",
+      "gtest_body_sha256": "8a0fc0425b8a943385b50fe6992c296145e9e2bf67fd3625a562b891eb06f279"
+    },
+    {
+      "name": "forward-list-long-emplace-front-preserves-source-evaluation",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongEmplaceFrontPreservesSourceEvaluationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "776ad620e6aad2cf6022ca508b01d26d5e2869be3d7e258dc789195921c4ecd8",
+      "original_case_source_sha256": "776ad620e6aad2cf6022ca508b01d26d5e2869be3d7e258dc789195921c4ecd8",
+      "gtest_body_sha256": "1161cc961b72e060edd081ed337fd58d3a2537a72988e682517ed3c2cd1c4971"
+    },
+    {
+      "name": "forward-list-emplace-front-converts-mutable-long",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceFrontConvertsMutableLongRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c98177f106b7c148a69919b9c5cf51b90615e2cfcdcecd040d87e487bb4da0f7",
+      "original_case_source_sha256": "c98177f106b7c148a69919b9c5cf51b90615e2cfcdcecd040d87e487bb4da0f7",
+      "gtest_body_sha256": "6b42e3edf4521ec2c9f1a328de6a3c73ea351bf3f65d917dc1903533f0d7f6cd"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "forward-list-emplace-volatile-short-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceVolatileShortGuardRejected",
+      "expected": "reject",
+      "source_sha256": "bf9605815c113d45d506f2fc85757dd67f2d35634e6a443a472462c4a9a4b2af",
+      "original_case_source_sha256": "bf9605815c113d45d506f2fc85757dd67f2d35634e6a443a472462c4a9a4b2af",
+      "gtest_body_sha256": "1fcd10d8fb79f080261f48aeb8c15e8f76acfec0dde4bdc5485c421306003c5e"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "forward-list-emplace-after-converts-const-short",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const short value = -320;\n  std::forward_list<int> list{5, 6};\n  auto selected = list.emplace_after(list.cbegin(), value);\n  auto item = list.begin();\n  if (*item++ != 5 || item != selected || *item++ != -320)\n    return 1;\n  return *item++ != 6 || item != list.end();\n}\n",
+      "source_sha256": "e1709f5bc2c26052881ea9727970c17b5435174317c0816f6821babd2340e8d7",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-long-emplace-front-preserves-source-evaluation",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint calls = 0;\nint next() { ++calls; return -289; }\nint main() {\n  std::forward_list<long> list{9L};\n  long &result = list.emplace_front(next());\n  if (calls != 1 || &result != &list.front() || result != -289L)\n    return 1;\n  result = 700L;\n  auto item = list.cbegin();\n  return *item++ != 700L || *item++ != 9L || item != list.cend();\n}\n",
+      "source_sha256": "776ad620e6aad2cf6022ca508b01d26d5e2869be3d7e258dc789195921c4ecd8",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-emplace-front-converts-mutable-long",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  long value = -45L;\n  std::forward_list<int> list;\n  int &result = list.emplace_front(value);\n  value = 19L;\n  return &result != &list.front() || result != -45 || value != 19L;\n}\n",
+      "source_sha256": "c98177f106b7c148a69919b9c5cf51b90615e2cfcdcecd040d87e487bb4da0f7",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-emplace-volatile-short-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint main() {\n  volatile short value = 1;\n  std::forward_list<long> list;\n  list.emplace_front(value);\n  return list.front() != 1L;\n}\n",
+      "source_sha256": "bf9605815c113d45d506f2fc85757dd67f2d35634e6a443a472462c4a9a4b2af",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListEmplaceAfterConvertsConstShortRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListLongEmplaceFrontPreservesSourceEvaluationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEmplaceFrontConvertsMutableLongRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEmplaceVolatileShortGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "be2a1e00dde6f5628947634a30d19c98d7f52d64e8edb89ca3f2f87a8a978f75",
+  "maintained_original_sha256": "6b9196d994fcd86fe1b2bd5c6e4af35f866f7bd0dacda4417ba816135db02808",
+  "previous_registered_source_sha256": "47ddd5063205cb2696d1f2912263fbecbfe25352fdecbad64b5423db06578b6a",
+  "previous_maintained_original_sha256": "e4870f9d43cfc9b9f94b967104bb13b119609adb36af0c6a29d6821f6991cfcf",
+  "restorer_sha256": "3eb3485dff9ac3efe52b1e26a6683f5744739faa6f4cfb9d40d774ee68df4902",
+  "extractor_sha256": "7decdc4e6a8d781c162d39ee31bb979249bcefed3cbdd1d9971600ece5bb1bd0",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9251,
+  "current_python_registry_tests": 328,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "forward-list-converting-emplace": "45d5c2fcc9d1030f6653c8204018e48f90caa0beec702e97edd1764e79c23403"
+  },
+  "native_reference_authentication_sha256": "cc3406dc6990ee4ad9f51220d5ccdf6eb763da2f710040f2d1d246df27a742d4",
+  "source_proof_sha256": "da8b3aac87f0aed207d92d50edd4d89315a8d74ee6ede25ba694b250b15b0729"
+}
