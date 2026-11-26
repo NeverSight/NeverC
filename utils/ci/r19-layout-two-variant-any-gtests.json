@@ -1,0 +1,131 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-two-visit-mixed-active-indices",
+      "formal_test_name": "TranslateTest.CoreV2VariantTwoVisitMixedActiveIndicesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "71f65110f346e8805c9d5927d132c66105b6abbd26f8c954725a4dad2d5aadb9",
+      "original_case_source_sha256": "71f65110f346e8805c9d5927d132c66105b6abbd26f8c954725a4dad2d5aadb9",
+      "gtest_body_sha256": "84cba5cdf53ee6d205412c810383a1966e080f3dea8ba970df7dabbf99f55e55"
+    },
+    {
+      "name": "variant-two-visit-const-operand-and-mutation",
+      "formal_test_name": "TranslateTest.CoreV2VariantTwoVisitConstOperandAndMutationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e21718602202fd5cd323d20598dad1bf5198429da991761666a2e154677d437b",
+      "original_case_source_sha256": "e21718602202fd5cd323d20598dad1bf5198429da991761666a2e154677d437b",
+      "gtest_body_sha256": "bc201d811583724c765ac2cfec4b978ce8d082a298f1c707a3913f7abf4556b6"
+    },
+    {
+      "name": "variant-two-visit-alias-and-effects-with-void-result",
+      "formal_test_name": "TranslateTest.CoreV2VariantTwoVisitAliasAndEffectsWithVoidResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "88a7ff3f38c2e089aa1cfe0acb4c716c95866883368944288213f38f4d7402d9",
+      "original_case_source_sha256": "88a7ff3f38c2e089aa1cfe0acb4c716c95866883368944288213f38f4d7402d9",
+      "gtest_body_sha256": "fc6e17a9f61930e9a8482ecf867b7ffcd1a80aa5dd0b65772316abb4eab12e7b"
+    },
+    {
+      "name": "variant-two-visit-generic-visitor",
+      "formal_test_name": "TranslateTest.CoreV2VariantTwoVisitUsesCapturelessGenericVisitor",
+      "expected": "accept",
+      "source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
+      "original_case_source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
+      "gtest_body_sha256": "8fe72d31cc0314aae765446c39f83ed3c94488e981b532e0ec86eb45d05077f1",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-two-visit-renamed-matrix-index",
+      "formal_test_name": "TranslateTest.CoreV2VariantTwoVisitRenamedMatrixIndexRejected",
+      "expected": "reject",
+      "source_sha256": "55f069f9300dd16d4900a993e85026ad2ec038abe4df518229b0a46f9692cd87",
+      "original_case_source_sha256": "55f069f9300dd16d4900a993e85026ad2ec038abe4df518229b0a46f9692cd87",
+      "gtest_body_sha256": "3141e0f8b96256fcf065d51b636c31dd255bd0c21fa5dfef7a9276a61263d0ff"
+    },
+    {
+      "name": "variant-two-visit-renamed-matrix-dispatch",
+      "formal_test_name": "TranslateTest.CoreV2VariantTwoVisitRenamedMatrixDispatchRejected",
+      "expected": "reject",
+      "source_sha256": "595064f2bbaa4a9d4d20e26accf4fe2c0cedcc36f2607036948d8278be3db4c4",
+      "original_case_source_sha256": "595064f2bbaa4a9d4d20e26accf4fe2c0cedcc36f2607036948d8278be3db4c4",
+      "gtest_body_sha256": "22cf5ec63d74b3cb2b0898f6d3b348f2407a0ace00adf7fe96b530b7c5b78292"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-two-visit-mixed-active-indices",
+      "source": "#include <variant>\nlong combine(int a, long b) { return a * 100 + b; }\nint main() {\n  std::variant<short, int> left(std::in_place_index<0>, short(7));\n  std::variant<long, int, short> right(std::in_place_index<2>, short(15));\n  if (std::visit(combine, left, right) != 715)\n    return 1;\n  left.emplace<1>(25);\n  right.emplace<0>(51L);\n  if (std::visit(combine, left, right) != 2551)\n    return 2;\n  right.emplace<1>(-3);\n  return std::visit(&combine, left, right) != 2497;\n}\n",
+      "expected": "accept",
+      "source_sha256": "71f65110f346e8805c9d5927d132c66105b6abbd26f8c954725a4dad2d5aadb9",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-two-visit-const-operand-and-mutation",
+      "source": "#include <variant>\nint observe(short x, int y) { return x - y; }\nint main() {\n  const std::variant<int, short> a(std::in_place_index<1>, short(3));\n  std::variant<short, int> b(std::in_place_index<1>, 28);\n  if (std::visit(&observe, a, b) != -25)\n    return 1;\n  b.emplace<0>(short(-1));\n  return std::visit(observe, a, b) != 4;\n}\n",
+      "expected": "accept",
+      "source_sha256": "e21718602202fd5cd323d20598dad1bf5198429da991761666a2e154677d437b",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-two-visit-alias-and-effects-with-void-result",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nusing Visitor = void (*)(int,int);\nint left_calls, right_calls, visitor_calls, invoked, seen;\nvoid two(int a, int b) { ++invoked; seen = a * 10 + b; }\nVisitor visitor() { ++visitor_calls; return &two; }\nValue& left(Value& v) { ++left_calls; return v; }\nValue& right(Value& v) { ++right_calls; return v; }\nint main() {\n  Value v(std::in_place_index<1>, 4);\n  std::visit(visitor(), left(v), right(v));\n  return seen != 44 || left_calls != 1 || right_calls != 1 || visitor_calls != 1 || invoked != 1;\n}\n",
+      "expected": "accept",
+      "source_sha256": "88a7ff3f38c2e089aa1cfe0acb4c716c95866883368944288213f38f4d7402d9",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-two-visit-generic-visitor",
+      "source": "#include <variant>\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit([](auto a, auto b) -> int { return a - b; }, left, right);\n}\n",
+      "expected": "accept",
+      "source_sha256": "ac356a29bb0c8e26d6d63f44d9f2ce13b8f2e00bfdcd22ee3c64d8b7e864bb27",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-two-visit-renamed-matrix-index",
+      "source": "#define __at changed_matrix_index\n#include <variant>\n#undef __at\nint sub(int a, int b) { return a - b; }\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit(sub, left, right);\n}\n",
+      "expected": "reject",
+      "source_sha256": "55f069f9300dd16d4900a993e85026ad2ec038abe4df518229b0a46f9692cd87",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-two-visit-renamed-matrix-dispatch",
+      "source": "#define __dispatch changed_matrix_dispatch\n#include <variant>\n#undef __dispatch\nint sub(int a, int b) { return a - b; }\nint f(std::variant<int, short>& left, std::variant<int, short>& right) {\n  return std::visit(sub, left, right);\n}\n",
+      "expected": "reject",
+      "source_sha256": "595064f2bbaa4a9d4d20e26accf4fe2c0cedcc36f2607036948d8278be3db4c4",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantTwoVisitMixedActiveIndicesRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTwoVisitConstOperandAndMutationRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTwoVisitAliasAndEffectsWithVoidResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantTwoVisitUsesCapturelessGenericVisitor",
+    "TranslateTest.CoreV2VariantTwoVisitRenamedMatrixIndexRejected",
+    "TranslateTest.CoreV2VariantTwoVisitRenamedMatrixDispatchRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "db4b815bb0310f32f1577df59ad0601008e7339bc4805d1c7b2cedf55bf554f0",
+  "maintained_original_sha256": "5ea4dd16eb081c1ae850c9041998ca7c81b9520eb9e68cdfd75b76fe06c7c215",
+  "previous_registered_source_sha256": "e1d1a69ba0d36883041061e29d4f6b1a52580f9c20e28da26728138c17b24bb4",
+  "previous_maintained_original_sha256": "a440054763014f0dc34b4964cfd525447e5a4df69d6ba2ca69f9eab19e5c8346",
+  "restorer_sha256": "deb4d7df574c405e06fe2c2d7ac7364b5a73bd7955f708923fd1b9b69ac8dad5",
+  "extractor_sha256": "448448985319ee2cbdf39d7860c98802edd2f18e3372d5a8672616b7b6c8e0e8",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8191,
+  "current_python_registry_tests": 134,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "variant-two-operand-visit": "6df3ff5f32a6aefd59d674e4995f1ee301617c2c173aa9cd61844737a6f88398"
+  },
+  "native_reference_authentication_sha256": "1e0d40a335099597144bb8e9e0dd74310af6f9080b6d1871c92ff195bf8361d8",
+  "source_proof_sha256": "0d248c934883d54810ce5979dd56b3efc875aa1ec821f0cb386577c777f8f784"
+}
