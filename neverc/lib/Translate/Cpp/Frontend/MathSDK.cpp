@@ -56318,16 +56318,16 @@ bool listIteratorType(const State &S, const SourceManager &SM, QualType T,
 }
 
 bool listRangeInputSignature(const State &S, const SourceManager &SM,
-    const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context) {
+    const CXXMethodDecl *M, const UtilityListRecord &Owner, const ASTContext &Context, unsigned First = 0) {
   if (M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation ||
-      M->getParamDecl(0)->hasDefaultArg() || M->getParamDecl(1)->hasDefaultArg())
+      M->getParamDecl(First)->hasDefaultArg() || M->getParamDecl(First + 1)->hasDefaultArg())
     return false;
-  const auto Input = M->getParamDecl(0)->getType();
+  const auto Input = M->getParamDecl(First)->getType();
   const auto *Arguments = M->getTemplateSpecializationArgs();
   if (!Arguments || Arguments->size() != 2 ||
       Arguments->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Input) ||
-      !Context.hasSameType(M->getParamDecl(1)->getType(), Input))
+      !Context.hasSameType(M->getParamDecl(First + 1)->getType(), Input))
     return false;
   if (Input->isPointerType()) {
     const auto Value = Input->getPointeeType();
@@ -56545,7 +56545,16 @@ std::optional<UtilityListOperation> listMethodSignature(
       !listFunctionDeclarations(S, SM, M)) return std::nullopt;
   if (const auto Owner = approvedUtilityListRecord(S, SM, M->getParent(), Context)) {
     const auto Element = Owner->Node.Value->getType();
+    const auto IsInsertionPosition = [&] {
+      return M->getNumParams() && !M->getParamDecl(0)->hasDefaultArg() &&
+             listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context);
+    };
     if (M->getPrimaryTemplate()) {
+      if (M->getIdentifier() && M->getName() == "insert" && !M->isConst() &&
+          M->getRefQualifier() == RQ_None && M->getNumParams() == 3 && IsInsertionPosition() &&
+          listIteratorType(S, SM, M->getReturnType(), Owner->Node, false, Context) &&
+          listRangeInputSignature(S, SM, M, *Owner, Context, 1))
+        return UtilityListOperation::InsertRange;
       if (listAssignRangeSignature(S, SM, M, *Owner, Context))
         return UtilityListOperation::AssignRange;
       if (auto Predicate = listPredicateSignature(M, Element, Context)) return Predicate;
@@ -56659,6 +56668,15 @@ std::optional<UtilityListOperation> listMethodSignature(
       if (M->getNumParams() == 1) return UtilityListOperation::Erase;
       if (listIteratorType(S, SM, M->getParamDecl(1)->getType(), Owner->Node, true, Context))
         return UtilityListOperation::EraseRange;
+    }
+    if (Name == "insert" && M->getRefQualifier() == RQ_None && IsInsertionPosition()) {
+      if (M->getNumParams() == 3 && !M->getParamDecl(1)->hasDefaultArg() && !M->getParamDecl(2)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(1)->getType(), Context.getSizeType()) &&
+          Context.hasSameType(M->getParamDecl(2)->getType(), Context.getLValueReferenceType(Element.withConst())))
+        return UtilityListOperation::InsertCount;
+      if (M->getNumParams() == 2 && !M->getParamDecl(1)->hasDefaultArg() &&
+          IsInitializer(M->getParamDecl(1)->getType()))
+        return UtilityListOperation::InsertInitializer;
     }
     if (Name == "insert" && M->getNumParams() == 2 &&
         listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner->Node, true, Context) &&

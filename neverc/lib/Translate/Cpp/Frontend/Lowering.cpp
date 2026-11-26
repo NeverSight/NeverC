@@ -29105,34 +29105,8 @@ class FunctionLowering {
       Fill = address(Zero, Element, L);
     }
     auto Added = snapshot(binary("-", SizeRequested, CurrentSize, Size, L), L);
-    auto ToCreate = temporary(Size, L);
-    auto First = temporary("ptr:void", L), Tail = temporary("ptr:void", L);
-    assign(ToCreate, Added, L);
-    initializeZero(First, A.Context.VoidPtrTy, L);
-    initializeZero(Tail, A.Context.VoidPtrTy, L);
-    const auto Make = labelName(), Link = labelName(), SetFirst = labelName(), Advance = labelName(), Commit = labelName();
-    jump(Make, L); label(Make, L);
-    auto Node = listCreateNode(*Fill, Info, L);
-    assign(listLink(Node, true, L), Tail, L);
-    branch(cast(Tail, "bool", L), Link, SetFirst, L);
-    label(Link, L);
-    assign(listLink(Tail, false, L), Node, L);
-    jump(Advance, L);
-    label(SetFirst, L); assign(First, Node, L); jump(Advance, L);
-    label(Advance, L);
-    assign(Tail, Node, L);
-    assign(ToCreate, binary("-", ToCreate, quantity(1, Size, L), Size, L), L);
-    branch(binary("!=", ToCreate, quantity(0, Size, L), "bool", L), Make, Commit, L);
-    label(Commit, L);
-    // The SDK attaches the complete chain after all allocation callbacks.
-    auto End = snapshot(listSentinel(Place, L), L);
-    auto Previous = snapshot(listLink(End, true, L), L);
-    assign(listLink(Previous, false, L), First, L);
-    assign(listLink(First, true, L), Previous, L);
-    assign(listLink(Tail, false, L), End, L);
-    assign(listLink(End, true, L), Tail, L);
-    assign(listMember(Place, "nct_list_size", L),
-        binary("+", listMember(Place, "nct_list_size", L), Added, Size, L), L);
+    auto Input = listRepeatedInput(Added, *Fill, L);
+    listInsertInputStorage(Place, snapshot(listSentinel(Place, L), L), Input, Info, L);
     jump(Done, L); label(Done, L);
   }
 
@@ -29469,6 +29443,7 @@ class FunctionLowering {
     Expression Current;
     Expression End;
     QualType PointerElement;
+    std::optional<Expression> Remaining = std::nullopt;
   };
 
   ListAssignmentInput listAssignmentInput(Expression First, Expression Last,
@@ -29481,13 +29456,31 @@ class FunctionLowering {
     return {std::move(Current), std::move(End), PointerElement};
   }
 
+  ListAssignmentInput listRepeatedInput(Expression Count, Expression Value, SourceLocation L) {
+    auto Remaining = temporary(type(A.Context.getSizeType(), L), L);
+    assign(Remaining, std::move(Count), L);
+    return {std::move(Value), {}, {}, std::move(Remaining)};
+  }
+
+  Expression listInputHasNext(const ListAssignmentInput &Input, SourceLocation L) {
+    if (Input.Remaining)
+      return binary("!=", *Input.Remaining, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
+    return binary("!=", Input.Current, Input.End, "bool", L);
+  }
+
   Expression listAssignmentReference(const ListAssignmentInput &Input, QualType Element, SourceLocation L) {
+    if (Input.Remaining) return Input.Current;
     return Input.PointerElement.isNull()
         ? address(listValue(Input.Current, Element, true, L), Element.withConst(), L)
         : Input.Current;
   }
 
   void advanceListAssignmentInput(const ListAssignmentInput &Input, SourceLocation L) {
+    if (Input.Remaining) {
+      const auto Size = type(A.Context.getSizeType(), L);
+      assign(*Input.Remaining, binary("-", *Input.Remaining, quantity(1, Size, L), Size, L), L);
+      return;
+    }
     if (Input.PointerElement.isNull()) {
       assign(Input.Current, snapshot(listLink(Input.Current, false, L), L), L);
       return;
@@ -29498,8 +29491,11 @@ class FunctionLowering {
   }
 
   ListAssignmentInput listInitializerInput(Expression Operand,
-      const UtilityInitializerListRecord &List, SourceLocation L) {
-    const auto Element = List.ElementType;
+      QualType Parameter, QualType Element, SourceLocation L) {
+    const auto Approved = approvedUtilityInitializerListRecord(A.S, A.Sources, Parameter->getAsCXXRecordDecl(), A.Context);
+    if (!Approved || !A.Context.hasSameType(Approved->ElementType, Element))
+      reject(L, "list initializer", "The matching pinned scalar initializer-list carrier is required.");
+    const auto &List = *Approved;
     auto Carrier = dereference(std::move(Operand), L);
     auto First = snapshot(fieldStorage(Carrier, List.Begin, L), L);
     auto Count = snapshot(fieldStorage(std::move(Carrier), List.Size, L), L);
@@ -29555,9 +29551,48 @@ class FunctionLowering {
     label(Done, L);
   }
 
-  void listAssignValueStorage(Expression Place, const ListAssignmentInput &Input,
+  Expression listInsertInputStorage(Expression Place, Expression Position, const ListAssignmentInput &Input,
       const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
+    auto Count = temporary(Size, L), Result = temporary("ptr:void", L), Tail = temporary("ptr:void", L);
+    assign(Count, quantity(0, Size, L), L);
+    assign(Result, Position, L);
+    initializeZero(Tail, A.Context.VoidPtrTy, L);
+    const auto Make = labelName(), Link = labelName(), First = labelName(), Advance = labelName();
+    const auto Commit = labelName(), Done = labelName();
+    branch(listInputHasNext(Input, L), Make, Done, L);
+    label(Make, L);
+    auto Node = listCreateNode(listAssignmentReference(Input, Info.Value->getType(), L),
+                               Info, L, Input.PointerElement);
+    assign(listLink(Node, true, L), Tail, L);
+    branch(cast(Tail, "bool", L), Link, First, L);
+    label(Link, L);
+    assign(listLink(Tail, false, L), Node, L);
+    jump(Advance, L);
+    label(First, L);
+    assign(Result, Node, L);
+    jump(Advance, L);
+    label(Advance, L);
+    assign(Tail, Node, L);
+    assign(Count, binary("+", Count, quantity(1, Size, L), Size, L), L);
+    advanceListAssignmentInput(Input, L);
+    branch(listInputHasNext(Input, L), Make, Commit, L);
+    label(Commit, L);
+    // The complete chain is still detached during allocation callbacks.
+    auto Previous = snapshot(listLink(Position, true, L), L);
+    assign(listLink(Previous, false, L), Result, L);
+    assign(listLink(Result, true, L), Previous, L);
+    assign(listLink(Tail, false, L), Position, L);
+    assign(listLink(Position, true, L), Tail, L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
+  }
+
+  void listAssignValueStorage(Expression Place, const ListAssignmentInput &Input,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
     auto Output = temporary("ptr:void", L);
     assign(Output, listMember(Place, "nct_list_next", L), L);
     auto OutputEnd = snapshot(listSentinel(Place, L), L);
@@ -29579,29 +29614,7 @@ class FunctionLowering {
     listEraseRange(Place, Output, OutputEnd, Info, L);
     jump(Done, L);
     label(Append, L);
-    // SDK assignment builds its remaining range as a detached chain, then
-    // links it and changes the destination size after all allocation callbacks.
-    auto First = temporary("ptr:void", L), Last = temporary("ptr:void", L), Count = temporary(Size, L);
-    initializeZero(First, A.Context.VoidPtrTy, L); initializeZero(Last, A.Context.VoidPtrTy, L);
-    assign(Count, quantity(0, Size, L), L);
-    const auto AppendCheck = labelName(), Make = labelName(), Link = labelName(), SetFirst = labelName(), Advance = labelName(), Commit = labelName();
-    jump(AppendCheck, L); label(AppendCheck, L);
-    branch(binary("!=", Input.Current, Input.End, "bool", L), Make, Commit, L);
-    label(Make, L);
-    auto Node = listCreateNode(listAssignmentReference(Input, Element, L), Info, L,
-                               Input.PointerElement);
-    assign(listLink(Node, true, L), Last, L);
-    branch(cast(First, "bool", L), Link, SetFirst, L);
-    label(Link, L); assign(listLink(Last, false, L), Node, L); jump(Advance, L);
-    label(SetFirst, L); assign(First, Node, L); jump(Advance, L);
-    label(Advance, L); assign(Last, Node, L);
-    assign(Count, binary("+", Count, quantity(1, Size, L), Size, L), L);
-    advanceListAssignmentInput(Input, L);
-    jump(AppendCheck, L); label(Commit, L);
-    auto PreviousTail = snapshot(listLink(OutputEnd, true, L), L);
-    assign(listLink(PreviousTail, false, L), First, L); assign(listLink(First, true, L), PreviousTail, L);
-    assign(listLink(Last, false, L), OutputEnd, L); assign(listLink(OutputEnd, true, L), Last, L);
-    assign(listMember(Place, "nct_list_size", L), binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    listInsertInputStorage(Place, OutputEnd, Input, Info, L);
     jump(Done, L); label(Done, L);
   }
 
@@ -29839,6 +29852,20 @@ class FunctionLowering {
       listInsertNode(Place, *Position, Node, L);
       return Emplace ? listIterator(Method->getReturnType(), Node, L) : listValue(Node, Element, false, L);
     }
+    if (Operation == UtilityListOperation::InsertCount || Operation == UtilityListOperation::InsertRange ||
+        Operation == UtilityListOperation::InsertInitializer) {
+      auto Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
+      const auto Parameter = Method->getParamDecl(1)->getType();
+      ListAssignmentInput Input;
+      if (Operation == UtilityListOperation::InsertCount)
+        Input = listRepeatedInput(Operands[1], Operands[2], L);
+      else if (Operation == UtilityListOperation::InsertRange)
+        Input = listRangeInput(Operands[1], Operands[2], Parameter, L);
+      else
+        Input = listInitializerInput(Operands[1], Parameter, Element, L);
+      auto First = listInsertInputStorage(Place, Position, Input, Owner->Node, L);
+      return listIterator(Method->getReturnType(), std::move(First), L);
+    }
     const bool Insert = Operation == UtilityListOperation::Insert;
     if (Insert || Operation == UtilityListOperation::PushFront || Operation == UtilityListOperation::PushBack) {
       std::optional<Expression> Position;
@@ -29853,10 +29880,7 @@ class FunctionLowering {
     }
     if (Operation == UtilityListOperation::AssignInitializer) {
       const auto Parameter = Method->getParamDecl(0)->getType();
-      const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources, Parameter->getAsCXXRecordDecl(), A.Context);
-      if (!List || !A.Context.hasSameType(List->ElementType, Element))
-        reject(L, "list assignment", "The matching pinned scalar initializer-list carrier is required.");
-      const auto Input = listInitializerInput(Operands[0], *List, L);
+      const auto Input = listInitializerInput(Operands[0], Parameter, Element, L);
       listAssignValueStorage(Place, Input, Owner->Node, L);
       return AssignmentSyntax ? Place : Expression{};
     }
