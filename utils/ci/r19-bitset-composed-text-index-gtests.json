@@ -247,6 +247,46 @@
       "source_sha256": "d3e27491981d11c704b4d46fd1808cc8d0c6a8e41cbd8b7df60632fb88a5ac2e",
       "original_case_source_sha256": "d3e27491981d11c704b4d46fd1808cc8d0c6a8e41cbd8b7df60632fb88a5ac2e",
       "gtest_body_sha256": "8bdaab33a8e133e6c8555f1efefb276b633a5f6efa56f0d660cff7319c526938"
+    },
+    {
+      "name": "bitset-const-local-guard-const-reference",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsExtendedTemporary",
+      "expected": "accept",
+      "source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
+      "original_case_source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
+      "gtest_body_sha256": "b730a802eb8e771d86ab03b84d5f2abd4eed32c09f9d16a4e66344d84e2138b5"
+    },
+    {
+      "name": "bitset-const-local-guard-conditional-receiver",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionSelectsImmutableReceiver",
+      "expected": "accept",
+      "source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
+      "original_case_source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
+      "gtest_body_sha256": "dedf17ecdc12aca931574c74c4fcd636bec5d59aebe0bba05ef012ff9f2956a8"
+    },
+    {
+      "name": "bitset-const-local-guard-copy-initialized",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseLocal",
+      "expected": "accept",
+      "source_sha256": "8b3a81dbbc1b9cbedc23b8c516ee2799d89e7654ce854b9626ed22dc80cffb11",
+      "original_case_source_sha256": "8b3a81dbbc1b9cbedc23b8c516ee2799d89e7654ce854b9626ed22dc80cffb11",
+      "gtest_body_sha256": "7e54ab5072b22deabbeb7c32472962bedede0ac8c0a4985516e8e717b8fb29cc"
+    },
+    {
+      "name": "bitset-const-local-guard-static-const",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsStaticConstant",
+      "expected": "accept",
+      "source_sha256": "c34b57ceb60f96dbb45f71dc4f738c95b20524179ec35bb4355ebfdf7746ce89",
+      "original_case_source_sha256": "c34b57ceb60f96dbb45f71dc4f738c95b20524179ec35bb4355ebfdf7746ce89",
+      "gtest_body_sha256": "3f13f58ccd483294cee6d7cb906653747afd6097a9e4a35541419e258e1c78d8"
+    },
+    {
+      "name": "bitset-const-local-guard-const-member",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsConstDataMember",
+      "expected": "accept",
+      "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
+      "original_case_source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
+      "gtest_body_sha256": "80b4708ee802cc776a086abd7ad00642bffd2947e46ab547fff5d67191300cbf"
     }
   ],
   "negative_cases": [
@@ -267,52 +307,12 @@
       "gtest_body_sha256": "18538266823174ac95fdef2d47762f967d09cc677577494c2480494e5f2d9e90"
     },
     {
-      "name": "bitset-const-local-guard-const-reference",
-      "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardConstReferenceRejected",
-      "expected": "reject",
-      "source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
-      "original_case_source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
-      "gtest_body_sha256": "2127b69b34098bbe96858496923673f6ebc313659af745fed6e72746c8b0e320"
-    },
-    {
-      "name": "bitset-const-local-guard-static-const",
-      "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardStaticConstRejected",
-      "expected": "reject",
-      "source_sha256": "c34b57ceb60f96dbb45f71dc4f738c95b20524179ec35bb4355ebfdf7746ce89",
-      "original_case_source_sha256": "c34b57ceb60f96dbb45f71dc4f738c95b20524179ec35bb4355ebfdf7746ce89",
-      "gtest_body_sha256": "63f9f8a4e5584387f1869c988166d923a283181f943b2dbb902f705b5c908f81"
-    },
-    {
       "name": "bitset-const-local-guard-const-parameter",
       "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardConstParameterRejected",
       "expected": "reject",
       "source_sha256": "14f65c012de3c0b2f26b7deba0e19c8b215dfe2deb7e4036dccb0f9617865b0d",
       "original_case_source_sha256": "14f65c012de3c0b2f26b7deba0e19c8b215dfe2deb7e4036dccb0f9617865b0d",
       "gtest_body_sha256": "91b7b8f7f384fa0bd51871c3746083512e40fcb1e3eb19315304eb75c9cd76fc"
-    },
-    {
-      "name": "bitset-const-local-guard-copy-initialized",
-      "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardCopyInitializedRejected",
-      "expected": "reject",
-      "source_sha256": "8b3a81dbbc1b9cbedc23b8c516ee2799d89e7654ce854b9626ed22dc80cffb11",
-      "original_case_source_sha256": "8b3a81dbbc1b9cbedc23b8c516ee2799d89e7654ce854b9626ed22dc80cffb11",
-      "gtest_body_sha256": "d871f8ab5ca7a59dcd4e2f11a4d0338f6242143ae002c500e8b345870f1f3fc3"
-    },
-    {
-      "name": "bitset-const-local-guard-const-member",
-      "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardConstMemberRejected",
-      "expected": "reject",
-      "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
-      "original_case_source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
-      "gtest_body_sha256": "00126fa8e5618c6e57d6d7dc3083fd8522cca3e39c1bb6e8599906f294c772c7"
-    },
-    {
-      "name": "bitset-const-local-guard-conditional-receiver",
-      "formal_test_name": "TranslateTest.CoreV2BitsetConstLocalGuardConditionalReceiverRejected",
-      "expected": "reject",
-      "source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
-      "original_case_source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
-      "gtest_body_sha256": "938ec3825dc4f1d0ee9b3181f73701d81eb70b7fa95f7875f61f9cb636cff394"
     },
     {
       "name": "bitset-constant-position-guard-negative",
@@ -619,14 +619,14 @@
     "TranslateTest.CoreV2BitsetConstexprTextPointerPointerTypeAliasRunAtBothOptimizations",
     "TranslateTest.CoreV2BitsetConstexprTextPointerZeroCountRunAtBothOptimizations",
     "TranslateTest.CoreV2BitsetWideSwapAndCheckedPositionsRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsExtendedTemporary",
+    "TranslateTest.CoreV2BitsetUnsignedConversionSelectsImmutableReceiver",
+    "TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseLocal",
+    "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsStaticConstant",
+    "TranslateTest.CoreV2BitsetUnsignedConversionAcceptsConstDataMember",
     "TranslateTest.CoreV2BitsetConstLocalGuardMutableLocalRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardAliasToMutableRejected",
-    "TranslateTest.CoreV2BitsetConstLocalGuardConstReferenceRejected",
-    "TranslateTest.CoreV2BitsetConstLocalGuardStaticConstRejected",
     "TranslateTest.CoreV2BitsetConstLocalGuardConstParameterRejected",
-    "TranslateTest.CoreV2BitsetConstLocalGuardCopyInitializedRejected",
-    "TranslateTest.CoreV2BitsetConstLocalGuardConstMemberRejected",
-    "TranslateTest.CoreV2BitsetConstLocalGuardConditionalReceiverRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardNegativeRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardOnePastRejected",
     "TranslateTest.CoreV2BitsetConstantPositionGuardConvertedTooLargeRejected",
@@ -662,17 +662,21 @@
     "TranslateTest.CoreV2BitsetConstexprTextPointerGuardOwnedDecoderRejected",
     "TranslateTest.CoreV2BitsetWideSwapAndOutOfBoundsPositionRejected"
   ],
-  "native_reference_authentication_sha256": "12d1632159172878dd381a0e3db9ababd930f2a126174a6f3518bc8f93d02b52",
+  "native_reference_authentication_sha256": "e00f9af1732c6792de2f14766f6ed87a68aa28a7dbd5ff9e214bd03442892854",
   "native_reference_proofs": {
+    "bitset-const-member": "f6a998ed0442766f1ef9697e02a8800fa0a70d5931683e1381bae381022a4c34",
+    "bitset-const-static-unsigned-replay": "ce04fd417d7df7f8acec5e43b1072804aea691cceed7922f35a6c75caebada2c",
+    "bitset-reference-materialization": "81867ed88acbf1edd6052562dfe20dfc33a45dd67a18ddb7aaf31e6913b7b521",
+    "bitset-unaliased-copy": "76610846ae7580bb48502fa59e90616b94ee92adebc66499915936f77c4d660a",
+    "composed-witness": "5a2e82d350f86d096d370f25c027052e09c6013d9b1ca9c4c10119d54c4a1e70",
     "const-local": "e8b426f964b5249e65709fbbf64dd170aa8d823fdeee6bbbddf3d425002bca65",
     "constant-position": "8f60ff6176f9cd80d72db81ab78ffb428fd8e3b4f47fcde73351b80a1abbf6f0",
-    "unsigned-index-type": "af6abbe53a224b21e46ecc2b7803fb918b4ca574b5ceb0bb519e8b4112811941",
-    "owned-string-representation": "07e846ae1ab33e30136acbdfdf50b65df7fe748295c6416fdfb5b6cc630d478e",
     "constexpr-text-pointer": "2b27588c467d049757d91df44cc4fe949df2b569d53ac50d014220598a5dbea7",
-    "composed-witness": "5a2e82d350f86d096d370f25c027052e09c6013d9b1ca9c4c10119d54c4a1e70"
+    "owned-string-representation": "07e846ae1ab33e30136acbdfdf50b65df7fe748295c6416fdfb5b6cc630d478e",
+    "unsigned-index-type": "af6abbe53a224b21e46ecc2b7803fb918b4ca574b5ceb0bb519e8b4112811941"
   },
-  "native_reference_selected_executions": 62,
-  "planned_generated_c23_executions": 62,
+  "native_reference_selected_executions": 72,
+  "planned_generated_c23_executions": 72,
   "actual_new_gtests_executed": 0,
   "actual_new_generated_c23_executions": 0,
   "source_proof_gate_pending": false,
@@ -694,7 +698,7 @@
       "source_sha256": "52f14ba83c3efc9175611869467e9e7db824356bf2b0c4fa5b00d1224f13f1cc",
       "public_header": "bitset",
       "expected": "accept",
-      "kind": "bitset-const-local-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-const-local-single-word-fit",
@@ -702,7 +706,7 @@
       "source_sha256": "86bd8dfbbea21033a533cd3d0f41dd1faacc37105e8086f128ca9bed6bc8476a",
       "public_header": "bitset",
       "expected": "accept",
-      "kind": "bitset-const-local-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-const-local-wide-unsigned-argument",
@@ -710,7 +714,7 @@
       "source_sha256": "3b0d672ad22db71bb22311ba5c285104c0d0f86f0a31b1a669d1e4a94ebcf876",
       "public_header": "bitset",
       "expected": "accept",
-      "kind": "bitset-const-local-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-const-local-one-time-initialization",
@@ -718,7 +722,7 @@
       "source_sha256": "7b2f9521f231daf0af31b8d6e0deea79f0b3094340282232cb823fa6fba0e2ce",
       "public_header": "bitset",
       "expected": "accept",
-      "kind": "bitset-const-local-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-const-local-live-source-independence",
@@ -726,7 +730,7 @@
       "source_sha256": "0545f97bcbd887c96dc77b2fad2a0bcf8fbc8ae48ef189dddaa817e363430ca9",
       "public_header": "bitset",
       "expected": "accept",
-      "kind": "bitset-const-local-operations"
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-const-local-const-alias-type",
@@ -734,7 +738,247 @@
       "source_sha256": "4756a50d5fe76e9f36bafa38efd353d1fbbd7f7f25ac876f43f7d019fefb80b7",
       "public_header": "bitset",
       "expected": "accept",
-      "kind": "bitset-const-local-operations"
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constant-position-namespace-constant",
+      "source": "#include <bitset>\nconstexpr std::size_t high = 64;\nint main() {\n  std::bitset<70> bits;\n  bits.set(high);\n  return !bits.test(high) || bits.count() != 1;\n}\n",
+      "source_sha256": "a21bcc74731758e49b054e8f17c36c551c280247028218e384afd1c81e95cbb1",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constant-position-arithmetic",
+      "source": "#include <bitset>\nint main() {\n  std::bitset<70> bits;\n  bits.set(1u << 6);\n  bits.flip(35 + 30);\n  bits.reset(32 * 2);\n  return bits.test(64) || !bits.test(35 + 30) || bits.count() != 1;\n}\n",
+      "source_sha256": "32da801f41cac60157dfac92bca9b89976a16d7c4397d42f401cf839d068c43f",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constant-position-enum-index",
+      "source": "#include <bitset>\nenum Position : unsigned { boundary = 63 };\nint main() {\n  std::bitset<70> bits;\n  bits.set(boundary).set(static_cast<unsigned>(boundary) + 1);\n  return !bits.test(boundary) || !bits.test(64) || bits.count() != 2;\n}\n",
+      "source_sha256": "ed6b0b0a86cce85447482eeea671897d34cdeda3736a48e55ce98c3f0c07b1fd",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constant-position-type-size-index",
+      "source": "#include <bitset>\nint main() {\n  constexpr std::size_t last = sizeof(unsigned long long) * 8 - 1;\n  std::bitset<65> bits;\n  bits.flip(last).set(last + 1);\n  return !bits.test(last) || !bits.test(last + 1) || bits.count() != 2;\n}\n",
+      "source_sha256": "b086dda204d2f41cd715b40fcc8ee259e156cc6e66d8049b8e7039b81e342c2f",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constant-position-constexpr-function",
+      "source": "#include <bitset>\nconstexpr std::size_t at(bool high) { return high ? 65 : 0; }\nint main() {\n  std::bitset<70> bits;\n  bits.set(at(true));\n  bits.set(at(false));\n  bits.reset(at(true));\n  return !bits.test(at(false)) || bits.test(at(true)) || bits.count() != 1;\n}\n",
+      "source_sha256": "7c3849915df78856e54576d04accfdbf6065b1231bc63f49c3d7c6dd4ce8d6f4",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constant-position-receiver-and-value",
+      "source": "#include <bitset>\nstatic unsigned phase;\nstd::bitset<70>& receiver(std::bitset<70>& bits) { ++phase; return bits; }\nbool value() { phase = phase == 1 ? 2 : 99; return true; }\nint main() {\n  std::bitset<70> bits;\n  receiver(bits).set(2u * 33u, value());\n  return phase != 2 || !bits.test(66) || bits.count() != 1;\n}\n",
+      "source_sha256": "91f8826770a55f067dd0526eef5bd49b0baa0124d8a3d2978f4d6d120b76787e",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-index-type-last-byte-index",
+      "source": "#include <bitset>\nvoid set(std::bitset<256>& bits, unsigned char pos) { bits.set(pos); }\nint main() {\n  std::bitset<256> bits;\n  set(bits, 255);\n  return !bits.test(255) || bits.count() != 1;\n}\n",
+      "source_sha256": "ab13deea57a15238c005ad2ddf0be20972297515850739c0eb03210b17889b53",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-index-type-word-boundaries",
+      "source": "#include <bitset>\nvoid update(std::bitset<257>& bits, unsigned char a, unsigned char b) {\n  bits.set(a).flip(b);\n}\nint main() {\n  std::bitset<257> bits;\n  update(bits, 63, 64);\n  return !bits.test(63) || !bits.test(64) || bits.count() != 2;\n}\n",
+      "source_sha256": "95ac24f0e6a977b594201822fae8669120ed5572d69f206b2f1a56f5a242fc80",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-index-type-boolean-index",
+      "source": "#include <bitset>\nbool set_and_test(std::bitset<2>& bits, bool position) {\n  bits.set(position);\n  return bits.test(position);\n}\nint main() {\n  std::bitset<2> bits;\n  if (!set_and_test(bits, true) || !set_and_test(bits, false)) return 1;\n  return !bits.all();\n}\n",
+      "source_sha256": "4aeb5642e5dcfe6887be2f4c3a5228a8673d9654b8f3ed30944719eb69b8f504",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-index-type-reset-and-flip",
+      "source": "#include <bitset>\nvoid change(std::bitset<256>& bits, unsigned char pos) {\n  bits.flip(pos).reset(pos);\n}\nint main() {\n  std::bitset<256> bits;\n  bits.set(128);\n  change(bits, 127);\n  change(bits, 128);\n  return bits.any();\n}\n",
+      "source_sha256": "20d58a3a3ef5155fc3db13b84fb7446440f226c2a41fa56a96f96c416942a255",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-index-type-unsigned-pointer-load",
+      "source": "#include <bitset>\nbool test(const std::bitset<256>& bits, const unsigned char* pos) {\n  return bits.test(*pos);\n}\nint main() {\n  std::bitset<256> bits;\n  bits.set(211);\n  unsigned char p = 211;\n  return !test(bits, &p);\n}\n",
+      "source_sha256": "7e22bd09a4cc809054a41664dcccd5b739660e41bfe99ec0270f3dae1c53e324",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-index-type-index-called-once",
+      "source": "#include <bitset>\nstatic unsigned calls;\nunsigned char position() { ++calls; return 201; }\nint main() {\n  std::bitset<256> bits;\n  bits.set(position());\n  return calls != 1 || !bits.test(201) || bits.count() != 1;\n}\n",
+      "source_sha256": "9f27794aa0d593cbbb26ecfa5836fe04dd183543225d5aced30c6decd5f7eecd",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-owned-literal-default-digits",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<7> value{std::string(\"0010110\")};\n  return value.to_ulong() != 22 || value.count() != 3;\n}\n",
+      "source_sha256": "9348028bd1ef486c1772a6ae8b4da28f527f270c559fbe011f7a34d48e41f2bd",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-owned-literal-offset-and-count",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<8> value{std::string(\"prefixyxxymore\"), 6, 4, 'x', 'y'};\n  return value.to_ulong() != 9 || value.count() != 2;\n}\n",
+      "source_sha256": "4f9dbca19233b43a8c3b9649899005b6c93854b5d64432a8f6a75c5c7c01810a",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-owned-literal-allocated-string-crosses-word",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<70> value{std::string(\"1000000000000000000000000000000000000000000000000000000000000000001001\", 70)};\n  return value.count() != 3 || !value.test(69) || !value.test(3) || !value.test(0);\n}\n",
+      "source_sha256": "a27884c537f3219418935f3d9a9c344c05ab654dc1488db26dde628600036c5c",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-owned-literal-zero-as-a-digit",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<6> value{std::string(\"A\\0A?\", 4), 0, 3, 'A', '\\0'};\n  return value.to_ulong() != 2 || value.count() != 1;\n}\n",
+      "source_sha256": "b12fea61c28d81af40dd882bb45ef75a84c07a3e60848ea03946880d0502c89a",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-owned-literal-empty-input",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<0> empty{std::string{}};\n  std::bitset<8> end{std::string(\"11\"), 2};\n  std::bitset<8> zero{std::string(\"invalid\"), 0, 0};\n  return empty.any() || !empty.all() || end.any() || zero.any();\n}\n",
+      "source_sha256": "9d244f2509e8dbf74516964257f693ad7aab8be6f2e8b7bfbfaa557a67f091a9",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-owned-literal-equal-digits",
+      "public_header": "bitset",
+      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<4> value{std::string(\"zzz\"), 0, 3, 'z', 'z'};\n  return value.to_ulong() != 7 || value.count() != 3;\n}\n",
+      "source_sha256": "146b2a4dd5bc433c65a2e5ef240200578fe6228b07d8bfc27c188cae90ed902b",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constexpr-text-pointer-local",
+      "source": "#include <bitset>\nint main() {\n  constexpr const char* text = \"101101\";\n  return std::bitset<8>(text).to_ulong() != 45UL;\n}\n",
+      "source_sha256": "c54b364b561d4a66cf8b2c15ac45626dc83857e75bd75dd8f969db7427963c7c",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constexpr-text-pointer-namespace",
+      "source": "#include <bitset>\nconstexpr const char* text = \"0110\";\nbool test() { return std::bitset<8>(text).test(2); }\nint main() { return !test() || std::bitset<8>(text).count() != 2; }\n",
+      "source_sha256": "910e64903dd1dc4bd5c95ad136c36fa337b9c93f81a5fe0e5a420b06831258fe",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constexpr-text-pointer-first-null",
+      "source": "#include <bitset>\nint main() {\n  constexpr const char* text = \"101\\0x1\";\n  return std::bitset<8>(text).to_ullong() != 5ULL;\n}\n",
+      "source_sha256": "9bc199a4a4a6188402b00eef208733644026798d0bd0127b344fb0580d2b4ba5",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constexpr-text-pointer-custom-digits",
+      "source": "#include <bitset>\nint main() {\n  constexpr const char* text = \"xoo123\";\n  return std::bitset<6>(text, 3, 'o', 'x').to_ulong() != 4UL;\n}\n",
+      "source_sha256": "3ad60491c960e34dcc84e01a97d598f9a80dca742c28fe5f5285c6d827b46e73",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constexpr-text-pointer-pointer-type-alias",
+      "source": "#include <bitset>\nusing Text = const char*;\nint main() {\n  constexpr Text text = \"101\";\n  std::bitset<128> bits(text);\n  return bits.count() != 2 || !bits.test(0) || !bits.test(2) || bits.test(64);\n}\n",
+      "source_sha256": "10187ba7651e2b162d145b06fc00f12cff3b6acb3e4c877b2cee7962127e4570",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-constexpr-text-pointer-zero-count",
+      "source": "#include <bitset>\nint main() {\n  constexpr const char* text = \"not a binary string\";\n  return std::bitset<80>(text, 0).any();\n}\n",
+      "source_sha256": "272c4cf8e27a38336425ca3342c250a55ab5420f62dfd5b65ac68ce33da9552e",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-composed-wide-swap-and-positions",
+      "source": "#include <bitset>\n\nstatic unsigned calls;\nunsigned char position() { ++calls; return 255; }\nconstexpr unsigned index() { return 64 - 1; }\nint main() {\n  const std::bitset<256> initial(1ULL << 63);\n  std::bitset<256> left(initial);\n  std::bitset<256> right(2);\n  std::swap(left, right);\n  left.set(position());\n  return initial.to_ullong() != (1ULL << 63) || !right.test(index()) ||\n         !left.test(255) || !left.test(1) || calls != 1;\n}\n",
+      "source_sha256": "d3e27491981d11c704b4d46fd1808cc8d0c6a8e41cbd8b7df60632fb88a5ac2e",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-const-local-guard-const-reference",
+      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){const Bits& bits=Bits(2);return bits.to_ullong()!=2;}\n",
+      "source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-const-local-guard-conditional-receiver",
+      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nunsigned long long convert(bool select){const Bits a(1),b(2);return (select?a:b).to_ullong();}\nint main(){return convert(true)!=1||convert(false)!=2;}\n",
+      "source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-const-local-guard-copy-initialized",
+      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){Bits a(3);const Bits b=a;return b.to_ullong()!=3;}\n",
+      "source_sha256": "8b3a81dbbc1b9cbedc23b8c516ee2799d89e7654ce854b9626ed22dc80cffb11",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-const-local-guard-static-const",
+      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){static const Bits bits(2);return bits.to_ullong()!=2;}\n",
+      "source_sha256": "c34b57ceb60f96dbb45f71dc4f738c95b20524179ec35bb4355ebfdf7746ce89",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "bitset-const-local-guard-const-member",
+      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n",
+      "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
+      "public_header": "bitset",
+      "expected": "accept",
+      "kind": "cpp17-operation"
     },
     {
       "name": "bitset-const-local-guard-mutable-local",
@@ -753,100 +997,12 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "bitset-const-local-guard-const-reference",
-      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){const Bits& bits=Bits(2);return bits.to_ullong()!=2;}\n",
-      "source_sha256": "a14151263ab36abe7d79880d4c99d95ec861297e44158561fd692d5ea194b197",
-      "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "bitset-const-local-guard-static-const",
-      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){static const Bits bits(2);return bits.to_ullong()!=2;}\n",
-      "source_sha256": "c34b57ceb60f96dbb45f71dc4f738c95b20524179ec35bb4355ebfdf7746ce89",
-      "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "bitset-const-local-guard-const-parameter",
       "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nunsigned long long convert(const Bits& bits){return bits.to_ullong();}\nint main(){const Bits bits(2);return convert(bits)!=2;}\n",
       "source_sha256": "14f65c012de3c0b2f26b7deba0e19c8b215dfe2deb7e4036dccb0f9617865b0d",
       "public_header": "bitset",
       "expected": "reject",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "bitset-const-local-guard-copy-initialized",
-      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nint main(){Bits a(3);const Bits b=a;return b.to_ullong()!=3;}\n",
-      "source_sha256": "8b3a81dbbc1b9cbedc23b8c516ee2799d89e7654ce854b9626ed22dc80cffb11",
-      "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "bitset-const-local-guard-const-member",
-      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nstruct State{const Bits bits{2};};\nint main(){State state;return state.bits.to_ullong()!=2;}\n",
-      "source_sha256": "62398ac69ab40776e4d7d5ad4df1e29dd5ee9d9d3957022e3ad4a34b633a7cf7",
-      "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "bitset-const-local-guard-conditional-receiver",
-      "source": "#include <bitset>\nusing Bits = std::bitset<129>;\nunsigned long long convert(bool select){const Bits a(1),b(2);return (select?a:b).to_ullong();}\nint main(){return convert(true)!=1||convert(false)!=2;}\n",
-      "source_sha256": "d7c3c763239c26f9122eb9413d5a921fd2e3cd93590a870b7ca9598409a5a4aa",
-      "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "bitset-constant-position-namespace-constant",
-      "source": "#include <bitset>\nconstexpr std::size_t high = 64;\nint main() {\n  std::bitset<70> bits;\n  bits.set(high);\n  return !bits.test(high) || bits.count() != 1;\n}\n",
-      "source_sha256": "a21bcc74731758e49b054e8f17c36c551c280247028218e384afd1c81e95cbb1",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constant-position-operations"
-    },
-    {
-      "name": "bitset-constant-position-arithmetic",
-      "source": "#include <bitset>\nint main() {\n  std::bitset<70> bits;\n  bits.set(1u << 6);\n  bits.flip(35 + 30);\n  bits.reset(32 * 2);\n  return bits.test(64) || !bits.test(35 + 30) || bits.count() != 1;\n}\n",
-      "source_sha256": "32da801f41cac60157dfac92bca9b89976a16d7c4397d42f401cf839d068c43f",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constant-position-operations"
-    },
-    {
-      "name": "bitset-constant-position-enum-index",
-      "source": "#include <bitset>\nenum Position : unsigned { boundary = 63 };\nint main() {\n  std::bitset<70> bits;\n  bits.set(boundary).set(static_cast<unsigned>(boundary) + 1);\n  return !bits.test(boundary) || !bits.test(64) || bits.count() != 2;\n}\n",
-      "source_sha256": "ed6b0b0a86cce85447482eeea671897d34cdeda3736a48e55ce98c3f0c07b1fd",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constant-position-operations"
-    },
-    {
-      "name": "bitset-constant-position-type-size-index",
-      "source": "#include <bitset>\nint main() {\n  constexpr std::size_t last = sizeof(unsigned long long) * 8 - 1;\n  std::bitset<65> bits;\n  bits.flip(last).set(last + 1);\n  return !bits.test(last) || !bits.test(last + 1) || bits.count() != 2;\n}\n",
-      "source_sha256": "b086dda204d2f41cd715b40fcc8ee259e156cc6e66d8049b8e7039b81e342c2f",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constant-position-operations"
-    },
-    {
-      "name": "bitset-constant-position-constexpr-function",
-      "source": "#include <bitset>\nconstexpr std::size_t at(bool high) { return high ? 65 : 0; }\nint main() {\n  std::bitset<70> bits;\n  bits.set(at(true));\n  bits.set(at(false));\n  bits.reset(at(true));\n  return !bits.test(at(false)) || bits.test(at(true)) || bits.count() != 1;\n}\n",
-      "source_sha256": "7c3849915df78856e54576d04accfdbf6065b1231bc63f49c3d7c6dd4ce8d6f4",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constant-position-operations"
-    },
-    {
-      "name": "bitset-constant-position-receiver-and-value",
-      "source": "#include <bitset>\nstatic unsigned phase;\nstd::bitset<70>& receiver(std::bitset<70>& bits) { ++phase; return bits; }\nbool value() { phase = phase == 1 ? 2 : 99; return true; }\nint main() {\n  std::bitset<70> bits;\n  receiver(bits).set(2u * 33u, value());\n  return phase != 2 || !bits.test(66) || bits.count() != 1;\n}\n",
-      "source_sha256": "91f8826770a55f067dd0526eef5bd49b0baa0124d8a3d2978f4d6d120b76787e",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constant-position-operations"
     },
     {
       "name": "bitset-constant-position-guard-negative",
@@ -913,54 +1069,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "bitset-index-type-last-byte-index",
-      "source": "#include <bitset>\nvoid set(std::bitset<256>& bits, unsigned char pos) { bits.set(pos); }\nint main() {\n  std::bitset<256> bits;\n  set(bits, 255);\n  return !bits.test(255) || bits.count() != 1;\n}\n",
-      "source_sha256": "ab13deea57a15238c005ad2ddf0be20972297515850739c0eb03210b17889b53",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-unsigned-index-type-operations"
-    },
-    {
-      "name": "bitset-index-type-word-boundaries",
-      "source": "#include <bitset>\nvoid update(std::bitset<257>& bits, unsigned char a, unsigned char b) {\n  bits.set(a).flip(b);\n}\nint main() {\n  std::bitset<257> bits;\n  update(bits, 63, 64);\n  return !bits.test(63) || !bits.test(64) || bits.count() != 2;\n}\n",
-      "source_sha256": "95ac24f0e6a977b594201822fae8669120ed5572d69f206b2f1a56f5a242fc80",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-unsigned-index-type-operations"
-    },
-    {
-      "name": "bitset-index-type-boolean-index",
-      "source": "#include <bitset>\nbool set_and_test(std::bitset<2>& bits, bool position) {\n  bits.set(position);\n  return bits.test(position);\n}\nint main() {\n  std::bitset<2> bits;\n  if (!set_and_test(bits, true) || !set_and_test(bits, false)) return 1;\n  return !bits.all();\n}\n",
-      "source_sha256": "4aeb5642e5dcfe6887be2f4c3a5228a8673d9654b8f3ed30944719eb69b8f504",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-unsigned-index-type-operations"
-    },
-    {
-      "name": "bitset-index-type-reset-and-flip",
-      "source": "#include <bitset>\nvoid change(std::bitset<256>& bits, unsigned char pos) {\n  bits.flip(pos).reset(pos);\n}\nint main() {\n  std::bitset<256> bits;\n  bits.set(128);\n  change(bits, 127);\n  change(bits, 128);\n  return bits.any();\n}\n",
-      "source_sha256": "20d58a3a3ef5155fc3db13b84fb7446440f226c2a41fa56a96f96c416942a255",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-unsigned-index-type-operations"
-    },
-    {
-      "name": "bitset-index-type-unsigned-pointer-load",
-      "source": "#include <bitset>\nbool test(const std::bitset<256>& bits, const unsigned char* pos) {\n  return bits.test(*pos);\n}\nint main() {\n  std::bitset<256> bits;\n  bits.set(211);\n  unsigned char p = 211;\n  return !test(bits, &p);\n}\n",
-      "source_sha256": "7e22bd09a4cc809054a41664dcccd5b739660e41bfe99ec0270f3dae1c53e324",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-unsigned-index-type-operations"
-    },
-    {
-      "name": "bitset-index-type-index-called-once",
-      "source": "#include <bitset>\nstatic unsigned calls;\nunsigned char position() { ++calls; return 201; }\nint main() {\n  std::bitset<256> bits;\n  bits.set(position());\n  return calls != 1 || !bits.test(201) || bits.count() != 1;\n}\n",
-      "source_sha256": "9f27794aa0d593cbbb26ecfa5836fe04dd183543225d5aced30c6decd5f7eecd",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-unsigned-index-type-operations"
-    },
-    {
       "name": "bitset-index-type-guard-signed-byte",
       "source": "#include <bitset>\nbool check(signed char p){std::bitset<256> bits;return bits.test(p);}\nint main(){return check(2);}\n",
       "source_sha256": "3bd187bea6b4dc9e9e16b51555c9d44b7965789118da84db2e95151d84470c1a",
@@ -1023,70 +1131,6 @@
       "public_header": "bitset",
       "expected": "reject",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "bitset-composed-wide-swap-and-positions",
-      "source": "#include <bitset>\n\nstatic unsigned calls;\nunsigned char position() { ++calls; return 255; }\nconstexpr unsigned index() { return 64 - 1; }\nint main() {\n  const std::bitset<256> initial(1ULL << 63);\n  std::bitset<256> left(initial);\n  std::bitset<256> right(2);\n  std::swap(left, right);\n  left.set(position());\n  return initial.to_ullong() != (1ULL << 63) || !right.test(index()) ||\n         !left.test(255) || !left.test(1) || calls != 1;\n}\n",
-      "source_sha256": "d3e27491981d11c704b4d46fd1808cc8d0c6a8e41cbd8b7df60632fb88a5ac2e",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-composition"
-    },
-    {
-      "name": "bitset-composed-wide-swap-and-position-guard",
-      "source": "#include <bitset>\n\nstatic unsigned calls;\nunsigned char position() { ++calls; return 255; }\nconstexpr unsigned index() { return 64 - 1; }\nint main() {\n  const std::bitset<256> initial(1ULL << 63);\n  std::bitset<256> left(initial);\n  std::bitset<256> right(2);\n  std::swap(left, right);\n  left.set(position() + 1);\n  return initial.to_ullong() != (1ULL << 63) || !right.test(index()) ||\n         !left.test(255) || !left.test(1) || calls != 1;\n}\n",
-      "source_sha256": "30192e3c37a4ab90dd81dde62edc24495666033836739fc43e4937ba8902fd08",
-      "public_header": "bitset",
-      "expected": "reject",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "bitset-owned-literal-default-digits",
-      "public_header": "bitset",
-      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<7> value{std::string(\"0010110\")};\n  return value.to_ulong() != 22 || value.count() != 3;\n}\n",
-      "source_sha256": "9348028bd1ef486c1772a6ae8b4da28f527f270c559fbe011f7a34d48e41f2bd",
-      "expected": "accept",
-      "kind": "bitset-owned-literal-operations"
-    },
-    {
-      "name": "bitset-owned-literal-offset-and-count",
-      "public_header": "bitset",
-      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<8> value{std::string(\"prefixyxxymore\"), 6, 4, 'x', 'y'};\n  return value.to_ulong() != 9 || value.count() != 2;\n}\n",
-      "source_sha256": "4f9dbca19233b43a8c3b9649899005b6c93854b5d64432a8f6a75c5c7c01810a",
-      "expected": "accept",
-      "kind": "bitset-owned-literal-operations"
-    },
-    {
-      "name": "bitset-owned-literal-allocated-string-crosses-word",
-      "public_header": "bitset",
-      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<70> value{std::string(\"1000000000000000000000000000000000000000000000000000000000000000001001\", 70)};\n  return value.count() != 3 || !value.test(69) || !value.test(3) || !value.test(0);\n}\n",
-      "source_sha256": "a27884c537f3219418935f3d9a9c344c05ab654dc1488db26dde628600036c5c",
-      "expected": "accept",
-      "kind": "bitset-owned-literal-operations"
-    },
-    {
-      "name": "bitset-owned-literal-zero-as-a-digit",
-      "public_header": "bitset",
-      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<6> value{std::string(\"A\\0A?\", 4), 0, 3, 'A', '\\0'};\n  return value.to_ulong() != 2 || value.count() != 1;\n}\n",
-      "source_sha256": "b12fea61c28d81af40dd882bb45ef75a84c07a3e60848ea03946880d0502c89a",
-      "expected": "accept",
-      "kind": "bitset-owned-literal-operations"
-    },
-    {
-      "name": "bitset-owned-literal-empty-input",
-      "public_header": "bitset",
-      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<0> empty{std::string{}};\n  std::bitset<8> end{std::string(\"11\"), 2};\n  std::bitset<8> zero{std::string(\"invalid\"), 0, 0};\n  return empty.any() || !empty.all() || end.any() || zero.any();\n}\n",
-      "source_sha256": "9d244f2509e8dbf74516964257f693ad7aab8be6f2e8b7bfbfaa557a67f091a9",
-      "expected": "accept",
-      "kind": "bitset-owned-literal-operations"
-    },
-    {
-      "name": "bitset-owned-literal-equal-digits",
-      "public_header": "bitset",
-      "source": "#include <bitset>\n#include <string>\nint main() {\n  std::bitset<4> value{std::string(\"zzz\"), 0, 3, 'z', 'z'};\n  return value.to_ulong() != 7 || value.count() != 3;\n}\n",
-      "source_sha256": "146b2a4dd5bc433c65a2e5ef240200578fe6228b07d8bfc27c188cae90ed902b",
-      "expected": "accept",
-      "kind": "bitset-owned-literal-operations"
     },
     {
       "name": "bitset-owned-literal-guard-named-string",
@@ -1161,54 +1205,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "bitset-constexpr-text-pointer-local",
-      "source": "#include <bitset>\nint main() {\n  constexpr const char* text = \"101101\";\n  return std::bitset<8>(text).to_ulong() != 45UL;\n}\n",
-      "source_sha256": "c54b364b561d4a66cf8b2c15ac45626dc83857e75bd75dd8f969db7427963c7c",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constexpr-text-pointer-operations"
-    },
-    {
-      "name": "bitset-constexpr-text-pointer-namespace",
-      "source": "#include <bitset>\nconstexpr const char* text = \"0110\";\nbool test() { return std::bitset<8>(text).test(2); }\nint main() { return !test() || std::bitset<8>(text).count() != 2; }\n",
-      "source_sha256": "910e64903dd1dc4bd5c95ad136c36fa337b9c93f81a5fe0e5a420b06831258fe",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constexpr-text-pointer-operations"
-    },
-    {
-      "name": "bitset-constexpr-text-pointer-first-null",
-      "source": "#include <bitset>\nint main() {\n  constexpr const char* text = \"101\\0x1\";\n  return std::bitset<8>(text).to_ullong() != 5ULL;\n}\n",
-      "source_sha256": "9bc199a4a4a6188402b00eef208733644026798d0bd0127b344fb0580d2b4ba5",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constexpr-text-pointer-operations"
-    },
-    {
-      "name": "bitset-constexpr-text-pointer-custom-digits",
-      "source": "#include <bitset>\nint main() {\n  constexpr const char* text = \"xoo123\";\n  return std::bitset<6>(text, 3, 'o', 'x').to_ulong() != 4UL;\n}\n",
-      "source_sha256": "3ad60491c960e34dcc84e01a97d598f9a80dca742c28fe5f5285c6d827b46e73",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constexpr-text-pointer-operations"
-    },
-    {
-      "name": "bitset-constexpr-text-pointer-pointer-type-alias",
-      "source": "#include <bitset>\nusing Text = const char*;\nint main() {\n  constexpr Text text = \"101\";\n  std::bitset<128> bits(text);\n  return bits.count() != 2 || !bits.test(0) || !bits.test(2) || bits.test(64);\n}\n",
-      "source_sha256": "10187ba7651e2b162d145b06fc00f12cff3b6acb3e4c877b2cee7962127e4570",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constexpr-text-pointer-operations"
-    },
-    {
-      "name": "bitset-constexpr-text-pointer-zero-count",
-      "source": "#include <bitset>\nint main() {\n  constexpr const char* text = \"not a binary string\";\n  return std::bitset<80>(text, 0).any();\n}\n",
-      "source_sha256": "272c4cf8e27a38336425ca3342c250a55ab5420f62dfd5b65ac68ce33da9552e",
-      "public_header": "bitset",
-      "expected": "accept",
-      "kind": "bitset-constexpr-text-pointer-operations"
-    },
-    {
       "name": "bitset-constexpr-text-pointer-guard-mutable-pointer",
       "source": "#include <bitset>\nint main(){const char* p=\"1\";p=\"0\";return std::bitset<8>(p).any();}\n",
       "source_sha256": "7518a06d21deead3c120453352e4d44e296c0888b96fe1173def4782bfd2757f",
@@ -1271,7 +1267,15 @@
       "public_header": "bitset",
       "expected": "reject",
       "kind": "source-body-guard"
+    },
+    {
+      "name": "bitset-composed-wide-swap-and-position-guard",
+      "source": "#include <bitset>\n\nstatic unsigned calls;\nunsigned char position() { ++calls; return 255; }\nconstexpr unsigned index() { return 64 - 1; }\nint main() {\n  const std::bitset<256> initial(1ULL << 63);\n  std::bitset<256> left(initial);\n  std::bitset<256> right(2);\n  std::swap(left, right);\n  left.set(position() + 1);\n  return initial.to_ullong() != (1ULL << 63) || !right.test(index()) ||\n         !left.test(255) || !left.test(1) || calls != 1;\n}\n",
+      "source_sha256": "30192e3c37a4ab90dd81dde62edc24495666033836739fc43e4937ba8902fd08",
+      "public_header": "bitset",
+      "expected": "reject",
+      "kind": "source-body-guard"
     }
   ],
-  "source_proof_sha256": "6fc4624eceeb15a4dae738ec019f9a4dfa975b693f118a68ee5bfc7a65bff2d2"
+  "source_proof_sha256": "9d42e5ad5c0a96435f23f5067a963cd87eb5e149f880cf19e9704d6e270bca07"
 }
