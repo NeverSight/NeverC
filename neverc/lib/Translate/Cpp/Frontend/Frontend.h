@@ -4070,7 +4070,7 @@ enum class UtilityListConstruction {
   Default, Allocator, Count, CountFill, Range, InitializerList, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityListOperation {
-  CopyAssign, MoveAssign, AssignCount, AssignRange, AssignInitializer, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, GetAllocator, MaxSize, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, InsertCount, InsertRange, InsertInitializer, Emplace, EmplaceFront, EmplaceBack, Erase, EraseRange, Resize, ResizeFill, Clear, Reverse, Remove, Unique, RemoveIf, UniqueWithPredicate, Merge, Sort,
+  CopyAssign, MoveAssign, AssignCount, AssignRange, AssignInitializer, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, GetAllocator, MaxSize, Begin, End, ReverseBegin, ReverseEnd, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, InsertCount, InsertRange, InsertInitializer, Emplace, EmplaceFront, EmplaceBack, Erase, EraseRange, Resize, ResizeFill, Clear, Reverse, Remove, Unique, RemoveIf, UniqueWithPredicate, Merge, Sort,
   OwnerEqual, OwnerNotEqual, OwnerLess, OwnerGreater, OwnerLessEqual, OwnerGreaterEqual,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
   IteratorEqual, IteratorNotEqual, IteratorAssign
@@ -4414,6 +4414,11 @@ struct UtilityReverseIteratorRecord {
   const clang::FieldDecl *WrappedCurrent;
   clang::QualType PointerType, OrderedElementType;
   uint64_t OrderedValueOffset;
+  clang::QualType ListElementType;
+
+  clang::QualType linkedElementType() const {
+    return ListElementType.isNull() ? OrderedElementType : ListElementType;
+  }
 };
 struct UtilityWrapIteratorRecord {
   const clang::CXXRecordDecl *Record;
@@ -4445,7 +4450,7 @@ std::optional<UtilityReverseIteratorRecord>
 approvedUtilityReverseIteratorRecord(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CXXRecordDecl *Record,
-                                     const clang::ASTContext &Context, bool AllowOrdered = false);
+                                     const clang::ASTContext &Context, bool AllowLinked = false);
 enum class UtilityReverseIteratorConstruction {
   Default,
   Iterator,

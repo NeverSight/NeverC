@@ -18530,6 +18530,8 @@ class FunctionLowering {
         reject(L, "make reverse iterator",
                "The selected reverse iterator layout is unavailable.");
       auto Iterator = snapshot(expression(Call->getArg(0)), L);
+      if (!Reverse->ListElementType.isNull())
+        return ReverseValue(listIteratorMember(std::move(Iterator), L), *Reverse);
       if (!Reverse->OrderedElementType.isNull())
         return ReverseValue(orderedIteratorCursor(std::move(Iterator), L), *Reverse);
       return ReverseValue(
@@ -18549,7 +18551,7 @@ class FunctionLowering {
                "The selected reverse iterator layout is unavailable.");
       if (Operation == UtilityOperation::ReverseBase) {
         auto Current = fieldStorage(lvalue(Object), Reverse->Current, L);
-        if (!Reverse->WrappedCurrent && Reverse->OrderedElementType.isNull())
+        if (!Reverse->WrappedCurrent && Reverse->linkedElementType().isNull())
           return snapshot(std::move(Current), L);
         auto Place = Destination ? std::move(*Destination)
                                  : objectTemporary(Call->getType(), L);
@@ -18561,6 +18563,13 @@ class FunctionLowering {
         return Place;
       }
       auto Current = snapshot(ReverseCurrent(lvalue(Object), *Reverse), L);
+      if (!Reverse->ListElementType.isNull()) {
+        const auto ElementType = Reverse->ListElementType;
+        auto Node = snapshot(listLink(std::move(Current), true, L), L);
+        auto Element = listValue(std::move(Node), ElementType.getUnqualifiedType(), ElementType.isConstQualified(), L);
+        return Operation == UtilityOperation::ReverseArrow
+            ? address(std::move(Element), ElementType, L) : Element;
+      }
       if (!Reverse->OrderedElementType.isNull()) {
         auto Node = stepOrderedIterator(std::move(Current), false, L);
         auto Element = nodeFieldAt(std::move(Node), Reverse->OrderedElementType, Reverse->OrderedValueOffset, L);
@@ -18603,11 +18612,15 @@ class FunctionLowering {
       const bool Increment =
           Operation == UtilityOperation::ReversePreIncrement ||
           Operation == UtilityOperation::ReversePostIncrement;
-      auto Next = !Reverse->OrderedElementType.isNull()
-          ? stepOrderedIterator(std::move(Value), !Increment, L)
-          : binary(Increment ? "-" : "+", std::move(Value),
-                   quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                   type(Reverse->PointerType, L), L);
+      Expression Next;
+      if (!Reverse->ListElementType.isNull())
+        Next = snapshot(listLink(std::move(Value), Increment, L), L);
+      else if (!Reverse->OrderedElementType.isNull())
+        Next = stepOrderedIterator(std::move(Value), !Increment, L);
+      else
+        Next = binary(Increment ? "-" : "+", std::move(Value),
+                      quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                      type(Reverse->PointerType, L), L);
       assign(Current, std::move(Next), L);
       return Post ? std::move(Result) : std::move(Stored);
     }
@@ -27983,7 +27996,15 @@ class FunctionLowering {
       const UtilityReverseIteratorRecord &Info, SourceLocation L) {
     auto Stored = fieldStorage(std::move(Place), Field, L);
     if (!Info.OrderedElementType.isNull()) return orderedIteratorCursor(std::move(Stored), L);
+    if (!Info.ListElementType.isNull()) return listIteratorMember(std::move(Stored), L);
     return Info.WrappedCurrent ? fieldStorage(std::move(Stored), Info.WrappedCurrent, L) : Stored;
+  }
+
+  void initializeReverseIteratorSlots(Expression Place, Expression Cursor,
+      const UtilityReverseIteratorRecord &Info, SourceLocation L) {
+    auto Value = snapshot(cast(std::move(Cursor), type(Info.PointerType, L), L), L);
+    assign(reverseIteratorSlot(Place, Info.Legacy, Info, L), json::Object(Value), L);
+    assign(reverseIteratorSlot(std::move(Place), Info.Current, Info, L), std::move(Value), L);
   }
 
   Expression loadOrderedIteratorArgument(const CallExpr *Call, unsigned Index, SourceLocation L,
@@ -29818,6 +29839,17 @@ class FunctionLowering {
     if (Operation == UtilityListOperation::Empty)
       return binary("==", listMember(Place, "nct_list_size", L),
           quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
+    if (Operation == UtilityListOperation::ReverseBegin || Operation == UtilityListOperation::ReverseEnd) {
+      const auto Type = Method->getReturnType();
+      const auto Reverse = approvedUtilityReverseIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context, true);
+      if (!Reverse || Reverse->ListElementType.isNull())
+        reject(L, "list reverse iterator", "The selected pinned reverse iterator layout is required.");
+      auto Cursor = Operation == UtilityListOperation::ReverseBegin
+          ? listSentinel(Place, L, Method->isConst()) : listMember(Place, "nct_list_next", L);
+      auto Result = objectTemporary(Type, L);
+      initializeReverseIteratorSlots(Result, std::move(Cursor), *Reverse, L);
+      return Result;
+    }
     if (Operation == UtilityListOperation::Begin || Operation == UtilityListOperation::End)
       return listIterator(Method->getReturnType(), Operation == UtilityListOperation::Begin
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L, Method->isConst()), L), L);
@@ -34407,13 +34439,7 @@ class FunctionLowering {
         reject(
             L, "reverse iterator result",
             "The destination type differs from the reverse iterator result.");
-      auto Value = snapshot(
-          cast(std::move(Pointer), type(Reverse.PointerType, L), L), L);
-      auto MemberPointer = [&](const FieldDecl *Field) {
-        return reverseIteratorSlot(Place, Field, Reverse, L);
-      };
-      assign(MemberPointer(Reverse.Legacy), json::Object(Value), L);
-      assign(MemberPointer(Reverse.Current), std::move(Value), L);
+      initializeReverseIteratorSlots(Place, std::move(Pointer), Reverse, L);
       return Place;
     };
     auto AllocatorMaximum = [&](const UtilityAllocatorRecord &Allocator,
@@ -43102,10 +43128,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return reverseIteratorSlot(Place, Field, *Reverse, L);
       };
       auto InitializePointer = [&](Expression Pointer) {
-        auto Value = snapshot(
-            cast(std::move(Pointer), type(Reverse->PointerType, L), L), L);
-        assign(MemberPointer(Reverse->Legacy), json::Object(Value), L);
-        assign(MemberPointer(Reverse->Current), std::move(Value), L);
+        initializeReverseIteratorSlots(Place, std::move(Pointer), *Reverse, L);
       };
       switch (*Kind) {
       case UtilityReverseIteratorConstruction::Default:
@@ -43115,6 +43138,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return;
       case UtilityReverseIteratorConstruction::Iterator: {
         auto Iterator = snapshot(expression(C->getArg(0)), L);
+        if (!Reverse->ListElementType.isNull()) {
+          InitializePointer(listIteratorMember(std::move(Iterator), L));
+          return;
+        }
         if (!Reverse->OrderedElementType.isNull()) {
           InitializePointer(orderedIteratorCursor(std::move(Iterator), L));
           return;

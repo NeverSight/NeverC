@@ -50013,7 +50013,7 @@ bool approvedUtilityReverseIteratorMetadata(const State &S,
 std::optional<UtilityReverseIteratorRecord>
 approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
                                      const CXXRecordDecl *Record,
-                                     const ASTContext &Context, bool AllowOrdered) {
+                                     const ASTContext &Context, bool AllowLinked) {
   const auto *Specialization =
       dyn_cast_or_null<ClassTemplateSpecializationDecl>(Record);
   Specialization = Specialization
@@ -50047,15 +50047,23 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
   const auto Wrapped = approvedUtilityWrapIteratorRecord(
       S, SM, Iterator->getAsCXXRecordDecl(), Context);
   UtilityOrderedSetStorage Tree{};
-  const auto *Ordered = AllowOrdered && !Wrapped
+  const auto *Ordered = AllowLinked && !Wrapped
       ? approvedOrderedSetIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context, nullptr, &Tree)
       : nullptr;
+  const auto List = AllowLinked && !Wrapped && !Ordered
+      ? approvedUtilityListIteratorRecord(S, SM, Iterator->getAsCXXRecordDecl(), Context)
+      : std::nullopt;
+  QualType ListElement;
+  if (List) {
+    ListElement = List->Node.Value->getType();
+    if (List->Const) ListElement = ListElement.withConst();
+  }
   auto OrderedElement = !Ordered ? QualType() : Tree.MappedPairType.isNull()
       ? Context.IntTy.withConst() : Tree.MappedPairType;
   if (Ordered && Ordered->getName() == "__map_const_iterator")
     OrderedElement = OrderedElement.withConst();
-  const auto Pointer = Ordered ? Context.VoidPtrTy : Wrapped ? Wrapped->IteratorType : Iterator;
-  if ((!Ordered && !utilityObjectPointer(Context, Pointer)) ||
+  const auto Pointer = Ordered || List ? Context.VoidPtrTy : Wrapped ? Wrapped->IteratorType : Iterator;
+  if ((!Ordered && !List && !utilityObjectPointer(Context, Pointer)) ||
       Context.getTypeSize(Iterator) != Context.getTypeSize(Pointer) ||
       Context.getTypeAlign(Iterator) != Context.getTypeAlign(Pointer))
     return std::nullopt;
@@ -50132,7 +50140,7 @@ approvedUtilityReverseIteratorRecord(const State &S, const SourceManager &SM,
   return UtilityReverseIteratorRecord{Specialization, Legacy, Current,
                                       Iterator,
                                       Wrapped ? Wrapped->Current : nullptr,
-                                      Pointer, OrderedElement, Ordered ? Tree.ValueOffsetBytes : 0};
+                                      Pointer, OrderedElement, Ordered ? Tree.ValueOffsetBytes : 0, ListElement};
 }
 
 static bool approvedOrderedReverseQualification(const State &S, const SourceManager &SM,
@@ -50150,11 +50158,26 @@ static bool approvedOrderedReverseQualification(const State &S, const SourceMana
   return To && To->getName() == "__map_const_iterator";
 }
 
+static bool approvedLinkedReverseQualification(const State &S, const SourceManager &SM,
+    const UtilityReverseIteratorRecord &Source, const UtilityReverseIteratorRecord &Destination,
+    const ASTContext &Context) {
+  if (Source.ListElementType.isNull() && Destination.ListElementType.isNull())
+    return approvedOrderedReverseQualification(S, SM, Source, Destination, Context);
+  if (Source.ListElementType.isNull() || Destination.ListElementType.isNull() ||
+      Source.ListElementType.isConstQualified() || !Destination.ListElementType.isConstQualified() ||
+      !Context.hasSameType(Source.ListElementType.withConst(), Destination.ListElementType))
+    return false;
+  const auto From = approvedUtilityListIteratorRecord(S, SM, Source.IteratorType->getAsCXXRecordDecl(), Context);
+  const auto To = approvedUtilityListIteratorRecord(S, SM, Destination.IteratorType->getAsCXXRecordDecl(), Context);
+  return From && To && !From->Const && To->Const &&
+         From->Node.Record->getCanonicalDecl() == To->Node.Record->getCanonicalDecl();
+}
+
 static bool approvedReverseIteratorConversion(const State &S, const SourceManager &SM,
     const UtilityReverseIteratorRecord &Source, const UtilityReverseIteratorRecord &Destination,
     const ASTContext &Context) {
-  if (!Source.OrderedElementType.isNull() || !Destination.OrderedElementType.isNull())
-    return approvedOrderedReverseQualification(S, SM, Source, Destination, Context);
+  if (!Source.linkedElementType().isNull() || !Destination.linkedElementType().isNull())
+    return approvedLinkedReverseQualification(S, SM, Source, Destination, Context);
   return bool(Source.WrappedCurrent) == bool(Destination.WrappedCurrent) &&
       utilityPointerConversion(Context, Source.PointerType, Destination.PointerType);
 }
@@ -56652,6 +56675,17 @@ std::optional<UtilityListOperation> listMethodSignature(
       if ((Name == "cbegin" || Name == "cend") && M->isConst() &&
           listIteratorType(S, SM, M->getReturnType(), Owner->Node, true, Context))
         return Name == "cbegin" ? UtilityListOperation::Begin : UtilityListOperation::End;
+      const bool ReverseBegin = Name == "rbegin" || Name == "crbegin";
+      const bool ReverseEnd = Name == "rend" || Name == "crend";
+      const bool ConstReverse = Name == "crbegin" || Name == "crend";
+      if ((ReverseBegin || ReverseEnd) && (!ConstReverse || M->isConst()) && M->getRefQualifier() == RQ_None) {
+        const auto Return = M->getReturnType();
+        const auto Reverse = approvedUtilityReverseIteratorRecord(S, SM, listRecordType(Return), Context, true);
+        if (Reverse && !Reverse->ListElementType.isNull() &&
+            Context.hasSameType(Return, Context.getRecordType(Reverse->Record)) &&
+            listIteratorType(S, SM, Reverse->IteratorType, Owner->Node, M->isConst(), Context))
+          return ReverseBegin ? UtilityListOperation::ReverseBegin : UtilityListOperation::ReverseEnd;
+      }
       const auto ValueType = M->isConst() ? Element.withConst() : Element;
       if ((Name == "front" || Name == "back") && Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(ValueType)))
         return Name == "front" ? UtilityListOperation::Front : UtilityListOperation::Back;
@@ -128900,8 +128934,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
   const auto Reverse = approvedUtilityReverseIteratorRecord(
       S, SM, Method ? Method->getParent() : nullptr, Context, true);
   if (Method && Reverse) {
-    const bool Ordered = !Reverse->OrderedElementType.isNull();
-    const auto Pointer = Ordered ? Context.getPointerType(Reverse->OrderedElementType) : Reverse->PointerType;
+    const auto Element = Reverse->linkedElementType();
+    const auto Pointer = Element.isNull() ? Reverse->PointerType : Context.getPointerType(Element);
     const auto *Reference = directMethodReference(Call);
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto *MemberCall = dyn_cast<CXXMemberCallExpr>(Call);
@@ -128987,7 +129021,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
         return UtilityOperation::ReversePostDecrement;
       }
     }
-    if (Ordered) return std::nullopt;
+    if (!Element.isNull()) return std::nullopt;
     if ((Kind == OO_Plus || Kind == OO_Minus) && Method->isConst() &&
         DifferenceParameter() && Call->isPRValue() &&
         SameReverse(Method->getReturnType()) && SameReverse(Call->getType()))
@@ -136925,7 +136959,7 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     auto Parameter = Function->getParamDecl(0)->getType();
     if (Result &&
         (utilityObjectPointer(Context, Parameter) ||
-         Result->WrappedCurrent || !Result->OrderedElementType.isNull()) &&
+         Result->WrappedCurrent || !Result->linkedElementType().isNull()) &&
         Same(Parameter, Result->IteratorType) &&
         Same(Call->getArg(0)->getType(), Parameter) &&
         Same(Call->getType(), Function->getReturnType()))
@@ -136936,10 +136970,10 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
     const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
     const auto Left = ReverseFor(Call->getArg(0)->getType(), true);
     const auto Right = ReverseFor(Call->getArg(1)->getType(), true);
-    if (Left && Right && (!Left->OrderedElementType.isNull() || !Right->OrderedElementType.isNull()) &&
+    if (Left && Right && (!Left->linkedElementType().isNull() || !Right->linkedElementType().isNull()) &&
         (!(Context.hasSameType(Left->IteratorType, Right->IteratorType) ||
-           approvedOrderedReverseQualification(S, SM, *Left, *Right, Context) ||
-           approvedOrderedReverseQualification(S, SM, *Right, *Left, Context)) ||
+           approvedLinkedReverseQualification(S, SM, *Left, *Right, Context) ||
+           approvedLinkedReverseQualification(S, SM, *Right, *Left, Context)) ||
          !Operator || (Operator->getOperator() != OO_EqualEqual && Operator->getOperator() != OO_ExclaimEqual)))
       return std::nullopt;
     if (Operator && Left && Right && ReverseParameter(0, *Left) &&
@@ -137093,7 +137127,8 @@ approvedUtilityOperation(const State &S, const SourceManager &SM,
            !Type->getPointeeType()->isVoidType();
   };
   auto NavigableIterator = [&](QualType Type) {
-    return ObjectPointer(Type) || ReverseFor(Type, true).has_value() ||
+    const auto Reverse = ReverseFor(Type, true);
+    return ObjectPointer(Type) || (Reverse && Reverse->ListElementType.isNull()) ||
            approvedUtilityWrapIteratorRecord(S, SM, Type->getAsCXXRecordDecl(),
                                              Context).has_value() ||
            approvedOrderedSetIteratorRecord(S, SM, Type->getAsCXXRecordDecl(), Context);
