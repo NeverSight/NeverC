@@ -410930,6 +410930,2972 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2ListReverseRetainsIteratorsReferencesAndSizeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-reverse-retains-iterators-references-and-size.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{11, 5, 17, -2};
+  auto first = values.begin();
+  auto middle = first;
+  ++middle;
+  int* address = &*middle;
+  auto end = values.end();
+  values.reverse();
+  auto item = values.begin();
+  if (values.size() != 4 || values.end() != end || values.front() != -2 || values.back() != 11)
+    return 1;
+  if (*item++ != -2 || *item++ != 17 || item != middle || &*item != address)
+    return 2;
+  *address = 31;
+  if (*item++ != 31 || item != first || *item++ != 11 || item != end)
+    return 3;
+  return *--end != 11;
+}
+)r19containers");
+  const auto Output = tmpFile("list-reverse-retains-iterators-references-and-size.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-reverse-retains-iterators-references-and-size" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListReverseEmptySingletonAndDoubleReversalRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-reverse-empty-singleton-and-double-reversal.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values;
+  values.reverse();
+  if (!values.empty() || values.begin() != values.end())
+    return 1;
+  values.push_back(19);
+  auto original = values.begin();
+  values.reverse();
+  if (values.begin() != original || values.front() != 19 || values.back() != 19)
+    return 2;
+  values.push_back(20);
+  values.reverse();
+  values.reverse();
+  return values.size() != 2 || values.begin() != original || values.front() != 19 || values.back() != 20;
+}
+)r19containers");
+  const auto Output = tmpFile("list-reverse-empty-singleton-and-double-reversal.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-reverse-empty-singleton-and-double-reversal" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListReverseEvaluatesPointerReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-reverse-evaluates-pointer-receiver-once.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+std::list<int>* lookup(std::list<int>& values, int& calls) {
+  ++calls;
+  return &values;
+}
+int main() {
+  std::list<int> values{5, 7, 8};
+  int calls = 0;
+  lookup(values, calls)->reverse();
+  if (calls != 1 || values.front() != 8 || values.back() != 5)
+    return 1;
+  values.pop_front();
+  auto item = values.begin();
+  return values.size() != 2 || *item++ != 7 || *item++ != 5 || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-reverse-evaluates-pointer-receiver-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-reverse-evaluates-pointer-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListReverseOtherElementGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-reverse-other-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<long> values{6L, 9L};
+  values.reverse();
+  return values.front() != 9L;
+}
+)r19containers");
+  const auto Output = tmpFile("list-reverse-other-element-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-reverse-other-element-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRangeErasePreservesBoundaryAndEmptyRangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-range-erase-preserves-boundary-and-empty-range.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{2, 5, 7, 11, 13};
+  auto first = values.cbegin();
+  ++first;
+  auto last = values.cend();
+  --last;
+  const int* last_address = &*last;
+  auto end = values.end();
+  auto item = values.erase(first, last);
+  if (&*item != last_address || values.size() != 2 || values.front() != 2 || values.end() != end)
+    return 1;
+  auto unchanged = values.erase(last, last);
+  if (unchanged != item || values.size() != 2)
+    return 2;
+  return values.erase(values.cbegin(), values.cend()) != end || !values.empty();
+}
+)r19containers");
+  const auto Output = tmpFile("list-range-erase-preserves-boundary-and-empty-range.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-range-erase-preserves-boundary-and-empty-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRangeEraseUnlinksBeforeReleaseRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-range-erase-unlinks-before-release.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static std::list<int>* observed;
+static int released, bad;
+void* operator new(Size n) { return ::malloc(n); }
+void operator delete(void* memory) noexcept {
+  if (observed) {
+    ++released;
+    auto after = observed->begin();
+    ++after;
+    if (observed->front() != 10 || observed->back() != 50 || *after != 50 ||
+        observed->size() != static_cast<Size>(5 - released))
+      bad = 1;
+  }
+  ::free(memory);
+}
+int main() {
+  std::list<int> values{10, 20, 30, 40, 50};
+  auto first = values.cbegin();
+  ++first;
+  auto last = values.cend();
+  --last;
+  observed = &values;
+  auto result = values.erase(first, last);
+  observed = nullptr;
+  return bad || released != 3 || *result != 50 || values.size() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-range-erase-unlinks-before-release.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-range-erase-unlinks-before-release" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRangeEraseOtherElementGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-range-erase-other-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<long> values{5L, -7L};
+  return values.erase(values.cbegin(), values.cend()) != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-range-erase-other-element-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-range-erase-other-element-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSpliceWholeIntoMiddlePreservesAddressRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-splice-whole-into-middle-preserves-address.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{1, 7};
+  std::list<int> source{3, 4, 5};
+  auto moved = source.begin();
+  ++moved;
+  auto* address = &*moved;
+  auto position = values.cbegin();
+  ++position;
+  auto end = values.end();
+  values.splice(position, source);
+  if (!source.empty() || source.begin() != source.end() || values.size() != 5 ||
+      values.end() != end || values.front() != 1 || values.back() != 7)
+    return 1;
+  auto item = values.begin();
+  if (*item++ != 1 || *item++ != 3 || item != moved || &*item != address ||
+      *item++ != 4 || *item++ != 5 || *item++ != 7 || item != end)
+    return 2;
+  source.push_back(11);
+  return source.front() != 11 || values.size() != 5;
+}
+)r19containers");
+  const auto Output = tmpFile("list-splice-whole-into-middle-preserves-address.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-splice-whole-into-middle-preserves-address" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSpliceRvalueIntoEmptyOwnerRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-splice-rvalue-into-empty-owner.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+int main() {
+  std::list<int> values;
+  std::list<int> source{13, 21};
+  auto first = source.begin();
+  values.splice(values.cend(), std::move(source));
+  if (!source.empty() || values.size() != 2 || values.begin() != first ||
+      values.front() != 13 || values.back() != 21)
+    return 1;
+  source.splice(source.cend(), std::move(values));
+  return !values.empty() || source.size() != 2 || source.begin() != first || source.back() != 21;
+}
+)r19containers");
+  const auto Output = tmpFile("list-splice-rvalue-into-empty-owner.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-splice-rvalue-into-empty-owner" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSpliceEmptySourceLeavesAnExistingPositionRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-splice-empty-source-leaves-an-existing-position.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{9, 14};
+  std::list<int> source;
+  auto position = values.cbegin();
+  ++position;
+  const int* address = &*position;
+  values.splice(position, source);
+  return !source.empty() || values.size() != 2 || &values.back() != address || *position != 14;
+}
+)r19containers");
+  const auto Output = tmpFile("list-splice-empty-source-leaves-an-existing-position.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-splice-empty-source-leaves-an-existing-position" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSpliceSingleTransfersAddressAndCountRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-splice-single-transfers-address-and-count.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{2, 5};
+  std::list<int> source{3, 7};
+  auto position = values.cbegin();
+  ++position;
+  auto moved = source.begin();
+  const int* address = &*moved;
+  values.splice(position, source, moved);
+  if (source.size() != 1 || source.front() != 7 || source.back() != 7 || values.size() != 3)
+    return 1;
+  auto check = values.begin();
+  ++check;
+  if (check != moved || &*check != address || *check != 3)
+    return 2;
+  ++check;
+  return check != position || *check != 5;
+}
+)r19containers");
+  const auto Output = tmpFile("list-splice-single-transfers-address-and-count.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-splice-single-transfers-address-and-count" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSpliceSingleWithinOwnerAndAdjacentNoOpsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-splice-single-within-owner-and-adjacent-no-ops.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+int main() {
+  std::list<int> values{2, 3, 5, 7};
+  auto moved = values.begin();
+  ++moved;
+  auto next = moved;
+  ++next;
+  const int* address = &*moved;
+  values.splice(moved, values, moved);
+  values.splice(next, values, moved);
+  if (values.front() != 2 || values.back() != 7 || values.size() != 4 || *next != 5)
+    return 1;
+  auto after_first = values.begin();
+  ++after_first;
+  if (after_first != moved)
+    return 2;
+  values.splice(values.cend(), std::move(values), moved);
+  auto tail = values.end();
+  --tail;
+  return values.size() != 4 || values.front() != 2 || values.back() != 3 ||
+      tail != moved || &*tail != address || *--tail != 7;
+}
+)r19containers");
+  const auto Output = tmpFile("list-splice-single-within-owner-and-adjacent-no-ops.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-splice-single-within-owner-and-adjacent-no-ops" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSpliceRvalueRangeKeepsBothOwnerBoundariesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-splice-rvalue-range-keeps-both-owner-boundaries.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+int main() {
+  std::list<int> values{2, 11};
+  std::list<int> source{3, 5, 7, 13};
+  auto first = source.begin();
+  ++first;
+  auto after = source.end();
+  --after;
+  auto position = values.end();
+  --position;
+  const int* address = &*first;
+  values.splice(position, std::move(source), first, after);
+  if (source.size() != 2 || source.front() != 3 || source.back() != 13 ||
+      values.size() != 4 || values.front() != 2 || values.back() != 11)
+    return 1;
+  auto check = values.begin();
+  ++check;
+  if (check != first || &*check != address || *check++ != 5 || *check++ != 7 || check != position)
+    return 2;
+  return *--after != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("list-splice-rvalue-range-keeps-both-owner-boundaries.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-splice-rvalue-range-keeps-both-owner-boundaries" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSpliceRangeWithinOwnerAndEmptyRangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-splice-range-within-owner-and-empty-range.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{2, 3, 5, 7, 11};
+  auto first = values.begin();
+  auto after = first;
+  ++after;
+  ++after;
+  auto end = values.end();
+  const int* address = &*first;
+  values.splice(after, values, first, after);
+  values.splice(first, values, after, after);
+  if (values.begin() != first || values.front() != 2 || values.back() != 11 || values.size() != 5)
+    return 1;
+  values.splice(end, values, first, after);
+  auto check = values.begin();
+  if (check != after || *check++ != 5 || *check++ != 7 || *check++ != 11 || check != first ||
+      &*check != address || *check++ != 2 || *check++ != 3 || check != end)
+    return 2;
+  return values.size() != 5 || values.end() != end;
+}
+)r19containers");
+  const auto Output = tmpFile("list-splice-range-within-owner-and-empty-range.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-splice-range-within-owner-and-empty-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSpliceOtherElementGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-splice-other-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<long> values{3, 5};
+  std::list<long> source{7};
+  values.splice(values.cbegin(), source, source.cbegin());
+  return values.front() != 7;
+}
+)r19containers");
+  const auto Output = tmpFile("list-splice-other-element-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-splice-other-element-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRemoveValueAliasedToFirstNodeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-remove-value-aliased-to-first-node.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> items{3, 3, 5, 3, 7, 3};
+  auto kept = items.begin();
+  ++kept;
+  ++kept;
+  const int* address = &*kept;
+  const int& selected = items.front();
+  items.remove(selected);
+  if (items.size() != 2 || items.begin() != kept || &items.front() != address || items.front() != 5 || items.back() != 7)
+    return 1;
+  items.remove(11);
+  if (items.size() != 2 || items.begin() != kept)
+    return 2;
+  std::list<int> equal{13, 13, 13};
+  equal.remove(equal.back());
+  equal.remove(13);
+  return !equal.empty() || equal.begin() != equal.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-remove-value-aliased-to-first-node.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-remove-value-aliased-to-first-node" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUniqueKeepsFirstNodeOfEachRunRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-unique-keeps-first-node-of-each-run.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> empty;
+  empty.unique();
+  std::list<int> single{17};
+  auto only = single.begin();
+  single.unique();
+  if (!empty.empty() || single.size() != 1 || single.begin() != only)
+    return 1;
+  std::list<int> items{3, 3, 7, 3, 3, 3, 5, 5, 3};
+  auto first = items.begin();
+  auto later = items.end();
+  --later;
+  auto end = items.end();
+  items.unique();
+  if (items.size() != 5 || items.begin() != first || items.end() != end)
+    return 2;
+  auto current = items.begin();
+  if (*current++ != 3 || *current++ != 7 || *current++ != 3 || *current++ != 5 || current != later ||
+      *current++ != 3 || current != end)
+    return 3;
+  return *--later != 5;
+}
+)r19containers");
+  const auto Output = tmpFile("list-unique-keeps-first-node-of-each-run.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-unique-keeps-first-node-of-each-run" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRemoveAndUniqueUnlinkBeforeFirstReleaseRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-remove-and-unique-unlink-before-first-release.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static std::list<int>* observed;
+static int expected_front, expected_back, released, bad;
+void* operator new(Size n) { return ::malloc(n); }
+void operator delete(void* p) noexcept {
+  if (observed) {
+    ++released;
+    if (observed->size() != 2 || observed->front() != expected_front || observed->back() != expected_back) {
+      bad = 1;
+    } else {
+      auto i = observed->begin();
+      ++i;
+      if (*i != expected_back || ++i != observed->end())
+        bad = 1;
+    }
+  }
+  ::free(p);
+}
+int main() {
+  std::list<int> removed{3, 5, 3, 9, 3};
+  expected_front = 5;
+  expected_back = 9;
+  observed = &removed;
+  removed.remove(removed.front());
+  observed = nullptr;
+  if (bad || released != 3 || removed.size() != 2)
+    return 1;
+  std::list<int> unique{7, 7, 11, 11, 11};
+  expected_front = 7;
+  expected_back = 11;
+  released = 0;
+  observed = &unique;
+  unique.unique();
+  observed = nullptr;
+  return bad || released != 3 || unique.size() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-remove-and-unique-unlink-before-first-release.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-remove-and-unique-unlink-before-first-release" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUniqueUserPredicateGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-unique-user-predicate-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+bool same(int left, int right) { return left == right; }
+int main() {
+  std::list<int> items{3, 3, 5};
+  items.unique(same);
+  return items.size() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-unique-user-predicate-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-unique-user-predicate-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSortDefaultIsStableAndKeepsNodeIdentityRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-sort-default-is-stable-and-keeps-node-identity.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> items{-3, 7, -3, 1, 7, 0, -8};
+  auto first = items.begin();
+  auto second = first;
+  ++second;
+  auto third = second;
+  ++third;
+  const int* first_address = &*first;
+  const int* second_address = &*second;
+  auto end = items.end();
+  items.sort();
+  if (items.front() != -8 || items.back() != 7 || items.size() != 7 || items.end() != end)
+    return 1;
+  auto item = items.begin();
+  ++item;
+  if (item != first || &*item != first_address || *item++ != -3 || item != third ||
+      *item++ != -3 || *item++ != 0 || *item++ != 1 || item != second ||
+      &*item != second_address || *item++ != 7 || *item++ != 7 || item != end)
+    return 2;
+  return *--end != 7 || *--end != 7 || *--end != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("list-sort-default-is-stable-and-keeps-node-identity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-sort-default-is-stable-and-keeps-node-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSortDefaultEmptySingletonAndTwoNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-sort-default-empty-singleton-and-two-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> empty;
+  empty.sort();
+  std::list<int> single{24};
+  auto one = single.begin();
+  single.sort();
+  if (!empty.empty() || single.size() != 1 || single.begin() != one || single.front() != 24)
+    return 1;
+  std::list<int> pair{7, 3};
+  auto old_first = pair.begin();
+  auto end = pair.end();
+  pair.sort();
+  pair.sort();
+  auto last = pair.end();
+  --last;
+  return pair.size() != 2 || pair.front() != 3 || pair.back() != 7 || last != old_first || pair.end() != end;
+}
+)r19containers");
+  const auto Output = tmpFile("list-sort-default-empty-singleton-and-two-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-sort-default-empty-singleton-and-two-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListMergeKeepsLeftEqualsFirstAndReusesOwnersRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-merge-keeps-left-equals-first-and-reuses-owners.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+int main() {
+  std::list<int> left{-7, 3, 7};
+  std::list<int> right{-9, 3, 3, 11};
+  auto first_equal = left.begin();
+  ++first_equal;
+  auto moved = right.begin();
+  ++moved;
+  const int* address = &*moved;
+  left.merge(std::move(right));
+  if (left.size() != 7 || !right.empty() || right.begin() != right.end())
+    return 1;
+  auto item = left.begin();
+  if (*item++ != -9 || *item++ != -7 || item != first_equal || *item++ != 3 ||
+      item != moved || &*item != address || *item++ != 3 || *item++ != 3 || *item++ != 7 ||
+      *item++ != 11 || item != left.end())
+    return 2;
+  left.merge(left);
+  right.merge(left);
+  return !left.empty() || right.size() != 7 || right.front() != -9 || right.back() != 11;
+}
+)r19containers");
+  const auto Output = tmpFile("list-merge-keeps-left-equals-first-and-reuses-owners.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-merge-keeps-left-equals-first-and-reuses-owners" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListSortExplicitOrderGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-sort-explicit-order-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+bool descending(int left, int right) { return left > right; }
+int main() {
+  std::list<int> items{3, 7, 5};
+  items.sort(descending);
+  return items.front() != 7;
+}
+)r19containers");
+  const auto Output = tmpFile("list-sort-explicit-order-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-sort-explicit-order-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListOwnerRelationsSignedDifferenceRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-owner-relations-signed-difference.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::list<int> first{3, -5, 11};
+  const std::list<int> second{3, 5, -11};
+  return !(first < second) || !(second > first) || first >= second || second <= first ||
+      !(first <= second) || !(second >= first) || first == second || !(first != second);
+}
+)r19containers");
+  const auto Output = tmpFile("list-owner-relations-signed-difference.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-owner-relations-signed-difference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListOwnerRelationsPrefixAndEmptyRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-owner-relations-prefix-and-empty.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> empty, empty_again, first{3, 5}, second{3, 5, -7}, same{3, 5};
+  if (!(empty == empty_again) || empty != empty_again || empty < empty || !(empty >= empty))
+    return 1;
+  if (!(empty < first) || !(first < second) || second < first || first == second)
+    return 2;
+  if (!(first == same) || first != same || first < same || first > same ||
+      !(first <= same) || !(first >= same))
+    return 3;
+  return &first.front() == &same.front();
+}
+)r19containers");
+  const auto Output = tmpFile("list-owner-relations-prefix-and-empty.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-owner-relations-prefix-and-empty" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListOwnerRelationsEvaluateOperandsOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-owner-relations-evaluate-operands-once.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+static int left_calls, right_calls;
+using List = std::list<int>;
+const List& left(const List& x) { ++left_calls; return x; }
+const List& right(const List& x) { ++right_calls; return x; }
+int main() {
+  const List first{-11}, second{-3};
+  if (!(left(first) < right(second)) || left_calls != 1 || right_calls != 1)
+    return 1;
+  if (std::operator==(left(first), right(second)) || left_calls != 2 || right_calls != 2)
+    return 2;
+  return 0;
+}
+)r19containers");
+  const auto Output = tmpFile("list-owner-relations-evaluate-operands-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-owner-relations-evaluate-operands-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListOwnerRelationsOtherElementGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-owner-relations-other-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::list<long> first{3L, 5L}, second{7L, 9L};
+  return !(first < second) || first == second;
+}
+)r19containers");
+  const auto Output = tmpFile("list-owner-relations-other-element-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-owner-relations-other-element-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListResizeDefaultFillAndRepeatedCountRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-resize-default-fill-and-repeated-count.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> items{7, 13};
+  auto first = items.begin();
+  const int* address = &*first;
+  auto end = items.end();
+  items.resize(4);
+  if (items.size() != 4 || items.begin() != first || items.end() != end || items.back() != 0)
+    return 1;
+  items.resize(6, -5);
+  items.resize(6, 9);
+  auto tail = items.end();
+  if (*--tail != -5 || *--tail != -5 || *--tail != 0)
+    return 2;
+  items.resize(1);
+  if (items.size() != 1 || items.begin() != first || &items.front() != address || items.back() != 7)
+    return 3;
+  items.resize(0, 11);
+  return !items.empty() || items.begin() != end || items.end() != end;
+}
+)r19containers");
+  const auto Output = tmpFile("list-resize-default-fill-and-repeated-count.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-resize-default-fill-and-repeated-count" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListResizeGrowthKeepsChainDetachedAndReadsFillAfterAllocationRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-resize-growth-keeps-chain-detached-and-reads-fill-after-allocation.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static std::list<int>* observed;
+static int calls, bad;
+void* operator new(Size bytes) {
+  if (observed) {
+    ++calls;
+    if (observed->size() != 2 || observed->back() != 20)
+      bad = 1;
+    ++observed->front();
+  }
+  return ::malloc(bytes);
+}
+void operator delete(void* p) noexcept { ::free(p); }
+int main() {
+  std::list<int> items{10, 20};
+  observed = &items;
+  items.resize(5, items.front());
+  observed = nullptr;
+  if (calls != 3 || bad || items.size() != 5)
+    return 1;
+  auto it = items.begin();
+  return *it++ != 13 || *it++ != 20 || *it++ != 11 || *it++ != 12 || *it++ != 13 || it != items.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-resize-growth-keeps-chain-detached-and-reads-fill-after-allocation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-resize-growth-keeps-chain-detached-and-reads-fill-after-allocation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListResizeShrinkUnlinksBeforeReleasingTheTailRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-resize-shrink-unlinks-before-releasing-the-tail.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static std::list<int>* observed;
+static int deletes, bad;
+void* operator new(Size bytes) { return ::malloc(bytes); }
+void operator delete(void* p) noexcept {
+  if (observed) {
+    ++deletes;
+    auto last = observed->end();
+    if (observed->front() != 2 || *--last != 3 || observed->size() != static_cast<Size>(5 - deletes))
+      bad = 1;
+  }
+  ::free(p);
+}
+int main() {
+  std::list<int> items{2, 3, 5, 7, 11};
+  auto kept = items.begin();
+  ++kept;
+  observed = &items;
+  items.resize(2, 17);
+  observed = nullptr;
+  return bad || deletes != 3 || items.size() != 2 || &items.back() != &*kept;
+}
+)r19containers");
+  const auto Output = tmpFile("list-resize-shrink-unlinks-before-releasing-the-tail.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-resize-shrink-unlinks-before-releasing-the-tail" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListResizeOtherElementGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-resize-other-element-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<long> items{3L, 5L};
+  items.resize(4, 7L);
+  return items.back() != 7L;
+}
+)r19containers");
+  const auto Output = tmpFile("list-resize-other-element-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-resize-other-element-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListLongStableOrderIteratorValuesAndCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-long-stable-order-iterator-values-and-copy.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+int main() {
+  constexpr long hi = sizeof(long) == 8 ? static_cast<long>(4294967301LL) : 1879048197L;
+  constexpr long lo = sizeof(long) == 8 ? static_cast<long>(-4294967303LL) : -1879048199L;
+  std::list<long> items{hi, lo, hi, 3L};
+  auto first_hi = items.begin();
+  const auto* address = first_hi.operator->();
+  items.sort();
+  if (items.front() != lo || items.back() != hi || items.size() != 4 || *address != hi)
+    return 1;
+  items.unique();
+  auto last = items.end();
+  if (--last != first_hi || last.operator->() != address || items.size() != 3)
+    return 2;
+  const std::list<long> copied(items);
+  if (copied != items || &copied.back() == &items.back() || *copied.cbegin() != lo)
+    return 3;
+  items.reverse();
+  std::list<long> moved(std::move(items));
+  return !items.empty() || moved.begin() != first_hi || moved.front() != hi || moved.back() != lo;
+}
+)r19containers");
+  const auto Output = tmpFile("list-long-stable-order-iterator-values-and-copy.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-long-stable-order-iterator-values-and-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUnsignedMergesAndComparesInTheUnsignedDomainRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-unsigned-merges-and-compares-in-the-unsigned-domain.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  constexpr unsigned maximum = static_cast<unsigned>(-1);
+  std::list<unsigned> lhs{1u, maximum}, rhs{2u, maximum};
+  auto moved = rhs.cbegin();
+  auto* moved_address = &*moved;
+  lhs.merge(rhs);
+  const std::list<unsigned> prefix{1u, 2u};
+  if (!rhs.empty() || lhs.size() != 4 || lhs.back() != maximum || !(prefix < lhs) || lhs < prefix)
+    return 1;
+  const std::list<unsigned> smaller{1u, 2u, maximum - 1u, maximum};
+  if (!(smaller < lhs) || lhs < smaller)
+    return 2;
+  lhs.remove(lhs.front());
+  return lhs.cbegin() != moved || &lhs.front() != moved_address || lhs.front() != 2u || lhs.size() != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("list-unsigned-merges-and-compares-in-the-unsigned-domain.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-unsigned-merges-and-compares-in-the-unsigned-domain" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUnsignedLongResizeInsertAndSpliceRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-unsigned-long-resize-insert-and-splice.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  constexpr unsigned long maximum = static_cast<unsigned long>(-1);
+  std::list<unsigned long> items{2UL};
+  items.resize(4, maximum);
+  items.resize(5);
+  if (items.size() != 5 || items.front() != 2UL || items.back() != 0UL)
+    return 1;
+  auto moved = items.begin();
+  ++moved;
+  std::list<unsigned long> out{3UL};
+  out.splice(out.cend(), items, moved);
+  auto* address = &*moved;
+  auto inserted = out.insert(out.cbegin(), maximum - 2UL);
+  if (*inserted != maximum - 2UL || out.size() != 3 || items.size() != 4 || &out.back() != address)
+    return 2;
+  items.erase(items.cbegin(), items.cend());
+  out.pop_front();
+  return !items.empty() || out.front() != 3UL || out.back() != maximum;
+}
+)r19containers");
+  const auto Output = tmpFile("list-unsigned-long-resize-insert-and-splice.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-unsigned-long-resize-insert-and-splice" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUserDefinedIntegerAllocatorGuardRejected) {
+  const auto Source = tmpFile("list-user-defined-integer-allocator-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <memory>
+template <class T> struct LocalAllocator : std::allocator<T> {
+  using value_type = T;
+  template <class U> struct rebind { using other = LocalAllocator<U>; };
+  LocalAllocator() noexcept = default;
+  template <class U> LocalAllocator(const LocalAllocator<U>&) noexcept {}
+};
+int main() {
+  std::list<long, LocalAllocator<long>> items{3L, 7L};
+  items.reverse();
+  return items.front() != 7L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListLongLongGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-long-long-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<long long> items{3LL, 5LL};
+  items.push_back(7LL);
+  return items.back() != 7LL;
+}
+)r19containers");
+  const auto Output = tmpFile("list-long-long-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-long-long-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListObserverAllocatorConstructsATypedOwnerRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-observer-allocator-constructs-a-typed-owner.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::list<unsigned long> first{3UL, 7UL};
+  auto allocator = first.get_allocator();
+  std::list<unsigned long> second(allocator);
+  if (!second.empty() || first.size() != 2 || first.front() != 3UL)
+    return 1;
+  second.push_back(static_cast<unsigned long>(-1));
+  return second.size() != 1 || second.back() != static_cast<unsigned long>(-1);
+}
+)r19containers");
+  const auto Output = tmpFile("list-observer-allocator-constructs-a-typed-owner.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-observer-allocator-constructs-a-typed-owner" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListMaxSizeUsesTheCheckedNodeWidthRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-max-size-uses-the-checked-node-width.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  using Size = decltype(sizeof(0));
+  const Size maximum = static_cast<Size>(-1) / 24;
+  const std::list<int> empty;
+  const std::list<long> first{3L, 5L, 7L};
+  const std::list<unsigned long> second{9UL, 11UL};
+  return empty.max_size() != maximum || first.max_size() != maximum || second.max_size() != maximum;
+}
+)r19containers");
+  const auto Output = tmpFile("list-max-size-uses-the-checked-node-width.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-max-size-uses-the-checked-node-width" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListObserversEvaluateAPointerReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-observers-evaluate-a-pointer-receiver-once.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+const std::list<int>* observe(const std::list<int>& items, int& calls) {
+  ++calls;
+  return &items;
+}
+int main() {
+  const std::list<int> first{4, 7};
+  int calls = 0;
+  if (observe(first, calls)->max_size() <= 2 || calls != 1)
+    return 1;
+  std::list<int> second(observe(first, calls)->get_allocator());
+  return calls != 2 || !second.empty() || first.size() != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-observers-evaluate-a-pointer-receiver-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-observers-evaluate-a-pointer-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListIndirectCapacityGuardRejected) {
+  const auto Source = tmpFile("list-indirect-capacity-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  using List = std::list<int>;
+  const List items{3, 7};
+  const auto method = &List::max_size;
+  return (items.*method)() <= 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListRemoveIfChecksEachElementBeforeSplicingARunRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-remove-if-checks-each-element-before-splicing-a-run.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+std::list<unsigned>* active;
+int sequence, sizes, selections;
+bool even(unsigned value) {
+  sequence = sequence * 10 + static_cast<int>(value);
+  sizes = sizes * 10 + static_cast<int>(active->size());
+  return value % 2u == 0u;
+}
+using Predicate = bool (*)(unsigned);
+Predicate select() {
+  ++selections;
+  return &even;
+}
+int main() {
+  std::list<unsigned> values{2u, 4u, 3u, 6u, 5u};
+  active = &values;
+  auto first = values.begin();
+  ++first;
+  ++first;
+  auto last = values.end();
+  --last;
+  values.remove_if(select());
+  if (sequence != 24365 || sizes != 55533 || selections != 1 || values.size() != 2)
+    return 1;
+  auto item = values.begin();
+  return item != first || *item++ != 3u || item != last || *item++ != 5u || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-remove-if-checks-each-element-before-splicing-a-run.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-remove-if-checks-each-element-before-splicing-a-run" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUniquePredicateComparesBeforeEachRunTransferRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-unique-predicate-compares-before-each-run-transfer.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+std::list<long>* active;
+int sizes;
+bool same_parity(long left, long right) {
+  sizes = sizes * 10 + static_cast<int>(active->size());
+  return (left & 1L) == (right & 1L);
+}
+int main() {
+  std::list<long> values{10L, 12L, 11L, 13L, 14L};
+  active = &values;
+  auto first = values.begin();
+  auto second = first;
+  ++second;
+  ++second;
+  values.unique(&same_parity);
+  if (sizes != 5544 || values.size() != 3)
+    return 1;
+  auto item = values.begin();
+  return item != first || *item++ != 10L || item != second || *item++ != 11L ||
+         *item++ != 14L || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-unique-predicate-compares-before-each-run-transfer.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-unique-predicate-compares-before-each-run-transfer" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRemoveIfNarrowingPredicateGuardRejected) {
+  const auto Source = tmpFile("list-remove-if-narrowing-predicate-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+bool positive(int value) { return value > 0; }
+int main() {
+  std::list<long> items{0L, 1L};
+  items.remove_if(&positive);
+  return items.size() != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListRemoveIfStatefulObjectGuardRejected) {
+  const auto Source = tmpFile("list-remove-if-stateful-object-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Matches {
+  unsigned value;
+  bool operator()(unsigned item) const { return item == value; }
+};
+int main() {
+  std::list<unsigned> items{1u, 2u};
+  items.remove_if(Matches{2u});
+  return items.front() != 1u;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListWideSignedSortAndResizeKeepFullValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-wide-signed-sort-and-resize-keep-full-values.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const long long low = -5000000001LL;
+  const long long high = 7000000003LL;
+  std::list<long long> values{high, low, high, 2LL};
+  auto first = values.begin();
+  auto low_node = first;
+  ++low_node;
+  values.sort();
+  auto item = values.begin();
+  if (item != low_node || *item++ != low || *item++ != 2LL || item != first || *item++ != high)
+    return 1;
+  values.resize(6, values.back());
+  return values.size() != 6 || values.front() != low || values.back() != high || *first != high;
+}
+)r19containers");
+  const auto Output = tmpFile("list-wide-signed-sort-and-resize-keep-full-values.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-wide-signed-sort-and-resize-keep-full-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListWideUnsignedMergePreservesHighBitAndStabilityRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-wide-unsigned-merge-preserves-high-bit-and-stability.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+int main() {
+  const unsigned long long high = 0x8000000000000007ULL;
+  const unsigned long long max = 0xffffffffffffffffULL;
+  std::list<unsigned long long> left{3ULL, high};
+  std::list<unsigned long long> right{high, max};
+  auto left_high = left.end();
+  --left_high;
+  auto right_high = right.begin();
+  auto allocation = left.get_allocator();
+  std::list<unsigned long long> empty(allocation);
+  left.merge(std::move(right));
+  auto item = left.begin();
+  if (!right.empty() || !empty.empty() || left.max_size() == 0 || *item++ != 3ULL ||
+      item != left_high || *item++ != high || item != right_high || *item++ != high)
+    return 1;
+  return *item++ != max || item != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-wide-unsigned-merge-preserves-high-bit-and-stability.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-wide-unsigned-merge-preserves-high-bit-and-stability" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListFloatingPayloadGuardRejected) {
+  const auto Source = tmpFile("list-floating-payload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<double> values{3.0, 5.0};
+  values.push_back(7.0);
+  return values.back() != 7.0;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceEndsReturnMutableReferencesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-emplace-ends-return-mutable-references.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const long long high = 7000000003LL;
+  std::list<long long> values{13LL};
+  auto middle = values.begin();
+  auto end = values.end();
+  long long& first = values.emplace_front();
+  if (first != 0 || &first != &values.front())
+    return 1;
+  long long& last = values.emplace_back(high);
+  first = -17LL;
+  if (&last != &values.back() || last != high || values.size() != 3)
+    return 2;
+  auto item = values.begin();
+  return *item++ != -17LL || item != middle || *item++ != 13LL ||
+         *item++ != high || item != end || end != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-emplace-ends-return-mutable-references.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-emplace-ends-return-mutable-references" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceAtPositionRetainsNeighborIteratorsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-emplace-at-position-retains-neighbor-iterators.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<unsigned> values{5u, 9u};
+  auto first = values.begin();
+  auto last = values.end();
+  --last;
+  auto position = values.cbegin();
+  ++position;
+  auto inserted = values.emplace(position, 7u);
+  auto zero = values.emplace(values.cend());
+  auto item = values.begin();
+  return item != first || *item++ != 5u || item != inserted || *item++ != 7u ||
+         item != last || *item++ != 9u || item != zero || *item++ != 0u || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-emplace-at-position-retains-neighbor-iterators.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-emplace-at-position-retains-neighbor-iterators" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceReadsReferenceAfterAllocationRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-emplace-reads-reference-after-allocation.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static std::list<int>* observed;
+static int value = 9, calls, seen_size;
+void* operator new(Size count) {
+  if (observed) {
+    ++calls;
+    seen_size = static_cast<int>(observed->size());
+    value = 27;
+  }
+  return ::malloc(count);
+}
+void operator delete(void* p) noexcept { ::free(p); }
+int main() {
+  std::list<int> values{3};
+  observed = &values;
+  const int& fill = value;
+  int& item = values.emplace_back(fill);
+  observed = nullptr;
+  return calls != 1 || seen_size != 1 || item != 27 || values.size() != 2 || &item != &values.back();
+}
+)r19containers");
+  const auto Output = tmpFile("list-emplace-reads-reference-after-allocation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-emplace-reads-reference-after-allocation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceConvertingLongGuardRejected) {
+  const auto Source = tmpFile("list-emplace-converting-long-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values;
+  const long value = 9;
+  return values.emplace_front(value) != 9;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceUserConversionGuardRejected) {
+  const auto Source = tmpFile("list-emplace-user-conversion-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Value {
+  operator int() const { return 4; }
+};
+int main() {
+  std::list<int> values;
+  return values.emplace_back(Value{}) != 4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListShortPayloadSortAndLvalueStoreRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-short-payload-sort-and-lvalue-store.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<short> values{31000, -30000, 2500};
+  auto high = values.begin();
+  values.sort();
+  auto item = values.begin();
+  if (*item++ != -30000 || *item++ != 2500 || item != high || *item != 31000)
+    return 1;
+  *item = -255;
+  return values.back() != -255 || &*high != &values.back() || ++item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-short-payload-sort-and-lvalue-store.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-short-payload-sort-and-lvalue-store" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUnsignedShortPayloadKeepsHighBitRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-unsigned-short-payload-keeps-high-bit.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<unsigned short> left{9, 33000};
+  std::list<unsigned short> right{33000, 65535};
+  auto first_moved = right.begin();
+  left.merge(right);
+  auto item = left.begin();
+  if (!right.empty() || *item++ != 9 || *item++ != 33000 ||
+      item != first_moved || *item++ != 33000 || *item++ != 65535)
+    return 1;
+  left.resize(6, left.back());
+  return left.back() != 65535 || left.size() != 6;
+}
+)r19containers");
+  const auto Output = tmpFile("list-unsigned-short-payload-keeps-high-bit.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-unsigned-short-payload-keeps-high-bit" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListCharacterPayloadsKeepDistinctTypeAndOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-character-payloads-keep-distinct-type-and-order.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<signed char> signed_values{-120, 100, -2};
+  signed_values.sort();
+  auto s = signed_values.begin();
+  if (*s++ != -120 || *s++ != -2 || *s++ != 100 || s != signed_values.end())
+    return 1;
+  std::list<unsigned char> unsigned_values{250, 3, 128};
+  unsigned_values.sort();
+  auto u = unsigned_values.begin();
+  if (*u++ != 3 || *u++ != 128 || *u++ != 250 || u != unsigned_values.end())
+    return 2;
+  std::list<char> plain{'x', 'y'};
+  plain.reverse();
+  return plain.front() != 'y' || plain.back() != 'x';
+}
+)r19containers");
+  const auto Output = tmpFile("list-character-payloads-keep-distinct-type-and-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-character-payloads-keep-distinct-type-and-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUserEnumPayloadGuardRejected) {
+  const auto Source = tmpFile("list-user-enum-payload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+enum Code : unsigned char { First = 1, Second = 2 };
+int main() {
+  std::list<Code> values{First};
+  values.push_back(Second);
+  return values.back() != Second;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListCountAssignmentShrinksAndOverwritesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-count-assignment-shrinks-and-overwrites.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{1, 2, 3, 4};
+  values.assign(2, -5);
+  auto current = values.begin();
+  return values.size() != 2 || *current++ != -5 || *current++ != -5 || current != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-count-assignment-shrinks-and-overwrites.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-count-assignment-shrinks-and-overwrites" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListCountAssignmentCopiesExistingNodesBeforeAllocationRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-count-assignment-copies-existing-nodes-before-allocation.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static std::list<long>* observed;
+static long fill = 13L;
+static int allocations, bad;
+void* operator new(Size size) {
+  if (observed) {
+    ++allocations;
+    if (observed->size() != 1 || observed->front() != 13L)
+      bad = 1;
+    fill = 25L;
+  }
+  return ::malloc(size);
+}
+void operator delete(void* p) noexcept { ::free(p); }
+int main() {
+  std::list<long> values{1L};
+  observed = &values;
+  values.assign(3, fill);
+  observed = nullptr;
+  auto item = values.begin();
+  return bad || allocations != 2 || values.size() != 3 || *item++ != 13L ||
+         *item++ != 25L || *item++ != 25L || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-count-assignment-copies-existing-nodes-before-allocation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-count-assignment-copies-existing-nodes-before-allocation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListCountAssignmentZeroAndWideRegrowthRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-count-assignment-zero-and-wide-regrowth.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const long long wide = -7000000009LL;
+  std::list<long long> values{9LL, 13LL};
+  values.assign(0, wide);
+  if (!values.empty() || values.begin() != values.end())
+    return 1;
+  values.assign(3, wide);
+  auto item = values.begin();
+  return values.size() != 3 || *item++ != wide || *item++ != wide ||
+         *item++ != wide || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-count-assignment-zero-and-wide-regrowth.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-count-assignment-zero-and-wide-regrowth" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRangeAssignmentGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-range-assignment-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  int values[]{2, 3, 5};
+  std::list<int> list;
+  list.assign(values, values + 3);
+  return list.size() != 3 || list.back() != 5;
+}
+)r19containers");
+  const auto Output = tmpFile("list-range-assignment-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-range-assignment-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListConvertingRangeRetainsNodesAndDefersAppendsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-converting-range-retains-nodes-and-defers-appends.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static short input[]{-9, 10, -20};
+static std::list<long long>* observed;
+static int allocations, bad;
+void* operator new(Size size) {
+  if (observed) {
+    ++allocations;
+    if (observed->size() != 1 || observed->front() != -9LL)
+      bad = 1;
+    input[1] = 13 + allocations;
+    input[2] = -23 - allocations;
+  }
+  return ::malloc(size);
+}
+void operator delete(void* p) noexcept { ::free(p); }
+int main() {
+  std::list<long long> values{3LL};
+  auto first = values.begin();
+  const short* data = input;
+  observed = &values;
+  values.assign(data, data + 3);
+  observed = nullptr;
+  auto item = values.begin();
+  return bad || allocations != 2 || values.size() != 3 || item != first ||
+         *item++ != -9LL || *item++ != 14LL || *item++ != -25LL || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-converting-range-retains-nodes-and-defers-appends.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-converting-range-retains-nodes-and-defers-appends" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListIteratorRangeOverwritesAndShrinksRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-iterator-range-overwrites-and-shrinks.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::list<unsigned short> input{65000, 17, 60000};
+  std::list<unsigned short> values{2, 3, 4};
+  auto first = values.begin();
+  auto second = first;
+  ++second;
+  auto start = input.cbegin();
+  ++start;
+  values.assign(start, input.cend());
+  auto item = values.begin();
+  if (values.size() != 2 || item != first || *item++ != 17 ||
+      item != second || *item++ != 60000 || item != values.end())
+    return 1;
+  values.assign(input.cend(), input.cend());
+  return !values.empty() || values.begin() != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-iterator-range-overwrites-and-shrinks.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-iterator-range-overwrites-and-shrinks" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListAssignRangeVolatileInputGuardRejected) {
+  const auto Source = tmpFile("list-assign-range-volatile-input-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  volatile unsigned int input[]{1, 2};
+  std::list<unsigned int> values;
+  values.assign(input, input + 2);
+  return values.size() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListAssignRangeFloatingInputGuardRejected) {
+  const auto Source = tmpFile("list-assign-range-floating-input-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const double input[]{-1.5, 2.75};
+  std::list<int> values;
+  values.assign(input, input + 2);
+  return values.size() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListConstructByCountValueAndDefaultAllocatorRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-construct-by-count-value-and-default-allocator.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::allocator<long> alloc;
+  const std::list<long> zero(0, alloc);
+  const std::list<long> defaults(2, alloc);
+  const std::list<unsigned long long> filled(3, 18446744073709551607ULL);
+  auto cursor = filled.cbegin();
+  return !zero.empty() || defaults.size() != 2 || defaults.front() || defaults.back() ||
+         filled.size() != 3 || *cursor++ != 18446744073709551607ULL ||
+         *cursor++ != 18446744073709551607ULL || *cursor++ != 18446744073709551607ULL ||
+         cursor != filled.cend();
+}
+)r19containers");
+  const auto Output = tmpFile("list-construct-by-count-value-and-default-allocator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-construct-by-count-value-and-default-allocator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListConstructRawRangeLoadsAfterAllocationRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-construct-raw-range-loads-after-allocation.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static signed char input[]{1, 2};
+static int calls;
+static bool observe;
+void* operator new(Size bytes) {
+  if (observe) {
+    ++calls;
+    input[0] = static_cast<signed char>(-90 - calls);
+    input[1] = static_cast<signed char>(90 + calls);
+  }
+  return ::malloc(bytes);
+}
+void operator delete(void* memory) noexcept { ::free(memory); }
+int main() {
+  const signed char* first = input;
+  observe = true;
+  const std::list<long> values(first, first + 2);
+  observe = false;
+  return calls != 2 || values.size() != 2 || values.front() != -91L || values.back() != 92L;
+}
+)r19containers");
+  const auto Output = tmpFile("list-construct-raw-range-loads-after-allocation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-construct-raw-range-loads-after-allocation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListConstructFromConstIteratorsAndExplicitAllocatorRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-construct-from-const-iterators-and-explicit-allocator.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::list<unsigned short> original{2, 65000, 4};
+  auto start = original.cbegin();
+  ++start;
+  const std::allocator<unsigned short> alloc;
+  const std::list<unsigned short> values(start, original.cend(), alloc);
+  return original.size() != 3 || values.size() != 2 || values.front() != 65000 ||
+         values.back() != 4 || &values.front() == &*start;
+}
+)r19containers");
+  const auto Output = tmpFile("list-construct-from-const-iterators-and-explicit-allocator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-construct-from-const-iterators-and-explicit-allocator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListConstructRangeVolatileInputGuardRejected) {
+  const auto Source = tmpFile("list-construct-range-volatile-input-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  volatile short source[]{3, 4};
+  const std::list<int> values(source, source + 2);
+  return values.size() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListAssignInitializerReusesPrefixAndClearsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-assign-initializer-reuses-prefix-and-clears.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{1, 2, 3};
+  auto first = values.begin();
+  auto second = first;
+  ++second;
+  values.assign({6, -3});
+  auto item = values.begin();
+  if (values.size() != 2 || item != first || *item++ != 6 ||
+      item != second || *item++ != -3 || item != values.end())
+    return 1;
+  values.assign({});
+  return !values.empty() || values.begin() != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-assign-initializer-reuses-prefix-and-clears.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-assign-initializer-reuses-prefix-and-clears" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListOperatorAssignmentByInitializerRetainsOwnerRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-operator-assignment-by-initializer-retains-owner.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<unsigned long long> values{11ULL};
+  auto first = values.begin();
+  auto& result = (values = {18446744073709551607ULL, 18ULL, 19ULL});
+  auto item = values.begin();
+  return &result != &values || values.size() != 3 || item != first ||
+         *item++ != 18446744073709551607ULL || *item++ != 18ULL ||
+         *item++ != 19ULL || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-operator-assignment-by-initializer-retains-owner.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-operator-assignment-by-initializer-retains-owner" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListInitializerAssignmentCapturesRightSideFirstRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-initializer-assignment-captures-right-side-first.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int ordering;
+std::list<long>& target(std::list<long>& value) {
+  ordering = ordering * 10 + 2;
+  return value;
+}
+long element(long result) {
+  ordering = ordering * 10 + 1;
+  return result;
+}
+int main() {
+  std::list<long> values{5L};
+  target(values) = {element(7L), element(-9L)};
+  return ordering != 112 || values.size() != 2 || values.front() != 7L || values.back() != -9L;
+}
+)r19containers");
+  const auto Output = tmpFile("list-initializer-assignment-captures-right-side-first.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-initializer-assignment-captures-right-side-first" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListFloatingInitializerAssignmentGuardRejected) {
+  const auto Source = tmpFile("list-floating-initializer-assignment-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<double> values;
+  values = {1.5, 2.25};
+  return values.size() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListInsertCountValueAndEmptyRangeReturnPositionRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-insert-count-value-and-empty-range-return-position.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<unsigned long long> values{1ULL, 5ULL};
+  auto before = values.begin();
+  auto position = before;
+  ++position;
+  if (values.insert(position, 0, 9ULL) != position)
+    return 1;
+  auto first = values.insert(position, 2, 18446744073709551607ULL);
+  auto item = values.begin();
+  return values.size() != 4 || item != before || *item++ != 1ULL || item != first ||
+         *item++ != 18446744073709551607ULL || *item++ != 18446744073709551607ULL ||
+         item != position || *item++ != 5ULL || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-insert-count-value-and-empty-range-return-position.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-insert-count-value-and-empty-range-return-position" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListInsertConvertingRangeDefersAllLinksRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-insert-converting-range-defers-all-links.cpp");
+  writeFile(Source, R"r19containers(using Size = decltype(sizeof(0));
+extern "C" void* malloc(Size);
+extern "C" void free(void*);
+#include <new>
+#include <list>
+static short input[]{-9, 10};
+static std::list<long>* observed;
+static int calls, bad;
+void* operator new(Size size) {
+  if (observed) {
+    ++calls;
+    if (observed->size() != 2 || observed->front() != 1L || observed->back() != 5L)
+      bad = 1;
+    input[0] = -11 - calls;
+    input[1] = 20 + calls;
+  }
+  return ::malloc(size);
+}
+void operator delete(void* p) noexcept { ::free(p); }
+int main() {
+  std::list<long> values{1L, 5L};
+  auto position = values.begin();
+  ++position;
+  const short* start = input;
+  observed = &values;
+  auto first = values.insert(position, start, start + 2);
+  observed = nullptr;
+  auto item = values.begin();
+  ++item;
+  return bad || calls != 2 || values.size() != 4 || item != first ||
+         *item++ != -12L || *item++ != 22L || item != position;
+}
+)r19containers");
+  const auto Output = tmpFile("list-insert-converting-range-defers-all-links.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-insert-converting-range-defers-all-links" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListInsertConstIteratorRangeKeepsSourceNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-insert-const-iterator-range-keeps-source-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::list<unsigned short> from{60000, 65000};
+  std::list<unsigned short> values{1};
+  auto first = values.insert(values.cend(), from.cbegin(), from.cend());
+  auto next = first;
+  return from.size() != 2 || values.size() != 3 || &*first == &from.front() ||
+         *next++ != 60000 || *next++ != 65000 || next != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-insert-const-iterator-range-keeps-source-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-insert-const-iterator-range-keeps-source-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListInsertInitializerAtBeginAndEmptyAtEndRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-insert-initializer-at-begin-and-empty-at-end.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<int> values{19};
+  auto old = values.begin();
+  auto first = values.insert(old, {2, -7});
+  auto item = values.begin();
+  if (item != first || *item++ != 2 || *item++ != -7 || item != old || *item != 19)
+    return 1;
+  return values.insert(values.cend(), {}) != values.end() || values.size() != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("list-insert-initializer-at-begin-and-empty-at-end.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-insert-initializer-at-begin-and-empty-at-end" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListInsertVolatilePointerRangeGuardRejected) {
+  const auto Source = tmpFile("list-insert-volatile-pointer-range-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  volatile short source[]{9, 10};
+  std::list<int> values;
+  values.insert(values.cend(), source, source + 2);
+  return values.size() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListExplicitOrderWideSortPreservesEquivalentNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-explicit-order-wide-sort-preserves-equivalent-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+bool higher(unsigned long long left, unsigned long long right) { return right < left; }
+int main() {
+  const auto high = 18446744073709551607ULL;
+  std::list<unsigned long long> values{2ULL, high, 1ULL, high, 6ULL};
+  auto early = values.begin();
+  ++early;
+  auto late = early;
+  ++late;
+  ++late;
+  values.sort(&higher);
+  auto item = values.begin();
+  return item != early || *item++ != high || item != late || *item++ != high ||
+         *item++ != 6ULL || *item++ != 2ULL || *item++ != 1ULL || item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-explicit-order-wide-sort-preserves-equivalent-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-explicit-order-wide-sort-preserves-equivalent-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListExplicitOrderMergeKeepsDestinationTiesFirstRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-explicit-order-merge-keeps-destination-ties-first.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+#include <utility>
+bool higher(long left, long right) { return left > right; }
+int main() {
+  std::list<long> destination{7L, 5L, -1L};
+  std::list<long> source{7L, 6L, -8L};
+  auto dst = destination.begin();
+  auto src = source.begin();
+  destination.merge(std::move(source), higher);
+  auto item = destination.begin();
+  return !source.empty() || destination.size() != 6 || item != dst || *item++ != 7L ||
+         item != src || *item++ != 7L || *item++ != 6L || *item++ != 5L ||
+         *item++ != -1L || *item++ != -8L || item != destination.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-explicit-order-merge-keeps-destination-ties-first.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-explicit-order-merge-keeps-destination-ties-first" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListOrderFunctionWithObservableBodyGuardRejected) {
+  const auto Source = tmpFile("list-order-function-with-observable-body-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int calls;
+bool greater(int left, int right) {
+  ++calls;
+  return left > right;
+}
+int main() {
+  std::list<int> values{2, 5, 7};
+  values.sort(&greater);
+  return calls == 0 || values.front() != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListOrderFunctionWithConvertingSignatureGuardRejected) {
+  const auto Source = tmpFile("list-order-function-with-converting-signature-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+bool greater(long left, long right) { return left > right; }
+int main() {
+  std::list<int> values{2, 5, 7};
+  values.sort(&greater);
+  return values.front() != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListReverseIteratorBaseAndNodeIdentityRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-reverse-iterator-base-and-node-identity.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<long> values{3L, -4L, 8L};
+  auto top = values.rbegin();
+  auto end = values.rend();
+  if (top.base() != values.end() || end.base() != values.begin() || *top != 8L)
+    return 1;
+  *top = 12L;
+  auto item = top;
+  auto previous = item++;
+  if (previous != top || *item != -4L || values.back() != 12L)
+    return 2;
+  ++item;
+  auto old = item--;
+  --item;
+  return *old == 3L && item == top ? 0 : 3;
+}
+)r19containers");
+  const auto Output = tmpFile("list-reverse-iterator-base-and-node-identity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-reverse-iterator-base-and-node-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListConstReverseIteratorEmptyAndTraversalRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-const-reverse-iterator-empty-and-traversal.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  const std::list<unsigned short> values{2, 5, 5, 7};
+  auto it = values.crbegin();
+  unsigned result = 0;
+  while (it != values.crend()) {
+    result = result * 10 + *it;
+    ++it;
+  }
+  const std::list<unsigned short> empty;
+  return result == 7552 && empty.rbegin() == empty.rend() && values.rbegin() == values.crbegin()
+      && values.rend().base() == values.cbegin() ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("list-const-reverse-iterator-empty-and-traversal.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-const-reverse-iterator-empty-and-traversal" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListReverseIteratorFactoryAndConstConversionRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-reverse-iterator-factory-and-const-conversion.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int main() {
+  std::list<int> values{1, 4, 9};
+  auto from = std::make_reverse_iterator(values.end());
+  std::reverse_iterator<std::list<int>::iterator> first(values.end());
+  std::list<int>::const_reverse_iterator converted(from), assigned;
+  assigned = first;
+  if (first != converted || converted != assigned || first.base() != values.end())
+    return 1;
+  int *last = first.operator->();
+  *last = 11;
+  return *converted == 11 && values.back() == 11 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-reverse-iterator-factory-and-const-conversion.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-reverse-iterator-factory-and-const-conversion" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListReverseIteratorUnsupportedPayloadGuardRejected) {
+  const auto Source = tmpFile("list-reverse-iterator-unsupported-payload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Record { int member; };
+int main() {
+  const std::list<Record> values{Record{2}, Record{5}};
+  return values.rbegin()->member == 5 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListReverseIteratorDistanceSourceGuardRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-reverse-iterator-distance-source-guard.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int main() {
+  std::list<int> values{1, 2, 3};
+  return std::distance(values.rbegin(), values.rend()) == 3 ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("list-reverse-iterator-distance-source-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-reverse-iterator-distance-source-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListIteratorSignedAdvanceAndDefaultNavigationRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-iterator-signed-advance-and-default-navigation.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int main() {
+  std::list<long> values{-2L, 3L, 6L, 8L};
+  auto last = std::prev(values.end());
+  auto second = std::next(values.begin());
+  if (*last != 8L || *second != 3L || std::distance(second, values.end()) != 3)
+    return 1;
+  std::advance(last, -2);
+  if (last != second || std::distance(last, second) != 0)
+    return 2;
+  std::advance(last, 2);
+  return *last == 8L && *std::prev(last, 2) == 3L ? 0 : 3;
+}
+)r19containers");
+  const auto Output = tmpFile("list-iterator-signed-advance-and-default-navigation.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-iterator-signed-advance-and-default-navigation" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListConstReverseNavigationDirectionsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-const-reverse-navigation-directions.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int main() {
+  const std::list<unsigned int> values{2u, 3u, 5u, 7u, 8u};
+  auto head = values.crbegin();
+  auto cursor = std::next(head, 2);
+  if (*head != 8u || *cursor != 5u || std::distance(head, cursor) != 2)
+    return 1;
+  std::advance(cursor, -1);
+  if (*cursor != 7u || std::prev(cursor) != head)
+    return 2;
+  std::advance(cursor, 3);
+  return *cursor == 2u && std::next(cursor) == values.crend() ? 0 : 3;
+}
+)r19containers");
+  const auto Output = tmpFile("list-const-reverse-navigation-directions.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-const-reverse-navigation-directions" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListIteratorNavigationEvaluatesDistanceOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-iterator-navigation-evaluates-distance-once.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int calls;
+int distance_value() { ++calls; return 1; }
+int main() {
+  std::list<int> values{1, 2, 3};
+  auto cursor = values.begin();
+  std::advance(cursor, distance_value());
+  auto first = std::prev(cursor, distance_value());
+  return *cursor == 2 && *first == 1 && calls == 2 ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("list-iterator-navigation-evaluates-distance-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-iterator-navigation-evaluates-distance-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListIteratorNonScalarNavigationGuardRejected) {
+  const auto Source = tmpFile("list-iterator-non-scalar-navigation-guard.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+struct Record { int value; };
+int main() {
+  std::list<Record> values{Record{1}, Record{3}};
+  return std::next(values.begin())->value == 3 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListFreeAccessEvaluatesReceiverOnceRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-free-access-evaluates-receiver-once.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int calls;
+std::list<long> &observe(std::list<long> &values) { ++calls; return values; }
+int main() {
+  std::list<long> values{3L, 8L};
+  auto begin = std::begin(observe(values));
+  auto end = std::end(observe(values));
+  *begin = -4L;
+  if (end != values.end() || values.front() != -4L)
+    return 1;
+  return std::size(observe(values)) == 2 && !std::empty(observe(values)) && calls == 4 ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-free-access-evaluates-receiver-once.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-free-access-evaluates-receiver-once" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListFreeConstAccessMatchesMemberBaseRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-free-const-access-matches-member-base.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int main() {
+  const std::list<short> values{2, 5, 9};
+  auto first = std::cbegin(values);
+  auto last = std::cend(values);
+  auto top = std::crbegin(values);
+  auto end = std::crend(values);
+  return first == values.begin() && last == values.end() && *top == 9 &&
+      top.base() == last && end.base() == first && *std::next(top) == 5 ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("list-free-const-access-matches-member-base.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-free-const-access-matches-member-base" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListFreeReverseAccessPreservesMutableAndEmptyEndpointsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-free-reverse-access-preserves-mutable-and-empty-endpoints.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int main() {
+  std::list<int> values{4, 7};
+  auto from = std::rbegin(values);
+  *from = 11;
+  if (std::rend(values).base() != values.begin() || values.back() != 11)
+    return 1;
+  values.clear();
+  return std::empty(values) && std::size(values) == 0 && std::begin(values) == std::end(values)
+      && std::rbegin(values) == std::rend(values) ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-free-reverse-access-preserves-mutable-and-empty-endpoints.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-free-reverse-access-preserves-mutable-and-empty-endpoints" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListFreeAccessRecordPayloadGuardRejected) {
+  const auto Source = tmpFile("list-free-access-record-payload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+struct Record { int field; };
+int main() {
+  std::list<Record> values{Record{2}};
+  return std::begin(values)->field == 2 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListFreeReverseAccessFloatingPayloadGuardRejected) {
+  const auto Source = tmpFile("list-free-reverse-access-floating-payload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int main() {
+  const std::list<double> values{2.0, 3.0};
+  return *std::crbegin(values) == 3.0 ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListBoolAddressableReferencesAndNodeIdentityRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-bool-addressable-references-and-node-identity.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<bool> values{true, false, true};
+  auto it = values.begin();
+  bool *first = &*it;
+  *first = false;
+  ++it;
+  if (values.front() || first == &*it)
+    return 1;
+  values.insert(values.end(), true);
+  values.reverse();
+  return values.size() == 4 && values.front() && !values.back() && &values.back() == first ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-bool-addressable-references-and-node-identity.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-bool-addressable-references-and-node-identity" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListBoolRangeConversionAndReusedPrefixRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-bool-range-conversion-and-reused-prefix.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  int input[]{0, 5, -2};
+  std::list<bool> values{true};
+  bool *first = &values.front();
+  values.assign(input, input + 3);
+  if (values.size() != 3 || values.front() || &values.front() != first)
+    return 1;
+  auto item = values.begin();
+  ++item;
+  return *item && *++item && &*item == &values.back() ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-bool-range-conversion-and-reused-prefix.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-bool-range-conversion-and-reused-prefix" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListBoolStableOrderAndUniqueRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-bool-stable-order-and-unique.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int main() {
+  std::list<bool> values{true, false, true, false};
+  auto first_true = values.begin();
+  auto first_false = first_true;
+  ++first_false;
+  values.sort();
+  if (values.begin() != first_false || *first_false || !*first_true)
+    return 1;
+  values.unique();
+  auto item = values.begin();
+  ++item;
+  return values.size() == 2 && values.begin() == first_false && item == first_true ? 0 : 2;
+}
+)r19containers");
+  const auto Output = tmpFile("list-bool-stable-order-and-unique.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-bool-stable-order-and-unique" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListBoolReverseBaseAddressAndConstAccessRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-bool-reverse-base-address-and-const-access.cpp");
+  writeFile(Source, R"r19containers(#include <iterator>
+#include <list>
+int main() {
+  std::list<bool> values{false, true};
+  auto last = std::rbegin(values);
+  bool *element = last.operator->();
+  *element = false;
+  std::list<bool>::const_reverse_iterator checked(last);
+  return checked.base() == values.cend() && *checked == false && &values.back() == element ? 0 : 1;
+}
+)r19containers");
+  const auto Output = tmpFile("list-bool-reverse-base-address-and-const-access.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-bool-reverse-base-address-and-const-access" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListBoolUserProxyPayloadGuardRejected) {
+  const auto Source = tmpFile("list-bool-user-proxy-payload-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Proxy { bool value; operator bool() const { return value; } };
+int main() {
+  std::list<Proxy> values{Proxy{true}, Proxy{false}};
+  return values.front() && !values.back() ? 0 : 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListStandardGreaterKeepsSignedNodeOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-standard-greater-keeps-signed-node-order.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <list>
+int main() {
+  const long maximum = sizeof(long) == 8 ? static_cast<long>(4294967301LL) : 19L;
+  std::list<long> values{-3L, maximum, maximum, 4L};
+  auto original = values.begin();
+  ++original;
+  values.sort(std::greater<long>{});
+  auto it = values.begin();
+  return it != original || *it++ != maximum || *it++ != maximum || *it++ != 4L ||
+         *it++ != -3L || it != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-standard-greater-keeps-signed-node-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-standard-greater-keeps-signed-node-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListTransparentGreaterMoveMergePreservesTiesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-transparent-greater-move-merge-preserves-ties.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <list>
+#include <utility>
+int main() {
+  const unsigned long long high = 4294967303ULL;
+  std::list<unsigned long long> left{high, 7ULL}, right{high, 9ULL, 0ULL};
+  auto left_first = left.begin();
+  auto right_first = right.begin();
+  left.merge(std::move(right), std::greater<>{});
+  auto it = left.begin();
+  return !right.empty() || it != left_first || *it++ != high || it != right_first ||
+         *it++ != high || *it++ != 9ULL || *it++ != 7ULL || *it++ != 0ULL || it != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-transparent-greater-move-merge-preserves-ties.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-transparent-greater-move-merge-preserves-ties" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListExplicitStandardLessOrdersLvalueMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-explicit-standard-less-orders-lvalue-merge.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <list>
+int main() {
+  std::list<int> left{-3, 6}, right{-2, 4};
+  const std::less<int> order{};
+  left.merge(right, order);
+  auto item = left.begin();
+  return !right.empty() || *item++ != -3 || *item++ != -2 || *item++ != 4 || *item++ != 6;
+}
+)r19containers");
+  const auto Output = tmpFile("list-explicit-standard-less-orders-lvalue-merge.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-explicit-standard-less-orders-lvalue-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListStandardOrderWidthConversionGuardRejected) {
+  const auto Source = tmpFile("list-standard-order-width-conversion-guard.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <list>
+int main() {
+  std::list<long> values{2L, 5L};
+  values.sort(std::greater<int>{});
+  return values.front() != 5L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListStandardOrderUserLookalikeGuardRejected) {
+  const auto Source = tmpFile("list-standard-order-user-lookalike-guard.cpp");
+  writeFile(Source, R"r19containers(#include <functional>
+#include <list>
+struct greater {
+  bool operator()(int left, int right) const { return left > right; }
+};
+int main() {
+  std::list<int> values{1, 4};
+  values.sort(greater{});
+  return values.front() != 4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

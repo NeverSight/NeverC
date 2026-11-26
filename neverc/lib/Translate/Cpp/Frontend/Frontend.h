@@ -4068,10 +4068,11 @@ std::optional<UtilityListIteratorRecord> approvedUtilityListIteratorRecord(
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
 
 enum class UtilityListConstruction {
-  Default, Allocator, InitializerList, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
+  Default, Allocator, Count, CountFill, Range, InitializerList, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityListOperation {
-  CopyAssign, MoveAssign, Swap, Empty, Size, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, Erase, Clear,
+  CopyAssign, MoveAssign, AssignCount, AssignRange, AssignInitializer, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, GetAllocator, MaxSize, Begin, End, ReverseBegin, ReverseEnd, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, InsertCount, InsertRange, InsertInitializer, Emplace, EmplaceFront, EmplaceBack, Erase, EraseRange, Resize, ResizeFill, Clear, Reverse, Remove, Unique, RemoveIf, UniqueWithPredicate, Merge, Sort,
+  OwnerEqual, OwnerNotEqual, OwnerLess, OwnerGreater, OwnerLessEqual, OwnerGreaterEqual,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
   IteratorEqual, IteratorNotEqual, IteratorAssign
 };
@@ -4081,6 +4082,8 @@ struct UtilityListCall {
   const clang::Expr *Receiver = nullptr;
   const clang::FunctionDecl *Function = nullptr;
   unsigned ArgumentOffset = 0;
+  std::optional<uint64_t> Maximum = std::nullopt;
+  std::optional<bool> Descending = std::nullopt;
 };
 std::optional<UtilityListConstruction> approvedUtilityListConstruction(
     const State &S, const clang::SourceManager &SM,
@@ -4412,6 +4415,11 @@ struct UtilityReverseIteratorRecord {
   const clang::FieldDecl *WrappedCurrent;
   clang::QualType PointerType, OrderedElementType;
   uint64_t OrderedValueOffset;
+  clang::QualType ListElementType;
+
+  clang::QualType linkedElementType() const {
+    return ListElementType.isNull() ? OrderedElementType : ListElementType;
+  }
 };
 struct UtilityWrapIteratorRecord {
   const clang::CXXRecordDecl *Record;
@@ -4443,7 +4451,7 @@ std::optional<UtilityReverseIteratorRecord>
 approvedUtilityReverseIteratorRecord(const State &S,
                                      const clang::SourceManager &SM,
                                      const clang::CXXRecordDecl *Record,
-                                     const clang::ASTContext &Context, bool AllowOrdered = false);
+                                     const clang::ASTContext &Context, bool AllowLinked = false);
 enum class UtilityReverseIteratorConstruction {
   Default,
   Iterator,

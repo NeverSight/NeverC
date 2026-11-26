@@ -1172,3 +1172,10 @@ The combined compiler passes 8,208 source requests across six 64-bit targets
 and 1472 formal tests on Linux x86-64. All 1018 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Scalar std::list operations and iterators
+
+The combined compiler passes 8,838 source requests across six 64-bit targets
+and 1577 formal tests on Linux x86-64. All 1101 generated C23 programs
+match native C++ at O0 and O2. The original 750 source requests pass with
+the same compiler source.

@@ -18705,3 +18705,17 @@ Default-allocator forward_list<unsigned> and forward_list<unsigned long>
 preserve each target's element width and unsigned order. Supported pointer
 ranges and scalar emplacement convert nonvolatile signed or unsigned short,
 int, and long inputs to the container's element type.
+
+## Scalar std::list operations and iterators
+
+The default-allocator list supports the checked scalar integer types.
+Range erasure, reversal, splice, removal, uniqueness, merging, sorting,
+owner comparisons, resize, allocator and capacity queries, and scalar
+emplacement preserve the checked value and iterator behavior.
+Count and iterator-range construction and assignment and braced
+assignment and insertion reuse the checked allocation and iterator behavior.
+Direct scalar order functions retain stable relinking. Reverse
+iterators retain base and const conversion, and checked list
+iterators support advance, distance, next and prev. Free range access
+preserves endpoints, element references, size and empty queries.
+Bool elements retain their own addresses. Pinned less and greater preserve stable ordering.
