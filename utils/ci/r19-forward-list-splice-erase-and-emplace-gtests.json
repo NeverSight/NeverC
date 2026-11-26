@@ -1,0 +1,406 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-splice-whole-in-middle-keeps-node-identity",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSpliceWholeInMiddleKeepsNodeIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4a2fcb3717da0c394ca57a6d78fd661b95d0db28ed8972ad895f9c91b33c5f3b",
+      "original_case_source_sha256": "4a2fcb3717da0c394ca57a6d78fd661b95d0db28ed8972ad895f9c91b33c5f3b",
+      "gtest_body_sha256": "32b89abfffdbb6911adcd58fea3f3145214cca82649df3db52724b181d177036"
+    },
+    {
+      "name": "forward-list-splice-whole-rvalue-appends-without-destroying-source",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSpliceWholeRvalueAppendsWithoutDestroyingSourceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b9ac88bbd1a0c954f527cc2ecca254a3114a3c9fd5b7234ddcd920385cfec8a4",
+      "original_case_source_sha256": "b9ac88bbd1a0c954f527cc2ecca254a3114a3c9fd5b7234ddcd920385cfec8a4",
+      "gtest_body_sha256": "aa22dd8ffcf3395ec35fc5271a09b417c26b73d7ad2d6c35f493e118f15cfada"
+    },
+    {
+      "name": "forward-list-splice-whole-empty-edges",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSpliceWholeEmptyEdgesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4e3436c73c58d34b0202901adba3464ce40e01da1e39462fa1a3daa7f3cd5018",
+      "original_case_source_sha256": "4e3436c73c58d34b0202901adba3464ce40e01da1e39462fa1a3daa7f3cd5018",
+      "gtest_body_sha256": "d886fc1fc2dcf0a2c9c30dd6044ef54d8e1ae3d5479546c179664bfa49e7d866"
+    },
+    {
+      "name": "forward-list-splice-single-node-overload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSpliceSingleNodeOverloadGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2863175a7c2e9723bb297cf1973e0567daecd236ffbd6265436baf9e513496a6",
+      "original_case_source_sha256": "2863175a7c2e9723bb297cf1973e0567daecd236ffbd6265436baf9e513496a6",
+      "gtest_body_sha256": "5005c522031afed6344c1ccccfe4131c7512d91616ecdc9aefdd7901543b3228"
+    },
+    {
+      "name": "forward-list-splice-range-overload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSpliceRangeOverloadGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "927563b966903af30e05d91a771ef459ca1ee2da0cdfc85b7200573e1e3d548c",
+      "original_case_source_sha256": "927563b966903af30e05d91a771ef459ca1ee2da0cdfc85b7200573e1e3d548c",
+      "gtest_body_sha256": "4b029706c443b50d1c2490857b8ad33ec0137c47ee24ccac70a50d2f6b822986"
+    },
+    {
+      "name": "forward-list-erase-range-preserves-predecessor-and-suffix",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEraseRangePreservesPredecessorAndSuffixRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ea8008608304d3b01031e606f8ac89708b497275de8ef17b7b8b5f5c3265766e",
+      "original_case_source_sha256": "ea8008608304d3b01031e606f8ac89708b497275de8ef17b7b8b5f5c3265766e",
+      "gtest_body_sha256": "c0da5f1835c973a075f07414ce83da585989a306a60f4de289f33953e274ad42"
+    },
+    {
+      "name": "forward-list-erase-range-releases-all-and-reuses-owner",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEraseRangeReleasesAllAndReusesOwnerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d5fd376c2588221e227491a601022a0fbe3f723c07b71f4b527a06c4bf7e49a9",
+      "original_case_source_sha256": "d5fd376c2588221e227491a601022a0fbe3f723c07b71f4b527a06c4bf7e49a9",
+      "gtest_body_sha256": "846ebbafdd72dfeb9bf03f8ef83f3024253aa35616dde7372bc705ce1a0594ef"
+    },
+    {
+      "name": "forward-list-erase-range-with-adjacent-bounds-is-empty",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEraseRangeWithAdjacentBoundsIsEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5b8e19ab5c4a0d82371fc9a1694c6a051c64868f3758b5dd01867f7a29cc50e6",
+      "original_case_source_sha256": "5b8e19ab5c4a0d82371fc9a1694c6a051c64868f3758b5dd01867f7a29cc50e6",
+      "gtest_body_sha256": "a9498cb4c421105102968bb6d806a5c7a6a49d6099dba9007067de1f69433144"
+    },
+    {
+      "name": "forward-list-erase-range-at-head-retains-the-live-tail",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEraseRangeAtHeadRetainsTheLiveTailRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9d04f35cccdf6b108a1fba1f69d94537df77a64ee15d415d65617ef5b8dfbc2a",
+      "original_case_source_sha256": "9d04f35cccdf6b108a1fba1f69d94537df77a64ee15d415d65617ef5b8dfbc2a",
+      "gtest_body_sha256": "f53532b067a0f80832db08e9312861c7b7ac87b6b253025786b1e998a47cf6fc"
+    },
+    {
+      "name": "forward-list-splice-single-same-owner-preserves-overlap-rules",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSpliceSingleSameOwnerPreservesOverlapRulesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5a14ce977680d3f9fc4cc16e78887238315c74603e51785cf68dc2c0a69eb64d",
+      "original_case_source_sha256": "5a14ce977680d3f9fc4cc16e78887238315c74603e51785cf68dc2c0a69eb64d",
+      "gtest_body_sha256": "9832f281aa4efd11b1ae7fac8d7ec2e85a65119194a8ae4c2c6265653c9ad92e"
+    },
+    {
+      "name": "forward-list-splice-range-same-owner-suffix-retains-node-addresses",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSpliceRangeSameOwnerSuffixRetainsNodeAddressesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "07d85c1e40cce9ab0ed5ac846d01ba91923d3eccd42e0d07e9e41d295c393979",
+      "original_case_source_sha256": "07d85c1e40cce9ab0ed5ac846d01ba91923d3eccd42e0d07e9e41d295c393979",
+      "gtest_body_sha256": "827fc4800737e4749e405c9ee036aafdb6200c8a762a61f881715155304636a2"
+    },
+    {
+      "name": "forward-list-emplace-front-default-returns-stored-int",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceFrontDefaultReturnsStoredIntRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1f2c7a71c3c14292f6f1ea0b7f708bc5a1d203d0e065e0e504b2e940226bb02a",
+      "original_case_source_sha256": "1f2c7a71c3c14292f6f1ea0b7f708bc5a1d203d0e065e0e504b2e940226bb02a",
+      "gtest_body_sha256": "b2b74b4490668ce3517809cb684db1326cdd84cbd8fce2ebabfbc043fea2f9c4"
+    },
+    {
+      "name": "forward-list-emplace-front-keeps-aliased-and-const-values",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceFrontKeepsAliasedAndConstValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "872fc3646ff06a283327a649c93c1470f92c28ff2b546446ae7f49503ac7435f",
+      "original_case_source_sha256": "872fc3646ff06a283327a649c93c1470f92c28ff2b546446ae7f49503ac7435f",
+      "gtest_body_sha256": "ac6766f36361b16c58ff7c48aaeb7386c6f210bd9ccd717d697329776cb4a474"
+    },
+    {
+      "name": "forward-list-emplace-after-zero-and-rvalue-return-exact-cursor",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceAfterZeroAndRvalueReturnExactCursorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4f52d72aca06dcd74488c0ae8e70bba4736c286c22088cafaca9967daad719d0",
+      "original_case_source_sha256": "4f52d72aca06dcd74488c0ae8e70bba4736c286c22088cafaca9967daad719d0",
+      "gtest_body_sha256": "0e0ce74b612aed7fbaaa0621d7ab9ff7d56b85b99d53c60fcb88ae1a87d30d91"
+    },
+    {
+      "name": "forward-list-splice-whole-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongSplicesWholeRanges",
+      "expected": "accept",
+      "source_sha256": "23835bcabc53b84aee423bab1cae31e16d27e03cd097c09e26011b3800f87ed2",
+      "original_case_source_sha256": "23835bcabc53b84aee423bab1cae31e16d27e03cd097c09e26011b3800f87ed2",
+      "gtest_body_sha256": "8d625d3c8c61d4f64596efad8673fb6e5374f2630da459767e308d9d1b5ce4fd"
+    },
+    {
+      "name": "forward-list-erase-range-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongErasesRanges",
+      "expected": "accept",
+      "source_sha256": "bf13801eff5cc6c885290f0ed4fab9cd6d4e40bf96393a69397a9b9204a5d027",
+      "original_case_source_sha256": "bf13801eff5cc6c885290f0ed4fab9cd6d4e40bf96393a69397a9b9204a5d027",
+      "gtest_body_sha256": "74f8fa15ca3d536669d52fc2937f9e0e65c37334d83a0ab8d542d21632c79d9d"
+    },
+    {
+      "name": "forward-list-splice-range-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongSplicesPartialRanges",
+      "expected": "accept",
+      "source_sha256": "725b9faf4a46f901ddc5499c2fb3caafa813ce44af7462678fe84c845c57ee41",
+      "original_case_source_sha256": "725b9faf4a46f901ddc5499c2fb3caafa813ce44af7462678fe84c845c57ee41",
+      "gtest_body_sha256": "6cda572f0d42c05163550c5f926466c5e7cffee7e7dd36a0835fe9b4590f8b0a"
+    },
+    {
+      "name": "forward-list-emplace-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListLongEmplacesValues",
+      "expected": "accept",
+      "source_sha256": "b05ee54ae66b81ce2050f624d38740c1e4b14f3602c81d67ea79158a152b62fa",
+      "original_case_source_sha256": "b05ee54ae66b81ce2050f624d38740c1e4b14f3602c81d67ea79158a152b62fa",
+      "gtest_body_sha256": "f6727916c2891b4d80e8258abb7d9b0d78d65a5661a5a55f1e9942167a9e33ae"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "forward-list-erase-range-source-allocator-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEraseRangeSourceAllocatorGuardRejected",
+      "expected": "reject",
+      "source_sha256": "bb700fc4f2bc544d9accf9d9ebf7a38eae22879cf5de7707f2cc099d0c1784c9",
+      "original_case_source_sha256": "bb700fc4f2bc544d9accf9d9ebf7a38eae22879cf5de7707f2cc099d0c1784c9",
+      "gtest_body_sha256": "c444ab6235e490f375628e6658925ea1d24e197977b73f0bcdc7233c11c3b761"
+    },
+    {
+      "name": "forward-list-splice-single-source-allocator-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListSpliceSingleSourceAllocatorGuardRejected",
+      "expected": "reject",
+      "source_sha256": "2bcf6058aff3a5085417a2d814ca29a1ff429d3d584c3651a56be0931e64f94d",
+      "original_case_source_sha256": "2bcf6058aff3a5085417a2d814ca29a1ff429d3d584c3651a56be0931e64f94d",
+      "gtest_body_sha256": "ce4668e8ea800a8cfaeac0e2ab63378a4d28655d5ae3a04f67e34a3efb3d1693"
+    },
+    {
+      "name": "forward-list-emplace-converted-long-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceConvertedLongGuardRejected",
+      "expected": "reject",
+      "source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
+      "original_case_source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
+      "gtest_body_sha256": "90968824af6fa6dce5df881d834d0da1a231c9b6a5834a140eadf561cbd7c485"
+    },
+    {
+      "name": "forward-list-emplace-user-conversion-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEmplaceUserConversionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "e9718c257e2adcec36fc97f8576e0f85fa1ecba9deaf04be1213f0b05701a18e",
+      "original_case_source_sha256": "e9718c257e2adcec36fc97f8576e0f85fa1ecba9deaf04be1213f0b05701a18e",
+      "gtest_body_sha256": "10e0d2f1ceee9cbbccfe197900fa1185d2eacd05c2add05b069ed6e9bd2db396"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "forward-list-splice-whole-in-middle-keeps-node-identity",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> destination{2, 11};\n  std::forward_list<int> source{5, 7};\n  auto moved = source.begin();\n  auto tail = destination.begin();\n  ++tail;\n  auto position = destination.begin();\n  destination.splice_after(position, source);\n  if (!source.empty() || destination.front() != 2)\n    return 1;\n  ++position;\n  if (position != moved || *position != 5)\n    return 2;\n  ++position;\n  if (*position != 7)\n    return 3;\n  ++position;\n  if (position != tail || *position != 11)\n    return 4;\n  ++position;\n  return position != destination.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "4a2fcb3717da0c394ca57a6d78fd661b95d0db28ed8972ad895f9c91b33c5f3b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-splice-whole-rvalue-appends-without-destroying-source",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nint main() {\n  std::forward_list<int> destination{3};\n  std::forward_list<int> source{5, 7};\n  const int *first = &source.front();\n  auto *receiver = &destination;\n  receiver->splice_after(destination.cbegin(), std::move(source));\n  if (!source.empty() || destination.front() != 3)\n    return 1;\n  auto cursor = destination.begin();\n  ++cursor;\n  if (&*cursor != first || *cursor != 5)\n    return 2;\n  ++cursor;\n  if (*cursor != 7)\n    return 3;\n  source.push_front(13);\n  return source.front() != 13 || *first != 5;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "b9ac88bbd1a0c954f527cc2ecca254a3114a3c9fd5b7234ddcd920385cfec8a4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-splice-whole-empty-edges",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> destination;\n  std::forward_list<int> source;\n  destination.splice_after(destination.cbefore_begin(), source);\n  if (!destination.empty() || !source.empty())\n    return 1;\n  source.push_front(17);\n  int *node = &source.front();\n  destination.splice_after(destination.cbefore_begin(), source);\n  if (&destination.front() != node || !source.empty())\n    return 2;\n  destination.splice_after(destination.begin(), source);\n  return destination.front() != 17 || &destination.front() != node;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "4e3436c73c58d34b0202901adba3464ce40e01da1e39462fa1a3daa7f3cd5018",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-splice-single-node-overload-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> source{5, 7};\n  std::forward_list<int> destination{11};\n  destination.splice_after(destination.before_begin(), source, source.before_begin());\n  return destination.front() != 5;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "2863175a7c2e9723bb297cf1973e0567daecd236ffbd6265436baf9e513496a6",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-splice-range-overload-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> source{5, 7};\n  std::forward_list<int> destination{11};\n  destination.splice_after(destination.before_begin(), source, source.before_begin(), source.end());\n  return destination.front() != 5;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "927563b966903af30e05d91a771ef459ca1ee2da0cdfc85b7200573e1e3d548c",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-erase-range-preserves-predecessor-and-suffix",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values{2, 3, 5, 7, 11};\n  auto first = values.begin();\n  auto last = values.cbegin();\n  ++last;\n  ++last;\n  ++last;\n  const int *retained = &*last;\n  auto result = values.erase_after(first, last);\n  if (&*result != retained || *result != 7 || *first != 2)\n    return 1;\n  ++first;\n  if (first != result)\n    return 2;\n  ++result;\n  if (*result != 11)\n    return 3;\n  ++result;\n  return result != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "ea8008608304d3b01031e606f8ac89708b497275de8ef17b7b8b5f5c3265766e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-erase-range-releases-all-and-reuses-owner",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values{2, 3, 5};\n  auto *receiver = &values;\n  auto end = receiver->erase_after(values.cbefore_begin(), values.cend());\n  if (end != values.end() || !values.empty())\n    return 1;\n  values.push_front(13);\n  return values.empty() || values.front() != 13;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "d5fd376c2588221e227491a601022a0fbe3f723c07b71f4b527a06c4bf7e49a9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-erase-range-with-adjacent-bounds-is-empty",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values{3, 5};\n  auto first = values.begin();\n  auto next = first;\n  ++next;\n  const int *oldNext = &*next;\n  auto result = values.erase_after(first, next);\n  return result != next || &*result != oldNext || values.front() != 3;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "5b8e19ab5c4a0d82371fc9a1694c6a051c64868f3758b5dd01867f7a29cc50e6",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-erase-range-at-head-retains-the-live-tail",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values{2, 3, 5};\n  auto last = values.begin();\n  ++last;\n  ++last;\n  int *tail = &*last;\n  auto result = values.erase_after(values.before_begin(), last);\n  if (&values.front() != tail || &*result != tail || *result != 5)\n    return 1;\n  ++result;\n  return result != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "9d04f35cccdf6b108a1fba1f69d94537df77a64ee15d415d65617ef5b8dfbc2a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-splice-single-same-owner-preserves-overlap-rules",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nint main() {\n  std::forward_list<int> values{2, 5, 7, 11};\n  auto before = values.begin();\n  auto moving = before;\n  ++moving;\n  auto tail = moving;\n  ++tail;\n  ++tail;\n  values.splice_after(before, values, before);\n  values.splice_after(moving, values, before);\n  if (*before != 2 || *moving != 5)\n    return 1;\n  values.splice_after(tail, std::move(values), before);\n  auto after = before;\n  ++after;\n  if (*after != 7)\n    return 2;\n  ++tail;\n  if (tail != moving || *tail != 5)\n    return 3;\n  ++tail;\n  return tail != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "5a14ce977680d3f9fc4cc16e78887238315c74603e51785cf68dc2c0a69eb64d",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-splice-range-same-owner-suffix-retains-node-addresses",
+      "expected": "accept",
+      "source": "#include <forward_list>\n#include <utility>\nint main() {\n  std::forward_list<int> values{2, 3, 5, 7, 11};\n  auto before = values.begin();\n  auto first = before;\n  ++first;\n  auto last = first;\n  ++last;\n  ++last;\n  auto tail = last;\n  ++tail;\n  auto *firstAddress = &*first;\n  values.splice_after(before, values, before, last);\n  values.splice_after(tail, std::move(values), before, last);\n  auto remaining = before;\n  ++remaining;\n  if (remaining != last || *remaining != 7)\n    return 1;\n  ++tail;\n  if (tail != first || &*tail != firstAddress || *tail != 3)\n    return 2;\n  ++tail;\n  if (*tail != 5)\n    return 3;\n  ++tail;\n  return tail != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "07d85c1e40cce9ab0ed5ac846d01ba91923d3eccd42e0d07e9e41d295c393979",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-emplace-front-default-returns-stored-int",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values;\n  int &front = values.emplace_front();\n  if (&front != &values.front() || front != 0)\n    return 1;\n  front = 5;\n  return values.front() != 5;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "1f2c7a71c3c14292f6f1ea0b7f708bc5a1d203d0e065e0e504b2e940226bb02a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-emplace-front-keeps-aliased-and-const-values",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values{17};\n  int *before = &values.front();\n  int &copy = values.emplace_front(values.front());\n  if (&copy == before || copy != 17 || *before != 17)\n    return 1;\n  copy = 19;\n  const int value = 23;\n  int &another = values.emplace_front(value);\n  return another != 23 || value != 23 || copy != 19 || *before != 17;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "872fc3646ff06a283327a649c93c1470f92c28ff2b546446ae7f49503ac7435f",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-emplace-after-zero-and-rvalue-return-exact-cursor",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values{17};\n  auto zero = values.emplace_after(values.cbefore_begin());\n  if (zero != values.begin() || *zero != 0)\n    return 1;\n  auto first = values.emplace_after(zero, 3 + 4);\n  if (*first != 7)\n    return 2;\n  *first = 11;\n  ++zero;\n  if (zero != first || *first != 11)\n    return 3;\n  ++first;\n  if (*first != 17)\n    return 4;\n  ++first;\n  return first != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "4f52d72aca06dcd74488c0ae8e70bba4736c286c22088cafaca9967daad719d0",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-splice-whole-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> source{5L};\n  std::forward_list<long> destination;\n  destination.splice_after(destination.before_begin(), source);\n  return destination.front() != 5L;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "23835bcabc53b84aee423bab1cae31e16d27e03cd097c09e26011b3800f87ed2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-erase-range-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> values{2L, 3L};\n  auto result = values.erase_after(values.cbefore_begin(), values.cend());\n  return result != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "bf13801eff5cc6c885290f0ed4fab9cd6d4e40bf96393a69397a9b9204a5d027",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-splice-range-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> source{2L, 3L};\n  std::forward_list<long> destination;\n  destination.splice_after(destination.before_begin(), source, source.before_begin(), source.end());\n  return destination.front() != 2L;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "725b9faf4a46f901ddc5499c2fb3caafa813ce44af7462678fe84c845c57ee41",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-emplace-other-element-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<long> values;\n  return values.emplace_front(7L) != 7L;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "b05ee54ae66b81ce2050f624d38740c1e4b14f3602c81d67ea79158a152b62fa",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-erase-range-source-allocator-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  LocalAllocator() = default;\n  template <class U> LocalAllocator(const LocalAllocator<U> &) {}\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n};\nint main() {\n  std::forward_list<int, LocalAllocator<int>> values{2, 3};\n  auto result = values.erase_after(values.cbefore_begin(), values.cend());\n  return result != values.end();\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "bb700fc4f2bc544d9accf9d9ebf7a38eae22879cf5de7707f2cc099d0c1784c9",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-splice-single-source-allocator-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  LocalAllocator() = default;\n  template <class U> LocalAllocator(const LocalAllocator<U> &) {}\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n};\nint main() {\n  std::forward_list<int, LocalAllocator<int>> source{2, 3};\n  std::forward_list<int, LocalAllocator<int>> destination;\n  destination.splice_after(destination.before_begin(), source, source.before_begin());\n  return destination.front() != 2;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "2bcf6058aff3a5085417a2d814ca29a1ff429d3d584c3651a56be0931e64f94d",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-emplace-converted-long-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<int> values;\n  return values.emplace_front(4L) != 4;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "001305c3b16b4388a4d977e7206e82216ec794ba3587c872a51349840a490497",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-emplace-user-conversion-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nstruct Value { operator int() const { return 9; } };\nint main() {\n  std::forward_list<int> values;\n  auto result = values.emplace_after(values.cbefore_begin(), Value{});\n  return *result != 9;\n}\n",
+      "public_header": "forward_list",
+      "source_sha256": "e9718c257e2adcec36fc97f8576e0f85fa1ecba9deaf04be1213f0b05701a18e",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListSpliceWholeInMiddleKeepsNodeIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSpliceWholeRvalueAppendsWithoutDestroyingSourceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSpliceWholeEmptyEdgesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSpliceSingleNodeOverloadGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSpliceRangeOverloadGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEraseRangePreservesPredecessorAndSuffixRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEraseRangeReleasesAllAndReusesOwnerRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEraseRangeWithAdjacentBoundsIsEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEraseRangeAtHeadRetainsTheLiveTailRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSpliceSingleSameOwnerPreservesOverlapRulesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListSpliceRangeSameOwnerSuffixRetainsNodeAddressesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEmplaceFrontDefaultReturnsStoredIntRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEmplaceFrontKeepsAliasedAndConstValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListEmplaceAfterZeroAndRvalueReturnExactCursorRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListLongSplicesWholeRanges",
+    "TranslateTest.CoreV2ForwardListLongErasesRanges",
+    "TranslateTest.CoreV2ForwardListLongSplicesPartialRanges",
+    "TranslateTest.CoreV2ForwardListLongEmplacesValues",
+    "TranslateTest.CoreV2ForwardListEraseRangeSourceAllocatorGuardRejected",
+    "TranslateTest.CoreV2ForwardListSpliceSingleSourceAllocatorGuardRejected",
+    "TranslateTest.CoreV2ForwardListEmplaceConvertedLongGuardRejected",
+    "TranslateTest.CoreV2ForwardListEmplaceUserConversionGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f68e22dc8a47a4846bbe2b23dca4b1ab0a2ea045b24aad6a706e28c1b5acb4d8",
+  "maintained_original_sha256": "048f1e174ead64a97c070eab3ca67854f86a0f08c41a8ae604dd8be70688d9c8",
+  "previous_registered_source_sha256": "4f553d55f3f9bf0848f53a883362a9fc575f44e57eb078e0c99f0ac1dd74fddb",
+  "previous_maintained_original_sha256": "4f807adbe2a9dfa6c0c1044d249bca8128ddc0789010eeb3df8e29d3a53d589b",
+  "restorer_sha256": "0423efed64fd7f9416c8c61c9af90ecff04c2784dcd33377d28e6e5764b232e2",
+  "extractor_sha256": "ecc196cfcc03b8bf95b5288c1b35893b289e2bd073f825c40fcb5f43e3008ae2",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9141,
+  "current_python_registry_tests": 310,
+  "native_reference_selected_executions": 36,
+  "planned_generated_c23_executions": 36,
+  "native_reference_proofs": {
+    "forward-list-emplace": "a6bc6cd008cc29a468e889147d33fdf32f51250895f0386274b125a3eed42466",
+    "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
+    "forward-list-partial-splice": "23e0409651c25ef636d98e2f9c321261157aa1074cc2632ce62599208dd9905f",
+    "forward-list-range-erase": "7e5e7093a5948b5caf40a6f08ecfe75fb57398e72d4666dc4822bca13504a02b",
+    "forward-list-whole-splice": "b2ca18412cb3def1c654cfd9b604830aa2820404462caf65dfe2961d27ba46ef"
+  },
+  "native_reference_authentication_sha256": "5ab07eb87db29db09906689ba82aedbc983e1979682f704d6069eec60e2d7305",
+  "source_proof_sha256": "d0e58cf5772355229fa29f8b2fc8743eda1e02888b31b4ab90ad0e64424b41fa"
+}
