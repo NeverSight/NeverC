@@ -1,0 +1,283 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-set-list-and-lookup-list-balances-sorted-keys-and-deduplicates",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetListAndLookupListBalancesSortedKeysAndDeduplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5fd4e5a7a6817bf46064524fa29b4438030a6e53033fa6008ca454965e5e5156",
+      "original_case_source_sha256": "5fd4e5a7a6817bf46064524fa29b4438030a6e53033fa6008ca454965e5e5156",
+      "gtest_body_sha256": "edd949cfe7d78e66b4f05314739d11e6529bf2960928b043b6b4a2a768d86c8a"
+    },
+    {
+      "name": "ordered-set-list-and-lookup-pointer-count-after-left-and-right-rotations",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetListAndLookupPointerCountAfterLeftAndRightRotationsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "eb6f103dacc2fb764f42256a72f3a242cff39e0eec13bf3fea634a9b485116a8",
+      "original_case_source_sha256": "eb6f103dacc2fb764f42256a72f3a242cff39e0eec13bf3fea634a9b485116a8",
+      "gtest_body_sha256": "a3370fc243f042b5dbe80e581dc3847d613b8349bd5e06ed6207a5c4db79f245"
+    },
+    {
+      "name": "ordered-set-list-and-lookup-list-duplicates-release-each-owned-node-once",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetListAndLookupListDuplicatesReleaseEachOwnedNodeOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "19b9591724cc4705409a2c8edf2c5a41e66e9288e85fdf92e1e5b28f2e681cd9",
+      "original_case_source_sha256": "19b9591724cc4705409a2c8edf2c5a41e66e9288e85fdf92e1e5b28f2e681cd9",
+      "gtest_body_sha256": "1ab2fa3613e19b2dbccfb087061d80275ad4d23cf18eba24ae072b38eb577501"
+    },
+    {
+      "name": "ordered-set-insert-result-insertion-result-distinguishes-a-duplicate-key",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetInsertResultInsertionResultDistinguishesADuplicateKeyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dacd85447b1580ef82cf1f3d9ae4b18bb2c6ff891f7262d4c6335a659a7ebac1",
+      "original_case_source_sha256": "dacd85447b1580ef82cf1f3d9ae4b18bb2c6ff891f7262d4c6335a659a7ebac1",
+      "gtest_body_sha256": "749d2e495a30f537f6df519b30a97ca9aad072350f3dfbfbc22d0119827532de"
+    },
+    {
+      "name": "ordered-set-insert-result-pointer-insertion-uses-the-checked-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetInsertResultPointerInsertionUsesTheCheckedReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "566aa51301b9b4509ef506c76637dd8696f4e00c087d89dc2a5705ff84a03f80",
+      "original_case_source_sha256": "566aa51301b9b4509ef506c76637dd8696f4e00c087d89dc2a5705ff84a03f80",
+      "gtest_body_sha256": "44d8a09ae03de60a9fab624b8091640bc4682517a2d67480ab1ba4b5d254ac38"
+    },
+    {
+      "name": "ordered-set-iterator-ordered-range-and-insertion-preserve-existing-position",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetIteratorOrderedRangeAndInsertionPreserveExistingPositionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0735662eed0b6c8a84e129f7b5aad745c92bc4766e0ab7919b3eed7a415ac465",
+      "original_case_source_sha256": "0735662eed0b6c8a84e129f7b5aad745c92bc4766e0ab7919b3eed7a415ac465",
+      "gtest_body_sha256": "bfc5a279360f600196419aaf246b08a01c36e1c883e3dcc41755bd22da84a69e"
+    },
+    {
+      "name": "ordered-set-iterator-pointer-endpoints-and-postfix-traversal",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetIteratorPointerEndpointsAndPostfixTraversalRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "35a1d1206dfa4f9d3090e1329efdb8474c7a80c14fbe837ade7bfe14779ade18",
+      "original_case_source_sha256": "35a1d1206dfa4f9d3090e1329efdb8474c7a80c14fbe837ade7bfe14779ade18",
+      "gtest_body_sha256": "c150f0a056daa0b9d8442a57e33477a29e7aecc933f1da1eaa297e183b6a8b0c"
+    },
+    {
+      "name": "ordered-set-iterator-empty-iterators-use-the-same-owner-sentinel",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetIteratorEmptyIteratorsUseTheSameOwnerSentinelRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a3df9cf0e790bdecdc07da8dbd129f58c1f5a5ad75acc24323a6f115e416c827",
+      "original_case_source_sha256": "a3df9cf0e790bdecdc07da8dbd129f58c1f5a5ad75acc24323a6f115e416c827",
+      "gtest_body_sha256": "c5042b9e8bb3b5b9259c66a2d658df76919dd806a49bc0acd9f34845f4b473c6"
+    },
+    {
+      "name": "ordered-set-bounds-bounds-on-keys-and-gaps",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetBoundsBoundsOnKeysAndGapsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "892728738b93731546efec17e63da7a93d35f47c21d7a440a92866629356cf59",
+      "original_case_source_sha256": "892728738b93731546efec17e63da7a93d35f47c21d7a440a92866629356cf59",
+      "gtest_body_sha256": "72806b076a90b4ffc0ef01f4fb4baeea5dc7973e283707ef5f4c66b2e8af6c1b"
+    },
+    {
+      "name": "ordered-set-bounds-const-pointer-lookup-matches-extreme-keys",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetBoundsConstPointerLookupMatchesExtremeKeysRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "069607a7d1f7395fe12817dfc9461013cd22f7f74c6a8a80abe6a2bef3205a1a",
+      "original_case_source_sha256": "069607a7d1f7395fe12817dfc9461013cd22f7f74c6a8a80abe6a2bef3205a1a",
+      "gtest_body_sha256": "75d85f3e51c51b87928c8068eaa1c2d9fd623ecfea410cf74619371ee52cc4fc"
+    },
+    {
+      "name": "ordered-set-bounds-empty-lookup-evaluates-receiver-and-key-once",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetBoundsEmptyLookupEvaluatesReceiverAndKeyOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "287a8cbd710658b09f7ac1c6b75e57c73fd9fe908de41b2f4d513477d0d5f384",
+      "original_case_source_sha256": "287a8cbd710658b09f7ac1c6b75e57c73fd9fe908de41b2f4d513477d0d5f384",
+      "gtest_body_sha256": "5ef85c9359d2b179abfdcc8ca424c7f8f70a6d3ec89977f9f8fd528fa15a9950"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "ordered-set-list-and-lookup-custom-order-keeps-existing-source-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetListAndLookupCustomOrderKeepsExistingSourceGuardRejected",
+      "expected": "reject",
+      "source_sha256": "81be77494dfe18f68c1ed4880f55c5bfecf4875798a07d33a398838c4fb7568f",
+      "original_case_source_sha256": "81be77494dfe18f68c1ed4880f55c5bfecf4875798a07d33a398838c4fb7568f",
+      "gtest_body_sha256": "301ba03afecf7102f3ca14bbce51807a1c0830025d7decc7f260149e202595d0"
+    },
+    {
+      "name": "ordered-set-insert-result-unapproved-custom-comparator-for-scalar-insertion",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetInsertResultUnapprovedCustomComparatorForScalarInsertionRejected",
+      "expected": "reject",
+      "source_sha256": "3d6d12d8bf2bdec0c1f745457907c6dc24ce70ee364f07306672d6f50f591533",
+      "original_case_source_sha256": "3d6d12d8bf2bdec0c1f745457907c6dc24ce70ee364f07306672d6f50f591533",
+      "gtest_body_sha256": "0fa6780d64a768cb35ce3cadb23facee39e0223d02819df915dcf674055e1e7f"
+    },
+    {
+      "name": "ordered-set-iterator-stateful-ordering-remains-outside-the-checked-iterator-type",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetIteratorStatefulOrderingRemainsOutsideTheCheckedIteratorTypeRejected",
+      "expected": "reject",
+      "source_sha256": "6a48fba93d53d0adf275f5d0a0c2ca560bc65c6cf4056eb7aae06d500a776347",
+      "original_case_source_sha256": "6a48fba93d53d0adf275f5d0a0c2ca560bc65c6cf4056eb7aae06d500a776347",
+      "gtest_body_sha256": "47c62764a19298beffa6717d0d8bc171c56ddd7ac9d203f41dee2feb77086433"
+    },
+    {
+      "name": "ordered-set-bounds-custom-ordering-does-not-use-integer-bounds",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetBoundsCustomOrderingDoesNotUseIntegerBoundsRejected",
+      "expected": "reject",
+      "source_sha256": "78118ad5938b1f60697f6204f07f50b921ed2b7b7ed8479f7a5e786607c00d3c",
+      "original_case_source_sha256": "78118ad5938b1f60697f6204f07f50b921ed2b7b7ed8479f7a5e786607c00d3c",
+      "gtest_body_sha256": "df961c0393d48da43b0b38bb7f52ad999aab92c509f5089d46cc67bd5c56cd18"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "ordered-set-list-and-lookup-list-balances-sorted-keys-and-deduplicates",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::set<int> numbers{-13, -7, -4, -1, 0, 2, 3, 5, 7, 9, 10, 12, 7, 3};\n  if (numbers.size() != 12 || numbers.empty()) return 1;\n  for (int key = -13; key < 13; ++key) {\n    const bool expected = key == -13 || key == -7 || key == -4 || key == -1 ||\n                          key == 0 || key == 2 || key == 3 || key == 5 ||\n                          key == 7 || key == 9 || key == 10 || key == 12;\n    if (numbers.count(key) != unsigned(expected)) return 2;\n  }\n}\n",
+      "source_sha256": "5fd4e5a7a6817bf46064524fa29b4438030a6e53033fa6008ca454965e5e5156",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-list-and-lookup-pointer-count-after-left-and-right-rotations",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\n#include <functional>\nint main() {\n  const std::set<int> values({8, 14, 13, 4, 5, 3, 20, 19}, std::less<int>{});\n  const auto* receiver = &values;\n  return receiver->count(5) != 1 || receiver->count(20) != 1 ||\n         receiver->count(8) != 1 || receiver->count(7) != 0 || receiver->size() != 8;\n}\n",
+      "source_sha256": "eb6f103dacc2fb764f42256a72f3a242cff39e0eec13bf3fea634a9b485116a8",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-list-and-lookup-list-duplicates-release-each-owned-node-once",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <cstddef>\n#include <cstdlib>\n#include <set>\nunsigned allocating, releasing;\nvoid* operator new(std::size_t bytes) { ++allocating; return std::malloc(bytes); }\nvoid operator delete(void* p) noexcept { ++releasing; std::free(p); }\nvoid operator delete(void* p, std::size_t) noexcept { ++releasing; std::free(p); }\nint main() {\n  {\n    const std::set<int> values{3, 1, 7, 3, 9, 7};\n    if (values.size() != 4 || allocating != 4 || releasing != 0) return 1;\n  }\n  return allocating != 4 || releasing != 4;\n}\n",
+      "source_sha256": "19b9591724cc4705409a2c8edf2c5a41e66e9288e85fdf92e1e5b28f2e681cd9",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-insert-result-insertion-result-distinguishes-a-duplicate-key",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::set<int> values;\n  int key = -9;\n  auto added = values.insert(key);\n  auto duplicate = values.insert(key);\n  auto other = values.insert(3);\n  return !added.second || duplicate.second || !other.second || values.size() != 2 ||\n         values.count(-9) != 1 || values.count(0) != 0;\n}\n",
+      "source_sha256": "dacd85447b1580ef82cf1f3d9ae4b18bb2c6ff891f7262d4c6335a659a7ebac1",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-insert-result-pointer-insertion-uses-the-checked-receiver-once",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nusing Set = std::set<int>;\nSet* receiver(Set& values, int& calls) { ++calls; return &values; }\nint main() {\n  Set values{9, 7, 3};\n  int calls = 0;\n  auto result = receiver(values, calls)->insert(-6);\n  return calls != 1 || !result.second || values.count(-6) != 1 || values.size() != 4;\n}\n",
+      "source_sha256": "566aa51301b9b4509ef506c76637dd8696f4e00c087d89dc2a5705ff84a03f80",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-iterator-ordered-range-and-insertion-preserve-existing-position",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::set<int> values{9, -6, 3, 7, 3};\n  auto state = values.insert(-2);\n  if (!state.second || *state.first != -2) return 1;\n  int previous = -8, count = 0;\n  for (const int value : values) {\n    if (value <= previous) return 2;\n    previous = value;\n    ++count;\n  }\n  return previous != 9 || count != 5;\n}\n",
+      "source_sha256": "0735662eed0b6c8a84e129f7b5aad745c92bc4766e0ab7919b3eed7a415ac465",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-iterator-pointer-endpoints-and-postfix-traversal",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::set<int> values{9, -6, 3, 7};\n  const auto* receiver = &values;\n  auto last = receiver->cend();\n  --last;\n  auto previous = last--;\n  auto first = receiver->cbegin();\n  auto old = first++;\n  return *last != 7 || *previous != 9 || *first != 3 || *old != -6;\n}\n",
+      "source_sha256": "35a1d1206dfa4f9d3090e1329efdb8474c7a80c14fbe837ade7bfe14779ade18",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-iterator-empty-iterators-use-the-same-owner-sentinel",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::set<int> values;\n  return values.begin() != values.end();\n}\n",
+      "source_sha256": "a3df9cf0e790bdecdc07da8dbd129f58c1f5a5ad75acc24323a6f115e416c827",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-bounds-bounds-on-keys-and-gaps",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::set<int> values{13, -6, 3, 0, 7, -6};\n  auto exact = values.find(-6);\n  auto missing = values.find(-5);\n  auto after = values.upper_bound(3);\n  auto at = values.lower_bound(3);\n  auto gap = values.lower_bound(4);\n  auto low = values.upper_bound(-9);\n  auto end = values.end();\n  auto high = values.lower_bound(14);\n  return *exact != -6 || missing != end || *after != 7 || *at != 3 ||\n         gap != after || low != exact || high != end;\n}\n",
+      "source_sha256": "892728738b93731546efec17e63da7a93d35f47c21d7a440a92866629356cf59",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-bounds-const-pointer-lookup-matches-extreme-keys",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::set<int> values{(-2147483647 - 1), -2, 0, 2147483647};\n  const auto* owner = &values;\n  auto first = owner->begin();\n  auto last = owner->find(2147483647);\n  auto low = owner->lower_bound((-2147483647 - 1));\n  auto high = owner->upper_bound(2147483647);\n  auto end = owner->end();\n  return low != first || high != end || *last != 2147483647;\n}\n",
+      "source_sha256": "069607a7d1f7395fe12817dfc9461013cd22f7f74c6a8a80abe6a2bef3205a1a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-bounds-empty-lookup-evaluates-receiver-and-key-once",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nusing Set = std::set<int>;\nconst Set* receiver(const Set& values, int& n) { ++n; return &values; }\nint key(int& n) { ++n; return 4; }\nint main() {\n  const Set values;\n  int owners = 0, keys = 0;\n  auto result = receiver(values, owners)->lower_bound(key(keys));\n  auto end = values.end();\n  return result != end || owners != 1 || keys != 1;\n}\n",
+      "source_sha256": "287a8cbd710658b09f7ac1c6b75e57c73fd9fe908de41b2f4d513477d0d5f384",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-list-and-lookup-custom-order-keeps-existing-source-guard",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Descending { bool operator()(int a, int b) const { return a > b; } };\nint main() {\n  std::set<int, Descending> values{2, 4};\n  return values.count(2) != 1;\n}\n",
+      "source_sha256": "81be77494dfe18f68c1ed4880f55c5bfecf4875798a07d33a398838c4fb7568f",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-set-insert-result-unapproved-custom-comparator-for-scalar-insertion",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Descending { bool operator()(int l, int r) const { return l > r; } };\nint main() {\n  std::set<int, Descending> values;\n  return !values.insert(3).second;\n}\n",
+      "source_sha256": "3d6d12d8bf2bdec0c1f745457907c6dc24ce70ee364f07306672d6f50f591533",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-set-iterator-stateful-ordering-remains-outside-the-checked-iterator-type",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Comparator { int delta; bool operator()(int a, int b) const { return a + delta < b; } };\nint main() {\n  const std::set<int, Comparator> values({1, 2}, Comparator{0});\n  return *values.begin() != 1;\n}\n",
+      "source_sha256": "6a48fba93d53d0adf275f5d0a0c2ca560bc65c6cf4056eb7aae06d500a776347",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "ordered-set-bounds-custom-ordering-does-not-use-integer-bounds",
+      "expected": "reject",
+      "public_header": "set",
+      "source": "#include <set>\nstruct Descending { bool operator()(int left, int right) const { return left > right; } };\nint main() {\n  const std::set<int, Descending> values{2, 8};\n  return *values.lower_bound(5);\n}\n",
+      "source_sha256": "78118ad5938b1f60697f6204f07f50b921ed2b7b7ed8479f7a5e786607c00d3c",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedSetListAndLookupListBalancesSortedKeysAndDeduplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetListAndLookupPointerCountAfterLeftAndRightRotationsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetListAndLookupListDuplicatesReleaseEachOwnedNodeOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetInsertResultInsertionResultDistinguishesADuplicateKeyRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetInsertResultPointerInsertionUsesTheCheckedReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetIteratorOrderedRangeAndInsertionPreserveExistingPositionRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetIteratorPointerEndpointsAndPostfixTraversalRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetIteratorEmptyIteratorsUseTheSameOwnerSentinelRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetBoundsBoundsOnKeysAndGapsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetBoundsConstPointerLookupMatchesExtremeKeysRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetBoundsEmptyLookupEvaluatesReceiverAndKeyOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetListAndLookupCustomOrderKeepsExistingSourceGuardRejected",
+    "TranslateTest.CoreV2OrderedSetInsertResultUnapprovedCustomComparatorForScalarInsertionRejected",
+    "TranslateTest.CoreV2OrderedSetIteratorStatefulOrderingRemainsOutsideTheCheckedIteratorTypeRejected",
+    "TranslateTest.CoreV2OrderedSetBoundsCustomOrderingDoesNotUseIntegerBoundsRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "ec78979a7b483ff52b14ef27db1472a179c41c7649741f7a166ce73b0e62cfaa",
+  "maintained_original_sha256": "b0ebfd804a188b3740667ec710c8b116ed96e8924a57a6f66882051165586f48",
+  "previous_registered_source_sha256": "a5ddd1fe6e53f82facecbd1237242b0926e8170a3a5aa4c6dae75302b9027724",
+  "previous_maintained_original_sha256": "b537c8295007d1c8b9bef82c985bc3b7db2f5701d9b9b24e3650c6a0d456962e",
+  "restorer_sha256": "b5b07590e25d9d06ae214db60ffcdb0d655313cbfeb2e4a3e2b951a44c9672a6",
+  "extractor_sha256": "43089125aa7fff4bd42d5aa7bfb6d0349c395e709dcd15d0b2d123dd43caab12",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8670,
+  "current_python_registry_tests": 248,
+  "native_reference_selected_executions": 22,
+  "planned_generated_c23_executions": 22,
+  "native_reference_proofs": {
+    "ordered-set-core": "1c2f471258c24fa552d0702893167e6543b8e3a6e6be5d499e9e0f6be5786d4e"
+  },
+  "native_reference_authentication_sha256": "3980698b9765befec2fe4c8be88855a65c8f717574eb0c78c4233e54316f50d4",
+  "source_proof_sha256": "bfdb308cccd283e79ed0d466b3d03fc2eb3115ffc0f4c6a09822bf04f0330b4a"
+}

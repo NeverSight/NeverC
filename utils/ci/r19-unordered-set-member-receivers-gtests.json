@@ -1,0 +1,249 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-set-member-receivers-pointer-range-evaluates-bucket-count-once-before-inserting",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversPointerRangeEvaluatesBucketCountOnceBeforeInsertingRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0ffbac52379697fdca66f0eec76599e3bc23aef86f151c49cfb19f6d52ae46c7",
+      "original_case_source_sha256": "0ffbac52379697fdca66f0eec76599e3bc23aef86f151c49cfb19f6d52ae46c7",
+      "gtest_body_sha256": "14198b50ef2a431be00b824cc98dbfb6a3d7556bed4d957ffc1e3774af2699a6"
+    },
+    {
+      "name": "unordered-set-member-receivers-iterator-range-with-pinned-policies-retains-equivalent-keys",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversIteratorRangeWithPinnedPoliciesRetainsEquivalentKeysRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f2775b0cbf47f102d9a20650f2487584e99fd1bb6d4c2e8d91bb394cac126ffa",
+      "original_case_source_sha256": "f2775b0cbf47f102d9a20650f2487584e99fd1bb6d4c2e8d91bb394cac126ffa",
+      "gtest_body_sha256": "9f6b3e89b59995b8e17b7b09e6771023bc892269cf1fb8f58cbd370c4c08ef2a"
+    },
+    {
+      "name": "unordered-set-member-receivers-list-with-bucket-count-and-allocator-coalesces-duplicates",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversListWithBucketCountAndAllocatorCoalescesDuplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7743fc7780e1d1102ac3b4b4c8eeba57680168cdb79104a47f616f48238bd548",
+      "original_case_source_sha256": "7743fc7780e1d1102ac3b4b4c8eeba57680168cdb79104a47f616f48238bd548",
+      "gtest_body_sha256": "417cfa8d9dba5fc0fac3a6e3c8488f80e088eac7c4c5ec3c76cea55714ed03ed"
+    },
+    {
+      "name": "unordered-set-member-receivers-list-with-all-policies-preserves-duplicate-key-group",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversListWithAllPoliciesPreservesDuplicateKeyGroupRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8fa731cfe5fa56f6e6a4bbcacf597f94de825ec8a33f1c19003e3e3ea4203f92",
+      "original_case_source_sha256": "8fa731cfe5fa56f6e6a4bbcacf597f94de825ec8a33f1c19003e3e3ea4203f92",
+      "gtest_body_sha256": "bbd762c110b291c1389a63ea741ed89a76bcaa255d635728f7e341f667d2d396"
+    },
+    {
+      "name": "unordered-set-member-receivers-empty-range-keeps-explicit-bucket-storage",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversEmptyRangeKeepsExplicitBucketStorageRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a7e6953350cf547933f3989d425e6e38946a6cda5658b7846ff5fd5d49ae0b6e",
+      "original_case_source_sha256": "a7e6953350cf547933f3989d425e6e38946a6cda5658b7846ff5fd5d49ae0b6e",
+      "gtest_body_sha256": "09602f71c5b2f2e18de3ed631a3723a7f56b38ecde0653114f42f6de14f21d7b"
+    },
+    {
+      "name": "unordered-set-member-receivers-member-pointer-expressions-evaluate-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversMemberPointerExpressionsEvaluateOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7865d5d0157d879fefb3f970af6448168e0e6b65b486bfa7b8af749fe08b0e63",
+      "original_case_source_sha256": "7865d5d0157d879fefb3f970af6448168e0e6b65b486bfa7b8af749fe08b0e63",
+      "gtest_body_sha256": "3973a4fe01c0c033e642d30a31d5733aa613347bdc00a9f7fbc8df7ae8099748"
+    },
+    {
+      "name": "unordered-set-member-receivers-const-pointer-global-and-local-iteration",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversConstPointerGlobalAndLocalIterationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8f419792511c409a6582142a7a4a59e33a13d3afd476cd028514f44a3516ff68",
+      "original_case_source_sha256": "8f419792511c409a6582142a7a4a59e33a13d3afd476cd028514f44a3516ff68",
+      "gtest_body_sha256": "aec3db078a330b73769399f8ee6d70357f4f40f606da6b2b71e1fe87e51e2829"
+    },
+    {
+      "name": "unordered-set-member-receivers-pointer-range-insertion-and-clear-preserve-key-multiplicity",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversPointerRangeInsertionAndClearPreserveKeyMultiplicityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "13c6988d3b64db4b7b3bc5d6d73c1a35d83a399d436ee8a08fc6d013431474d7",
+      "original_case_source_sha256": "13c6988d3b64db4b7b3bc5d6d73c1a35d83a399d436ee8a08fc6d013431474d7",
+      "gtest_body_sha256": "619bc1641c35afe7ce2a7c377147c8313cdda3abc86bd2fbaca807c767e431fd"
+    },
+    {
+      "name": "unordered-set-member-receivers-pointer-swap-retains-element-address-and-live-buckets",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversPointerSwapRetainsElementAddressAndLiveBucketsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5e9bccbac7437b3a5656437e8d941d698d2d959f8e7943fff31730bc6a0c4029",
+      "original_case_source_sha256": "5e9bccbac7437b3a5656437e8d941d698d2d959f8e7943fff31730bc6a0c4029",
+      "gtest_body_sha256": "338bdee81e0c762b299ac95746c096cc50a79175dd871c0991d0a80acee7c711"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-set-member-receivers-range-with-user-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversRangeWithUserHashRejected",
+      "expected": "reject",
+      "source_sha256": "784a4476d8be5d2fc1223a23db5de582c57bba70f1f5e0dfc510ea231e55a623",
+      "original_case_source_sha256": "784a4476d8be5d2fc1223a23db5de582c57bba70f1f5e0dfc510ea231e55a623",
+      "gtest_body_sha256": "0870cc8e7c68301400cbfa6787a450a281b19f026bba173af2df363ee38e3f4b"
+    },
+    {
+      "name": "unordered-set-member-receivers-bucketed-list-with-unapproved-key-type",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversBucketedListWithUnapprovedKeyTypeRejected",
+      "expected": "reject",
+      "source_sha256": "21f951004573ca1f33cadc4bb42e6942af45cb59e16b50d3d662a2cc2083fdf1",
+      "original_case_source_sha256": "21f951004573ca1f33cadc4bb42e6942af45cb59e16b50d3d662a2cc2083fdf1",
+      "gtest_body_sha256": "2ff8e0c9692a0bdc7b726116ce63d5edfd2fce1ea53e26eb438cbe67cc3bdb66"
+    },
+    {
+      "name": "unordered-set-member-receivers-user-hash-pointer-member",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversUserHashPointerMemberRejected",
+      "expected": "reject",
+      "source_sha256": "8fe27d8419c7066fe17bde1b71c0b86ebcaea223df1a3be01aabe63eb49ea928",
+      "original_case_source_sha256": "8fe27d8419c7066fe17bde1b71c0b86ebcaea223df1a3be01aabe63eb49ea928",
+      "gtest_body_sha256": "00d47af8752001e0a29fc01c058ddb6b0c20ae52678ba23237728f675ce2e124"
+    },
+    {
+      "name": "unordered-set-member-receivers-unapproved-key-pointer-member",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetMemberReceiversUnapprovedKeyPointerMemberRejected",
+      "expected": "reject",
+      "source_sha256": "a490cde46ed8da2a4010fab732c934787ff3375fa32486378fe6fa157b313f04",
+      "original_case_source_sha256": "a490cde46ed8da2a4010fab732c934787ff3375fa32486378fe6fa157b313f04",
+      "gtest_body_sha256": "408749bdcf7814eaed3c41c35eb57bb55b553ab5693c48ad97df4e9bb106fc7b"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-set-member-receivers-pointer-range-evaluates-bucket-count-once-before-inserting",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstatic unsigned calls;\nunsigned count() { ++calls; return 31; }\nint main() {\n  const int input[] = {7, 2, 7, 5};\n  std::unordered_set<int> values(input, input + 4, count());\n  return calls != 1 || values.bucket_count() < 31 || values.size() != 3 || values.count(7) != 1;\n}\n",
+      "source_sha256": "0ffbac52379697fdca66f0eec76599e3bc23aef86f151c49cfb19f6d52ae46c7",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-iterator-range-with-pinned-policies-retains-equivalent-keys",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{5, 5, 6};\n  std::unordered_multiset<int> values(source.cbegin(), source.cend(), 32, std::hash<int>{},\n      std::equal_to<int>{}, std::allocator<int>{});\n  source.clear();\n  return values.bucket_count() < 32 || values.size() != 3 || values.count(5) != 2;\n}\n",
+      "source_sha256": "f2775b0cbf47f102d9a20650f2487584e99fd1bb6d4c2e8d91bb394cac126ffa",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-list-with-bucket-count-and-allocator-coalesces-duplicates",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values({2, 8, 2}, 17, std::allocator<int>{});\n  return values.bucket_count() < 17 || values.size() != 2 || values.count(2) != 1;\n}\n",
+      "source_sha256": "7743fc7780e1d1102ac3b4b4c8eeba57680168cdb79104a47f616f48238bd548",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-list-with-all-policies-preserves-duplicate-key-group",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values({7, 3, 7}, 11, std::hash<int>{},\n      std::equal_to<int>{}, std::allocator<int>{});\n  return values.bucket_count() < 11 || values.size() != 3 || values.count(7) != 2;\n}\n",
+      "source_sha256": "8fa731cfe5fa56f6e6a4bbcacf597f94de825ec8a33f1c19003e3e3ea4203f92",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-empty-range-keeps-explicit-bucket-storage",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  int input = 5;\n  std::unordered_multiset<int> values(&input, &input, 16, std::allocator<int>{});\n  return !values.empty() || values.bucket_count() < 16;\n}\n",
+      "source_sha256": "a7e6953350cf547933f3989d425e6e38946a6cda5658b7846ff5fd5d49ae0b6e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-member-pointer-expressions-evaluate-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nSet* table(Set& values, unsigned& calls) { ++calls; return &values; }\nint main() {\n  Set values{3};\n  unsigned calls = 0;\n  if (!table(values, calls)->emplace(4).second) return 1;\n  auto found = table(values, calls)->find(3);\n  if (found == values.end() || *found != 3) return 2;\n  table(values, calls)->erase(found);\n  return calls != 3 || values.size() != 1 || values.count(4) != 1;\n}\n",
+      "source_sha256": "7865d5d0157d879fefb3f970af6448168e0e6b65b486bfa7b8af749fe08b0e63",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-const-pointer-global-and-local-iteration",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values{3, 3, 7};\n  values.rehash(16);\n  const auto* pointer = &values;\n  const auto group = pointer->equal_range(3);\n  const auto bucket = values.bucket(3);\n  unsigned global = 0, local = 0;\n  for (auto it = group.first; it != group.second; ++it) global += *it;\n  for (auto it = pointer->cbegin(bucket); it != pointer->cend(bucket); ++it) local += *it;\n  return global != 6 || local != 6 || pointer->count(3) != 2;\n}\n",
+      "source_sha256": "8f419792511c409a6582142a7a4a59e33a13d3afd476cd028514f44a3516ff68",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-pointer-range-insertion-and-clear-preserve-key-multiplicity",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> source{4, 4, 8}, target{4};\n  auto* receiver = &target;\n  receiver->insert(source.cbegin(), source.cend());\n  if (receiver->count(4) != 3 || receiver->erase(8) != 1) return 1;\n  receiver->clear();\n  return !target.empty() || source.count(4) != 2;\n}\n",
+      "source_sha256": "13c6988d3b64db4b7b3bc5d6d73c1a35d83a399d436ee8a08fc6d013431474d7",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-pointer-swap-retains-element-address-and-live-buckets",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> left{4, 5}, right{8};\n  left.reserve(16);\n  const int* address = &*left.find(5);\n  auto* receiver = &left;\n  receiver->swap(right);\n  return receiver->count(8) != 1 || right.bucket_count() < 16 || &*right.find(5) != address;\n}\n",
+      "source_sha256": "5e9bccbac7437b3a5656437e8d941d698d2d959f8e7943fff31730bc6a0c4029",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-set-member-receivers-range-with-user-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned operator()(int n) const { return static_cast<unsigned>(n); } };\nint main() {\n  int input = 3;\n  std::unordered_set<int, Hash> values(&input, &input + 1, 16, Hash{});\n  return values.empty();\n}\n",
+      "source_sha256": "784a4476d8be5d2fc1223a23db5de582c57bba70f1f5e0dfc510ea231e55a623",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-member-receivers-bucketed-list-with-unapproved-key-type",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<long> values({3L, 7L}, 8);\n  return values.empty();\n}\n",
+      "source_sha256": "21f951004573ca1f33cadc4bb42e6942af45cb59e16b50d3d662a2cc2083fdf1",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-member-receivers-user-hash-pointer-member",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned operator()(int key) const { return static_cast<unsigned>(key); } };\nint main() {\n  std::unordered_set<int, Hash> values;\n  auto* receiver = &values;\n  return receiver->find(1) != receiver->end();\n}\n",
+      "source_sha256": "8fe27d8419c7066fe17bde1b71c0b86ebcaea223df1a3be01aabe63eb49ea928",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-set-member-receivers-unapproved-key-pointer-member",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<long> values;\n  auto* receiver = &values;\n  receiver->insert(12L);\n  return receiver->count(12L) != 1;\n}\n",
+      "source_sha256": "a490cde46ed8da2a4010fab732c934787ff3375fa32486378fe6fa157b313f04",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversPointerRangeEvaluatesBucketCountOnceBeforeInsertingRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversIteratorRangeWithPinnedPoliciesRetainsEquivalentKeysRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversListWithBucketCountAndAllocatorCoalescesDuplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversListWithAllPoliciesPreservesDuplicateKeyGroupRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversEmptyRangeKeepsExplicitBucketStorageRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversMemberPointerExpressionsEvaluateOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversConstPointerGlobalAndLocalIterationRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversPointerRangeInsertionAndClearPreserveKeyMultiplicityRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversPointerSwapRetainsElementAddressAndLiveBucketsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversRangeWithUserHashRejected",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversBucketedListWithUnapprovedKeyTypeRejected",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversUserHashPointerMemberRejected",
+    "TranslateTest.CoreV2UnorderedSetMemberReceiversUnapprovedKeyPointerMemberRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "af259a5994e7dedc5dedb4eef6e5ebc2abbe2266e62574ce2498fc3edc51ae8e",
+  "maintained_original_sha256": "518897789c68d3c75c2040ed9f914fde53c7dee14830d0891ba1f5c465b1ac89",
+  "previous_registered_source_sha256": "62811ae5debb7c6f1f25657823242ba217dafe1d84cfeb3bc6d3c495da26fcb0",
+  "previous_maintained_original_sha256": "965da4c3ce1920bcf0f371fa02e17f56e8fcade8a67b7bbcef60058040053f16",
+  "restorer_sha256": "45f1cb797dbd64107887b8a6d9b1b94da04c23c8989ebb7f017c2e8facaddd24",
+  "extractor_sha256": "a3477d643931d453ac7f6d321a055bafca0157d74149f39e262679cd74b50999",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8624,
+  "current_python_registry_tests": 238,
+  "native_reference_selected_executions": 18,
+  "planned_generated_c23_executions": 18,
+  "native_reference_proofs": {
+    "unordered-set-member-receivers": "b9a38d8778715d6db311aa597817334a2d355bee27549ec2a3cc13f9b583937f"
+  },
+  "native_reference_authentication_sha256": "31c201f5a40fdafd3e983ad51a3581d75b60aa6bb8d8e1806220dd949b029592",
+  "source_proof_sha256": "bfdb308cccd283e79ed0d466b3d03fc2eb3115ffc0f4c6a09822bf04f0330b4a"
+}

@@ -1,0 +1,167 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-bucket-storage-unique-rehash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedBucketStorageUniqueRehashRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "99a7a04d51f8f1cea3d82fb1bb1dde4f3e0fe1b11fc965d210842f1946e711e2",
+      "original_case_source_sha256": "99a7a04d51f8f1cea3d82fb1bb1dde4f3e0fe1b11fc965d210842f1946e711e2",
+      "gtest_body_sha256": "9670dd3623ec12c1355c6779e474f2ace018ecf7036109af08346a5d13e46680"
+    },
+    {
+      "name": "unordered-bucket-storage-multi-reserve-limit",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedBucketStorageMultiReserveLimitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7fa6b17acf2dac432dde50391a182ab4e8919642122327e724afe4266678f233",
+      "original_case_source_sha256": "7fa6b17acf2dac432dde50391a182ab4e8919642122327e724afe4266678f233",
+      "gtest_body_sha256": "fe44440dce38206470e8daa5b454170cb46af0bb7420c8381b253ca19bfedf6a"
+    },
+    {
+      "name": "unordered-bucket-storage-resize-arguments-once",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedBucketStorageResizeArgumentsOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "72414d560a3efcf6dbc19bd46445594e55c982ce79814916e4964f8f874bb2e0",
+      "original_case_source_sha256": "72414d560a3efcf6dbc19bd46445594e55c982ce79814916e4964f8f874bb2e0",
+      "gtest_body_sha256": "95a19fbcd41816397d151bb7c0ab819edecd9dde4e6f301651973c1b0ee4ecc8"
+    },
+    {
+      "name": "unordered-bucket-storage-bucket-allocation-and-release",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedBucketStorageBucketAllocationAndReleaseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a86d29c8a7bc9f9f93da77bfe30e3d55315351b24a2558ecc28293262df81ecc",
+      "original_case_source_sha256": "a86d29c8a7bc9f9f93da77bfe30e3d55315351b24a2558ecc28293262df81ecc",
+      "gtest_body_sha256": "4fabe4d00fb5801b1b2ba8b38d0a9b61cb8429089749dd840df5558f3de96c69"
+    },
+    {
+      "name": "unordered-bucket-storage-nonempty-owner",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetNonemptyRehashRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2e0d0a3d61c0353fd836c5b75fed78535ad0102253fe6d83774167f740d5b2e4",
+      "original_case_source_sha256": "2e0d0a3d61c0353fd836c5b75fed78535ad0102253fe6d83774167f740d5b2e4",
+      "gtest_body_sha256": "7b02c0fbfcffc8214fa4ecdab8d9d6fa10fb4b8f7c93c99bcaec3eb419cb391f",
+      "expected_exit_code": 2
+    },
+    {
+      "name": "unordered-bucket-storage-pointer-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerReserveRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
+      "original_case_source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
+      "gtest_body_sha256": "da61053c786076c5c8cd18f633792fc07b028efd3420af4ef55326de004e8f65"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-bucket-storage-custom-hasher",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedBucketStorageCustomHasherRejected",
+      "expected": "reject",
+      "source_sha256": "293f5b1260db8b749c4ac104357a06e27c27f67645ab00434576d49d0df30503",
+      "original_case_source_sha256": "293f5b1260db8b749c4ac104357a06e27c27f67645ab00434576d49d0df30503",
+      "gtest_body_sha256": "8c201e47e43338c05523768abd30cc2a9020c875059d67f1c2149ad64d588250"
+    },
+    {
+      "name": "unordered-bucket-storage-different-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedBucketStorageDifferentKeyRejected",
+      "expected": "reject",
+      "source_sha256": "9271ef2c810f27cb6b3feb5760247ddcc3eeb041b32ad93a4ed517b3f51d40c8",
+      "original_case_source_sha256": "9271ef2c810f27cb6b3feb5760247ddcc3eeb041b32ad93a4ed517b3f51d40c8",
+      "gtest_body_sha256": "4eca3310f30bf590a9887dd006c2abd5f209f904b391902c22bc1368784f7c80"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-bucket-storage-unique-rehash",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_set<int> values;\n  values.rehash(7);\n  if (values.bucket_count() != 7 || values.load_factor() != 0.0f) return 1;\n    if (values.bucket(10) != 3 || values.bucket_size(3) != 0) return 2;\n  values.rehash(1);\n    if (values.bucket_count() != 2 || !values.empty()) return 3;\n  values.rehash(0);\n  return values.bucket_count() != 0 || values.size() != 0;\n}\n",
+      "source_sha256": "99a7a04d51f8f1cea3d82fb1bb1dde4f3e0fe1b11fc965d210842f1946e711e2",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-bucket-storage-multi-reserve-limit",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() {\n  std::unordered_multiset<int> values;\n  values.max_load_factor(0.5f);\n  values.reserve(5);\n  if (values.bucket_count() != 11 || values.load_factor() != 0.0f) return 1;\n  values.max_load_factor(2.0f);\n  values.reserve(5);\n    const auto& view = values;\n    return view.bucket_count() != 3 || !view.empty() || view.bucket(13) != 1 || view.bucket_size(1) != 0;\n}\n",
+      "source_sha256": "7fa6b17acf2dac432dde50391a182ab4e8919642122327e724afe4266678f233",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-bucket-storage-resize-arguments-once",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nusing Size = decltype(sizeof(0));\nint trace;\nSet& owner(Set& value) { trace = trace * 10 + 1; return value; }\nSize count() { trace = trace * 10 + 2; return 4; }\nint main() {\n  Set values;\n  owner(values).reserve(count());\n  return trace != 12 || values.bucket_count() != 4;\n}\n",
+      "source_sha256": "72414d560a3efcf6dbc19bd46445594e55c982ce79814916e4964f8f874bb2e0",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-bucket-storage-bucket-allocation-and-release",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <unordered_set>\nint armed, allocations, releases;\nSize first_bytes, second_bytes;\nvoid* operator new(Size bytes) {\n  if (armed) {\n    ++allocations;\n    if (allocations == 1) first_bytes = bytes;\n    else second_bytes = bytes;\n  }\n  return malloc(bytes);\n}\nvoid operator delete(void* pointer) noexcept {\n  if (armed && pointer) ++releases;\n  free(pointer);\n}\nvoid operator delete(void* pointer, Size) noexcept {\n  if (armed && pointer) ++releases;\n  free(pointer);\n}\nint main() {\n  {\n    std::unordered_multiset<int> values;\n    armed = 1;\n    values.rehash(4);\n    values.rehash(7);\n    values.rehash(7);\n    if (allocations != 2 || releases != 1 ||\n        first_bytes != 4 * sizeof(void*) || second_bytes != 7 * sizeof(void*)) return 1;\n  }\n  armed = 0;\n  return releases != 2;\n}\n",
+      "source_sha256": "a86d29c8a7bc9f9f93da77bfe30e3d55315351b24a2558ecc28293262df81ecc",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-bucket-storage-nonempty-owner",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<int> values{1, 3}; values.rehash(4); return values.size(); }\n",
+      "source_sha256": "2e0d0a3d61c0353fd836c5b75fed78535ad0102253fe6d83774167f740d5b2e4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-bucket-storage-pointer-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_set<int> values; auto* ptr = &values; ptr->reserve(4); return values.size(); }\n",
+      "source_sha256": "12650de0b3574ce5b512e67accf107d4c2107bd6296ef4677a56e919b090ee09",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "unordered-bucket-storage-custom-hasher",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nstruct Hash { using Size = decltype(sizeof(0)); Size operator()(int value) const { return Size(value); } };\nint main() { std::unordered_set<int, Hash> values; values.rehash(4); return values.size(); }\n",
+      "source_sha256": "293f5b1260db8b749c4ac104357a06e27c27f67645ab00434576d49d0df30503",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "unordered-bucket-storage-different-key",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "source": "#include <unordered_set>\nint main() { std::unordered_multiset<long> values; values.reserve(4); return values.size(); }\n",
+      "source_sha256": "9271ef2c810f27cb6b3feb5760247ddcc3eeb041b32ad93a4ed517b3f51d40c8",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedBucketStorageUniqueRehashRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedBucketStorageMultiReserveLimitRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedBucketStorageResizeArgumentsOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedBucketStorageBucketAllocationAndReleaseRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetNonemptyRehashRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerReserveRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedBucketStorageCustomHasherRejected",
+    "TranslateTest.CoreV2UnorderedBucketStorageDifferentKeyRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "5d4e1f88637adc033ff73d27435f3bf5030c1be26f50b17a2e6b3b1047d615a8",
+  "maintained_original_sha256": "7d57c282e737021daad1b73c5869c5a3658f65dbded610460e5e703148810ffc",
+  "previous_registered_source_sha256": "53b48c911238bafe9c44bfce86ffe29f1eb8ea856f5c3efcb6f2ecf3eb3674a6",
+  "previous_maintained_original_sha256": "e181edb71c0c639a568de03643a59c6f0b7d0a14c386cf59b7b59c82c80504e9",
+  "restorer_sha256": "e9dd16283c31e7f8f0d9f6c3348e1cdcb53401966be442e164bf1bb9a89987f2",
+  "extractor_sha256": "cde3a0c06caee7260f7a67d5aa3fba5fa2e1a77c7d35a6b28bb6dd8293c4173d",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8392,
+  "current_python_registry_tests": 184,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-bucket-storage": "2eba369d4578e9e03c506e68fc1b71004f3614f6d7fbf879a0fdcf3b8acaef76",
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a",
+    "unordered-set-bucket-receivers": "1a0de477baf71caf287cb98e07a1017a3c2a3df8497717c62c00fa1dfc95ed03"
+  },
+  "native_reference_authentication_sha256": "cb83fcdc0a086c446cec3cb56220498293bfe97611002c71472c9e44db29c634",
+  "source_proof_sha256": "bfdb308cccd283e79ed0d466b3d03fc2eb3115ffc0f4c6a09822bf04f0330b4a"
+}

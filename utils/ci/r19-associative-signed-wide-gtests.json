@@ -1,0 +1,526 @@
+{
+  "positive_cases": [
+    {
+      "name": "pair-deduced-from-floating-literal",
+      "formal_test_name": "TranslateTest.CoreV2PairDeducedFromFloatingLiteralRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "af740cc2d21e318ef8d92f122c5374ec374e4af2d2c2b42c268f9649b3920cee",
+      "original_case_source_sha256": "af740cc2d21e318ef8d92f122c5374ec374e4af2d2c2b42c268f9649b3920cee",
+      "gtest_body_sha256": "fdf90953aa047d8d40822cdf6487c56dff50e0c025b8f829bd84c5af67202de5"
+    },
+    {
+      "name": "pair-deduced-from-numeric-limits-result",
+      "formal_test_name": "TranslateTest.CoreV2PairDeducedFromNumericLimitsResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ab45f1be977c1d32d8ea45eb874404e4094e1d1de89b27f0ac4ff000737cd08d",
+      "original_case_source_sha256": "ab45f1be977c1d32d8ea45eb874404e4094e1d1de89b27f0ac4ff000737cd08d",
+      "gtest_body_sha256": "9ed9d16714f1b85b878b2d56839e03eaaac1053415242eb5c166174218fbe2be"
+    },
+    {
+      "name": "pair-explicit-type-for-numeric-limits-result",
+      "formal_test_name": "TranslateTest.CoreV2PairExplicitTypeForNumericLimitsResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "064b1cc23f571275eb16069663ed925a97e5a5ce48d3f615d491b979dda3479d",
+      "original_case_source_sha256": "064b1cc23f571275eb16069663ed925a97e5a5ce48d3f615d491b979dda3479d",
+      "gtest_body_sha256": "3cbf06cceafc2c2006ef9771b4222f8d2c45e7a0b7d8f83b279220569f8b07d3"
+    },
+    {
+      "name": "pair-deduced-from-source-function-result",
+      "formal_test_name": "TranslateTest.CoreV2PairDeducedFromSourceFunctionResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e6ac51e8d0e068ab02ec06c7da8550d2ab6cf703b73129b5b209d608509d803f",
+      "original_case_source_sha256": "e6ac51e8d0e068ab02ec06c7da8550d2ab6cf703b73129b5b209d608509d803f",
+      "gtest_body_sha256": "4204bde4b7e84f0717b5e18e781916cd335e8aba58deb501ca578ea917d507f9"
+    },
+    {
+      "name": "pair-deduced-from-float-numeric-limits",
+      "formal_test_name": "TranslateTest.CoreV2PairDeducedFromFloatNumericLimitsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "37c5280eb7690f2178fb1b1048f30390a4493616f2771925198aa24170e28375",
+      "original_case_source_sha256": "37c5280eb7690f2178fb1b1048f30390a4493616f2771925198aa24170e28375",
+      "gtest_body_sha256": "20fb3e11e57865a3ba6e6e3aa2a2607a39b4468235ef49e7cb81ab1f765b3540"
+    },
+    {
+      "name": "ordered-map-at-after-absent-key-return",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtAfterAbsentKeyReturnRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5dbfa6b0bc12a05f2137e82438f99eb19b3e8b246108ae354550e6fe585a0172",
+      "original_case_source_sha256": "5dbfa6b0bc12a05f2137e82438f99eb19b3e8b246108ae354550e6fe585a0172",
+      "gtest_body_sha256": "43417d6be730a9a8a61be2c4682af57d7cc70ae8fb1e9ed8539fbf02e83a1c14"
+    },
+    {
+      "name": "ordered-map-at-after-absent-key-return-preserves-reference",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtAfterAbsentKeyReturnPreservesReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "122a0675564493cf3924aaffd64ee7a6584f4f315990602e8b5320e7468d9431",
+      "original_case_source_sha256": "122a0675564493cf3924aaffd64ee7a6584f4f315990602e8b5320e7468d9431",
+      "gtest_body_sha256": "65f013212fa5c89159373cb6425412c988955603476c8b2fa4a43a2a63ee030c"
+    },
+    {
+      "name": "ordered-map-at-present-else-branch",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtPresentElseBranchRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b63f88e16886cc717d8553cb19cd769c2f67cabc385ad78f76405c970b0b8b53",
+      "original_case_source_sha256": "b63f88e16886cc717d8553cb19cd769c2f67cabc385ad78f76405c970b0b8b53",
+      "gtest_body_sha256": "d5b18973ee3b9c38ecc4f6905c3ed311197a4ee9c12530ebf835046946048da3"
+    },
+    {
+      "name": "ordered-set-greater-boundaries-and-iteration",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetGreaterBoundariesAndIterationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cb431938864fe2fcba8ee67ee1326b7e1254068591f1a4a2d22b175dd046b1b6",
+      "original_case_source_sha256": "cb431938864fe2fcba8ee67ee1326b7e1254068591f1a4a2d22b175dd046b1b6",
+      "gtest_body_sha256": "ada19a930a65bd3e8c3f2dbdb2a5662b9fc3082f90c706ab4fb00f23a76aa5dc"
+    },
+    {
+      "name": "ordered-multiset-greater-hints-and-duplicates",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetGreaterHintsAndDuplicatesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "613883410ff152cfc40200250524aff50f1a317da14cb6c1882541ef9670f4e9",
+      "original_case_source_sha256": "613883410ff152cfc40200250524aff50f1a317da14cb6c1882541ef9670f4e9",
+      "gtest_body_sha256": "44df882743ec55267e2cd0bef90a518db04e50a4eea042e13bd947e2d87b5984"
+    },
+    {
+      "name": "ordered-map-greater-compare-and-storage",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapGreaterCompareAndStorageRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3643154f6a39a08222f5c392d980553edfea1a29d52442050a259d8a53c3f9ea",
+      "original_case_source_sha256": "3643154f6a39a08222f5c392d980553edfea1a29d52442050a259d8a53c3f9ea",
+      "gtest_body_sha256": "97f2c39690e1cfc3315ac7d3af343d9778394501e20cb2c6b0f99aa9e948032e"
+    },
+    {
+      "name": "unordered-map-long-subscript-assign-and-copy",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMapLongSubscriptAssignAndCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d1ee92f7d21260cebe29a732e391e9451696840ab8c525351c03c1972eee615b",
+      "original_case_source_sha256": "d1ee92f7d21260cebe29a732e391e9451696840ab8c525351c03c1972eee615b",
+      "gtest_body_sha256": "00e3a5719dc30d09911be6fbb72c9c1afc3c3ffbe211bfed2e254bc7b388fbac"
+    },
+    {
+      "name": "unordered-map-long-long-pair-range-and-node",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMapLongLongPairRangeAndNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "43766daee624900b149b1e84ed3da140444de8843b70a8fd6b645899442b144c",
+      "original_case_source_sha256": "43766daee624900b149b1e84ed3da140444de8843b70a8fd6b645899442b144c",
+      "gtest_body_sha256": "e1adc6e99fb41bfd05589136a77265e8a8705518e8ab0e281c4135cf77784683"
+    },
+    {
+      "name": "ordered-set-transparent-less-exact-search",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetTransparentLessExactSearchRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "30362f35aaf3115c25cc62daa72faa0dc2087643ef38d77ec0c5163a0765871a",
+      "original_case_source_sha256": "30362f35aaf3115c25cc62daa72faa0dc2087643ef38d77ec0c5163a0765871a",
+      "gtest_body_sha256": "b8dba28196b6bd4d25da35c4b9573fc44fd3271c3dec6ca139a2e305077e7613"
+    },
+    {
+      "name": "ordered-map-transparent-greater-exact-search",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTransparentGreaterExactSearchRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "58077e2633cec3f2f693d1fc9c26471253a83bd21e6975d95debaba39f7b80e4",
+      "original_case_source_sha256": "58077e2633cec3f2f693d1fc9c26471253a83bd21e6975d95debaba39f7b80e4",
+      "gtest_body_sha256": "0cb227150bd76823a521771986a40954b5cb4cf2a7f62692c329227a63f26b9b"
+    },
+    {
+      "name": "ordered-multiset-transparent-greater-equal-range",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetTransparentGreaterEqualRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5666db4f91445319d7af67c04fc60d8ff4e69b679ff2174d4f3453f2f15e856d",
+      "original_case_source_sha256": "5666db4f91445319d7af67c04fc60d8ff4e69b679ff2174d4f3453f2f15e856d",
+      "gtest_body_sha256": "cd028821bf6989308b424387e6e47384e5f5fcf57772fc14429de3c01b61a966"
+    },
+    {
+      "name": "ordered-set-transparent-wide-find-and-bounds",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetTransparentWideFindAndBoundsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1ee80aa2df65bae9e0400e9a2612cc31d86b18296a6bc340fe18af8fc3582b02",
+      "original_case_source_sha256": "1ee80aa2df65bae9e0400e9a2612cc31d86b18296a6bc340fe18af8fc3582b02",
+      "gtest_body_sha256": "ab2ee17d71cabb2df87694775c87a3b6b6a94cbb3040214636ba53da9f8b2bc0"
+    },
+    {
+      "name": "ordered-map-transparent-wide-descending-range",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTransparentWideDescendingRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0e7fc3cf02905be2fa4f13546c7e81efa334d2be021b51ece6839e93d57a8b4a",
+      "original_case_source_sha256": "0e7fc3cf02905be2fa4f13546c7e81efa334d2be021b51ece6839e93d57a8b4a",
+      "gtest_body_sha256": "8ab59862e0895100ec2f395f77753f0c2b7e74306c3fd8000021d051ede370df"
+    },
+    {
+      "name": "ordered-multimap-transparent-signed-probe-count",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapTransparentSignedProbeCountRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7b120734f6305a86b981e025c12b5e1d2584a337b2f4972cfc30d0f8ce15b811",
+      "original_case_source_sha256": "7b120734f6305a86b981e025c12b5e1d2584a337b2f4972cfc30d0f8ce15b811",
+      "gtest_body_sha256": "8e7c10177c193a179c2d8015ba39cef132052df7aa03f87cffffefa6f3c9b16a"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "pair-deduced-volatile-numeric-limits-guard",
+      "formal_test_name": "TranslateTest.CoreV2PairDeducedVolatileNumericLimitsGuardRejected",
+      "expected": "reject",
+      "source_sha256": "34083fc9b8e56437999d2c499f663c14f42145e0d94269df37b2ea74548d5832",
+      "original_case_source_sha256": "34083fc9b8e56437999d2c499f663c14f42145e0d94269df37b2ea74548d5832",
+      "gtest_body_sha256": "bde2c70c3e8b1390cf85bde30f57658c0a13b5864fb29544bd01751fc71b87fe"
+    },
+    {
+      "name": "ordered-map-at-key-changes-after-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtKeyChangesAfterGuardRejected",
+      "expected": "reject",
+      "source_sha256": "485fd232d80a2796c01873f560e764a0f78340515bbbb27bf5c3870c00f9667c",
+      "original_case_source_sha256": "485fd232d80a2796c01873f560e764a0f78340515bbbb27bf5c3870c00f9667c",
+      "gtest_body_sha256": "80f4c7bd0816ff9b9f216c519baa4206cfc0e8d89456873de03092ff24bfba66"
+    },
+    {
+      "name": "ordered-map-at-fallthrough-is-absent",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtFallthroughIsAbsentRejected",
+      "expected": "reject",
+      "source_sha256": "8a2594aef617f8fcb4a20b9c508b7733b04ca2abe444f6e48d2c4c11bb4cb93b",
+      "original_case_source_sha256": "8a2594aef617f8fcb4a20b9c508b7733b04ca2abe444f6e48d2c4c11bb4cb93b",
+      "gtest_body_sha256": "10709180f6c59ae40191ea111659b3db5d742a051308ed5048035a0f875cac76"
+    },
+    {
+      "name": "ordered-map-at-after-guard-of-other-container",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapAtAfterGuardOfOtherContainerRejected",
+      "expected": "reject",
+      "source_sha256": "e7b69a3bcd93399c6e5a9a8adc422f55ac8a303700a986de4b5cbe7e1757e513",
+      "original_case_source_sha256": "e7b69a3bcd93399c6e5a9a8adc422f55ac8a303700a986de4b5cbe7e1757e513",
+      "gtest_body_sha256": "8bd62b77bb7c5666dc3f1740a166fa7c24e2ef687f2c1323a7e1d2597b39369c"
+    },
+    {
+      "name": "ordered-map-greater-on-different-key-type-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapGreaterOnDifferentKeyTypeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "1381889303acd303c13a75fed5fd37f28a67461a6896a8dfd89b5208e78791c8",
+      "original_case_source_sha256": "1381889303acd303c13a75fed5fd37f28a67461a6896a8dfd89b5208e78791c8",
+      "gtest_body_sha256": "67a2dead850906f0d9a5c42bbed0aee64340e949c56d2cb9c75fc1d3a60f2f42"
+    },
+    {
+      "name": "ordered-set-caller-comparator-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetCallerComparatorGuardRejected",
+      "expected": "reject",
+      "source_sha256": "34e6f13743987ba0c2191470ac7a129c6817674c396789a9c26e11019cdb1b96",
+      "original_case_source_sha256": "34e6f13743987ba0c2191470ac7a129c6817674c396789a9c26e11019cdb1b96",
+      "gtest_body_sha256": "c6b35f13d2eb9f6012affc78665daf4b3f7a776efdfc42b345f8f60f6388ffba"
+    },
+    {
+      "name": "unordered-map-qualified-long-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMapQualifiedLongStorageGuardRejected",
+      "expected": "reject",
+      "source_sha256": "1b5e0d32997e71dcb67691ffbaae9730b82cc68fc4d197e1ec8e96349d057bac",
+      "original_case_source_sha256": "1b5e0d32997e71dcb67691ffbaae9730b82cc68fc4d197e1ec8e96349d057bac",
+      "gtest_body_sha256": "73b7cfe388ca5033d70687e2f5494f71fddd0be4d4e8295062d0f4176a5d7cc9"
+    },
+    {
+      "name": "ordered-set-mismatched-less-specialization-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetMismatchedLessSpecializationGuardRejected",
+      "expected": "reject",
+      "source_sha256": "c341b4f68fbc9bc70e4f9c499fb9687d7a06880467b961a6c89c73dd1f2266e4",
+      "original_case_source_sha256": "c341b4f68fbc9bc70e4f9c499fb9687d7a06880467b961a6c89c73dd1f2266e4",
+      "gtest_body_sha256": "14cf06fca48dfc87ccfdfe73f85a44c07466b47bf0aeb42aae7e4cc440a11c53"
+    },
+    {
+      "name": "ordered-set-transparent-unsigned-probe-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetTransparentUnsignedProbeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "d6ccb37c5c9e735653eafba9bd29d19da5a96f8b56413b013973eb2345e69567",
+      "original_case_source_sha256": "d6ccb37c5c9e735653eafba9bd29d19da5a96f8b56413b013973eb2345e69567",
+      "gtest_body_sha256": "85f9bb356316b469b8c68d82f4f70321ecfd79180aad851e6f5144bb8bfd2774"
+    },
+    {
+      "name": "ordered-map-transparent-volatile-probe-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTransparentVolatileProbeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "6d1c136480297c6da189c79fd3a1f8c9c1d415b7d8b11066998c387767fbe6d8",
+      "original_case_source_sha256": "6d1c136480297c6da189c79fd3a1f8c9c1d415b7d8b11066998c387767fbe6d8",
+      "gtest_body_sha256": "b01be4967dee1ccde85f79dd57bae0f11037805e44f526786d461d4c0e86f359"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "pair-deduced-from-floating-literal",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  const auto mapped = 1.25;\n  std::map<int, double> values{{1, mapped}};\n  return values.begin()->second == 1.25 ? 0 : 1;\n}\n",
+      "source_sha256": "af740cc2d21e318ef8d92f122c5374ec374e4af2d2c2b42c268f9649b3920cee"
+    },
+    {
+      "name": "pair-deduced-from-numeric-limits-result",
+      "public_header": "utility",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <limits>\n#include <utility>\nint main() {\n  const auto mapped = std::numeric_limits<double>::quiet_NaN();\n  std::pair<const int, double> value{1, mapped};\n  return value.second != value.second ? 0 : 1;\n}\n",
+      "source_sha256": "ab45f1be977c1d32d8ea45eb874404e4094e1d1de89b27f0ac4ff000737cd08d"
+    },
+    {
+      "name": "pair-explicit-type-for-numeric-limits-result",
+      "public_header": "utility",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <limits>\n#include <utility>\nint main() {\n  const double mapped = std::numeric_limits<double>::quiet_NaN();\n  std::pair<const int, double> value{1, mapped};\n  return value.second != value.second ? 0 : 1;\n}\n",
+      "source_sha256": "064b1cc23f571275eb16069663ed925a97e5a5ce48d3f615d491b979dda3479d"
+    },
+    {
+      "name": "pair-deduced-from-source-function-result",
+      "public_header": "utility",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <utility>\ndouble init() { return -1.25; }\nint main() {\n  const auto mapped = init();\n  std::pair<const int, double> value{1, mapped};\n  return value.second == -1.25 ? 0 : 1;\n}\n",
+      "source_sha256": "e6ac51e8d0e068ab02ec06c7da8550d2ab6cf703b73129b5b209d608509d803f"
+    },
+    {
+      "name": "pair-deduced-from-float-numeric-limits",
+      "public_header": "utility",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <limits>\n#include <utility>\nint main() {\n  const auto mapped = std::numeric_limits<float>::lowest();\n  std::pair<const int, float> value{1, mapped};\n  return value.second == std::numeric_limits<float>::lowest() ? 0 : 1;\n}\n",
+      "source_sha256": "37c5280eb7690f2178fb1b1048f30390a4493616f2771925198aa24170e28375"
+    },
+    {
+      "name": "ordered-map-at-after-absent-key-return",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, int key) {\n  if (values.find(key) == values.end()) return -1;\n  return values.at(key);\n}\nint main() {\n  const std::map<int, int> values{{3, 71}};\n  return lookup(values, 3) == 71 && lookup(values, 4) == -1 ? 0 : 1;\n}\n",
+      "source_sha256": "5dbfa6b0bc12a05f2137e82438f99eb19b3e8b246108ae354550e6fe585a0172"
+    },
+    {
+      "name": "ordered-map-at-after-absent-key-return-preserves-reference",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint& lookup(std::map<int, int>& values, int key, int& fallback) {\n  if (values.end() == values.find(key)) {\n    return fallback;\n  }\n  return values.at(key);\n}\nint main() {\n  std::map<int, int> values{{4, 2}};\n  int fallback = -1;\n  lookup(values, 4, fallback) = 87;\n  lookup(values, 5, fallback) = 12;\n  return values.find(4)->second == 87 && fallback == 12 && values.size() == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "122a0675564493cf3924aaffd64ee7a6584f4f315990602e8b5320e7468d9431"
+    },
+    {
+      "name": "ordered-map-at-present-else-branch",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, int key) {\n  if (values.find(key) == values.end())\n    return -1;\n  else\n    return values.at(key);\n}\nint main() {\n  const std::map<int, int> values{{2, 64}};\n  return lookup(values, 2) == 64 && lookup(values, 3) == -1 ? 0 : 1;\n}\n",
+      "source_sha256": "b63f88e16886cc717d8553cb19cd769c2f67cabc385ad78f76405c970b0b8b53"
+    },
+    {
+      "name": "ordered-set-greater-boundaries-and-iteration",
+      "public_header": "set",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nint main() {\n  std::set<int, std::greater<int>> values{1, 3, 5};\n  if (*values.begin() != 5 || *values.rbegin() != 1)\n    return 1;\n  if (*values.lower_bound(4) != 3 || *values.upper_bound(3) != 1)\n    return 2;\n  const auto both = values.equal_range(3);\n  return *both.first == 3 && *both.second == 1 && values.find(2) == values.end() ? 0 : 3;\n}\n",
+      "source_sha256": "cb431938864fe2fcba8ee67ee1326b7e1254068591f1a4a2d22b175dd046b1b6"
+    },
+    {
+      "name": "ordered-multiset-greater-hints-and-duplicates",
+      "public_header": "set",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <set>\nint main() {\n  std::multiset<int, std::greater<int>> values{2, 3, 4};\n  auto hint = values.find(3);\n  values.emplace_hint(hint, 3);\n  values.insert(values.cbegin(), 5);\n  if (*values.begin() != 5 || values.count(3) != 2)\n    return 1;\n  if (values.erase(3) != 2 || values.count(3) != 0)\n    return 2;\n  return *values.lower_bound(3) == 2 ? 0 : 3;\n}\n",
+      "source_sha256": "613883410ff152cfc40200250524aff50f1a317da14cb6c1882541ef9670f4e9"
+    },
+    {
+      "name": "ordered-map-greater-compare-and-storage",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <map>\nint main() {\n  std::map<int, int, std::greater<int>> left;\n  left.try_emplace(3, 31);\n  left.try_emplace(1, 17);\n  left[2] = 12;\n  auto first = left.begin();\n  auto second = first;\n  ++second;\n  if (!left.key_comp()(3, 2) || !left.value_comp()(*first, *second))\n    return 1;\n  std::map<int, int, std::greater<int>> right{{4, 41}, {0, 1}};\n  return left < right && left[2] == 12 && left.begin()->first == 3 ? 0 : 2;\n}\n",
+      "source_sha256": "3643154f6a39a08222f5c392d980553edfea1a29d52442050a259d8a53c3f9ea"
+    },
+    {
+      "name": "unordered-map-long-subscript-assign-and-copy",
+      "public_header": "unordered_map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, long> values;\n  values.try_emplace(1, -7102431L);\n  values.insert_or_assign(2, 42011071L);\n  values[2] += 93L;\n  auto copy = values;\n  values.clear();\n  if (copy[1] != -7102431L || copy[2] != 42011164L || values.size() != 0)\n    return 1;\n  return copy[3] == 0L && copy.size() == 3 ? 0 : 2;\n}\n",
+      "source_sha256": "d1ee92f7d21260cebe29a732e391e9451696840ab8c525351c03c1972eee615b"
+    },
+    {
+      "name": "unordered-map-long-long-pair-range-and-node",
+      "public_header": "unordered_map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_map>\n#include <utility>\nint main() {\n  const std::pair<int, long long> input[]{{6, -4398046511123LL}, {5, 4398046511119LL}};\n  std::unordered_map<int, long long> values;\n  values.insert(input, input + 2);\n  auto node = values.extract(5);\n  node.mapped() += 61LL;\n  auto result = values.insert(std::move(node));\n  return result.inserted && result.position->second == 4398046511180LL &&\n      values.find(6)->second == -4398046511123LL ? 0 : 1;\n}\n",
+      "source_sha256": "43766daee624900b149b1e84ed3da140444de8843b70a8fd6b645899442b144c"
+    },
+    {
+      "name": "ordered-set-transparent-less-exact-search",
+      "public_header": "set",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::less<>> values{4, 10};\n  const int key = 4;\n  auto found = values.find(key);\n  return found != values.end() && *found == 4 && *values.lower_bound(7) == 10 ? 0 : 1;\n}\n",
+      "source_sha256": "30362f35aaf3115c25cc62daa72faa0dc2087643ef38d77ec0c5163a0765871a"
+    },
+    {
+      "name": "ordered-map-transparent-greater-exact-search",
+      "public_header": "map",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  std::map<int, int, std::greater<>> values;\n  values[1] = 21;\n  values.try_emplace(4, 11);\n  auto found = values.find(1);\n  return values.begin()->first == 4 && found != values.end() && found->second == 21 ? 0 : 1;\n}\n",
+      "source_sha256": "58077e2633cec3f2f693d1fc9c26471253a83bd21e6975d95debaba39f7b80e4"
+    },
+    {
+      "name": "ordered-multiset-transparent-greater-equal-range",
+      "public_header": "set",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::multiset<int, std::greater<>> values{5, 3, 3, 1};\n  const int key = 3;\n  auto both = values.equal_range(key);\n  auto next = both.first;\n  ++next;\n  return *both.first == 3 && *next == 3 && *both.second == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "5666db4f91445319d7af67c04fc60d8ff4e69b679ff2174d4f3453f2f15e856d"
+    },
+    {
+      "name": "ordered-set-transparent-wide-find-and-bounds",
+      "public_header": "set",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::less<>> values{-5, -1, 8};\n  const long long above = 4294967295LL;\n  const long long below = -4294967297LL;\n  if (values.find(above) != values.end() || values.lower_bound(above) != values.end())\n    return 1;\n  if (values.upper_bound(below) != values.begin() || values.lower_bound(below) != values.begin())\n    return 2;\n  const long key = -1L;\n  return values.find(key) != values.end() && *values.find(key) == -1 ? 0 : 3;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "1ee80aa2df65bae9e0400e9a2612cc31d86b18296a6bc340fe18af8fc3582b02"
+    },
+    {
+      "name": "ordered-map-transparent-wide-descending-range",
+      "public_header": "map",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  const std::map<int, int, std::greater<>> values{{9, 27}, {-1, 10}, {-3, 12}};\n  auto above = values.equal_range(4294967295LL);\n  auto below = values.equal_range(-4294967297LL);\n  auto exact = values.equal_range(-1LL);\n  if (above.first != values.begin() || above.second != above.first ||\n      below.first != values.end() || below.second != values.end())\n    return 1;\n  return values.count(4294967295LL) == 0 && values.count(-1LL) == 1 &&\n      exact.first->second == 10 && exact.second->first == -3 ? 0 : 2;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "0e7fc3cf02905be2fa4f13546c7e81efa334d2be021b51ece6839e93d57a8b4a"
+    },
+    {
+      "name": "ordered-multimap-transparent-signed-probe-count",
+      "public_header": "map",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  const std::multimap<int, int, std::less<>> values{{-4, 3}, {7, 41}, {7, 53}, {11, 67}};\n  const long query = 7;\n  auto pair = values.equal_range(query);\n  auto second = pair.first;\n  ++second;\n  return values.count(query) == 2 && values.count(4294967303LL) == 0 &&\n      pair.first->second == 41 && second->second == 53 &&\n      pair.second->first == 11 ? 0 : 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "7b120734f6305a86b981e025c12b5e1d2584a337b2f4972cfc30d0f8ce15b811"
+    },
+    {
+      "name": "pair-deduced-volatile-numeric-limits-guard",
+      "public_header": "utility",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <limits>\n#include <utility>\nint main() {\n  volatile auto mapped = std::numeric_limits<double>::quiet_NaN();\n  std::pair<const int, double> value{1, mapped};\n  return value.second != value.second ? 0 : 1;\n}\n",
+      "source_sha256": "34083fc9b8e56437999d2c499f663c14f42145e0d94269df37b2ea74548d5832"
+    },
+    {
+      "name": "ordered-map-at-key-changes-after-guard",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, int key) {\n  if (values.find(key) == values.end()) return -1;\n  ++key;\n  return values.at(key);\n}\n",
+      "source_sha256": "485fd232d80a2796c01873f560e764a0f78340515bbbb27bf5c3870c00f9667c"
+    },
+    {
+      "name": "ordered-map-at-fallthrough-is-absent",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, int key) {\n  if (values.find(key) != values.end()) return -1;\n  return values.at(key);\n}\n",
+      "source_sha256": "8a2594aef617f8fcb4a20b9c508b7733b04ca2abe444f6e48d2c4c11bb4cb93b"
+    },
+    {
+      "name": "ordered-map-at-after-guard-of-other-container",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint lookup(const std::map<int, int>& values, const std::map<int, int>& other, int key) {\n  if (other.find(key) == other.end()) return -1;\n  return values.at(key);\n}\n",
+      "source_sha256": "e7b69a3bcd93399c6e5a9a8adc422f55ac8a303700a986de4b5cbe7e1757e513"
+    },
+    {
+      "name": "ordered-map-greater-on-different-key-type-guard",
+      "public_header": "map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <map>\nint main() {\n  std::map<int, int, std::greater<long>> values;\n  values.try_emplace(3, 5);\n  return values.begin()->second != 5;\n}\n",
+      "source_sha256": "1381889303acd303c13a75fed5fd37f28a67461a6896a8dfd89b5208e78791c8"
+    },
+    {
+      "name": "ordered-set-caller-comparator-guard",
+      "public_header": "set",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <set>\nstruct Descending {\n  int offset = 1;\n  bool operator()(int a, int b) const { return (a ^ offset) > (b ^ offset); }\n};\nint main() {\n  std::set<int, Descending> values{2, 3, 4};\n  return *values.begin() != 4;\n}\n",
+      "source_sha256": "34e6f13743987ba0c2191470ac7a129c6817674c396789a9c26e11019cdb1b96"
+    },
+    {
+      "name": "unordered-map-qualified-long-storage-guard",
+      "public_header": "unordered_map",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <unordered_map>\nint main() {\n  std::unordered_map<int, const long> values;\n  return values.try_emplace(3, 5L).second ? 0 : 1;\n}\n",
+      "source_sha256": "1b5e0d32997e71dcb67691ffbaae9730b82cc68fc4d197e1ec8e96349d057bac"
+    },
+    {
+      "name": "ordered-set-mismatched-less-specialization-guard",
+      "public_header": "set",
+      "expected": "reject",
+      "kind": "source-body-guard",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  std::set<int, std::less<long>> values{4, 10};\n  return values.count(4) != 1;\n}\n",
+      "source_sha256": "c341b4f68fbc9bc70e4f9c499fb9687d7a06880467b961a6c89c73dd1f2266e4"
+    },
+    {
+      "name": "ordered-set-transparent-unsigned-probe-guard",
+      "public_header": "set",
+      "expected": "reject",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::less<>> values;\n  return values.find(8ULL) == values.end() ? 0 : 1;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "d6ccb37c5c9e735653eafba9bd29d19da5a96f8b56413b013973eb2345e69567"
+    },
+    {
+      "name": "ordered-map-transparent-volatile-probe-guard",
+      "public_header": "map",
+      "expected": "reject",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  const std::map<int, int, std::greater<>> values;\n  volatile long query = 8L;\n  return values.count(query) == 0 ? 0 : 1;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "6d1c136480297c6da189c79fd3a1f8c9c1d415b7d8b11066998c387767fbe6d8"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2PairDeducedFromFloatingLiteralRunAtBothOptimizations",
+    "TranslateTest.CoreV2PairDeducedFromNumericLimitsResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2PairExplicitTypeForNumericLimitsResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2PairDeducedFromSourceFunctionResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2PairDeducedFromFloatNumericLimitsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapAtAfterAbsentKeyReturnRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapAtAfterAbsentKeyReturnPreservesReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapAtPresentElseBranchRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetGreaterBoundariesAndIterationRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetGreaterHintsAndDuplicatesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapGreaterCompareAndStorageRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMapLongSubscriptAssignAndCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMapLongLongPairRangeAndNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetTransparentLessExactSearchRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapTransparentGreaterExactSearchRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetTransparentGreaterEqualRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetTransparentWideFindAndBoundsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapTransparentWideDescendingRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapTransparentSignedProbeCountRunAtBothOptimizations",
+    "TranslateTest.CoreV2PairDeducedVolatileNumericLimitsGuardRejected",
+    "TranslateTest.CoreV2OrderedMapAtKeyChangesAfterGuardRejected",
+    "TranslateTest.CoreV2OrderedMapAtFallthroughIsAbsentRejected",
+    "TranslateTest.CoreV2OrderedMapAtAfterGuardOfOtherContainerRejected",
+    "TranslateTest.CoreV2OrderedMapGreaterOnDifferentKeyTypeGuardRejected",
+    "TranslateTest.CoreV2OrderedSetCallerComparatorGuardRejected",
+    "TranslateTest.CoreV2UnorderedMapQualifiedLongStorageGuardRejected",
+    "TranslateTest.CoreV2OrderedSetMismatchedLessSpecializationGuardRejected",
+    "TranslateTest.CoreV2OrderedSetTransparentUnsignedProbeGuardRejected",
+    "TranslateTest.CoreV2OrderedMapTransparentVolatileProbeGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "761303846e426d5bbefc5a1c38824d52c024d59eb2ad50c9d287766008c5d648",
+  "maintained_original_sha256": "5d9c5fe9375bb0ede15a85f8f32304c2b6a8695de38d1eb85b85738d0d8f8ab4",
+  "previous_registered_source_sha256": "dda90aa52bb9d02f2257863826aa5451ceab4a59fb15d0ba585d94651a2c1bf3",
+  "previous_maintained_original_sha256": "9a95c101b8902270e68741a842e565bf4bab4f74737a45b32a5f13d16859812b",
+  "restorer_sha256": "40f2ba70d2f47d44165a3c4abc42cd72fdf19024b336b48d79fa2a89aafda635",
+  "extractor_sha256": "90c520a8e88d4323401e9972d324b7fa4e68d3e6239fb4473f0a3775ba84dbfb",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8950,
+  "current_python_registry_tests": 274,
+  "native_reference_selected_executions": 38,
+  "planned_generated_c23_executions": 38,
+  "native_reference_proofs": {
+    "ordered-descending-comparator": "d4c8150124307dcdc1c0181906f0e196410a5b5191ff6323dafad2ef4ad2d4cf",
+    "ordered-heterogeneous-signed": "793cbc26ee50fda717eaaac096f6714dde1a5e3598e553ba4de12c242f90e433",
+    "ordered-map-at-early-exit": "13e9fe55e5271609309ffbd94c73f716392fe67535f5c6c4c93ee65f9e1fb88d",
+    "ordered-transparent-comparator": "481eeeea1c8d8c3f5717abd7923a712e3a9a2c726b02aa58847e8628baf38dfa",
+    "pair-numeric-limits": "07cca5d914b063de0f0895f43402fd453476c92c6deacc4caf1db89e33cb7153",
+    "unordered-map-wide-mapped": "a277fa7cd60cbb7628d63cec83f9dfbada19f9b3987d1d367d42072a0704e5af"
+  },
+  "native_reference_authentication_sha256": "d54e589712e68439123ed4acc104b43772980892fe3f5d087a9dd126571e1641",
+  "source_proof_sha256": "bfdb308cccd283e79ed0d466b3d03fc2eb3115ffc0f4c6a09822bf04f0330b4a"
+}
