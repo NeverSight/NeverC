@@ -29573,6 +29573,31 @@ class FunctionLowering {
     return Invert ? binary("==", Result, boolean(false, L), "bool", L) : Result;
   }
 
+  void listAssignCount(Expression Place, Expression Count, Expression Value,
+                       const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Element = Info.Value->getType();
+    auto Target = snapshot(Count, L);
+    auto Remaining = temporary(Size, L);
+    assign(Remaining, Target, L);
+    auto Current = temporary("ptr:void", L);
+    assign(Current, listMember(Place, "nct_list_next", L), L);
+    auto End = snapshot(listSentinel(Place, L), L);
+    const auto Check = labelName(), CheckEnd = labelName(), Store = labelName(), Resize = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), CheckEnd, Resize, L);
+    label(CheckEnd, L);
+    branch(binary("!=", Current, End, "bool", L), Store, Resize, L);
+    label(Store, L);
+    assign(listValue(Current, Element, false, L), dereference(Value, L), L);
+    assign(Current, snapshot(listLink(Current, false, L), L), L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Resize, L);
+    listResizeValueStorage(Place, Target, std::move(Value), Info, L);
+  }
+
   Expression utilityListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
     const auto Proof = approvedUtilityListCall(A.S, A.Sources, Call, A.Context);
@@ -29752,6 +29777,10 @@ class FunctionLowering {
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);
       return Insert ? listIterator(Method->getReturnType(), Node, L) : Expression{};
+    }
+    if (Operation == UtilityListOperation::AssignCount) {
+      listAssignCount(Place, Operands[0], Operands[1], Owner->Node, L);
+      return Expression{};
     }
     if (Operation == UtilityListOperation::Resize || Operation == UtilityListOperation::ResizeFill) {
       std::optional<Expression> Fill;

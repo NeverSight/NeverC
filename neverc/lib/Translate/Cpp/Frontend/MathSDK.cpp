@@ -56548,6 +56548,11 @@ std::optional<UtilityListOperation> listMethodSignature(
     }
     if (M->isConst()) return std::nullopt;
     if (M->getRefQualifier() == RQ_None && M->getReturnType()->isVoidType()) {
+      if (Name == "assign" && M->getNumParams() == 2 &&
+          !M->getParamDecl(0)->hasDefaultArg() && !M->getParamDecl(1)->hasDefaultArg() &&
+          Context.hasSameType(M->getParamDecl(0)->getType(), Context.getSizeType()) &&
+          Context.hasSameType(M->getParamDecl(1)->getType(), Context.getLValueReferenceType(Element.withConst())))
+        return UtilityListOperation::AssignCount;
       if (Name == "remove" && M->getNumParams() == 1 && !M->getParamDecl(0)->hasDefaultArg() &&
           Context.hasSameType(M->getParamDecl(0)->getType(), Context.getLValueReferenceType(Element.withConst())))
         return UtilityListOperation::Remove;

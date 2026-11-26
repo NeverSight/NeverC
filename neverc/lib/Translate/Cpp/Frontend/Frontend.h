@@ -4070,7 +4070,7 @@ enum class UtilityListConstruction {
   Default, Allocator, InitializerList, Copy, Move, IteratorDefault, IteratorCopy, IteratorConstConversion
 };
 enum class UtilityListOperation {
-  CopyAssign, MoveAssign, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, GetAllocator, MaxSize, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, Emplace, EmplaceFront, EmplaceBack, Erase, EraseRange, Resize, ResizeFill, Clear, Reverse, Remove, Unique, RemoveIf, UniqueWithPredicate, Merge, Sort,
+  CopyAssign, MoveAssign, AssignCount, Swap, SpliceAll, SpliceOne, SpliceRange, Empty, Size, GetAllocator, MaxSize, Begin, End, Front, Back, PushFront, PushBack, PopFront, PopBack, Insert, Emplace, EmplaceFront, EmplaceBack, Erase, EraseRange, Resize, ResizeFill, Clear, Reverse, Remove, Unique, RemoveIf, UniqueWithPredicate, Merge, Sort,
   OwnerEqual, OwnerNotEqual, OwnerLess, OwnerGreater, OwnerLessEqual, OwnerGreaterEqual,
   IteratorDereference, IteratorArrow, IteratorPreIncrement, IteratorPostIncrement, IteratorPreDecrement, IteratorPostDecrement,
   IteratorEqual, IteratorNotEqual, IteratorAssign
