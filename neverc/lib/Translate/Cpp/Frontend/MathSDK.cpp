@@ -56563,8 +56563,26 @@ bool listAssignRangeSignature(const State &S, const SourceManager &SM,
   return listRangeInputSignature(S, SM, M, Owner, Context);
 }
 
+std::optional<bool> listStandardOrder(const State &S, const SourceManager &SM, QualType Type,
+    QualType Element, const ASTContext &Context) {
+  if (Type.hasLocalQualifiers()) return std::nullopt;
+  const auto *Compare = dyn_cast_or_null<ClassTemplateSpecializationDecl>(listRecordType(Type));
+  const auto Functional = approvedFunctionalObjectRecord(S, SM, Compare, Context);
+  if (!Compare || !Compare->getIdentifier() || !Functional ||
+      Functional->Record != Compare->getDefinition() ||
+      (Compare->getName() != "less" && Compare->getName() != "greater") ||
+      Compare->getTemplateArgs().size() != 1 || Compare->getTemplateArgs()[0].getKind() != TemplateArgument::Type ||
+      !Compare->isEmpty() || !Compare->hasTrivialDefaultConstructor() ||
+      !Compare->hasTrivialCopyConstructor() || !Compare->hasTrivialDestructor()) return std::nullopt;
+  const auto Operand = Compare->getTemplateArgs()[0].getAsType();
+  if (!Context.hasSameType(Operand, Element) && !Context.hasSameType(Operand, Context.VoidTy))
+    return std::nullopt;
+  return Compare->getName() == "greater";
+}
+
 std::optional<UtilityListOperation> listOrderSignature(
-    const CXXMethodDecl *M, QualType Owner, QualType Element, const ASTContext &Context) {
+    const State &S, const SourceManager &SM, const CXXMethodDecl *M,
+    QualType Owner, QualType Element, const ASTContext &Context) {
   if (!M->getIdentifier() || M->isConst() || M->getRefQualifier() != RQ_None ||
       !M->getReturnType()->isVoidType() || M->getTemplateSpecializationKind() != TSK_ImplicitInstantiation)
     return std::nullopt;
@@ -56576,7 +56594,8 @@ std::optional<UtilityListOperation> listOrderSignature(
   const auto *Arguments = M->getTemplateSpecializationArgs();
   if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Compare) ||
-      !listPredicatePointer(Compare, Element, 2, Context)) return std::nullopt;
+      (!listPredicatePointer(Compare, Element, 2, Context) &&
+       !listStandardOrder(S, SM, Compare, Element, Context))) return std::nullopt;
   if (Sort) return UtilityListOperation::Sort;
   const auto *Source = M->getParamDecl(0);
   if (!Source->hasDefaultArg() &&
@@ -56626,7 +56645,7 @@ std::optional<UtilityListOperation> listMethodSignature(
     };
     const auto Type = Context.getRecordType(Owner->Record);
     if (M->getPrimaryTemplate()) {
-      if (auto Order = listOrderSignature(M, Type, Element, Context)) return Order;
+      if (auto Order = listOrderSignature(S, SM, M, Type, Element, Context)) return Order;
       if (M->getIdentifier() && M->getName() == "insert" && !M->isConst() &&
           M->getRefQualifier() == RQ_None && M->getNumParams() == 3 && IsInsertionPosition() &&
           listIteratorType(S, SM, M->getReturnType(), Owner->Node, false, Context) &&
@@ -57233,9 +57252,18 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       (*Operation == UtilityListOperation::Merge || *Operation == UtilityListOperation::Sort)) {
     if (Call->getNumArgs() != Method->getNumParams() || !Call->getNumArgs()) return std::nullopt;
     const unsigned Index = Call->getNumArgs() - 1;
-    Descending = listDirectOrder(S, SM, Call->getArg(Index), Node->Value->getType(), Context);
-    if (!Descending) return std::nullopt;
-    Compare = Method->getParamDecl(Index)->getType();
+    const auto *Argument = Call->getArg(Index);
+    const auto Element = Node->Value->getType();
+    const auto Type = Method->getParamDecl(Index)->getType();
+    Descending = listDirectOrder(S, SM, Argument, Element, Context);
+    if (Descending) {
+      Compare = Type;
+    } else {
+      if (!S.owns(SM, Argument->getExprLoc()) || !Context.hasSameType(Argument->getType(), Type))
+        return std::nullopt;
+      Descending = listStandardOrder(S, SM, Type, Element, Context);
+      if (!Descending) return std::nullopt;
+    }
   }
   if ((Predicates && !listPredicateBody(Method)) ||
       !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare)) return std::nullopt;
