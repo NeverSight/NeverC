@@ -23,6 +23,14 @@
       "source_sha256": "285222557869f9f6228ac61a2c5d58985bfeab9f4067fbda277cd6769991111c",
       "original_case_source_sha256": "285222557869f9f6228ac61a2c5d58985bfeab9f4067fbda277cd6769991111c",
       "gtest_body_sha256": "bbf45d1a7e778b2f77231c3d2d81e38797c2766e01e9d319e64567d84d16ed2d"
+    },
+    {
+      "name": "forward-list-long-converting-pointer-range-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListConstructsLongsFromIntPointers",
+      "expected": "accept",
+      "source_sha256": "6f67d45d7839de08b1456b324dd598bc24853a852f85c5a6dddf0324a7f164a7",
+      "original_case_source_sha256": "6f67d45d7839de08b1456b324dd598bc24853a852f85c5a6dddf0324a7f164a7",
+      "gtest_body_sha256": "7a7153d5381c1f8189d8b2d743bf638a6f09eb1f4334e78703dfa0698c58a9f7"
     }
   ],
   "negative_cases": [
@@ -41,14 +49,6 @@
       "source_sha256": "db046815229f40625a3e7d3a930114b3045c0bcd4aa8eafe78d572fbb29cb347",
       "original_case_source_sha256": "db046815229f40625a3e7d3a930114b3045c0bcd4aa8eafe78d572fbb29cb347",
       "gtest_body_sha256": "c2a729fb0f18cc7315e0d86c2a0075db987534ca2327d400e4fa1dcb7bc44d62"
-    },
-    {
-      "name": "forward-list-long-converting-pointer-range-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListLongConvertingPointerRangeGuardRejected",
-      "expected": "reject",
-      "source_sha256": "6f67d45d7839de08b1456b324dd598bc24853a852f85c5a6dddf0324a7f164a7",
-      "original_case_source_sha256": "6f67d45d7839de08b1456b324dd598bc24853a852f85c5a6dddf0324a7f164a7",
-      "gtest_body_sha256": "ab127d2523d6400ab1f02d9a3a558059b5dd835d5140c5f99278cf4539e20a9c"
     },
     {
       "name": "forward-list-long-narrowing-order-function-guard",
@@ -85,6 +85,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "forward-list-long-converting-pointer-range-guard",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  int values[] = {1, 2, 3};\n  std::forward_list<long> result(values, values + 3);\n  return result.front() != 1L;\n}\n",
+      "source_sha256": "6f67d45d7839de08b1456b324dd598bc24853a852f85c5a6dddf0324a7f164a7",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "forward-list-unsigned-element-guard",
       "expected": "reject",
       "source": "#include <forward_list>\nint main() {\n  std::forward_list<unsigned> values{3u, 5u};\n  return values.front() != 3u;\n}\n",
@@ -101,14 +109,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "forward-list-long-converting-pointer-range-guard",
-      "expected": "reject",
-      "source": "#include <forward_list>\nint main() {\n  int values[] = {1, 2, 3};\n  std::forward_list<long> result(values, values + 3);\n  return result.front() != 1L;\n}\n",
-      "source_sha256": "6f67d45d7839de08b1456b324dd598bc24853a852f85c5a6dddf0324a7f164a7",
-      "public_header": "forward_list",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "forward-list-long-narrowing-order-function-guard",
       "expected": "reject",
       "source": "#include <forward_list>\nbool less(int left, int right) { return left < right; }\nint main() {\n  std::forward_list<long> result{2L, 1L};\n  result.sort(&less);\n  return result.front() != 1L;\n}\n",
@@ -121,9 +121,9 @@
     "TranslateTest.CoreV2ForwardListLongKeepsFullWidthThroughIteratorsAndCopyRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListLongAssignAndInsertExactRangesRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListLongSortMergeRemoveAndCompareRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListConstructsLongsFromIntPointers",
     "TranslateTest.CoreV2ForwardListUnsignedElementGuardRejected",
     "TranslateTest.CoreV2ForwardListLongSourceAllocatorGuardRejected",
-    "TranslateTest.CoreV2ForwardListLongConvertingPointerRangeGuardRejected",
     "TranslateTest.CoreV2ForwardListLongNarrowingOrderFunctionGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -137,11 +137,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9236,
   "current_python_registry_tests": 322,
-  "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
   "native_reference_proofs": {
+    "forward-list-converting-ranges": "f379518da11a77fd7b63b6f5cf926e446bb8ca934ae68832dd1b5f0e6614d288",
     "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832"
   },
-  "native_reference_authentication_sha256": "52c10e0ebdfb46269ca62e65d3859aaff59aadf48bcfe51ca3b47db594688ebd",
-  "source_proof_sha256": "1a91c38c889de7a76471a90306d10339a88b1aa6f2c583a23686bc27823bddfe"
+  "native_reference_authentication_sha256": "ac5f4265b2e49d1aaaaa6b6dc297db217fc4f51bb8873984637519cec77ac3a6",
+  "source_proof_sha256": "d0e58cf5772355229fa29f8b2fc8743eda1e02888b31b4ab90ad0e64424b41fa"
 }

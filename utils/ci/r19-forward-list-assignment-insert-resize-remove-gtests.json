@@ -199,25 +199,25 @@
       "source_sha256": "3d60b834bf9e7712f6a370c811934d557ccda4467bc1f13a45815dd5c541073d",
       "original_case_source_sha256": "3d60b834bf9e7712f6a370c811934d557ccda4467bc1f13a45815dd5c541073d",
       "gtest_body_sha256": "3c426385d52ce3f04533cbd67cd6ea10e59426def76ca6810869dc9a3025fc11"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "forward-list-assign-converted-pointer-elements-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListAssignConvertedPointerElementsGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListAssignsConvertedPointerValues",
+      "expected": "accept",
       "source_sha256": "2e1d796a35a5b87ced2f406b773845c1a70c553b4315e584daeebb0dffa53320",
       "original_case_source_sha256": "2e1d796a35a5b87ced2f406b773845c1a70c553b4315e584daeebb0dffa53320",
-      "gtest_body_sha256": "33cb29b8afb74de7282e7af05be80734b3ea2b6037c80863b6e966df06c63a15"
+      "gtest_body_sha256": "e00d4222d047363ee06e84060dbe927419369ce88fa751d1deba8389a62e7ef9"
     },
     {
       "name": "forward-list-insert-range-converted-pointer-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListInsertRangeConvertedPointerGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListInsertsConvertedPointerValues",
+      "expected": "accept",
       "source_sha256": "5b37d678c1fe20797029ce25c83cc84856c64cdaa674b0741d518f7af402368e",
       "original_case_source_sha256": "5b37d678c1fe20797029ce25c83cc84856c64cdaa674b0741d518f7af402368e",
-      "gtest_body_sha256": "c9d52ad39ed0f404b1ecbdda8ff3e436335cb130a1a81ab73c67b47bb0f6002a"
-    },
+      "gtest_body_sha256": "a72f4dcbd7ea462102c628b07bfbeb2e9ceab9744adfe188b51dd62caf9c5c3f"
+    }
+  ],
+  "negative_cases": [
     {
       "name": "forward-list-resize-indirect-member-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListResizeIndirectMemberGuardRejected",
@@ -430,19 +430,19 @@
     },
     {
       "name": "forward-list-assign-converted-pointer-elements-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  long values[]{3, 5};\n  std::forward_list<int> list;\n  list.assign(values, values + 2);\n  return list.front() != 3;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "2e1d796a35a5b87ced2f406b773845c1a70c553b4315e584daeebb0dffa53320",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-insert-range-converted-pointer-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  long values[]{3, 5};\n  std::forward_list<int> list;\n  list.insert_after(list.before_begin(), values, values + 2);\n  return list.front() != 3;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "5b37d678c1fe20797029ce25c83cc84856c64cdaa674b0741d518f7af402368e",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-resize-indirect-member-guard",
@@ -479,8 +479,8 @@
     "TranslateTest.CoreV2ForwardListLongResizesWithZeros",
     "TranslateTest.CoreV2ForwardListLongResizesWithValues",
     "TranslateTest.CoreV2ForwardListLongRemovesDuplicateValues",
-    "TranslateTest.CoreV2ForwardListAssignConvertedPointerElementsGuardRejected",
-    "TranslateTest.CoreV2ForwardListInsertRangeConvertedPointerGuardRejected",
+    "TranslateTest.CoreV2ForwardListAssignsConvertedPointerValues",
+    "TranslateTest.CoreV2ForwardListInsertsConvertedPointerValues",
     "TranslateTest.CoreV2ForwardListResizeIndirectMemberGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -494,9 +494,10 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9169,
   "current_python_registry_tests": 312,
-  "native_reference_selected_executions": 50,
-  "planned_generated_c23_executions": 50,
+  "native_reference_selected_executions": 54,
+  "planned_generated_c23_executions": 54,
   "native_reference_proofs": {
+    "forward-list-converting-ranges": "f379518da11a77fd7b63b6f5cf926e446bb8ca934ae68832dd1b5f0e6614d288",
     "forward-list-filter-function": "cdaf87c834775b6a00adf8cebd928b7f46eec74a3ae2e981a490345da9bed1e6",
     "forward-list-initializer-assignment": "f5e86efb560af95a7315ac44f68a7e3bbe310d81d17a1688d7f39b1d59e5ffc2",
     "forward-list-input-assignment": "abc454be92e498d2a48d86f14749166ad5c768ab023154bc140f2c97febdbd79",
@@ -506,6 +507,6 @@
     "forward-list-remove-and-unique": "add5cfe4b15ee7dafb2e74b646009f5e30a8ecd8a17f45b7e9344e8022a8e348",
     "forward-list-resize": "bd171431830b9158bf5d23321f033d2986c18d90885750bb4a4a959bafd144f2"
   },
-  "native_reference_authentication_sha256": "77b7de2d3615366d4aebcdaa0e0cada00d8bffd8bdeb763282b9f05cb575b6c6",
-  "source_proof_sha256": "1a91c38c889de7a76471a90306d10339a88b1aa6f2c583a23686bc27823bddfe"
+  "native_reference_authentication_sha256": "15822bfb9027495068aabfe3de7dd945af4b68dc805c530e55b09daf33107f0a",
+  "source_proof_sha256": "d0e58cf5772355229fa29f8b2fc8743eda1e02888b31b4ab90ad0e64424b41fa"
 }

@@ -18679,3 +18679,9 @@ removal, default comparison and ordering, and range modifiers.
 The default-allocator forward_list<long> accepts checked signed long
 function pointers for stable sort and merge and for removal and
 adjacent uniqueness predicates.
+
+## Forward list input ranges with signed element conversion
+
+The default-allocator forward_list<int> and forward_list<long> accept
+checked signed short, int and long pointer ranges in constructors,
+assignment and insertion, with the input stride preserved.

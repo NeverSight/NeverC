@@ -79,18 +79,17 @@
       "source_sha256": "25fe828e2759546dc39b0305a5e321b15a8244c052c7c128ff1ac65a4dd531e1",
       "original_case_source_sha256": "25fe828e2759546dc39b0305a5e321b15a8244c052c7c128ff1ac65a4dd531e1",
       "gtest_body_sha256": "82e7682abb82e077fcef40a10b790c53d69301b0c08d62f618c1b68cd9075254"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "forward-list-pointer-construction-converting-elements-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListPointerConstructionConvertingElementsGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListConstructsConvertedPointerValues",
+      "expected": "accept",
       "source_sha256": "42dfaa380241a6bb5b67e39f1a6d680dd14cf68ad5ff1deda8e7418ce9bce9ef",
       "original_case_source_sha256": "42dfaa380241a6bb5b67e39f1a6d680dd14cf68ad5ff1deda8e7418ce9bce9ef",
-      "gtest_body_sha256": "c5f9d4b642b0c48f5acc76989648b865b752fa0d465bc17c217ca9e23910cf42"
+      "gtest_body_sha256": "80b3d6bf3d5c0308e939d0b17f9981f888813acf4a4cc55e02e5707533c46e77"
     }
   ],
+  "negative_cases": [],
   "source_cases": [
     {
       "name": "forward-list-count-construction-value-initializes",
@@ -174,11 +173,11 @@
     },
     {
       "name": "forward-list-pointer-construction-converting-elements-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint main() {\n  long source[]{3, 5};\n  std::forward_list<int> list(source, source + 2);\n  return list.front() != 3;\n}\n",
       "public_header": "forward_list",
       "source_sha256": "42dfaa380241a6bb5b67e39f1a6d680dd14cf68ad5ff1deda8e7418ce9bce9ef",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
     }
   ],
   "new_gtest_names": [
@@ -192,7 +191,7 @@
     "TranslateTest.CoreV2ForwardListConstructsFromCheckedIteratorRange",
     "TranslateTest.CoreV2ForwardListLongConstructsZeros",
     "TranslateTest.CoreV2ForwardListLongConstructsRepeatedValues",
-    "TranslateTest.CoreV2ForwardListPointerConstructionConvertingElementsGuardRejected"
+    "TranslateTest.CoreV2ForwardListConstructsConvertedPointerValues"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -205,14 +204,15 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9192,
   "current_python_registry_tests": 316,
-  "native_reference_selected_executions": 20,
-  "planned_generated_c23_executions": 20,
+  "native_reference_selected_executions": 22,
+  "planned_generated_c23_executions": 22,
   "native_reference_proofs": {
+    "forward-list-converting-ranges": "f379518da11a77fd7b63b6f5cf926e446bb8ca934ae68832dd1b5f0e6614d288",
     "forward-list-count-construction": "2357750e8e9324ae1c8898081f8584fc3b2ff4577c75f337fb06c85f9c2926db",
     "forward-list-iterator-construction": "44617d8c0b6a767a822607ad1939df3b64cf063de81fe6cbfeb530a135783d36",
     "forward-list-long-operations": "1127942203339a176562c96a7eea63ddfbf383a6c6d99b62c85d1f98e6717832",
     "forward-list-pointer-construction": "fb20eb3887f7fe34bc625fdd0f881996456650e22bcf3b00f0ab998bb44af6d8"
   },
-  "native_reference_authentication_sha256": "094944e8704fcbb9c5d9679454ccddc617bffa43ba14425147d342d94fbcdf68",
-  "source_proof_sha256": "1a91c38c889de7a76471a90306d10339a88b1aa6f2c583a23686bc27823bddfe"
+  "native_reference_authentication_sha256": "dd6691e4f11b84668570d9bf57c0e9a8f20631b1c371fb8b0be0a2f4a28a5668",
+  "source_proof_sha256": "d0e58cf5772355229fa29f8b2fc8743eda1e02888b31b4ab90ad0e64424b41fa"
 }

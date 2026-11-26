@@ -408070,7 +408070,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListAssignConvertedPointerElementsGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListAssignsConvertedPointerValues) {
   const auto Source = tmpFile("forward-list-assign-converted-pointer-elements-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int main() {
@@ -408080,10 +408080,17 @@ int main() {
   return list.front() != 3;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-assign-converted-pointer-elements-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-assign-converted-pointer-elements-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListAssignsFromCheckedIteratorRange) {
@@ -408202,7 +408209,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListInsertRangeConvertedPointerGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListInsertsConvertedPointerValues) {
   const auto Source = tmpFile("forward-list-insert-range-converted-pointer-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int main() {
@@ -408212,10 +408219,17 @@ int main() {
   return list.front() != 3;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-insert-range-converted-pointer-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-insert-range-converted-pointer-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListInsertsFromCheckedIteratorRange) {
@@ -409182,7 +409196,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListPointerConstructionConvertingElementsGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListConstructsConvertedPointerValues) {
   const auto Source = tmpFile("forward-list-pointer-construction-converting-elements-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int main() {
@@ -409191,10 +409205,17 @@ int main() {
   return list.front() != 3;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-pointer-construction-converting-elements-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-pointer-construction-converting-elements-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListConstructsFromCheckedIteratorRange) {
@@ -410258,7 +410279,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListLongConvertingPointerRangeGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListConstructsLongsFromIntPointers) {
   const auto Source = tmpFile("forward-list-long-converting-pointer-range-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int main() {
@@ -410267,10 +410288,17 @@ int main() {
   return result.front() != 1L;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-long-converting-pointer-range-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-long-converting-pointer-range-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListLongNarrowingOrderFunctionGuardRejected) {
@@ -410428,6 +410456,114 @@ int main() {
   std::forward_list<long> list{1L, 2L};
   list.remove_if(&remove);
   return list.front() != 2L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListConstructFromSignedShortRangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-construct-from-signed-short-range.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const short source[] = {-300, 12, 123, -22};
+  const std::forward_list<long> list(source + 1, source + 4);
+  auto item = list.begin();
+  return *item++ != 12L || *item++ != 123L || *item++ != -22L || item != list.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-construct-from-signed-short-range.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-construct-from-signed-short-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListAssignConvertingRangeReusesAndExtendsNodesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-assign-converting-range-reuses-and-extends-nodes.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const short source[] = {-31, 36, 73};
+  std::forward_list<int> list{9, 6};
+  auto first = list.begin();
+  auto second = first;
+  ++second;
+  list.assign(source, source + 3);
+  auto item = list.begin();
+  if (item != first || *item++ != -31 || item != second || *item++ != 36)
+    return 1;
+  return *item++ != 73 || item != list.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-assign-converting-range-reuses-and-extends-nodes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-assign-converting-range-reuses-and-extends-nodes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListInsertConvertingConstLongRangeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-insert-converting-const-long-range.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  const long source[] = {-31L, 3L, 81L, -99L};
+  std::forward_list<int> list{5, 6};
+  auto result = list.insert_after(list.cbegin(), source, source + 3);
+  auto item = list.begin();
+  if (*item++ != 5 || *item++ != -31 || *item++ != 3 || &*item != &*result)
+    return 1;
+  return *item++ != 81 || *item++ != 6 || item != list.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-insert-converting-const-long-range.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-insert-converting-const-long-range" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListConvertingVolatilePointerRangeGuardRejected) {
+  const auto Source = tmpFile("forward-list-converting-volatile-pointer-range-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  volatile short source[] = {1, 2};
+  std::forward_list<long> list(source, source + 2);
+  return list.front() != 1L;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListConvertingFloatingPointerRangeGuardRejected) {
+  const auto Source = tmpFile("forward-list-converting-floating-pointer-range-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int main() {
+  float source[] = {1.25f, 2.75f};
+  std::forward_list<int> list(source, source + 2);
+  return list.front() != 1;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
