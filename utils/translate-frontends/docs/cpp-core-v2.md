@@ -18744,3 +18744,10 @@ target element width and preserves node addresses across the supported relinking
 The checked default-allocator list and forward_list operations support pointers to ordinary
 scalar objects, including const pointees. Pointer ranges copy pointer values and relinking
 operations preserve the addresses of stored elements.
+
+## Trivial linked-list record layouts
+
+The checked default-allocator list and forward_list store naturally aligned trivial
+records with scalar fields, nested trivial records and fixed arrays. Node allocation
+uses the verified layout on each target. Supported range and copy operations preserve
+the stored values, and relinking preserves element addresses.

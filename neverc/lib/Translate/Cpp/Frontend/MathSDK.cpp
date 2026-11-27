@@ -54224,6 +54224,105 @@ bool linkedListFixedEnumElement(QualType Type, const ASTContext &Context) {
          Context.getTypeAlign(Underlying) == Bits;
 }
 
+bool linkedListObjectPointerElement(QualType Type, const ASTContext &Context) {
+  return !Type.isNull() && !Type.hasLocalQualifiers() &&
+         utilityObjectPointer(Context, Type) &&
+         utilityScalar(Context, Type->getPointeeType().getUnqualifiedType()) &&
+         Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
+}
+
+struct LinkedListRecordSource {
+  const State &Program;
+  const SourceManager &Sources;
+};
+
+bool linkedListTrivialRecordField(
+    QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
+    unsigned Depth, unsigned &RemainingFields);
+
+const CXXRecordDecl *linkedListTrivialRecordLayout(
+    QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
+    unsigned Depth, unsigned &RemainingFields) {
+  if (Type.isNull() || Type.hasLocalQualifiers() || Depth == 16) return nullptr;
+  const auto *Record = Type->getAsCXXRecordDecl();
+  Record = Record ? Record->getDefinition() : nullptr;
+  if (!Record || Record->isInvalidDecl() || Record->isDependentContext() ||
+      Record->isUnion() || Record->getNumBases() || !Record->isStandardLayout() ||
+      !Record->isAggregate() || !Record->isTrivial() || Record->field_empty())
+    return nullptr;
+  if (Source && !Source->Program.owns(Source->Sources, Record->getLocation()))
+    return nullptr;
+  const auto &Layout = Context.getASTRecordLayout(Record);
+  if (Layout.getAlignment().getQuantity() > 8 || Layout.getFieldCount() > RemainingFields)
+    return nullptr;
+  RemainingFields -= Layout.getFieldCount();
+  uint64_t Offset = 0, Alignment = 8;
+  unsigned Index = 0;
+  for (const auto *Field : Record->fields()) {
+    const auto FieldType = Field->getType();
+    if (Field->isBitField() || Field->hasAttrs() || FieldType.hasLocalQualifiers())
+      return nullptr;
+    if (!linkedListTrivialRecordField(FieldType, Context, Source, Depth + 1, RemainingFields))
+      return nullptr;
+    const uint64_t Size = Context.getTypeSize(FieldType);
+    const uint64_t Align = Context.getTypeAlign(FieldType);
+    Offset = llvm::alignTo(Offset, Align);
+    if (Layout.getFieldOffset(Index++) != Offset) return nullptr;
+    Offset += Size;
+    Alignment = std::max(Alignment, Align);
+  }
+  if (Context.getTypeSize(Type) != llvm::alignTo(Offset, Alignment) ||
+      Context.getTypeAlign(Type) != Alignment) return nullptr;
+  return Record;
+}
+
+bool linkedListTrivialRecordField(
+    QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
+    unsigned Depth, unsigned &RemainingFields) {
+  if (Type.isNull() || Type.hasLocalQualifiers()) return false;
+  if (const auto *Array = Context.getAsConstantArrayType(Type)) {
+    const auto Count = Array->getSize().getLimitedValue(4097);
+    if (Depth == 16 || !Count || Count > RemainingFields) return false;
+    const auto Element = Array->getElementType();
+    unsigned ElementFields = RemainingFields;
+    if (!linkedListTrivialRecordField(Element, Context, Source, Depth + 1, ElementFields))
+      return false;
+    const uint64_t Fields = Count * (RemainingFields - ElementFields + 1);
+    if (Fields > RemainingFields) return false;
+    RemainingFields -= Fields;
+    return Context.getTypeSize(Type) == Count * Context.getTypeSize(Element) &&
+           Context.getTypeAlign(Type) == Context.getTypeAlign(Element);
+  }
+  if ((Type->isBuiltinType() && Type->isIntegerType()) ||
+      linkedListFloatingElement(Type, Context) || linkedListFixedEnumElement(Type, Context) ||
+      linkedListObjectPointerElement(Type, Context)) {
+    const auto Size = Context.getTypeSize(Type);
+    return (Size == 8 || Size == 16 || Size == 32 || Size == 64) &&
+           Size == Context.getTypeAlign(Type);
+  }
+  return linkedListTrivialRecordLayout(Type, Context, Source, Depth, RemainingFields);
+}
+
+const CXXRecordDecl *linkedListTrivialRecordElement(
+    QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source = nullptr) {
+  unsigned RemainingFields = 4096;
+  return linkedListTrivialRecordLayout(Type, Context, Source, 0, RemainingFields);
+}
+
+bool linkedListTrivialElementMember(const State &S, const SourceManager &SM,
+                                    const ASTContext &Context, QualType Element,
+                                    const FunctionDecl *Function) {
+  const auto *Method = dyn_cast<CXXMethodDecl>(Function);
+  if (!Method || !Method->isImplicit() || !Method->isTrivial() || Method->isDeleted() ||
+      !(isa<CXXConstructorDecl>(Method) || isa<CXXDestructorDecl>(Method) ||
+        Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()))
+    return false;
+  const LinkedListRecordSource Source{S, SM};
+  const auto *Record = linkedListTrivialRecordElement(Element, Context, &Source);
+  return Record &&
+         Record->getCanonicalDecl() == Method->getParent()->getCanonicalDecl();
+}
+
 bool forwardListLeaves(const State &S, const SourceManager &SM,
                        const ASTContext &Context, const CXXRecordDecl *Input,
                        uint64_t Offset, unsigned Depth, unsigned &Budget,
@@ -54244,6 +54343,14 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
   for (const auto *F : R->fields()) {
     if (!forwardListPinned(S, SM, F) || F->isBitField() || ++Budget > 4096) return false;
     const auto Position = Offset + Layout.getFieldOffset(Index++);
+    if (F->getName() == "__value_") {
+      const LinkedListRecordSource Source{S, SM};
+      if (linkedListTrivialRecordElement(F->getType(), Context, &Source)) {
+        if (Leaves.size() == 8) return false;
+        Leaves.push_back({F, Position});
+        continue;
+      }
+    }
     if (const auto *Nested = forwardListRecordType(F->getType())) {
       if (!forwardListLeaves(S, SM, Context, Nested, Position, Depth + 1, Budget, Leaves))
         return false;
@@ -54269,16 +54376,10 @@ bool linkedListWideCharacterElement(QualType Type, const ASTContext &Context) {
          Context.getTypeSize(Type) == 32 && Context.getTypeAlign(Type) == 32;
 }
 
-bool linkedListObjectPointerElement(QualType Type, const ASTContext &Context) {
-  return !Type.isNull() && !Type.hasLocalQualifiers() &&
-         utilityObjectPointer(Context, Type) &&
-         utilityScalar(Context, Type->getPointeeType().getUnqualifiedType()) &&
-         Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
-}
-
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
   if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context) ||
-      linkedListFixedEnumElement(Type, Context) || linkedListObjectPointerElement(Type, Context))
+      linkedListFixedEnumElement(Type, Context) || linkedListObjectPointerElement(Type, Context) ||
+      linkedListTrivialRecordElement(Type, Context))
     return true;
   if (Context.hasSameType(Type, Context.BoolTy) ||
       Context.hasSameType(Type, Context.CharTy) ||
@@ -54314,7 +54415,10 @@ std::optional<UtilityForwardListNodeRecord> forwardListNode(
   if (!forwardListLeaves(S, SM, Context, R, 0, 0, Budget, Leaves) || Leaves.size() != 2)
     return std::nullopt;
   const auto &Layout = Context.getASTRecordLayout(R);
-  if (Layout.getSize().getQuantity() != 16 || Layout.getAlignment().getQuantity() != 8 ||
+  const uint64_t PayloadSize = Context.getTypeSizeInChars(Element).getQuantity();
+  const uint64_t NodeSize = llvm::alignTo(8 + PayloadSize, 8);
+  if (static_cast<uint64_t>(Layout.getSize().getQuantity()) != NodeSize ||
+      Layout.getAlignment().getQuantity() != 8 ||
       Leaves[0].Offset != 0 || Leaves[1].Offset != 64 ||
       Leaves[0].Field->getName() != "__next_" || Leaves[1].Field->getName() != "__value_" ||
       !Context.hasSameType(Leaves[0].Field->getType(), Context.getPointerType(Context.getRecordType(R))) ||
@@ -54432,7 +54536,7 @@ bool forwardListIteratorType(const State &S, const SourceManager &SM, QualType T
 }
 
 bool forwardListInputType(QualType Type, QualType Element, const ASTContext &Context) {
-  if (Element->isEnumeralType() || Element->isPointerType() ||
+  if (Element->isEnumeralType() || Element->isPointerType() || Element->isRecordType() ||
       linkedListFloatingElement(Element, Context))
     return Context.hasSameType(Type, Element);
   return Type->isIntegerType() && !Type->isEnumeralType() && forwardListElementType(Type, Context);
@@ -55248,6 +55352,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
     // Its exact overload and source-definition checks remain mandatory.
     if (forwardListHeapBoundary(F, Context)) return true;
     if (forwardListBuiltinLibraryCast(S, SM, F, Context)) return true;
+    if (linkedListTrivialElementMember(S, SM, Context, Owner.Value->getType(), F)) return true;
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();
@@ -56349,6 +56454,14 @@ bool listLeaves(const State &S, const SourceManager &SM,
   for (const auto *F : R->fields()) {
     if (!listPinned(S, SM, F) || F->isBitField() || ++Budget > 4096) return false;
     const auto Position = Offset + Layout.getFieldOffset(Index++);
+    if (F->getName() == "__value_") {
+      const LinkedListRecordSource Source{S, SM};
+      if (linkedListTrivialRecordElement(F->getType(), Context, &Source)) {
+        if (Leaves.size() == 8) return false;
+        Leaves.push_back({F, Position});
+        continue;
+      }
+    }
     if (const auto *Nested = listRecordType(F->getType())) {
       if (!listLeaves(S, SM, Context, Nested, Position, Depth + 1, Budget, Leaves))
         return false;
@@ -56365,7 +56478,8 @@ bool listLeaves(const State &S, const SourceManager &SM,
 
 bool listElementType(QualType Type, const ASTContext &Context) {
   if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context) ||
-      linkedListFixedEnumElement(Type, Context) || linkedListObjectPointerElement(Type, Context))
+      linkedListFixedEnumElement(Type, Context) || linkedListObjectPointerElement(Type, Context) ||
+      linkedListTrivialRecordElement(Type, Context))
     return true;
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
   if (Context.hasSameType(Type, Context.BoolTy))
@@ -56413,7 +56527,10 @@ std::optional<UtilityListNodeRecord> listNode(const State &S, const SourceManage
       !Context.hasSameType(Leaves[2].Field->getType(), Element)) return std::nullopt;
   const auto &Layout = Context.getASTRecordLayout(R);
   const auto &BaseLayout = Context.getASTRecordLayout(Base);
-  if (Layout.getSize().getQuantity() != 24 || Layout.getAlignment().getQuantity() != 8 ||
+  const uint64_t PayloadSize = Context.getTypeSizeInChars(Element).getQuantity();
+  const uint64_t NodeSize = llvm::alignTo(16 + PayloadSize, 8);
+  if (static_cast<uint64_t>(Layout.getSize().getQuantity()) != NodeSize ||
+      Layout.getAlignment().getQuantity() != 8 ||
       BaseLayout.getSize().getQuantity() != 16 || BaseLayout.getAlignment().getQuantity() != 8)
     return std::nullopt;
   return UtilityListNodeRecord{R, Base, Leaves[0].Field, Leaves[1].Field, Leaves[2].Field};
@@ -57273,6 +57390,7 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
     // Its exact overload and source-definition checks remain mandatory.
     if (listHeapBoundary(F, Context)) return true;
     if (listBuiltinLibraryCast(S, SM, F, Context)) return true;
+    if (linkedListTrivialElementMember(S, SM, Context, Owner.Value->getType(), F)) return true;
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();

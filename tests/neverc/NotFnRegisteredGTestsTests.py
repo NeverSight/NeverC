@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_trivial_records_registered = cls.registered
+        cls.list_trivial_records_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_trivial_records_original = cls.adapter.restore_original_gtests(cls.list_trivial_records_registered,
+                                                                        cls.list_trivial_records_suffix)
+        cls.registered = cls.adapter.restore_list_trivial_records_history(cls.list_trivial_records_registered)
         cls.list_object_pointers_registered = cls.registered
         cls.list_object_pointers_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_object_pointers_original = cls.adapter.restore_original_gtests(cls.list_object_pointers_registered,
@@ -4372,6 +4377,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_object_pointers_history(self.list_object_pointers_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_object_pointers_registered, self.list_object_pointers_suffix + b' ')
+
+
+    def test_list_trivial_records_retains_published_bodies(self):
+        self.assertEqual(self.list_trivial_records_original + self.list_trivial_records_suffix, self.list_trivial_records_registered)
+        self.assertEqual(self.adapter.restore_list_trivial_records_history(self.list_trivial_records_original),
+                         self.list_object_pointers_original)
+        output, evidence = self.extractor.extract(self.list_trivial_records_original, ['TranslateTest.CoreV2ListTrivialRecordCopyAndValueInitRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListTrivialRecordRangeAndRelinkRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListTrivialRecordCopyAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordNodeSizesAllocationAndClearRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListWiderRecordRangeAndAssignmentRunAtBothOptimizations', 'TranslateTest.CoreV2ListWiderRecordValueInitAndSpliceRunAtBothOptimizations', 'TranslateTest.CoreV2ListMixedTrivialRecordCopyAndSpliceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListMixedTrivialRecordRangeAndResizeRunAtBothOptimizations', 'TranslateTest.CoreV2ListMixedTrivialRecordReverseAndEraseRunAtBothOptimizations', 'TranslateTest.CoreV2ListNestedTrivialRecordCopyAndEraseRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListNestedTrivialRecordValueInitializationRunAtBothOptimizations', 'TranslateTest.CoreV2ListNestedTrivialRecordSpliceStabilityRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordFixedArrayValueCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordNestedAndMultidimensionalArraysRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordArrayRangeAndSpliceRunAtBothOptimizations', 'TranslateTest.CoreV2ListNontrivialRecordDestructionGuardRejected', 'TranslateTest.CoreV2ForwardListOveralignedRecordGuardRejected', 'TranslateTest.CoreV2ListTrivialRecordCustomDefaultOrderGuardRejected', 'TranslateTest.CoreV2ForwardListWiderRecordBitFieldGuardRejected', 'TranslateTest.CoreV2ListWiderRecordAlignmentGuardRejected', 'TranslateTest.CoreV2ListRecordVolatileFloatingFieldGuardRejected', 'TranslateTest.CoreV2ForwardListRecordFunctionPointerFieldGuardRejected', 'TranslateTest.CoreV2ListRecordLongDoubleFieldGuardRejected', 'TranslateTest.CoreV2ListNestedNontrivialRecordDestructionGuardRejected', 'TranslateTest.CoreV2ForwardListNestedPackedRecordLayoutGuardRejected', 'TranslateTest.CoreV2ListNestedTrivialUnionRecordGuardRejected', 'TranslateTest.CoreV2ListRecordArrayOfFunctionPointersGuardRejected', 'TranslateTest.CoreV2ForwardListRecordArrayOfOveralignedValuesGuardRejected', 'TranslateTest.CoreV2ListRecordVolatileArrayValueGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9439)
+        self.assertEqual(evidence['selected_count'], 29)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-trivial-record-copy-assignment', output)
+        self.assertIn(b'list-nontrivial-record-destruction-guard', output)
+
+    def test_list_trivial_records_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_trivial_records_history(self.list_trivial_records_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_trivial_records_registered, self.list_trivial_records_suffix + b' ')
 
 
 if __name__ == '__main__':

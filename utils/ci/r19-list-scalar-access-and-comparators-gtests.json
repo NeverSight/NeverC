@@ -711,6 +711,38 @@
       "source_sha256": "658fc3b81850df5d8044161a7ed27587da9ff874ac024eb5e877ababbef30e65",
       "original_case_source_sha256": "658fc3b81850df5d8044161a7ed27587da9ff874ac024eb5e877ababbef30e65",
       "gtest_body_sha256": "45a7a449087e4a297d1f3cbbc91860c78516e13b4b5979965cf8d0e7979e46ef"
+    },
+    {
+      "name": "list-free-access-record-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListProvidesFreeAccessToTrivialRecordElements",
+      "expected": "accept",
+      "source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
+      "original_case_source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
+      "gtest_body_sha256": "0cbce5548573ea686e8ff18f04f8b39718a303ed0f434ff5da868e0dace23984"
+    },
+    {
+      "name": "list-reverse-iterator-unsupported-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseIteratorTraversesTrivialRecords",
+      "expected": "accept",
+      "source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
+      "original_case_source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
+      "gtest_body_sha256": "75dcbcb63e08972a4f6f1e3198f99be22de28586799b842ad6b06ccb94c13173"
+    },
+    {
+      "name": "list-iterator-non-scalar-navigation-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListIteratorNavigatesTrivialRecords",
+      "expected": "accept",
+      "source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
+      "original_case_source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
+      "gtest_body_sha256": "7845976720d211c751948551352f0103770b082495c83ccc79c56a986c0ac024"
+    },
+    {
+      "name": "list-bool-user-proxy-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListElementsUseRecordBoolConversion",
+      "expected": "accept",
+      "source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
+      "original_case_source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
+      "gtest_body_sha256": "b4c29f9320733642fd3bea33220eb1627482cf785f98c39a3b60aa54e376ade5"
     }
   ],
   "negative_cases": [
@@ -801,38 +833,6 @@
       "source_sha256": "aab0b9d0c83388c9a6e8c8ba83248e71366fc08a042de2b375c5947929872d98",
       "original_case_source_sha256": "aab0b9d0c83388c9a6e8c8ba83248e71366fc08a042de2b375c5947929872d98",
       "gtest_body_sha256": "d9c2116c507a14689fffa0db2371f8213c1cf4a811212fe5715422ddfd49322c"
-    },
-    {
-      "name": "list-reverse-iterator-unsupported-payload-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListReverseIteratorUnsupportedPayloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
-      "original_case_source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
-      "gtest_body_sha256": "b8e72b98c6fcb1fad0ca46e5c1912d637f5acc0d9f8e4bec8996414d978022a2"
-    },
-    {
-      "name": "list-iterator-non-scalar-navigation-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListIteratorNonScalarNavigationGuardRejected",
-      "expected": "reject",
-      "source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
-      "original_case_source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
-      "gtest_body_sha256": "7d389a563b7ac77f9d91d929e50b9c8f545e6c70af63901107ea9a34d396788c"
-    },
-    {
-      "name": "list-free-access-record-payload-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListFreeAccessRecordPayloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
-      "original_case_source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
-      "gtest_body_sha256": "a182aa36fe8e741dbe01236603badf8cb5666781e761ec9565882945c3026b5e"
-    },
-    {
-      "name": "list-bool-user-proxy-payload-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListBoolUserProxyPayloadGuardRejected",
-      "expected": "reject",
-      "source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
-      "original_case_source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
-      "gtest_body_sha256": "700588c4acecb4971b779e56dec4763cab84854b9f24859bf2d674fedb95b51a"
     },
     {
       "name": "list-standard-order-width-conversion-guard",
@@ -1557,6 +1557,38 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "list-free-access-record-payload-guard",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nstruct Record { int field; };\nint main() {\n  std::list<Record> values{Record{2}};\n  return std::begin(values)->field == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-reverse-iterator-unsupported-payload-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Record { int member; };\nint main() {\n  const std::list<Record> values{Record{2}, Record{5}};\n  return values.rbegin()->member == 5 ? 0 : 1;\n}\n",
+      "source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-iterator-non-scalar-navigation-guard",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nstruct Record { int value; };\nint main() {\n  std::list<Record> values{Record{1}, Record{3}};\n  return std::next(values.begin())->value == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-bool-user-proxy-payload-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Proxy { bool value; operator bool() const { return value; } };\nint main() {\n  std::list<Proxy> values{Proxy{true}, Proxy{false}};\n  return values.front() && !values.back() ? 0 : 1;\n}\n",
+      "source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "list-user-defined-integer-allocator-guard",
       "expected": "reject",
       "source": "#include <list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n  LocalAllocator() noexcept = default;\n  template <class U> LocalAllocator(const LocalAllocator<U>&) noexcept {}\n};\nint main() {\n  std::list<long, LocalAllocator<long>> items{3L, 7L};\n  items.reverse();\n  return items.front() != 7L;\n}\n",
@@ -1641,38 +1673,6 @@
       "expected": "reject",
       "source": "#include <list>\nbool greater(long left, long right) { return left > right; }\nint main() {\n  std::list<int> values{2, 5, 7};\n  values.sort(&greater);\n  return values.front() != 7;\n}\n",
       "source_sha256": "aab0b9d0c83388c9a6e8c8ba83248e71366fc08a042de2b375c5947929872d98",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-reverse-iterator-unsupported-payload-guard",
-      "expected": "reject",
-      "source": "#include <list>\nstruct Record { int member; };\nint main() {\n  const std::list<Record> values{Record{2}, Record{5}};\n  return values.rbegin()->member == 5 ? 0 : 1;\n}\n",
-      "source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-iterator-non-scalar-navigation-guard",
-      "expected": "reject",
-      "source": "#include <iterator>\n#include <list>\nstruct Record { int value; };\nint main() {\n  std::list<Record> values{Record{1}, Record{3}};\n  return std::next(values.begin())->value == 3 ? 0 : 1;\n}\n",
-      "source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-free-access-record-payload-guard",
-      "expected": "reject",
-      "source": "#include <iterator>\n#include <list>\nstruct Record { int field; };\nint main() {\n  std::list<Record> values{Record{2}};\n  return std::begin(values)->field == 2 ? 0 : 1;\n}\n",
-      "source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-bool-user-proxy-payload-guard",
-      "expected": "reject",
-      "source": "#include <list>\nstruct Proxy { bool value; operator bool() const { return value; } };\nint main() {\n  std::list<Proxy> values{Proxy{true}, Proxy{false}};\n  return values.front() && !values.back() ? 0 : 1;\n}\n",
-      "source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
       "public_header": "list",
       "kind": "source-body-guard"
     },
@@ -1775,6 +1775,10 @@
     "TranslateTest.CoreV2ListStoresDoubleElementsAtBothOptimizations",
     "TranslateTest.CoreV2ListReadsDoubleThroughFreeReverseAccess",
     "TranslateTest.CoreV2ListStoresAFixedUnderlyingEnum",
+    "TranslateTest.CoreV2ListProvidesFreeAccessToTrivialRecordElements",
+    "TranslateTest.CoreV2ListReverseIteratorTraversesTrivialRecords",
+    "TranslateTest.CoreV2ListIteratorNavigatesTrivialRecords",
+    "TranslateTest.CoreV2ListElementsUseRecordBoolConversion",
     "TranslateTest.CoreV2ListUserDefinedIntegerAllocatorGuardRejected",
     "TranslateTest.CoreV2ListIndirectCapacityGuardRejected",
     "TranslateTest.CoreV2ListRemoveIfNarrowingPredicateGuardRejected",
@@ -1786,10 +1790,6 @@
     "TranslateTest.CoreV2ListInsertVolatilePointerRangeGuardRejected",
     "TranslateTest.CoreV2ListOrderFunctionWithObservableBodyGuardRejected",
     "TranslateTest.CoreV2ListOrderFunctionWithConvertingSignatureGuardRejected",
-    "TranslateTest.CoreV2ListReverseIteratorUnsupportedPayloadGuardRejected",
-    "TranslateTest.CoreV2ListIteratorNonScalarNavigationGuardRejected",
-    "TranslateTest.CoreV2ListFreeAccessRecordPayloadGuardRejected",
-    "TranslateTest.CoreV2ListBoolUserProxyPayloadGuardRejected",
     "TranslateTest.CoreV2ListStandardOrderWidthConversionGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -1803,12 +1803,14 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9365,
   "current_python_registry_tests": 334,
-  "native_reference_selected_executions": 178,
-  "planned_generated_c23_executions": 178,
+  "native_reference_selected_executions": 186,
+  "planned_generated_c23_executions": 186,
   "native_reference_proofs": {
+    "forward-list-unsigned-elements": "e774635c451a11038293800c6d4d6261f23656634dfbe20378be8993b5ff9089",
     "linked-list-fixed-enumerations": "72b5a08f98b321f6768571dfc6d17c651152bda07f57545ffc64f634752d6b25",
     "linked-list-floating-elements": "502dd6fd3e2e30b842111938720b1d038f62c9c19d71bd1280f96182d362a4bb",
     "linked-list-order-and-short-payload": "ce66053be3a3ab0ab14d3f0e8a24de543892c1e9b66ecb4ae0f256c2dc666c53",
+    "linked-list-trivial-records": "edf1f3c9008b2db90aa95a4a097a00441e0a19496801b86832f69ccf3ae136de",
     "list-bool-payload": "547031ac6a07136ffcc275265b960d3f294e307de9c1bac6b317a8c9bbb516ad",
     "list-bulk-insertion": "739e9ac51cb5b6798e044745b77039727830c03c2451587ea038cf2c65fe21fb",
     "list-converting-emplace": "b01fc933796ba878497fe433b0bb3877fd3bfbf0b4c4e347dc1b765fac6275ad",
@@ -1833,6 +1835,6 @@
     "list-typed-predicates": "0a67c2e592e69bb11710d45ffdca0a1b4ce94e1fd5110bb01b662245284feda7",
     "list-wide-payloads": "52f656e5f176ab3892cf34a611ce75f0a78ee28d1548a3c92b3eda1c10c36a11"
   },
-  "native_reference_authentication_sha256": "6e291f8362049cf554ff3e7677ced61275eb10c110f9f7af36871e843eaf4f70",
-  "source_proof_sha256": "9765c4799b963b5c62d0789f3a323c7309ed8fbc881a06e279253db07147b552"
+  "native_reference_authentication_sha256": "9687f68409f2c061bcf133ff84a70f061845e8d053d5dee5ff7579dd27007721",
+  "source_proof_sha256": "7a179f1c266748acb3ecb788c86717edfe6abb769806f5417959d27c3b058b4f"
 }
