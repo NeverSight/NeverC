@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_record_comparisons_registered = cls.registered
+        cls.list_record_comparisons_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_comparisons_original = cls.adapter.restore_original_gtests(cls.list_record_comparisons_registered,
+                                                                        cls.list_record_comparisons_suffix)
+        cls.registered = cls.adapter.restore_list_record_comparisons_history(cls.list_record_comparisons_registered)
         cls.list_record_algorithms_registered = cls.registered
         cls.list_record_algorithms_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_record_algorithms_original = cls.adapter.restore_original_gtests(cls.list_record_algorithms_registered,
@@ -4418,6 +4423,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_record_algorithms_history(self.list_record_algorithms_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_record_algorithms_registered, self.list_record_algorithms_suffix + b' ')
+
+
+    def test_list_record_comparisons_retains_published_bodies(self):
+        self.assertEqual(self.list_record_comparisons_original + self.list_record_comparisons_suffix, self.list_record_comparisons_registered)
+        self.assertEqual(self.adapter.restore_list_record_comparisons_history(self.list_record_comparisons_original),
+                         self.list_record_algorithms_original)
+        output, evidence = self.extractor.extract(self.list_record_comparisons_original, ['TranslateTest.CoreV2ListRecordRemoveWithAliasedValueRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordUniqueUsesEqualityOperatorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordRemoveWithAliasedValueRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordUniqueUsesEqualityOperatorRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordOwnerEqualityRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordOwnerOrderingRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordOwnerEqualityRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordOwnerOrderingRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordFloatingFieldStableSortRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordEnumFieldOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordPointerFieldEqualityWithAliasRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordDoubleFieldEqualityRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordMemberEqualityGuardRejected', 'TranslateTest.CoreV2ForwardListRecordCompoundEqualityGuardRejected', 'TranslateTest.CoreV2ListRecordMemberOwnerEqualityGuardRejected', 'TranslateTest.CoreV2ForwardListRecordCompoundOwnerOrderGuardRejected', 'TranslateTest.CoreV2ListRecordCompoundFloatingEqualityGuardRejected', 'TranslateTest.CoreV2ForwardListRecordPointerFieldOrderGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9474)
+        self.assertEqual(evidence['selected_count'], 18)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-remove-with-aliased-value', output)
+        self.assertIn(b'forward-list-record-pointer-field-order-guard', output)
+
+    def test_list_record_comparisons_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_comparisons_history(self.list_record_comparisons_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_comparisons_registered, self.list_record_comparisons_suffix + b' ')
 
 
 if __name__ == '__main__':

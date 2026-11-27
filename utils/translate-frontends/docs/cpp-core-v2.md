@@ -18757,3 +18757,10 @@ the stored values, and relinking preserves element addresses.
 The checked default-allocator list and forward_list pass stored records by const reference
 to the supported remove_if and unique predicates. Stable sort and merge support named
 comparators for integer fields and exact source-owned default ordering operators.
+
+## Linked-list record equality and lexicographic comparisons
+
+The checked list and forward_list support default record equality in remove and unique.
+Linked-list owner comparisons use the selected element operators in lexicographic order.
+The checked source-owned record operators accept floating-point fields, fixed enums and
+pointer equality within the supported scalar operations.

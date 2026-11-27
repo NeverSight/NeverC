@@ -416228,6 +416228,430 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2ListRecordRemoveWithAliasedValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-remove-with-aliased-value.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { int code; int tag; };
+bool operator==(const Entry& left, const Entry& right) { return left.code == right.code; }
+int main() {
+  std::list<Entry> values{{2, 11}, {5, 13}, {2, 17}, {7, 19}};
+  const auto& value = values.front();
+  auto kept = values.begin();
+  ++kept;
+  const auto* address = &*kept;
+  values.remove(value);
+  return values.size() != 2 || &values.front() != address ||
+         values.front().tag != 13 || values.back().tag != 19;
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-remove-with-aliased-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-remove-with-aliased-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordUniqueUsesEqualityOperatorRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-unique-uses-equality-operator.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { short code; short tag; };
+bool operator==(const Entry& left, const Entry& right) { return left.code == right.code; }
+int main() {
+  std::list<Entry> values{{2, 11}, {2, 13}, {5, 17}, {2, 19}};
+  auto first = values.begin();
+  values.unique();
+  auto item = values.begin();
+  if (values.size() != 3 || item != first || item->tag != 11) return 1;
+  return (++item)->tag != 17 || (++item)->tag != 19 || ++item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-unique-uses-equality-operator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-unique-uses-equality-operator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordRemoveWithAliasedValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-remove-with-aliased-value.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { unsigned code; int tag; };
+bool operator==(const Entry& left, const Entry& right) { return left.code == right.code; }
+int main() {
+  std::forward_list<Entry> values{{5, 11}, {2, 13}, {2, 17}, {7, 19}, {2, 23}};
+  auto removed = values.begin();
+  ++removed;
+  const auto& value = *removed;
+  auto saved = values.begin();
+  values.remove(value);
+  auto item = values.begin();
+  if (item != saved || item->tag != 11) return 1;
+  return (++item)->tag != 19 || ++item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-remove-with-aliased-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-remove-with-aliased-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordUniqueUsesEqualityOperatorRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-unique-uses-equality-operator.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { int code; int tag; };
+bool operator==(const Entry& left, const Entry& right) { return left.code == right.code; }
+int main() {
+  std::forward_list<Entry> values{{2, 11}, {2, 13}, {5, 17}, {5, 19}};
+  const auto* first = &values.front();
+  values.unique();
+  auto item = values.begin();
+  if (&*item != first || item->tag != 11) return 1;
+  return (++item)->tag != 17 || ++item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-unique-uses-equality-operator.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-unique-uses-equality-operator" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordMemberEqualityGuardRejected) {
+  const auto Source = tmpFile("list-record-member-equality-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int code;
+  bool operator==(const Entry& other) const { return code == other.code; }
+};
+int main() {
+  std::list<Entry> values{{2}, {2}, {4}};
+  values.unique();
+  return values.size() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordCompoundEqualityGuardRejected) {
+  const auto Source = tmpFile("forward-list-record-compound-equality-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { int code; int tag; };
+bool operator==(const Entry& left, const Entry& right) {
+  return left.code == right.code && left.tag == right.tag;
+}
+int main() {
+  std::forward_list<Entry> values{{2, 11}, {2, 13}, {2, 13}};
+  values.remove(Entry{2, 13});
+  return values.front().tag != 11;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordOwnerEqualityRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-owner-equality.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { unsigned short key; int tag; };
+bool operator==(const Entry& left, const Entry& right) { return left.key == right.key; }
+int main() {
+  const std::list<Entry> left{{1, 7}, {3, 5}}, same{{1, 0}, {3, 2}};
+  const std::list<Entry> shorter{{1, 7}}, different{{1, 7}, {2, 5}};
+  return !(left == same) || left != same || left == shorter || !(left != different);
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-owner-equality.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-owner-equality" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordOwnerOrderingRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-owner-ordering.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { int rank; int tag; };
+bool operator<(const Entry& left, const Entry& right) { return left.rank > right.rank; }
+int main() {
+  const std::list<Entry> left{{9, 7}, {4, 5}}, right{{9, 2}, {2, 8}};
+  const std::list<Entry> same{{9, 3}, {4, 6}}, prefix{{9, 0}};
+  return !(left < right) || !(right > left) || right < left || left >= right ||
+         !(prefix < left) || left < same || !(left <= same) || !(left >= same);
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-owner-ordering.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-owner-ordering" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordOwnerEqualityRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-owner-equality.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { short key; int tag; };
+bool operator==(const Entry& left, const Entry& right) { return left.key == right.key; }
+int main() {
+  const std::forward_list<Entry> left{{1, 7}, {-3, 5}}, same{{1, 8}, {-3, 2}};
+  const std::forward_list<Entry> empty, prefix{{1, 7}}, different{{-3, 7}, {1, 5}};
+  return !(left == same) || left != same || !(empty == empty) ||
+         left == prefix || prefix == left || !(left != different);
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-owner-equality.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-owner-equality" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordOwnerOrderingRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-owner-ordering.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { unsigned long long rank; int tag; };
+bool operator<(const Entry& left, const Entry& right) { return left.rank < right.rank; }
+int main() {
+  const std::forward_list<Entry> left{{1, 7}, {4, 5}}, right{{1, 2}, {6, 8}};
+  const std::forward_list<Entry> empty, same{{1, 3}, {4, 6}}, prefix{{1, 0}};
+  return !(left < right) || !(right > left) || right < left || left >= right ||
+         !(empty < left) || !(prefix < left) || left < same ||
+         !(left <= same) || !(left >= same);
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-owner-ordering.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-owner-ordering" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordMemberOwnerEqualityGuardRejected) {
+  const auto Source = tmpFile("list-record-member-owner-equality-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int key;
+  bool operator==(const Entry& other) const { return key == other.key; }
+};
+int main() { return std::list<Entry>{{1}} == std::list<Entry>{{2}}; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordCompoundOwnerOrderGuardRejected) {
+  const auto Source = tmpFile("forward-list-record-compound-owner-order-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { int key; int tag; };
+bool operator<(const Entry& left, const Entry& right) {
+  return left.key < right.key || (left.key == right.key && left.tag < right.tag);
+}
+int main() { return std::forward_list<Entry>{{1, 2}} < std::forward_list<Entry>{{1, 3}}; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordFloatingFieldStableSortRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-floating-field-stable-sort.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { float key; int tag; };
+bool comesBefore(const Entry& left, const Entry& right) { return left.key < right.key; }
+int main() {
+  std::list<Entry> data{{2.5f, 1}, {-0.0f, 2}, {2.5f, 3}, {0.0f, 4}};
+  const auto* first = &data.front();
+  data.sort(comesBefore);
+  auto item = data.begin();
+  if (item->tag != 2 || (++item)->tag != 4) return 1;
+  return &*(++item) != first || item->tag != 1 || (++item)->tag != 3 || ++item != data.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-floating-field-stable-sort.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-floating-field-stable-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordEnumFieldOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-enum-field-order.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+enum class Rank : signed char { Early = -3, Late = 4 };
+struct Entry { Rank rank; int tag; };
+bool operator<(const Entry& left, const Entry& right) { return left.rank < right.rank; }
+int main() {
+  std::forward_list<Entry> left{{Rank::Late, 1}, {Rank::Early, 2}};
+  std::forward_list<Entry> right{{Rank::Early, 3}, {Rank::Late, 4}};
+  auto original = left.begin();
+  left.sort();
+  left.merge(right);
+  auto item = left.begin();
+  return !right.empty() || item->tag != 2 || (++item)->tag != 3 ||
+         ++item != original || item->tag != 1 || (++item)->tag != 4 || ++item != left.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-enum-field-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-enum-field-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordPointerFieldEqualityWithAliasRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-pointer-field-equality-with-alias.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { const int* key; int tag; };
+bool operator==(const Entry& left, const Entry& right) { return left.key == right.key; }
+int main() {
+  const int keys[]{4, 4};
+  std::list<Entry> data{{keys, 7}, {keys + 1, 9}, {keys, 5}, {nullptr, 6}};
+  const auto& value = data.front();
+  data.remove(value);
+  auto item = data.begin();
+  return data.size() != 2 || item->tag != 9 || (++item)->tag != 6;
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-pointer-field-equality-with-alias.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-pointer-field-equality-with-alias" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordDoubleFieldEqualityRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-double-field-equality.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { double key; int tag; };
+bool operator==(const Entry& left, const Entry& right) { return left.key == right.key; }
+int main() {
+  std::forward_list<Entry> data{{-0.0, 7}, {0.0, 9}, {3.5, 5}, {3.5, 6}};
+  data.unique();
+  const std::forward_list<Entry> same{{0.0, 0}, {3.5, 0}};
+  auto item = data.begin();
+  return data != same || item->tag != 7 || (++item)->tag != 5 || ++item != data.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-double-field-equality.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-double-field-equality" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordCompoundFloatingEqualityGuardRejected) {
+  const auto Source = tmpFile("list-record-compound-floating-equality-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { float key; int tag; };
+bool operator==(const Entry& left, const Entry& right) {
+  return left.key == right.key && left.tag == right.tag;
+}
+int main() { return std::list<Entry>{{2.0f, 1}} == std::list<Entry>{{2.0f, 1}}; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordPointerFieldOrderGuardRejected) {
+  const auto Source = tmpFile("forward-list-record-pointer-field-order-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { int* key; int tag; };
+bool operator<(const Entry& left, const Entry& right) { return left.key < right.key; }
+int main() {
+  int keys[2]{};
+  std::forward_list<Entry> data{{keys + 1, 2}, {keys, 1}};
+  data.sort();
+  return data.front().tag != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");
