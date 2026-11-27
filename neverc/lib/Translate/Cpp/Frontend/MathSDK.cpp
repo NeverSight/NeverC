@@ -54264,9 +54264,12 @@ bool linkedListDefaultCall(const CallExpr *Call, const LinkedListRecordSource *S
 bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
                                  const LinkedListRecordSource *Source) {
   llvm::SmallVector<const Expr *, 8> Pending{Init};
+  // Separate calls can select the same parameter initializer.
+  llvm::DenseSet<const Expr *> Checked;
   const auto *Owner = Field->getParent()->getCanonicalDecl();
   while (!Pending.empty()) {
     const auto *Value = Pending.pop_back_val()->IgnoreParenImpCasts();
+    if (!Checked.insert(Value).second) continue;
     if (isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral,
             CXXNullPtrLiteralExpr>(Value))
       continue;
@@ -54289,12 +54292,11 @@ bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
           Pending.push_back(Argument);
           continue;
         }
-        // A selected literal needs no recursive parameter-initializer traversal.
-        const auto *Init = selectedDefaultArgument(Default, Field->getASTContext());
-        if (!Init || (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())) ||
-            !isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral>(
-                Init->IgnoreParenImpCasts()))
+        const auto *DefaultInit = selectedDefaultArgument(Default, Field->getASTContext());
+        if (!DefaultInit ||
+            (Source && !Source->Program.owns(Source->Sources, DefaultInit->getExprLoc())))
           return false;
+        Pending.push_back(DefaultInit);
       }
       continue;
     }
