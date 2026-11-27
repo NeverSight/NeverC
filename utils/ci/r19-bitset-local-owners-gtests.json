@@ -1,0 +1,165 @@
+{
+  "positive_cases": [
+    {
+      "name": "bitset-unsigned-conversion-copies-single-use-local",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseLocalRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a90c8a8abca7d17ceb6ad4f695c1359b0ac9fe994124291c3e91b684052a451",
+      "original_case_source_sha256": "6a90c8a8abca7d17ceb6ad4f695c1359b0ac9fe994124291c3e91b684052a451",
+      "gtest_body_sha256": "a1076f154a55ba5a892bcaa1cdfd7bdae8e503e0fd4bb01ae0774db3f490d6d1"
+    },
+    {
+      "name": "bitset-unsigned-conversion-copies-single-use-default",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseDefaultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fe54857a5d3ce037f300b1dced03107c4b427c2e8fb41fe468a5eeb905d2b62b",
+      "original_case_source_sha256": "fe54857a5d3ce037f300b1dced03107c4b427c2e8fb41fe468a5eeb905d2b62b",
+      "gtest_body_sha256": "8591a76ea1d24348dd6507776c2c2e757e061fde92421fbcf3fb9500698171ab"
+    },
+    {
+      "name": "bitset-unsigned-conversion-static-constant-fits-unsigned-long",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionStaticConstantFitsUnsignedLongRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f80f0c24fb59225b3945532f82da0229d7dc212e9366aba30667e95e6bc841f5",
+      "original_case_source_sha256": "f80f0c24fb59225b3945532f82da0229d7dc212e9366aba30667e95e6bc841f5",
+      "gtest_body_sha256": "cde1ee0cc4a783113366cb9f037d54dd7c9afd93a5f842806b012d4104b00834"
+    },
+    {
+      "name": "bitset-unsigned-conversion-selects-static-constant",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionSelectsStaticConstantRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "077963ab7668ffcbaa35dcdf7990316dc8879e6fd574d7e776f2eec6b1def015",
+      "original_case_source_sha256": "077963ab7668ffcbaa35dcdf7990316dc8879e6fd574d7e776f2eec6b1def015",
+      "gtest_body_sha256": "70c65c845f7242b85dbbf6bd33ab1ae6a4e5bfc782d65b98ef99c26a377e2aa4"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "bitset-unsigned-conversion-copy-after-mutation-guard",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionCopyAfterMutationGuardRejected",
+      "expected": "reject",
+      "source_sha256": "d39c731d49f132c12eb59b161fbe07b04ce317ddd4414f3dab06b042f0ebbbc9",
+      "original_case_source_sha256": "d39c731d49f132c12eb59b161fbe07b04ce317ddd4414f3dab06b042f0ebbbc9",
+      "gtest_body_sha256": "7e613830ee35ce4069a51e68818d5243d0864c9950cf9d4770fe671119f148d1"
+    },
+    {
+      "name": "bitset-unsigned-conversion-copy-from-aliased-owner-guard",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionCopyFromAliasedOwnerGuardRejected",
+      "expected": "reject",
+      "source_sha256": "23d3fb87bfba8a4929a843067603e0faf7a8910570a676016081aca493564280",
+      "original_case_source_sha256": "23d3fb87bfba8a4929a843067603e0faf7a8910570a676016081aca493564280",
+      "gtest_body_sha256": "3ddfa83520d5f54bd2277ddfe33850575827ce357ead6552d55b984e9eff755a"
+    },
+    {
+      "name": "bitset-unsigned-conversion-dynamic-static-initialization-guard",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionDynamicStaticInitializationGuardRejected",
+      "expected": "reject",
+      "source_sha256": "a7e2b6cbb6c2a62050e2ad41d4735634e060135ac1d520a9125e9b57565585d1",
+      "original_case_source_sha256": "a7e2b6cbb6c2a62050e2ad41d4735634e060135ac1d520a9125e9b57565585d1",
+      "gtest_body_sha256": "fdd3605f52713be0efd888a8d3c3b3e75154ce9d9fbbdf1bf4cbbccaac2b88e5"
+    },
+    {
+      "name": "bitset-unsigned-conversion-mutable-static-binding-guard",
+      "formal_test_name": "TranslateTest.CoreV2BitsetUnsignedConversionMutableStaticBindingGuardRejected",
+      "expected": "reject",
+      "source_sha256": "bc52c72db78a6785b8dad8f2946c1c163ae6327bb95e49b22669a99774981620",
+      "original_case_source_sha256": "bc52c72db78a6785b8dad8f2946c1c163ae6327bb95e49b22669a99774981620",
+      "gtest_body_sha256": "9ca072aab6c454d28167a8fd6dbc986134fed5870d638b18ce8beb679e0ade6f"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "bitset-unsigned-conversion-copies-single-use-local",
+      "public_header": "bitset",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  Bits input(0x80000000ULL);\n  const Bits first(input);\n  const Bits second(first);\n  return second.to_ulong() != 0x80000000UL;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "6a90c8a8abca7d17ceb6ad4f695c1359b0ac9fe994124291c3e91b684052a451"
+    },
+    {
+      "name": "bitset-unsigned-conversion-copies-single-use-default",
+      "public_header": "bitset",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  Bits input;\n  const Bits copy = input;\n  return copy.to_ullong() != 0;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "fe54857a5d3ce037f300b1dced03107c4b427c2e8fb41fe468a5eeb905d2b62b"
+    },
+    {
+      "name": "bitset-unsigned-conversion-static-constant-fits-unsigned-long",
+      "public_header": "bitset",
+      "expected": "accept",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  static const Bits payload(0x80000000ULL);\n  return payload.to_ulong() != 0x80000000UL;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "f80f0c24fb59225b3945532f82da0229d7dc212e9366aba30667e95e6bc841f5"
+    },
+    {
+      "name": "bitset-unsigned-conversion-selects-static-constant",
+      "public_header": "bitset",
+      "expected": "accept",
+      "source": "#include <bitset>\nbool select(int& calls) { return ++calls == 1; }\nint main() {\n  using Bits = std::bitset<129>;\n  static const Bits first(6), second(7);\n  int calls = 0;\n  unsigned long long left = (select(calls) ? first : second).to_ullong();\n  unsigned long long right = (select(calls) ? first : second).to_ullong();\n  return calls != 2 || left != 6 || right != 7;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "077963ab7668ffcbaa35dcdf7990316dc8879e6fd574d7e776f2eec6b1def015"
+    },
+    {
+      "name": "bitset-unsigned-conversion-copy-after-mutation-guard",
+      "public_header": "bitset",
+      "expected": "reject",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  Bits input(4);\n  input.set(90);\n  const Bits copy = input;\n  return copy.to_ullong() != 4;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "d39c731d49f132c12eb59b161fbe07b04ce317ddd4414f3dab06b042f0ebbbc9"
+    },
+    {
+      "name": "bitset-unsigned-conversion-copy-from-aliased-owner-guard",
+      "public_header": "bitset",
+      "expected": "reject",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  Bits input(4);\n  Bits* alias = &input;\n  alias->set(90);\n  const Bits copy = input;\n  return copy.to_ullong() != 4;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "23d3fb87bfba8a4929a843067603e0faf7a8910570a676016081aca493564280"
+    },
+    {
+      "name": "bitset-unsigned-conversion-dynamic-static-initialization-guard",
+      "public_header": "bitset",
+      "expected": "reject",
+      "source": "#include <bitset>\nunsigned long long initial_value() { return 1; }\nint main() {\n  using Bits = std::bitset<129>;\n  static const Bits payload(initial_value());\n  return payload.to_ullong() != 1;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "a7e2b6cbb6c2a62050e2ad41d4735634e060135ac1d520a9125e9b57565585d1"
+    },
+    {
+      "name": "bitset-unsigned-conversion-mutable-static-binding-guard",
+      "public_header": "bitset",
+      "expected": "reject",
+      "source": "#include <bitset>\nint main() {\n  using Bits = std::bitset<129>;\n  static Bits payload(1);\n  payload.set(90);\n  return payload.to_ullong() != 1;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "bc52c72db78a6785b8dad8f2946c1c163ae6327bb95e49b22669a99774981620"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseLocalRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionCopiesSingleUseDefaultRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionStaticConstantFitsUnsignedLongRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionSelectsStaticConstantRunAtBothOptimizations",
+    "TranslateTest.CoreV2BitsetUnsignedConversionCopyAfterMutationGuardRejected",
+    "TranslateTest.CoreV2BitsetUnsignedConversionCopyFromAliasedOwnerGuardRejected",
+    "TranslateTest.CoreV2BitsetUnsignedConversionDynamicStaticInitializationGuardRejected",
+    "TranslateTest.CoreV2BitsetUnsignedConversionMutableStaticBindingGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "841a079cfa207ab9e62cca16bfc1575d14f1021f1cd3a4166965319a45070628",
+  "maintained_original_sha256": "48e1f05751a00c512de0c0f78c9ca29ea059b41c927fcdfa468a1e76891e52f9",
+  "previous_registered_source_sha256": "4e25448c3737b6d941a9fd6c8361f4a8da049914fe631fbb789dd0f91e117959",
+  "previous_maintained_original_sha256": "7a62958b4afb394c3c67940a01e9b0d679bd505b74c5610b01df523e304f1137",
+  "restorer_sha256": "5fbec1d4f6e8ce42e888a365c9274424e2dda162a2d883ade1e3d2e0d41f10ce",
+  "extractor_sha256": "7367bbbeb889b3786b57934ca7b1e8262d689f60bccb6723a04338efe93c0746",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9072,
+  "current_python_registry_tests": 294,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "bitset-const-static-unsigned-replay": "ce04fd417d7df7f8acec5e43b1072804aea691cceed7922f35a6c75caebada2c",
+    "bitset-unaliased-copy": "76610846ae7580bb48502fa59e90616b94ee92adebc66499915936f77c4d660a"
+  },
+  "native_reference_authentication_sha256": "709f15aeb971daf0ac0768d444ddfc399f1a53b1d59d5b272840a82401b1c884",
+  "source_proof_sha256": "e8d8e3004d7cc82d3c0d3a4ba45c79417fceedae7494ee47947e3ad25065e5d9"
+}

@@ -1,0 +1,130 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-object-pointer-sorting-keeps-stored-slot",
+      "formal_test_name": "TranslateTest.CoreV2ListObjectPointerSortingKeepsStoredSlotRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7148e542616dde356041b245d016681fa54af04901430b2d1ceeed25e3eedb19",
+      "original_case_source_sha256": "7148e542616dde356041b245d016681fa54af04901430b2d1ceeed25e3eedb19",
+      "gtest_body_sha256": "7a4d17453aa0a7cb6f7aeaf5274f614a7bd1f37e9e93145037681036045b4ab6"
+    },
+    {
+      "name": "list-const-pointee-range-copies-pointer-values",
+      "formal_test_name": "TranslateTest.CoreV2ListConstPointeeRangeCopiesPointerValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2169c2f988d1c0c143fdb47aa96c9ab0c64f2f6926717e7151a744d8716d5e9d",
+      "original_case_source_sha256": "2169c2f988d1c0c143fdb47aa96c9ab0c64f2f6926717e7151a744d8716d5e9d",
+      "gtest_body_sha256": "a96b6f0b753624ff61f2722838223baf2028c0660b79e170db10ac5b87a713e2"
+    },
+    {
+      "name": "forward-list-const-pointer-assignment-and-null-resize",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListConstPointerAssignmentAndNullResizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "92f8b83c86f67dccdcba10aa45ff1e5620597911641fb9a66e27ede81efa759f",
+      "original_case_source_sha256": "92f8b83c86f67dccdcba10aa45ff1e5620597911641fb9a66e27ede81efa759f",
+      "gtest_body_sha256": "0534e19d84af52f56b836400fe4f1395e810e02f80f9ae1aab9c9e6af4210d6d"
+    },
+    {
+      "name": "forward-list-pointer-merge-keeps-node-and-pointee",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListPointerMergeKeepsNodeAndPointeeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "287ce13f1e92aabe41920c74efb1a70b0b646b6480acfdf5db7015cb445bca3d",
+      "original_case_source_sha256": "287ce13f1e92aabe41920c74efb1a70b0b646b6480acfdf5db7015cb445bca3d",
+      "gtest_body_sha256": "f008c603a26cf99b3b6a2e6fa299ea1a673d0fd6eda1461f6bb9c15bfdda66fa"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-function-pointer-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListFunctionPointerElementGuardRejected",
+      "expected": "reject",
+      "source_sha256": "cc173dac050cee629137d374b537c6b430a4ddc4fda70c4ed0fb0bf8dc9f1222",
+      "original_case_source_sha256": "cc173dac050cee629137d374b537c6b430a4ddc4fda70c4ed0fb0bf8dc9f1222",
+      "gtest_body_sha256": "ed87de11c124c7103859b756d97e3ebd4cde0856cc728a0c848d2c7ce662318b"
+    },
+    {
+      "name": "forward-list-volatile-pointee-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListVolatilePointeeElementGuardRejected",
+      "expected": "reject",
+      "source_sha256": "f4bef4d2a5f8e38d9d1bff7f32df5672e259b762d6def54b254c4f2bc1f9e662",
+      "original_case_source_sha256": "f4bef4d2a5f8e38d9d1bff7f32df5672e259b762d6def54b254c4f2bc1f9e662",
+      "gtest_body_sha256": "4e763e4f80a1e8d4fb079076d2e2c1f29d7ce2d4485d9d578d391f90385bf327"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-object-pointer-sorting-keeps-stored-slot",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  int data[] = {11, 22, 33};\n  std::list<int*> pointers{&data[2], &data[0]};\n  auto old = pointers.begin();\n  int** slot = &*old;\n  pointers.sort();\n  if (pointers.front() != &data[0] || pointers.back() != &data[2] || &pointers.back() != slot)\n    return 1;\n  *old = &data[1];\n  **old = 42;\n  return pointers.back() != &data[1] || data[1] != 42 || data[2] != 33;\n}\n",
+      "source_sha256": "7148e542616dde356041b245d016681fa54af04901430b2d1ceeed25e3eedb19",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-const-pointee-range-copies-pointer-values",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const char data[] = {'a', 'b', 'c'};\n  const char* input[] = {data, data + 2};\n  std::list<const char*> pointers(input, input + 2);\n  input[0] = data + 1;\n  const auto& observed = pointers;\n  auto cursor = observed.crbegin();\n  if (*cursor != &data[2] || **cursor != 'c')\n    return 1;\n  ++cursor;\n  return *cursor != &data[0] || **cursor != 'a' || pointers.size() != 2;\n}\n",
+      "source_sha256": "2169c2f988d1c0c143fdb47aa96c9ab0c64f2f6926717e7151a744d8716d5e9d",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-const-pointer-assignment-and-null-resize",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const int data[] = {5, 8};\n  const int* const input[] = {data, data + 1};\n  std::forward_list<const int*> pointers;\n  pointers.assign(input, input + 2);\n  pointers.resize(3);\n  auto item = pointers.cbegin();\n  return *item++ != &data[0] || *item++ != &data[1] || *item++ != nullptr || item != pointers.cend();\n}\n",
+      "source_sha256": "92f8b83c86f67dccdcba10aa45ff1e5620597911641fb9a66e27ede81efa759f",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-pointer-merge-keeps-node-and-pointee",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  double data[] = {1.5, 2.5, 3.5};\n  std::forward_list<double*> left{data, data + 2}, right{data + 1};\n  auto saved = right.begin();\n  double** slot = &*saved;\n  left.merge(right);\n  auto item = left.begin();\n  if (!right.empty() || *item++ != data || item != saved || &*item != slot)\n    return 1;\n  **item++ = 4.25;\n  return *item++ != data + 2 || item != left.end() || data[1] != 4.25;\n}\n",
+      "source_sha256": "287ce13f1e92aabe41920c74efb1a70b0b646b6480acfdf5db7015cb445bca3d",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-function-pointer-element-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint identity(int value) { return value; }\nint main() {\n  std::list<int (*)(int)> callbacks{&identity};\n  return callbacks.front()(7) != 7;\n}\n",
+      "source_sha256": "cc173dac050cee629137d374b537c6b430a4ddc4fda70c4ed0fb0bf8dc9f1222",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-volatile-pointee-element-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint main() {\n  volatile int value = 5;\n  std::forward_list<volatile int*> pointers{&value};\n  return **pointers.begin() != 5;\n}\n",
+      "source_sha256": "f4bef4d2a5f8e38d9d1bff7f32df5672e259b762d6def54b254c4f2bc1f9e662",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListObjectPointerSortingKeepsStoredSlotRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListConstPointeeRangeCopiesPointerValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListConstPointerAssignmentAndNullResizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListPointerMergeKeepsNodeAndPointeeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListFunctionPointerElementGuardRejected",
+    "TranslateTest.CoreV2ForwardListVolatilePointeeElementGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "a85c839074da01d91fd0955bd1fc2010a1c90a9cf491aa2904ee501ec6c3f16b",
+  "maintained_original_sha256": "82c3e8fd35854a8dfabd9dbea578d1002a66362ec90cca0468e4182f043e3b99",
+  "previous_registered_source_sha256": "40a6e51e56ec10e097a204aee78ac79ac4e0cae95816d88177cf680f8f15df92",
+  "previous_maintained_original_sha256": "1f14c4e4c5ec608d657e66cb6cde6e196af14b69f7351276915636e7ab3441a7",
+  "restorer_sha256": "14703f7784fcc9b9b9245fbd7fe46cb1ab7289cfd84f5487e874e57af46c3926",
+  "extractor_sha256": "034bafd27827cc22a59008771e7d76568236d6478bcfbf7b420c1d578a8975bd",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9410,
+  "current_python_registry_tests": 342,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "linked-list-object-pointers": "191366709f58c18ad0db6644229b0ca2a56ff946f3025c272e5d745b853cb75c"
+  },
+  "native_reference_authentication_sha256": "5b6f101d63ec4e3a8893c92aa54d6ce6f38701e3904f1e67283d2891f90ed1ae",
+  "source_proof_sha256": "e8d8e3004d7cc82d3c0d3a4ba45c79417fceedae7494ee47947e3ad25065e5d9"
+}
