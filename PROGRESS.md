@@ -1,5 +1,13 @@
 # NeverC Progress
 
+## Current snapshot — 2026-11-27T00:56:31Z
+
+- Reviewed [690e1dac to cdaef0a0](https://github.com/NeverSight/NeverC/compare/690e1dac312d2f3902127db562b1aae56c9edd26...cdaef0a0dc7afbd435d1a8b28322ce3879dbb6e2): 12 commits ahead; 126 changed paths in the comparison. Selected review covered `MathSDK.cpp`, the linked-list character, enum and object-pointer fixture diffs, and the registered-GTest extraction/history mapping. Fixed enums require an admitted underlying size/alignment. Object pointers require a 64-bit aligned supported object pointer and a scalar pointee; pointer-valued forward-list inputs require an exact type match. The registry distinguishes the fixture-source digests and expected registration counts. This is a sampled review, not a whole-repository audit. No additional defect was established in the reviewed dev code; no product fixes were submitted in this pass.
+- Activity: 10 open ordinary issues and zero open PRs, unchanged. No product PRs opened, merged, or closed unmerged and no ordinary issues opened or closed since 2026-11-26T00:58:36Z in the sampled GitHub search. Progress-only [#38](https://github.com/NeverSight/NeverC/pull/38) is excluded; the translator work landed in direct dev integration commits. No product PR review is pending.
+- Existing CI: No Actions run was listed for exact dev `cdaef0a0`. An existing [template diagnostics run](https://github.com/NeverSight/NeverC/actions/runs/45916347961) passed on its own workflow head `923cfb05`; this does not qualify current dev or the complete translator. No build, test, benchmark, repository script execution, or CI dispatch was performed by this static report.
+- Suggested priorities: (1) Qualify extracted list/forward-list character, fixed-enum, and exact-type pointer positive/negative controls at O0/O2 before extending the supported matrix. (2) Check rejected width/alignment profiles and pointer cv-qualification at the owning type boundary. (3) Verify registry extraction and restore against the exact registered and maintained fixture digests, and keep that separate from native compiler validation.
+
+
 ## Current snapshot — 2026-11-26T00:58:36Z
 
 - Reviewed [26127e48 to 690e1dac](https://github.com/NeverSight/NeverC/compare/26127e4871f70f15172dfcab22fedd463a227a35...690e1dac312d2f3902127db562b1aae56c9edd26): 18 commits ahead, 118 changed paths; only a selected slice reviewed. Read the forward_list element typing changes in C++ translation Lowering and MathSDK, associated fixture diffs, and the registry history mapping. Node fields, allocator arguments, counted/pointer inputs, and predicate comparisons in the reviewed paths now use the admitted element type rather than a fixed int. The recognition checks still bind the approved node layout. No new confirmed source defect or source change in this static pass.
@@ -1707,3 +1715,8 @@ Bounded static review of unordered multiset modifier lowering and documented sup
 ## 2026-11-26 — static review
 
 - 2026-11-26T00:58:36Z: Reviewed long-element forward_list lowering and registry provenance; no new confirmed defect. 10 open issues, no open PRs. Next: compare supported native element widths and investigate the older plugin sanitizer failure. No project code, build, test, or workflow dispatch in this snapshot.
+
+
+## 2026-11-27 — static review
+
+- 2026-11-27T00:56:31Z: Reviewed character, enum, and object-pointer list typing and registry history; 10 open issues, no open PRs. Next: exact-profile translation and registry checks. No product source change or active verification in this snapshot.
