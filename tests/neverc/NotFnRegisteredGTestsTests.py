@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_record_member_operators_registered = cls.registered
+        cls.list_record_member_operators_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_member_operators_original = cls.adapter.restore_original_gtests(cls.list_record_member_operators_registered,
+                                                                        cls.list_record_member_operators_suffix)
+        cls.registered = cls.adapter.restore_list_record_member_operators_history(cls.list_record_member_operators_registered)
         cls.list_record_defaults_registered = cls.registered
         cls.list_record_defaults_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_record_defaults_original = cls.adapter.restore_original_gtests(cls.list_record_defaults_registered,
@@ -4464,6 +4469,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_record_defaults_history(self.list_record_defaults_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_record_defaults_registered, self.list_record_defaults_suffix + b' ')
+
+
+    def test_list_record_member_operators_retains_published_bodies(self):
+        self.assertEqual(self.list_record_member_operators_original + self.list_record_member_operators_suffix, self.list_record_member_operators_registered)
+        self.assertEqual(self.adapter.restore_list_record_member_operators_history(self.list_record_member_operators_original),
+                         self.list_record_defaults_original)
+        output, evidence = self.extractor.extract(self.list_record_member_operators_original, ['TranslateTest.CoreV2ListRecordMemberOwnerOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordMemberOwnerEqualityRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordMemberOwnerOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordMemberRemoveAndUniqueRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordMemberStableSortAndMergeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordMemberRemoveAndUniqueRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordCompoundMemberOwnerOrderGuardRejected', 'TranslateTest.CoreV2ForwardListRecordIntegerMemberOwnerEqualityGuardRejected', 'TranslateTest.CoreV2ForwardListRecordCompoundMemberSortGuardRejected', 'TranslateTest.CoreV2ListRecordIntegerMemberRemovalGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9490)
+        self.assertEqual(evidence['selected_count'], 10)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-member-remove-and-unique', output)
+        self.assertIn(b'forward-list-record-compound-member-sort-guard', output)
+
+    def test_list_record_member_operators_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_member_operators_history(self.list_record_member_operators_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_member_operators_registered, self.list_record_member_operators_suffix + b' ')
 
 
 if __name__ == '__main__':

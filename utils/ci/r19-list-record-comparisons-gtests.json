@@ -95,17 +95,25 @@
       "source_sha256": "41f47a9282ca5ec0cf1d6529b9027d25068bde26fa5452bcfd0b8bbe9b786876",
       "original_case_source_sha256": "41f47a9282ca5ec0cf1d6529b9027d25068bde26fa5452bcfd0b8bbe9b786876",
       "gtest_body_sha256": "618ebbeba1429050192cc2d487cc8d3012a724f0afc881884075299d8939985c"
+    },
+    {
+      "name": "list-record-member-equality-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListUniqueUsesConstRecordMember",
+      "expected": "accept",
+      "source_sha256": "88a74a7782fc214d97da11037e8c6a54474c98cd287f7f0bdd0d3bc0581c91ba",
+      "original_case_source_sha256": "88a74a7782fc214d97da11037e8c6a54474c98cd287f7f0bdd0d3bc0581c91ba",
+      "gtest_body_sha256": "ad2628864280ad1ddee010ba0cecb3dd3a9bb17b994c1f20912195922a21dc41"
+    },
+    {
+      "name": "list-record-member-owner-equality-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnersUseConstRecordMemberEquality",
+      "expected": "accept",
+      "source_sha256": "869507a0c3c607528dddd388215a99dd4e581728f126f13b86a0998e73cf10cd",
+      "original_case_source_sha256": "869507a0c3c607528dddd388215a99dd4e581728f126f13b86a0998e73cf10cd",
+      "gtest_body_sha256": "3e8a755012ea0a14963dc1f5e0a614ee9c498d82f982a6249e633d497c748983"
     }
   ],
   "negative_cases": [
-    {
-      "name": "list-record-member-equality-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListRecordMemberEqualityGuardRejected",
-      "expected": "reject",
-      "source_sha256": "88a74a7782fc214d97da11037e8c6a54474c98cd287f7f0bdd0d3bc0581c91ba",
-      "original_case_source_sha256": "88a74a7782fc214d97da11037e8c6a54474c98cd287f7f0bdd0d3bc0581c91ba",
-      "gtest_body_sha256": "2319f19ac48d23665a1f8e0cb4d1cdf6489d5f66761f9a8ff1d6049c699af191"
-    },
     {
       "name": "forward-list-record-compound-equality-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListRecordCompoundEqualityGuardRejected",
@@ -113,14 +121,6 @@
       "source_sha256": "30d2be6a64f82b8ca614619dd8ee913438da4e4e298e208dee22013b87591e79",
       "original_case_source_sha256": "30d2be6a64f82b8ca614619dd8ee913438da4e4e298e208dee22013b87591e79",
       "gtest_body_sha256": "ea49af9536cda1d49594e6be5da77e84fd8464ed8209fb90405f280547733a96"
-    },
-    {
-      "name": "list-record-member-owner-equality-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListRecordMemberOwnerEqualityGuardRejected",
-      "expected": "reject",
-      "source_sha256": "869507a0c3c607528dddd388215a99dd4e581728f126f13b86a0998e73cf10cd",
-      "original_case_source_sha256": "869507a0c3c607528dddd388215a99dd4e581728f126f13b86a0998e73cf10cd",
-      "gtest_body_sha256": "43156482c5a5c6ae4c64a6dae7862c9e0ef08a613181bf31f2bd2decc035e71f"
     },
     {
       "name": "forward-list-record-compound-owner-order-guard",
@@ -246,11 +246,19 @@
     },
     {
       "name": "list-record-member-equality-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <list>\nstruct Entry {\n  int code;\n  bool operator==(const Entry& other) const { return code == other.code; }\n};\nint main() {\n  std::list<Entry> values{{2}, {2}, {4}};\n  values.unique();\n  return values.size() != 2;\n}\n",
       "source_sha256": "88a74a7782fc214d97da11037e8c6a54474c98cd287f7f0bdd0d3bc0581c91ba",
       "public_header": "list",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-record-member-owner-equality-guard",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry {\n  int key;\n  bool operator==(const Entry& other) const { return key == other.key; }\n};\nint main() { return std::list<Entry>{{1}} == std::list<Entry>{{2}}; }\n",
+      "source_sha256": "869507a0c3c607528dddd388215a99dd4e581728f126f13b86a0998e73cf10cd"
     },
     {
       "name": "forward-list-record-compound-equality-guard",
@@ -259,14 +267,6 @@
       "source_sha256": "30d2be6a64f82b8ca614619dd8ee913438da4e4e298e208dee22013b87591e79",
       "public_header": "forward_list",
       "kind": "source-body-guard"
-    },
-    {
-      "name": "list-record-member-owner-equality-guard",
-      "section": "list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
-      "source": "#include <list>\nstruct Entry {\n  int key;\n  bool operator==(const Entry& other) const { return key == other.key; }\n};\nint main() { return std::list<Entry>{{1}} == std::list<Entry>{{2}}; }\n",
-      "source_sha256": "869507a0c3c607528dddd388215a99dd4e581728f126f13b86a0998e73cf10cd"
     },
     {
       "name": "forward-list-record-compound-owner-order-guard",
@@ -306,9 +306,9 @@
     "TranslateTest.CoreV2ForwardListRecordEnumFieldOrderRunAtBothOptimizations",
     "TranslateTest.CoreV2ListRecordPointerFieldEqualityWithAliasRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListRecordDoubleFieldEqualityRunAtBothOptimizations",
-    "TranslateTest.CoreV2ListRecordMemberEqualityGuardRejected",
+    "TranslateTest.CoreV2ListUniqueUsesConstRecordMember",
+    "TranslateTest.CoreV2ListOwnersUseConstRecordMemberEquality",
     "TranslateTest.CoreV2ForwardListRecordCompoundEqualityGuardRejected",
-    "TranslateTest.CoreV2ListRecordMemberOwnerEqualityGuardRejected",
     "TranslateTest.CoreV2ForwardListRecordCompoundOwnerOrderGuardRejected",
     "TranslateTest.CoreV2ListRecordCompoundFloatingEqualityGuardRejected",
     "TranslateTest.CoreV2ForwardListRecordPointerFieldOrderGuardRejected"
@@ -324,13 +324,15 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9474,
   "current_python_registry_tests": 348,
-  "native_reference_selected_executions": 24,
-  "planned_generated_c23_executions": 24,
+  "native_reference_selected_executions": 28,
+  "planned_generated_c23_executions": 28,
   "native_reference_proofs": {
     "linked-list-record-equality": "a3479caa3ee0ed6f611748320b618982126dce48f1166bd68811e079d02d674b",
+    "linked-list-record-member-owner-operators": "b5e95a6b95facfef2f4a13e0a152c6ea75aa33f91f6f9654b53a4083fd254fba",
+    "linked-list-record-member-unique-replay": "0019dfbf40b212d8622269f153eff277897ab822606f030d6352d4206e76aa81",
     "linked-list-record-owner-comparison": "174fa5d5f26e1b725b7164f28f1e0b433bbb134b160973c7aa25d37f102cd391",
     "linked-list-record-scalar-comparisons": "f2de88f89056497f3589f8c710d219b621172e68985bd4d5aa9aff6c6122a58c"
   },
-  "native_reference_authentication_sha256": "aae4a0a0c804f3315ba2e99bf71c6f3125409d61ece524f9165b7c7c407d1231",
-  "source_proof_sha256": "780d5a5a5cddd2fcb92208e81b43dcaa0a7e1602a40547f538033a718e2b82cd"
+  "native_reference_authentication_sha256": "2b767faff190ce9e501b2d89380cd85af2d1be9d26809619f8e554623427edd1",
+  "source_proof_sha256": "e8d8e3004d7cc82d3c0d3a4ba45c79417fceedae7494ee47947e3ad25065e5d9"
 }

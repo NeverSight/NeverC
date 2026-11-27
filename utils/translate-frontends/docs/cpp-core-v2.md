@@ -18770,3 +18770,9 @@ pointer equality within the supported scalar operations.
 Count construction, resize and emplacement of the checked linked-list records apply
 literal member initializers after zero initialization. The checked copy paths preserve
 the stored field values.
+
+## Const record member operators in linked lists
+
+Linked-list owner comparisons and default algorithms use the checked source-owned
+const member operators on the stored values. The execution suite covers stable sorting
+and merging as well as equality for removal and deduplication.

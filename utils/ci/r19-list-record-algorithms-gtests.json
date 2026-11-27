@@ -87,6 +87,14 @@
       "source_sha256": "fe611aadb5b2c06870b8ae94021f2593fe046b1d9ce336cdfd5562baba4385a6",
       "original_case_source_sha256": "fe611aadb5b2c06870b8ae94021f2593fe046b1d9ce336cdfd5562baba4385a6",
       "gtest_body_sha256": "995ddb6abb7d9f91bc97de71c39b38f4a3fe3a0e293c61953e3d0db53a36e5bf"
+    },
+    {
+      "name": "list-record-member-default-order-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListSortUsesConstRecordMember",
+      "expected": "accept",
+      "source_sha256": "cbeba4f8210c5e9ddcd7f514d6da524faab92509c7a58671d49f99569e6f7e33",
+      "original_case_source_sha256": "cbeba4f8210c5e9ddcd7f514d6da524faab92509c7a58671d49f99569e6f7e33",
+      "gtest_body_sha256": "98b974e39d83026237b5a956457a6144d12ee1dc4cc44bf8a5fc027ea015ce9d"
     }
   ],
   "negative_cases": [
@@ -121,14 +129,6 @@
       "source_sha256": "b8d0a5dab534c9681928cbf3cbace4565b0bb08625e97daf87f69fa15def63ba",
       "original_case_source_sha256": "b8d0a5dab534c9681928cbf3cbace4565b0bb08625e97daf87f69fa15def63ba",
       "gtest_body_sha256": "7573d57a6ceec253db171e3cc06f663dd78199f1e4fa8e126c9d50f67366943a"
-    },
-    {
-      "name": "list-record-member-default-order-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListRecordMemberDefaultOrderGuardRejected",
-      "expected": "reject",
-      "source_sha256": "cbeba4f8210c5e9ddcd7f514d6da524faab92509c7a58671d49f99569e6f7e33",
-      "original_case_source_sha256": "cbeba4f8210c5e9ddcd7f514d6da524faab92509c7a58671d49f99569e6f7e33",
-      "gtest_body_sha256": "11770e2f9355087939b6e9381e32365438c50d9b7ddc212bf2a71ac9863d5ce5"
     },
     {
       "name": "forward-list-record-compound-default-order-guard",
@@ -229,6 +229,14 @@
       "kind": "cpp17-operation"
     },
     {
+      "name": "list-record-member-default-order-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Item {\n  int rank;\n  bool operator<(const Item& other) const { return rank < other.rank; }\n};\nint main() {\n  std::list<Item> values{{7}, {2}};\n  values.sort();\n  return values.front().rank != 2;\n}\n",
+      "source_sha256": "cbeba4f8210c5e9ddcd7f514d6da524faab92509c7a58671d49f99569e6f7e33",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
       "name": "list-record-volatile-reference-predicate-guard",
       "expected": "reject",
       "source": "#include <list>\nstruct Entry { int value; };\nbool negative(const volatile Entry& value) { return value.value < 0; }\nint main() {\n  std::list<Entry> values{{-2}, {4}};\n  values.remove_if(&negative);\n  return values.front().value != 4;\n}\n",
@@ -261,14 +269,6 @@
       "kind": "source-body-guard"
     },
     {
-      "name": "list-record-member-default-order-guard",
-      "expected": "reject",
-      "source": "#include <list>\nstruct Item {\n  int rank;\n  bool operator<(const Item& other) const { return rank < other.rank; }\n};\nint main() {\n  std::list<Item> values{{7}, {2}};\n  values.sort();\n  return values.front().rank != 2;\n}\n",
-      "source_sha256": "cbeba4f8210c5e9ddcd7f514d6da524faab92509c7a58671d49f99569e6f7e33",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
       "name": "forward-list-record-compound-default-order-guard",
       "expected": "reject",
       "source": "#include <forward_list>\nstruct Item { int rank; };\nbool operator<(const Item& left, const Item& right) { return !(left.rank >= right.rank); }\nint main() {\n  std::forward_list<Item> values{{7}, {2}};\n  values.sort();\n  return values.front().rank != 2;\n}\n",
@@ -289,11 +289,11 @@
     "TranslateTest.CoreV2ListDefaultRecordOrderStableMergeRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListDefaultRecordOrderStableSortRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListDefaultRecordOrderStableMergeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSortUsesConstRecordMember",
     "TranslateTest.CoreV2ListRecordVolatileReferencePredicateGuardRejected",
     "TranslateTest.CoreV2ForwardListScalarReferencePredicateGuardRejected",
     "TranslateTest.CoreV2ListRecordByValueFieldComparatorGuardRejected",
     "TranslateTest.CoreV2ForwardListCapturingFieldComparatorGuardRejected",
-    "TranslateTest.CoreV2ListRecordMemberDefaultOrderGuardRejected",
     "TranslateTest.CoreV2ForwardListRecordCompoundDefaultOrderGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -307,13 +307,14 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9456,
   "current_python_registry_tests": 346,
-  "native_reference_selected_executions": 24,
-  "planned_generated_c23_executions": 24,
+  "native_reference_selected_executions": 26,
+  "planned_generated_c23_executions": 26,
   "native_reference_proofs": {
     "linked-list-default-record-order": "55f1f9f1e973e1ed7c4284c84bec462f5b4d31276b37ffcdd40669861c1ad079",
     "linked-list-record-field-comparators": "0dd1f6379e408068414d584a57acc9cd8b74a1496ccf0a51dd1ebd1a67d447d5",
+    "linked-list-record-member-default-algorithms": "0ce8d3a6a0e1f6a2b101d3304bb9145383ddf35a37261c065b35c9d79d9d1bfc",
     "linked-list-record-predicate-references": "da580c5ebe552d30fea81839c6d1d166c3edb204880509481feb6c79520f56a7"
   },
-  "native_reference_authentication_sha256": "c47fcbe864fd581f7bf825f90d2068ad89aea6657f7c812cf2dddeac20200543",
-  "source_proof_sha256": "780d5a5a5cddd2fcb92208e81b43dcaa0a7e1602a40547f538033a718e2b82cd"
+  "native_reference_authentication_sha256": "c765eb5f30231d94594b5d58ba62e76b12faecd70e7e5cca75b62f9bc86139a4",
+  "source_proof_sha256": "e8d8e3004d7cc82d3c0d3a4ba45c79417fceedae7494ee47947e3ad25065e5d9"
 }

@@ -54887,7 +54887,7 @@ bool linkedListRecordComparisonBody(const FunctionDecl *Definition, const CXXRec
   if (!Comparison) return false;
   const auto *Left = dyn_cast<MemberExpr>(Comparison->getLHS()->IgnoreParenImpCasts());
   const auto *Right = dyn_cast<MemberExpr>(Comparison->getRHS()->IgnoreParenImpCasts());
-  if (!Left || !Right || Left->isArrow() || Right->isArrow()) return false;
+  if (!Left || !Right) return false;
   const auto *Field = dyn_cast<FieldDecl>(Left->getMemberDecl());
   if (!Field || Field != Right->getMemberDecl() || Field->isBitField() ||
       Field->getType().hasLocalQualifiers() ||
@@ -54898,6 +54898,16 @@ bool linkedListRecordComparisonBody(const FunctionDecl *Definition, const CXXRec
       !linkedListFloatingElement(Value, Context) && !linkedListFixedEnumElement(Value, Context) &&
       !(Operator == OO_EqualEqual && linkedListObjectPointerElement(Value, Context)))
     return false;
+  if (const auto *Method = dyn_cast<CXXMethodDecl>(Definition)) {
+    auto Receiver = [](const MemberExpr *Field) {
+      return Field->isArrow() && isa<CXXThisExpr>(Field->getBase()->IgnoreParenImpCasts());
+    };
+    auto Argument = [&](const MemberExpr *Field) {
+      return !Field->isArrow() && variantParameter(Field->getBase(), Method->getParamDecl(0));
+    };
+    return (Receiver(Left) && Argument(Right)) || (Receiver(Right) && Argument(Left));
+  }
+  if (Left->isArrow() || Right->isArrow()) return false;
   const auto *First = Definition->getParamDecl(0);
   const auto *Second = Definition->getParamDecl(1);
   return (variantParameter(Left->getBase(), First) && variantParameter(Right->getBase(), Second)) ||
@@ -54921,6 +54931,31 @@ bool linkedListNamedRecordOrder(const State &S, const SourceManager &SM, const E
   return Definition && linkedListRecordComparisonBody(Definition, Record, Context);
 }
 
+const CXXMethodDecl *linkedListRecordMemberOperator(
+    const State &S, const SourceManager &SM, const CXXOperatorCallExpr *Call,
+    QualType Element, const ASTContext &Context) {
+  const auto *Selected = Call->getDirectCallee();
+  const auto *Method = Selected ? dyn_cast_or_null<CXXMethodDecl>(Selected->getDefinition()) : nullptr;
+  const auto *Record = Element->getAsCXXRecordDecl();
+  if (!Method || !Record || Method->isInvalidDecl() || Method->getBuiltinID() ||
+      Method->getOverloadedOperator() != Call->getOperator() ||
+      !Method->isConst() || Method->isVolatile() ||
+      Method->isStatic() || Method->isVirtual() || Method->isDeleted() ||
+      Method->getRefQualifier() == RQ_RValue || !S.owns(SM, Method->getLocation()) ||
+      Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
+      !Context.hasSameType(Method->getReturnType(), Context.BoolTy) ||
+      Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg() ||
+      !Context.hasSameType(Method->getParamDecl(0)->getType(),
+                           Context.getLValueReferenceType(Element.withConst())))
+    return nullptr;
+  for (const auto *Argument : Call->arguments())
+    if (!Argument->isLValue() || Argument->getType().isVolatileQualified() ||
+        !Context.hasSameUnqualifiedType(Argument->getType(), Element))
+      return nullptr;
+  return Method;
+}
+
 bool bindLinkedListDefaultRecordComparison(const State &S, const SourceManager &SM,
     const CallExpr *Call, QualType Element, const ASTContext &Context,
     const FunctionDecl **Selected, OverloadedOperatorKind Kind) {
@@ -54933,16 +54968,20 @@ bool bindLinkedListDefaultRecordComparison(const State &S, const SourceManager &
   const bool DirectEquality = Kind == OO_EqualEqual && (File->Path == "list" || File->Path == "forward_list");
   if (!DirectEquality && File->Path != "__algorithm/comp.h") return false;
   const auto *Definition = linkedListRecordOrderDefinition(S, SM, Operator->getDirectCallee());
+  if (!Definition)
+    Definition = linkedListRecordMemberOperator(S, SM, Operator, Element, Context);
   if (!Definition || (*Selected && (*Selected)->getCanonicalDecl() != Definition->getCanonicalDecl()))
     return false;
   for (const auto *Declaration : Definition->redecls())
     if (!S.owns(SM, Declaration->getLocation())) return false;
   const auto *Record = Element->getAsCXXRecordDecl();
-  const auto Pointer = Context.getPointerType(Definition->getType());
-  if (!Record || !linkedListCallbackPointer(Pointer, Element, 2, Context, true) ||
-      !Definition->getParamDecl(0)->getType()->isLValueReferenceType() ||
-      !linkedListFilterArguments(Call, Pointer, Element, Context) ||
-      !linkedListRecordComparisonBody(Definition, Record, Context, Kind)) return false;
+  if (!Record || !linkedListRecordComparisonBody(Definition, Record, Context, Kind)) return false;
+  if (!isa<CXXMethodDecl>(Definition)) {
+    const auto Pointer = Context.getPointerType(Definition->getType());
+    if (!linkedListCallbackPointer(Pointer, Element, 2, Context, true) ||
+        !Definition->getParamDecl(0)->getType()->isLValueReferenceType() ||
+        !linkedListFilterArguments(Call, Pointer, Element, Context)) return false;
+  }
   *Selected = Definition;
   return true;
 }
