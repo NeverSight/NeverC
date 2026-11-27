@@ -54240,7 +54240,25 @@ bool linkedListTrivialRecordField(
     QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
     unsigned Depth, unsigned &RemainingFields);
 
-bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field) {
+bool linkedListDefaultCall(const CallExpr *Call, const LinkedListRecordSource *Source) {
+  const auto *Callee = dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto *Function = Call->getDirectCallee();
+  if (!Function || !Callee || Callee->getDecl() != Function || Function->getKind() != Decl::Function ||
+      Function->isInvalidDecl() || Function->isImplicit() || Function->isDeleted() ||
+      Function->getBuiltinID() || Function->isVariadic() || Function->getNumParams() ||
+      Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate || Call->getNumArgs() ||
+      !Call->getType()->isArithmeticType())
+    return false;
+  if (!Function->getDefinition()) return false;
+  // Ordinary expression validation and lowering inspect and emit the call.
+  // Here the SDK proof can only use a source-owned scalar result.
+  return !Source || llvm::all_of(Function->redecls(), [&](const FunctionDecl *D) {
+    return Source->Program.owns(Source->Sources, D->getLocation());
+  });
+}
+
+bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
+                                 const LinkedListRecordSource *Source) {
   llvm::SmallVector<const Expr *, 8> Pending{Init};
   const auto *Owner = Field->getParent()->getCanonicalDecl();
   while (!Pending.empty()) {
@@ -54257,6 +54275,10 @@ bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field) {
           Earlier->getFieldIndex() >= Field->getFieldIndex() ||
           !isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()))
         return false;
+      continue;
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(Value)) {
+      if (!linkedListDefaultCall(Call, Source)) return false;
       continue;
     }
     if (const auto *Unary = dyn_cast<UnaryOperator>(Value)) {
@@ -54286,7 +54308,7 @@ bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
     const auto *Init = Field->getInClassInitializer();
     if (!Init || (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())))
       return false;
-    if (!linkedListDefaultExpression(Init, Field)) return false;
+    if (!linkedListDefaultExpression(Init, Field, Source)) return false;
     HasDefault = true;
   }
   return HasDefault;
