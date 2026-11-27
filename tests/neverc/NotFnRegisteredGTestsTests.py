@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_record_extended_comparisons_registered = cls.registered
+        cls.list_record_extended_comparisons_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_extended_comparisons_original = cls.adapter.restore_original_gtests(cls.list_record_extended_comparisons_registered,
+                                                                        cls.list_record_extended_comparisons_suffix)
+        cls.registered = cls.adapter.restore_list_record_extended_comparisons_history(cls.list_record_extended_comparisons_registered)
         cls.list_record_member_operators_registered = cls.registered
         cls.list_record_member_operators_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_record_member_operators_original = cls.adapter.restore_original_gtests(cls.list_record_member_operators_registered,
@@ -4487,6 +4492,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_record_member_operators_history(self.list_record_member_operators_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_record_member_operators_registered, self.list_record_member_operators_suffix + b' ')
+
+
+    def test_list_record_extended_comparisons_retains_published_bodies(self):
+        self.assertEqual(self.list_record_extended_comparisons_original + self.list_record_extended_comparisons_suffix, self.list_record_extended_comparisons_registered)
+        self.assertEqual(self.adapter.restore_list_record_extended_comparisons_history(self.list_record_extended_comparisons_original),
+                         self.list_record_member_operators_original)
+        output, evidence = self.extractor.extract(self.list_record_extended_comparisons_original, ['TranslateTest.CoreV2ListRecordMemberLexicographicSortRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordByValueStableMergeRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordByValueDescendingSortRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordEffectfulMemberOrderGuardRejected', 'TranslateTest.CoreV2ListRecordByValueMismatchedFieldGuardRejected', 'TranslateTest.CoreV2ForwardListRecordByValueEffectfulCopyGuardRejected', 'TranslateTest.CoreV2ListRecordByValueVolatileParameterGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9497)
+        self.assertEqual(evidence['selected_count'], 7)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-member-lexicographic-sort', output)
+        self.assertIn(b'list-record-effectful-member-order-guard', output)
+
+    def test_list_record_extended_comparisons_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_extended_comparisons_history(self.list_record_extended_comparisons_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_extended_comparisons_registered, self.list_record_extended_comparisons_suffix + b' ')
 
 
 if __name__ == '__main__':

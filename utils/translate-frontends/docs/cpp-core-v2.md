@@ -18776,3 +18776,10 @@ the stored field values.
 Linked-list owner comparisons and default algorithms use the checked source-owned
 const member operators on the stored values. The execution suite covers stable sorting
 and merging as well as equality for removal and deduplication.
+
+## Compound and by-value record comparisons in linked lists
+
+The translation adapter checks short-circuit field comparisons for linked-list
+records. Named comparators that take a trivially copyable record by value
+receive a separate caller-owned copy for each argument. Stable sort and
+merge preserve the identity of the original nodes.

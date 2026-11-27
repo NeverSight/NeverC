@@ -54881,10 +54881,14 @@ const FunctionDecl *linkedListRecordOrderDefinition(
   return Definition;
 }
 
-bool linkedListRecordComparisonBody(const FunctionDecl *Definition, const CXXRecordDecl *Record,
-    const ASTContext &Context, OverloadedOperatorKind Operator = OO_Less) {
-  const auto *Comparison = linkedListComparisonExpression(Definition, Operator);
-  if (!Comparison) return false;
+bool linkedListRecordFieldComparison(const BinaryOperator *Comparison,
+    const FunctionDecl *Definition, const CXXRecordDecl *Record, const ASTContext &Context,
+    OverloadedOperatorKind Operator) {
+  const auto Opcode = Comparison->getOpcode();
+  const bool Equality = Opcode == BO_EQ || Opcode == BO_NE;
+  if (!Equality && (Operator == OO_EqualEqual ||
+      (Opcode != BO_LT && Opcode != BO_GT && Opcode != BO_LE && Opcode != BO_GE)))
+    return false;
   const auto *Left = dyn_cast<MemberExpr>(Comparison->getLHS()->IgnoreParenImpCasts());
   const auto *Right = dyn_cast<MemberExpr>(Comparison->getRHS()->IgnoreParenImpCasts());
   if (!Left || !Right) return false;
@@ -54914,6 +54918,32 @@ bool linkedListRecordComparisonBody(const FunctionDecl *Definition, const CXXRec
          (variantParameter(Left->getBase(), Second) && variantParameter(Right->getBase(), First));
 }
 
+bool linkedListRecordComparisonBody(const FunctionDecl *Definition,
+    const CXXRecordDecl *Record, const ASTContext &Context, OverloadedOperatorKind Operator = OO_Less) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
+  const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
+  if (!Return || !Return->getRetValue()) return false;
+
+  llvm::SmallVector<const Expr *, 8> Pending{Return->getRetValue()};
+  while (!Pending.empty()) {
+    const auto *Current = Pending.pop_back_val()->IgnoreParenImpCasts();
+    if (const auto *Unary = dyn_cast<UnaryOperator>(Current); Unary && Unary->getOpcode() == UO_LNot) {
+      Pending.push_back(Unary->getSubExpr());
+      continue;
+    }
+    const auto *Binary = dyn_cast<BinaryOperator>(Current);
+    if (!Binary) return false;
+    if (Binary->getOpcode() == BO_LAnd || Binary->getOpcode() == BO_LOr) {
+      Pending.push_back(Binary->getLHS());
+      Pending.push_back(Binary->getRHS());
+      continue;
+    }
+    if (!linkedListRecordFieldComparison(Binary, Definition, Record, Context, Operator))
+      return false;
+  }
+  return true;
+}
+
 bool linkedListNamedRecordOrder(const State &S, const SourceManager &SM, const Expr *Value,
     QualType Element, const ASTContext &Context) {
   const auto *Record = Element->getAsCXXRecordDecl();
@@ -54921,14 +54951,20 @@ bool linkedListNamedRecordOrder(const State &S, const SourceManager &SM, const E
       !linkedListCallbackPointer(Value->getType(), Element, 2, Context, true))
     return false;
   const auto *Prototype = Value->getType()->getPointeeType()->getAs<FunctionProtoType>();
-  if (!Prototype->getParamType(0)->isLValueReferenceType()) return false;
+  if (!Prototype->getParamType(0)->isLValueReferenceType()) {
+    const auto *Layout = Record->getDefinition();
+    if (!Layout || !Layout->isTriviallyCopyable()) return false;
+  }
   const Expr *Target = Value->IgnoreParenImpCasts();
   if (const auto *Address = dyn_cast<UnaryOperator>(Target); Address && Address->getOpcode() == UO_AddrOf)
     Target = Address->getSubExpr()->IgnoreParenImpCasts();
   const auto *Reference = dyn_cast<DeclRefExpr>(Target);
   const auto *Function = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
   const auto *Definition = linkedListRecordOrderDefinition(S, SM, Function);
-  return Definition && linkedListRecordComparisonBody(Definition, Record, Context);
+  if (!Definition) return false;
+  for (const auto *Parameter : Definition->parameters())
+    if (Parameter->getType().isVolatileQualified()) return false;
+  return linkedListRecordComparisonBody(Definition, Record, Context);
 }
 
 const CXXMethodDecl *linkedListRecordMemberOperator(
