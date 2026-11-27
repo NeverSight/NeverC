@@ -1,0 +1,166 @@
+{
+  "positive_cases": [
+    {
+      "name": "unordered-empty-capacity-set-max-size",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyCapacitySetMaxSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "95b30944071ae9127c45d17b45e559f7003d868dfe34ee765202c14bc68fb360",
+      "original_case_source_sha256": "95b30944071ae9127c45d17b45e559f7003d868dfe34ee765202c14bc68fb360",
+      "gtest_body_sha256": "e0fa2bcf7e3c17be14180c71066a1d9d8423b31da3b0715cad711d90f0ebaf58"
+    },
+    {
+      "name": "unordered-empty-capacity-multiset-max-buckets",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyCapacityMultisetMaxBucketsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "51b02740675825172d8abb5d9d36d6769518242d880b44e7459153eab13f031c",
+      "original_case_source_sha256": "51b02740675825172d8abb5d9d36d6769518242d880b44e7459153eab13f031c",
+      "gtest_body_sha256": "1d0d77b4e9f323aaf0668bf9befc50c1992b5e78ff5b74eb5826eda76e4bd67a"
+    },
+    {
+      "name": "unordered-empty-capacity-single-receiver-evaluation",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyCapacitySingleReceiverEvaluationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "883c8cd270eed5753556804d77209805cc7f6198349d72a37b1079afcdd3c200",
+      "original_case_source_sha256": "883c8cd270eed5753556804d77209805cc7f6198349d72a37b1079afcdd3c200",
+      "gtest_body_sha256": "554f8a63ca5753a72486c6f7e818724c0ec5a0f01815996bb69b51bcf8112065"
+    },
+    {
+      "name": "unordered-empty-capacity-nested-multiset",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyCapacityNestedMultisetRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0e0622d95993de087ed2850db140e579db8e4f4f6a8959b2744e2ad414d1b1d3",
+      "original_case_source_sha256": "0e0622d95993de087ed2850db140e579db8e4f4f6a8959b2744e2ad414d1b1d3",
+      "gtest_body_sha256": "ac24fb10238179d4f831d77b29f4f81999e06a6d62d5d07a41d689f89dcb413a"
+    },
+    {
+      "name": "unordered-empty-capacity-nonempty-owner",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedMultisetNonemptyMaxSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb",
+      "original_case_source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb",
+      "gtest_body_sha256": "1e3b24875640d6c49a9a04c558691f9406f1187c71738b4c56ee823dc4d3cae0"
+    },
+    {
+      "name": "unordered-empty-capacity-arrow-receiver",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedSetOriginalPointerMaxBucketsRunsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ef89b1775b5c94bcbe0242b039a33e5a73872a7804e572f78132ea04bd45e5e6",
+      "original_case_source_sha256": "ef89b1775b5c94bcbe0242b039a33e5a73872a7804e572f78132ea04bd45e5e6",
+      "gtest_body_sha256": "788b82c47b0949df70c4f73be0dd36c1074a3ed42c355c4d908bfdf8b0430fbd"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "unordered-empty-capacity-custom-hash",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyCapacityCustomHashRejected",
+      "expected": "reject",
+      "source_sha256": "05e9984e6f86ed9c9d53e719c1eb7adaf1df5d0c12174cbd23077ad26949307f",
+      "original_case_source_sha256": "05e9984e6f86ed9c9d53e719c1eb7adaf1df5d0c12174cbd23077ad26949307f",
+      "gtest_body_sha256": "2625226335e75ea8f05125f054f0290f6999eafed077e55a5e77b39b901a90be"
+    },
+    {
+      "name": "unordered-empty-capacity-non-int-key",
+      "formal_test_name": "TranslateTest.CoreV2UnorderedEmptyCapacityNonIntKeyRejected",
+      "expected": "reject",
+      "source_sha256": "1ebaad715446205bb332c29929ab9102b705850154923f5d984d57e0904762ef",
+      "original_case_source_sha256": "1ebaad715446205bb332c29929ab9102b705850154923f5d984d57e0904762ef",
+      "gtest_body_sha256": "b32cf1c2f955117ebc58b5ca31b3034c645d17c96a21de4d5a9be6ac293216d4"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "unordered-empty-capacity-set-max-size",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  using Set = std::unordered_set<int>;\n  const Set values;\n  Set::size_type maximum = values.max_size();\n  return maximum != Set::size_type(-1) / 24 || !values.empty();\n}\n",
+      "source_sha256": "95b30944071ae9127c45d17b45e559f7003d868dfe34ee765202c14bc68fb360"
+    },
+    {
+      "name": "unordered-empty-capacity-multiset-max-buckets",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  using Set = std::unordered_multiset<int>;\n  Set values;\n  Set::size_type maximum = values.max_bucket_count();\n  return maximum != Set::size_type(-1) / 24 || values.bucket_count() != 0;\n}\n",
+      "source_sha256": "51b02740675825172d8abb5d9d36d6769518242d880b44e7459153eab13f031c"
+    },
+    {
+      "name": "unordered-empty-capacity-single-receiver-evaluation",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_set<int>;\nconst Set& observe(int& calls, const Set& values) {\n  ++calls;\n  return values;\n}\nint main() {\n  const Set values;\n  int calls = 0;\n  Set::size_type maximum = observe(calls, values).max_bucket_count();\n  return calls != 1 || maximum != values.max_size();\n}\n",
+      "source_sha256": "883c8cd270eed5753556804d77209805cc7f6198349d72a37b1079afcdd3c200"
+    },
+    {
+      "name": "unordered-empty-capacity-nested-multiset",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nusing Set = std::unordered_multiset<int>;\nSet::size_type maximum(bool nested) {\n  const Set outer;\n  if (nested) {\n    const Set inner;\n    return inner.max_size() - outer.max_bucket_count();\n  }\n  return outer.max_size();\n}\nint main() { return maximum(true) != 0 || maximum(false) != Set::size_type(-1) / 24; }\n",
+      "source_sha256": "0e0622d95993de087ed2850db140e579db8e4f4f6a8959b2744e2ad414d1b1d3"
+    },
+    {
+      "name": "unordered-empty-capacity-nonempty-owner",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<int> values{3, 3};\n  return values.max_size() == 0;\n}\n",
+      "source_sha256": "9410245a4e9c6eaf36b49306da04f8d4940089fec17fef807e2e8f4a628afbdb"
+    },
+    {
+      "name": "unordered-empty-capacity-arrow-receiver",
+      "expected": "accept",
+      "public_header": "unordered_set",
+      "kind": "cpp17-operation",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_set<int> values;\n  const auto* pointer = &values;\n  return pointer->max_bucket_count() == 0;\n}\n",
+      "source_sha256": "ef89b1775b5c94bcbe0242b039a33e5a73872a7804e572f78132ea04bd45e5e6"
+    },
+    {
+      "name": "unordered-empty-capacity-custom-hash",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "kind": "source-body-guard",
+      "source": "#include <unordered_set>\nstruct Hash { unsigned long long operator()(int value) const { return value; } };\nint main() {\n  const std::unordered_set<int, Hash> values;\n  return values.max_size() == 0;\n}\n",
+      "source_sha256": "05e9984e6f86ed9c9d53e719c1eb7adaf1df5d0c12174cbd23077ad26949307f"
+    },
+    {
+      "name": "unordered-empty-capacity-non-int-key",
+      "expected": "reject",
+      "public_header": "unordered_set",
+      "kind": "source-body-guard",
+      "source": "#include <unordered_set>\nint main() {\n  const std::unordered_multiset<long> values;\n  return values.max_bucket_count() == 0;\n}\n",
+      "source_sha256": "1ebaad715446205bb332c29929ab9102b705850154923f5d984d57e0904762ef"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2UnorderedEmptyCapacitySetMaxSizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyCapacityMultisetMaxBucketsRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyCapacitySingleReceiverEvaluationRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyCapacityNestedMultisetRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedMultisetNonemptyMaxSizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedSetOriginalPointerMaxBucketsRunsAtBothOptimizations",
+    "TranslateTest.CoreV2UnorderedEmptyCapacityCustomHashRejected",
+    "TranslateTest.CoreV2UnorderedEmptyCapacityNonIntKeyRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "98711dd3c7fd92123632d787bbdddbb3df8ba8df23761125b202ed7e00895b96",
+  "maintained_original_sha256": "97626e342214f6eef8bd21ec028281d4bc2319f8749140a006b1e99559bf70d6",
+  "previous_registered_source_sha256": "e51e579798e32927a56469df5fc72fa5e15a7309fdc3a1aa4c1dafbb227aa931",
+  "previous_maintained_original_sha256": "b981812e100743864d81cd802d9b0d314b60e59b2362aff71f6a635b11e0cee5",
+  "restorer_sha256": "834a1504d19c596700c4a71d80c8f66360a4346f093c7e546712419399238f6e",
+  "extractor_sha256": "7a048c9465511ff470cac33fe18e577de4a2867f2a69178ca55433a087ac9023",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8350,
+  "current_python_registry_tests": 174,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
+  "native_reference_proofs": {
+    "unordered-empty-capacity": "0446aea757fd87d3b273bff57e5facec4230938419deb59350d2ac5199a83ba8",
+    "unordered-multiset-values": "a70973684483ea16fcd2304f595e88bd92a64431257321ebc99e34ea468f676a",
+    "unordered-set-bucket-receivers": "1a0de477baf71caf287cb98e07a1017a3c2a3df8497717c62c00fa1dfc95ed03"
+  },
+  "native_reference_authentication_sha256": "11e8e7b28b4f27563ffc8f37f6f772a5b0bb48a6f1fdba6b3619bacb43d96266",
+  "source_proof_sha256": "4d01790a187ae51bb7815f5eef1f115d90fa984a9430689fe63667089e9d693b"
+}
