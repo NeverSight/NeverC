@@ -54301,7 +54301,10 @@ bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
 
 bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
     const LinkedListRecordSource *Source) {
-  if (!Record->isTriviallyCopyable() || !Record->hasTrivialDestructor()) return false;
+  const bool CopiesTrivially = Record->hasTrivialDestructor()
+      ? Record->isTriviallyCopyable()
+      : Record->hasTrivialCopyConstructor() && Record->hasTrivialCopyAssignment();
+  if (!CopiesTrivially) return false;
   bool HasDefault = false;
   for (const auto *Field : Record->fields()) {
     if (!Field->hasInClassInitializer()) continue;
@@ -54316,8 +54319,10 @@ bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
 
 bool linkedListCheckedRecordDestructor(const CXXRecordDecl *Record,
     const LinkedListRecordSource *Source) {
-  if (Record->hasTrivialDestructor() || !Record->hasTrivialDefaultConstructor() ||
-      !Record->hasTrivialCopyConstructor() || !Record->hasTrivialCopyAssignment()) return false;
+  if (Record->hasTrivialDestructor() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialCopyAssignment()) return false;
+  if (!Record->hasTrivialDefaultConstructor() && !linkedListCheckedMemberDefaults(Record, Source))
+    return false;
   const auto *Destructor = Record->getDestructor();
   if (!Destructor || Destructor->isDeleted() || Destructor->isInvalidDecl() ||
       Destructor->isVirtual()) return false;
@@ -54343,8 +54348,14 @@ const CXXRecordDecl *linkedListRecordLayout(
       Record->isUnion() || Record->getNumBases() || !Record->isStandardLayout() ||
       !Record->isAggregate() || Record->field_empty())
     return nullptr;
-  if (!Record->isTrivial() && !linkedListCheckedRecordDestructor(Record, Source) &&
-      (Depth || !linkedListCheckedMemberDefaults(Record, Source))) return nullptr;
+  if (!Record->isTrivial()) {
+    // The node initializer evaluates defaults of the stored record itself.
+    if (Depth && !Record->hasTrivialDefaultConstructor()) return nullptr;
+    const bool Checked = Record->hasTrivialDestructor()
+        ? !Depth && linkedListCheckedMemberDefaults(Record, Source)
+        : linkedListCheckedRecordDestructor(Record, Source);
+    if (!Checked) return nullptr;
+  }
   if (Source && !Source->Program.owns(Source->Sources, Record->getLocation()))
     return nullptr;
   const auto &Layout = Context.getASTRecordLayout(Record);
