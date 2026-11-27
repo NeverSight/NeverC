@@ -765,9 +765,20 @@ class FunctionLowering {
         Converted.push_back(cast(
             address(json::Object(*Argument), Parameter->getPointeeType(), L),
             type(Parameter, L), L));
-      else if (recordValue(Parameter))
-        Converted.push_back(json::Object(*Argument));
-      else
+      else if (recordValue(Parameter)) {
+        const auto ValueType = Parameter.getUnqualifiedType();
+        const auto *Record = ValueType->getAsCXXRecordDecl();
+        Record = Record ? Record->getDefinition() : nullptr;
+        if (!Record || !Record->isTriviallyCopyable() ||
+            Argument->getString("type") != type(ValueType, L))
+          reject(L, "algorithm callback",
+                 "A matching trivially copyable record argument is required.");
+        // The emitted callback signature takes a pointer to each separate
+        // caller-owned record parameter.
+        auto Copy = objectTemporary(ValueType, L);
+        assign(Copy, json::Object(*Argument), L);
+        Converted.push_back(snapshot(address(std::move(Copy), ValueType, L), L));
+      } else
         Converted.push_back(
             cast(json::Object(*Argument), type(Parameter, L), L));
     }
