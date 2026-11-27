@@ -1,0 +1,130 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-default-construction-count-and-resize",
+      "formal_test_name": "TranslateTest.CoreV2ListDefaultConstructionCountAndResizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cd0141e1011e93fa90595041679aa71faf0b8c911a5152ecb73abb053bc8bd42",
+      "original_case_source_sha256": "cd0141e1011e93fa90595041679aa71faf0b8c911a5152ecb73abb053bc8bd42",
+      "gtest_body_sha256": "56061f8403f06127720114a7d1491864460b9964be391edc10a2b247596faa44"
+    },
+    {
+      "name": "forward-list-default-construction-count-and-resize",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultConstructionCountAndResizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "aa76a5717ffa04ed5a6c6513f899d70bbe90e4ffa6898fad9e4bbb43ef6bd6b9",
+      "original_case_source_sha256": "aa76a5717ffa04ed5a6c6513f899d70bbe90e4ffa6898fad9e4bbb43ef6bd6b9",
+      "gtest_body_sha256": "224890b3b63d001cabc6d8ad51817f101cddfc191044538130ccbea24605db85"
+    },
+    {
+      "name": "list-default-emplacement-and-explicit-fill",
+      "formal_test_name": "TranslateTest.CoreV2ListDefaultEmplacementAndExplicitFillRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b8d1d016450d38324256b827a12a0eb026573f70c7244274bf52dd82e084d48e",
+      "original_case_source_sha256": "b8d1d016450d38324256b827a12a0eb026573f70c7244274bf52dd82e084d48e",
+      "gtest_body_sha256": "6ac9787dd53eda1629e495ad968fad0c423dbf55df3cd6de6ba417fdd3411c9c"
+    },
+    {
+      "name": "forward-list-default-emplacement-and-explicit-fill",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultEmplacementAndExplicitFillRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5a52982c62c57e668e7adef408c964003e7e1f50ac61e4bacba4543f1c6193a0",
+      "original_case_source_sha256": "5a52982c62c57e668e7adef408c964003e7e1f50ac61e4bacba4543f1c6193a0",
+      "gtest_body_sha256": "ea4436c6521cac4892956d7c763e0912d8545ab1e32f629104c7651da286408e"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-node-default-indirect-call-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListNodeDefaultIndirectCallGuardRejected",
+      "expected": "reject",
+      "source_sha256": "76de1de575e0c4c7a5bee0cc6b17fb73230dc1e5bcfc913ca25d1ea4f3e51141",
+      "original_case_source_sha256": "76de1de575e0c4c7a5bee0cc6b17fb73230dc1e5bcfc913ca25d1ea4f3e51141",
+      "gtest_body_sha256": "43b1f6fa6da83b6fdd938f4fe4901302deb3fd2ed264333bfd91bfa15918ebeb"
+    },
+    {
+      "name": "forward-list-node-default-writing-member-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListNodeDefaultWritingMemberGuardRejected",
+      "expected": "reject",
+      "source_sha256": "a9f66cee1a45b2ad5d4d458ca10d7865491f508ad122302406feb1b0da5e5661",
+      "original_case_source_sha256": "a9f66cee1a45b2ad5d4d458ca10d7865491f508ad122302406feb1b0da5e5661",
+      "gtest_body_sha256": "8df5a25525f79612fb90fdc8535c7e56ce1341d52936147bf7872a14891997a9"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-default-construction-count-and-resize",
+      "section": "list",
+      "expected": "accept",
+      "source": "#include <list>\nint calls;\nint next() { return ++calls; }\nstruct Entry { int serial = next(); int checksum = serial + 4; };\nint main() {\n  std::list<Entry> empty(0);\n  empty.resize(0);\n  if (calls || !empty.empty()) return 1;\n  std::list<Entry> rows(2);\n  auto first = rows.begin();\n  rows.resize(2);\n  if (calls != 2 || first->checksum != 5 || rows.back().checksum != 6) return 2;\n  rows.resize(4);\n  if (calls != 4 || first != rows.begin() || rows.back().checksum != 8) return 3;\n  rows.resize(1);\n  return calls != 4 || first != rows.begin() || rows.back().checksum != 5;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "cd0141e1011e93fa90595041679aa71faf0b8c911a5152ecb73abb053bc8bd42"
+    },
+    {
+      "name": "forward-list-default-construction-count-and-resize",
+      "section": "forward_list",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint calls, destroyed;\nint next() { return ++calls; }\nstruct Entry {\n  int value = next();\n  ~Entry() noexcept { destroyed += value; }\n};\nint main() {\n  std::forward_list<Entry> empty(0);\n  empty.resize(0);\n  if (calls || destroyed || !empty.empty()) return 1;\n  std::forward_list<Entry> rows(2);\n  auto first = rows.begin();\n  auto second = first;\n  ++second;\n  rows.resize(2);\n  if (calls != 2 || first->value != 1 || second->value != 2) return 2;\n  rows.resize(1);\n  if (calls != 2 || destroyed != 2 || first != rows.begin()) return 3;\n  rows.resize(3);\n  rows.clear();\n  return calls != 4 || destroyed != 10 || !rows.empty();\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "aa76a5717ffa04ed5a6c6513f899d70bbe90e4ffa6898fad9e4bbb43ef6bd6b9"
+    },
+    {
+      "name": "list-default-emplacement-and-explicit-fill",
+      "section": "list",
+      "expected": "accept",
+      "source": "#include <list>\nint calls;\nint next() { return ++calls; }\nstruct Entry { int id = next(); int data = id + 10; };\nint main() {\n  Entry value{9};\n  std::list<Entry> rows(2, value);\n  rows.resize(3, value);\n  if (calls || rows.size() != 3 || rows.back().data != 19) return 1;\n  auto first = rows.emplace(rows.begin());\n  auto& last = rows.emplace_back();\n  return calls != 2 || first != rows.begin() || first->data != 11 || last.data != 12;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "b8d1d016450d38324256b827a12a0eb026573f70c7244274bf52dd82e084d48e"
+    },
+    {
+      "name": "forward-list-default-emplacement-and-explicit-fill",
+      "section": "forward_list",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint calls;\nint next() { return ++calls; }\nstruct Entry { int id = next(); int data = id + 20; };\nint main() {\n  Entry value{9};\n  std::forward_list<Entry> rows(1, value);\n  rows.resize(2, value);\n  auto explicit_value = rows.begin();\n  auto second = explicit_value;\n  ++second;\n  if (calls || explicit_value->data != 29 || second->data != 29) return 1;\n  auto& first = rows.emplace_front();\n  auto inserted = rows.emplace_after(explicit_value);\n  return calls != 2 || first.data != 21 || explicit_value->data != 29 || inserted->data != 22;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "5a52982c62c57e668e7adef408c964003e7e1f50ac61e4bacba4543f1c6193a0"
+    },
+    {
+      "name": "list-node-default-indirect-call-guard",
+      "section": "list",
+      "expected": "reject",
+      "source": "#include <list>\nint count;\nint next() { return ++count; }\nint (*stamp)() = next;\nstruct Entry { int id = stamp(); };\nint main() {\n  std::list<Entry> rows(2);\n  rows.resize(3);\n  return rows.back().id != 3;\n}\n",
+      "kind": "cpp17-negative",
+      "source_sha256": "76de1de575e0c4c7a5bee0cc6b17fb73230dc1e5bcfc913ca25d1ea4f3e51141"
+    },
+    {
+      "name": "forward-list-node-default-writing-member-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "source": "#include <forward_list>\nstruct Entry { int id = 3; int previous = id++; };\nint main() {\n  std::forward_list<Entry> rows;\n  rows.resize(2);\n  return rows.front().previous != 3;\n}\n",
+      "kind": "cpp17-negative",
+      "source_sha256": "a9f66cee1a45b2ad5d4d458ca10d7865491f508ad122302406feb1b0da5e5661"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListDefaultConstructionCountAndResizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDefaultConstructionCountAndResizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListDefaultEmplacementAndExplicitFillRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDefaultEmplacementAndExplicitFillRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListNodeDefaultIndirectCallGuardRejected",
+    "TranslateTest.CoreV2ForwardListNodeDefaultWritingMemberGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "7a2bdf2980bf0a682418f7f2223983f99745615d36b18223d036a1c087f5fe22",
+  "maintained_original_sha256": "e55c001a50d465a80ca24202f4561ee48de8bf564954262a02f0c9d9f0ab5345",
+  "previous_registered_source_sha256": "0b29b3c9caa29b262f4c21e102d5646824e206a0890c51e8f77f444254e2c2ff",
+  "previous_maintained_original_sha256": "9b5512ee9560abf9d3dcddded029e0b1450c1da7ef40741ddf36b5557d8c6ab4",
+  "restorer_sha256": "ccfb039ab69a32c463a7131aa96dada923dfab46fd2b329e24907ceccc4a7d25",
+  "extractor_sha256": "e784c085f19fdeaac1496a2181d69aca6d79c5c393012904d2622180d6940fbd",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9532,
+  "current_python_registry_tests": 364,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "linked-list-default-node-initialization": "1799dcb53ecd9edf836c08eeb43a27be8f8ae32634bff254abeac5d4055ec79a"
+  },
+  "native_reference_authentication_sha256": "099d38e12cc3586e21e5978cbed0c094088f6beb14942b4359ca19fb56f7ee2f",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}

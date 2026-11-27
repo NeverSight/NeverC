@@ -1,0 +1,114 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-record-default-call-resize",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordDefaultCallResizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9209ff55f91ab678ce92278cefbcd355ea2c58a34f077269419782763855cbc4",
+      "original_case_source_sha256": "9209ff55f91ab678ce92278cefbcd355ea2c58a34f077269419782763855cbc4",
+      "gtest_body_sha256": "0165b2284955b8829523661f28cd77193ec9cacd2125ca2cf8c95dd7db5202be"
+    },
+    {
+      "name": "forward-list-record-default-call-emplacement",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordDefaultCallEmplacementRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "21ccc332ca63c0d7d9f84525d2a20d62e87a3b2719519b958d8b11a3bf35290c",
+      "original_case_source_sha256": "21ccc332ca63c0d7d9f84525d2a20d62e87a3b2719519b958d8b11a3bf35290c",
+      "gtest_body_sha256": "2fa4db77cf5be51b3c208268d7d4a2e7ed53b369980a495e0716c855ab77556d"
+    },
+    {
+      "name": "list-record-default-call-aggregate-suppression",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordDefaultCallAggregateSuppressionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "61793278e2a5a7993837e4a3aafe66562a46f69bf167f878736a51139fccc1e9",
+      "original_case_source_sha256": "61793278e2a5a7993837e4a3aafe66562a46f69bf167f878736a51139fccc1e9",
+      "gtest_body_sha256": "f011c018c06fdce3e0629d37dd0a70740d09baab1be1bac56aad8e1e4f963efa"
+    },
+    {
+      "name": "forward-list-record-default-call-argument-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRunsDirectCallsWithDefaultArgument",
+      "expected": "accept",
+      "source_sha256": "6023b402dbc72f749e35c955ddf3cc38659a6b0020720277bc92b213aba9e6b8",
+      "original_case_source_sha256": "6023b402dbc72f749e35c955ddf3cc38659a6b0020720277bc92b213aba9e6b8",
+      "gtest_body_sha256": "61de2d999ff48b9900adddc6ab5dc1d52b9644f533abcf6fcc7f7cc7a84162b2"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-record-indirect-default-call-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordIndirectDefaultCallGuardRejected",
+      "expected": "reject",
+      "source_sha256": "6e55f7e6f6968c44be7d3217e1b40fb94396ebb6b276a496e8bfc4d9b3635a89",
+      "original_case_source_sha256": "6e55f7e6f6968c44be7d3217e1b40fb94396ebb6b276a496e8bfc4d9b3635a89",
+      "gtest_body_sha256": "0de15a4b4402ba08917ae61cb1560a47d95c78e84f1095ce40a35651562d0686"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-record-default-call-resize",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint calls;\nint next() { return ++calls; }\nstruct Entry { int serial = next(); int checksum = serial * 10; };\nint main() {\n  std::list<Entry> rows(2);\n  auto first = rows.begin();\n  rows.resize(4);\n  if (calls != 4 || first != rows.begin() || first->checksum != 10 || rows.back().checksum != 40) return 1;\n  rows.resize(1);\n  return calls != 4 || first != rows.begin() || rows.back().serial != 1;\n}\n",
+      "source_sha256": "9209ff55f91ab678ce92278cefbcd355ea2c58a34f077269419782763855cbc4"
+    },
+    {
+      "name": "forward-list-record-default-call-emplacement",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nint calls;\nint next() { return ++calls; }\nstruct Entry { int id = next() + 4; int tag = next(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  auto first = rows.begin();\n  if (first->id != 5 || first->tag != 2) return 1;\n  auto second = rows.emplace_after(first);\n  rows.emplace_front();\n  return calls != 6 || rows.front().id != 9 || rows.front().tag != 6 ||\n         second->id != 7 || second->tag != 4 || first->id != 5;\n}\n",
+      "source_sha256": "21ccc332ca63c0d7d9f84525d2a20d62e87a3b2719519b958d8b11a3bf35290c"
+    },
+    {
+      "name": "list-record-default-call-aggregate-suppression",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint calls;\nint next() { return ++calls; }\nstruct Entry { int id = next(); int tag = id + 3; };\nint main() {\n  Entry values[]{{9}, {}};\n  std::list<Entry> rows(values, values + 2);\n  return calls != 1 || rows.front().id != 9 || rows.front().tag != 12 ||\n         rows.back().id != 1 || rows.back().tag != 4;\n}\n",
+      "source_sha256": "61793278e2a5a7993837e4a3aafe66562a46f69bf167f878736a51139fccc1e9"
+    },
+    {
+      "name": "forward-list-record-default-call-argument-guard",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nint next(int count = 1) { return count; }\nstruct Entry { int id = next(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().id != 1;\n}\n",
+      "source_sha256": "6023b402dbc72f749e35c955ddf3cc38659a6b0020720277bc92b213aba9e6b8"
+    },
+    {
+      "name": "list-record-indirect-default-call-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nint seed = 0;\nint next() { return ++seed; }\nint (*selected)() = next;\nstruct Entry { int id = selected(); };\nint main() {\n  std::list<Entry> rows(2);\n  return rows.back().id != 2;\n}\n",
+      "source_sha256": "6e55f7e6f6968c44be7d3217e1b40fb94396ebb6b276a496e8bfc4d9b3635a89"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListRecordDefaultCallResizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordDefaultCallEmplacementRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordDefaultCallAggregateSuppressionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRunsDirectCallsWithDefaultArgument",
+    "TranslateTest.CoreV2ListRecordIndirectDefaultCallGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "3aecdea35dad904e24623feba96982628a19092f1fccbd7827f932b1e22f33a1",
+  "maintained_original_sha256": "c3b3b9d6c41a726b6d0f5d6d1eba0e6b868895188bb168887e4ac56e2e07bf39",
+  "previous_registered_source_sha256": "f4fb25bd4bf11a6d3093e2e630ba11751dcbba3bc9537a04bfe0c41e2488a23c",
+  "previous_maintained_original_sha256": "d095a2df7f786c8db110b7b67c0dcd974f3b533cd7ef4c8638e11b21cd61b560",
+  "restorer_sha256": "db6a708ec4544ab9428ee3fa6f00bac6b10dfb597919c765a39dc52da6a4323d",
+  "extractor_sha256": "a1761c76186f5e52c8d5c638011e63f6ae96156f29b56435d37c8e4c312d7a21",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9515,
+  "current_python_registry_tests": 360,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
+  "native_reference_proofs": {
+    "linked-list-record-default-calls": "ad1a22d6c42672bc0ff98992f4423f4e38b9732f3ef326c98c9246defbf645b5",
+    "linked-list-record-scalar-default-calls": "07bcfc5e4cb38bfbe0b9f2164e82ab3fd239e4b8b75c12f55eed8e66691859c1"
+  },
+  "native_reference_authentication_sha256": "55e66e734805e304a9946326b4fbd228931a97051dab33d361eba9657fc160c2",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}

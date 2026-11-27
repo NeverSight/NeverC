@@ -1,0 +1,1839 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-reverse-retains-iterators-references-and-size",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseRetainsIteratorsReferencesAndSizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5889ec9985b60b1307874a91438e0389780dbbaad0a6c9384f700ccc5f09571b",
+      "original_case_source_sha256": "5889ec9985b60b1307874a91438e0389780dbbaad0a6c9384f700ccc5f09571b",
+      "gtest_body_sha256": "b3258d089719b154b3cb970b6aa8bfd3ec4ba5c486f0dffc50ab3ceecd4278fe"
+    },
+    {
+      "name": "list-reverse-empty-singleton-and-double-reversal",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseEmptySingletonAndDoubleReversalRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b60e785829f114dd01d33f8cb8ac10e6e3cb59196b6a34ddb7fea6585d3b8410",
+      "original_case_source_sha256": "b60e785829f114dd01d33f8cb8ac10e6e3cb59196b6a34ddb7fea6585d3b8410",
+      "gtest_body_sha256": "3467b9e1d5e014adfe300ee70aadc3da7c1fee6dcb6d964f25c9ecd2643e02de"
+    },
+    {
+      "name": "list-reverse-evaluates-pointer-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseEvaluatesPointerReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a01feb133bb1af8309114506742440a10e347d98d1dccd9c2efb73c81e6c1801",
+      "original_case_source_sha256": "a01feb133bb1af8309114506742440a10e347d98d1dccd9c2efb73c81e6c1801",
+      "gtest_body_sha256": "2b608d9ba23ef77c55558cfdb475e4a36cd385bc6fbc6b6e1ace0329248bec3d"
+    },
+    {
+      "name": "list-reverse-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseOtherElementGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a706060cabe04c8d5831a677e3c98f12d4fd10747d47401e5b0ad60d3332c5a3",
+      "original_case_source_sha256": "a706060cabe04c8d5831a677e3c98f12d4fd10747d47401e5b0ad60d3332c5a3",
+      "gtest_body_sha256": "9ce04b81c64ec7e6e6ef19c9f473c576d626fe6e9f6229b17554febe13e92c1f"
+    },
+    {
+      "name": "list-range-erase-preserves-boundary-and-empty-range",
+      "formal_test_name": "TranslateTest.CoreV2ListRangeErasePreservesBoundaryAndEmptyRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5ff04e7ef40bc778c6afcb9b10201bb7cfb1ad6b8ab8357231f5d5c3c72a3bbf",
+      "original_case_source_sha256": "5ff04e7ef40bc778c6afcb9b10201bb7cfb1ad6b8ab8357231f5d5c3c72a3bbf",
+      "gtest_body_sha256": "fcb7dd9220acf33c668e5c8f7dc19dc7dd56dfcbc68c682b1bca2865f7bc3204"
+    },
+    {
+      "name": "list-range-erase-unlinks-before-release",
+      "formal_test_name": "TranslateTest.CoreV2ListRangeEraseUnlinksBeforeReleaseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c415331d464910dc32a91065bef0b23ea3c526b5bf6ef429179289de763df391",
+      "original_case_source_sha256": "c415331d464910dc32a91065bef0b23ea3c526b5bf6ef429179289de763df391",
+      "gtest_body_sha256": "35b29497c870f84e1f45a59511fdc4422d660ce738cdcb15511b5df7ab07d036"
+    },
+    {
+      "name": "list-range-erase-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRangeEraseOtherElementGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "308b6b7ee1d1143212c2aab540d2c9704fef3720a707851849b1407b5f016bd7",
+      "original_case_source_sha256": "308b6b7ee1d1143212c2aab540d2c9704fef3720a707851849b1407b5f016bd7",
+      "gtest_body_sha256": "eb8811f5faf7869710366c343924c8218571bbeb3f7f5949bc028757177558be"
+    },
+    {
+      "name": "list-splice-whole-into-middle-preserves-address",
+      "formal_test_name": "TranslateTest.CoreV2ListSpliceWholeIntoMiddlePreservesAddressRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "11a8fcb6477e5551dfcc58c1ee31eba604fbed28771c5b5a3a7204578592354e",
+      "original_case_source_sha256": "11a8fcb6477e5551dfcc58c1ee31eba604fbed28771c5b5a3a7204578592354e",
+      "gtest_body_sha256": "f365f868ca966d4e99d7c58f0ad368df079379152a1d8a0856816778996c5416"
+    },
+    {
+      "name": "list-splice-rvalue-into-empty-owner",
+      "formal_test_name": "TranslateTest.CoreV2ListSpliceRvalueIntoEmptyOwnerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "84783713ebbc4be3f43c76bfef6b93138f64277a84a8d504c362d2f8f1938634",
+      "original_case_source_sha256": "84783713ebbc4be3f43c76bfef6b93138f64277a84a8d504c362d2f8f1938634",
+      "gtest_body_sha256": "9d4747d4b756fce9a0e6bb881a42863ea892af4031d39f7aee5c8f3d6be9e75e"
+    },
+    {
+      "name": "list-splice-empty-source-leaves-an-existing-position",
+      "formal_test_name": "TranslateTest.CoreV2ListSpliceEmptySourceLeavesAnExistingPositionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1b94ba5167f53023e003c4368dbe3aa3196e504fbd51377a8b68d4c6b1f46a7b",
+      "original_case_source_sha256": "1b94ba5167f53023e003c4368dbe3aa3196e504fbd51377a8b68d4c6b1f46a7b",
+      "gtest_body_sha256": "164f5bbc163d5d6fe66ab727fe1b17569c8d875aec51e453e1d0f7a46daf6097"
+    },
+    {
+      "name": "list-splice-single-transfers-address-and-count",
+      "formal_test_name": "TranslateTest.CoreV2ListSpliceSingleTransfersAddressAndCountRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cd29abf205a18346e85f2fa5626556ae4b3c76a6ba59cefb63a5afb4077a6e80",
+      "original_case_source_sha256": "cd29abf205a18346e85f2fa5626556ae4b3c76a6ba59cefb63a5afb4077a6e80",
+      "gtest_body_sha256": "0c633e46d72876779b275d4757c1da0c25b25082acb808e1eed22ae767d23d90"
+    },
+    {
+      "name": "list-splice-single-within-owner-and-adjacent-no-ops",
+      "formal_test_name": "TranslateTest.CoreV2ListSpliceSingleWithinOwnerAndAdjacentNoOpsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "eaff48ff20706d4b029e804d632633702b12e69bb3240f7a54451196ba7fa794",
+      "original_case_source_sha256": "eaff48ff20706d4b029e804d632633702b12e69bb3240f7a54451196ba7fa794",
+      "gtest_body_sha256": "065be6c309173934d775e73776f96aada0f2d6f78f1985c2e8e0cd8d24432a68"
+    },
+    {
+      "name": "list-splice-rvalue-range-keeps-both-owner-boundaries",
+      "formal_test_name": "TranslateTest.CoreV2ListSpliceRvalueRangeKeepsBothOwnerBoundariesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c1324e456e1c6949a725d1a0433e86aee547cddb7b79b63c13ce3ae5798f35c9",
+      "original_case_source_sha256": "c1324e456e1c6949a725d1a0433e86aee547cddb7b79b63c13ce3ae5798f35c9",
+      "gtest_body_sha256": "c9f10d84683e29e6c6d27060b9802af2259304b03e92bf3f2d31999d6c6f1d0b"
+    },
+    {
+      "name": "list-splice-range-within-owner-and-empty-range",
+      "formal_test_name": "TranslateTest.CoreV2ListSpliceRangeWithinOwnerAndEmptyRangeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "98d228caf1eab671e01c449bb409ac4f8cb019820a266ee21b871afce1b2e1fd",
+      "original_case_source_sha256": "98d228caf1eab671e01c449bb409ac4f8cb019820a266ee21b871afce1b2e1fd",
+      "gtest_body_sha256": "fb8176b21fc1ad8bd21c620033c5c77171413b3f85ac06631af9e5ad495f9787"
+    },
+    {
+      "name": "list-splice-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListSpliceOtherElementGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a126af55a4fba87aee26c59245049af5e653e6271e80cda718c0d4b4724b3e1e",
+      "original_case_source_sha256": "a126af55a4fba87aee26c59245049af5e653e6271e80cda718c0d4b4724b3e1e",
+      "gtest_body_sha256": "21400bdaa3724ff8ea963c09a165a055e5af71d534ebd2f42d2bd3cb65732d8e"
+    },
+    {
+      "name": "list-remove-value-aliased-to-first-node",
+      "formal_test_name": "TranslateTest.CoreV2ListRemoveValueAliasedToFirstNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5b86526917c7b5d5d8971b10c0ecef25c159af27c4129434ad9f5f4110d79d9a",
+      "original_case_source_sha256": "5b86526917c7b5d5d8971b10c0ecef25c159af27c4129434ad9f5f4110d79d9a",
+      "gtest_body_sha256": "cc3eff5d2633aa64b4cccf2bb049691ba494feda53dc11ddcc2b1dfb1e868df6"
+    },
+    {
+      "name": "list-unique-keeps-first-node-of-each-run",
+      "formal_test_name": "TranslateTest.CoreV2ListUniqueKeepsFirstNodeOfEachRunRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0d8b3440c2583afc11bb73761791e78eb51009ac1026b36b4bcbb1d70192111c",
+      "original_case_source_sha256": "0d8b3440c2583afc11bb73761791e78eb51009ac1026b36b4bcbb1d70192111c",
+      "gtest_body_sha256": "5c33740ab05f7d1f9c3e872e00cff5026389531ad0e66476f33329b36822cddd"
+    },
+    {
+      "name": "list-remove-and-unique-unlink-before-first-release",
+      "formal_test_name": "TranslateTest.CoreV2ListRemoveAndUniqueUnlinkBeforeFirstReleaseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7732f1f6a2f2ec76284cef17527febdec6b7b96225a1364709b43809277bd772",
+      "original_case_source_sha256": "7732f1f6a2f2ec76284cef17527febdec6b7b96225a1364709b43809277bd772",
+      "gtest_body_sha256": "df246723b8075078027d28135e612721f761539f394ff8fdeba004cc10037b7e"
+    },
+    {
+      "name": "list-unique-user-predicate-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListUniqueUserPredicateGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "708c1681e240fc10285c493801bfa6ee569c0e1d5716082d9d1f986009c39a3d",
+      "original_case_source_sha256": "708c1681e240fc10285c493801bfa6ee569c0e1d5716082d9d1f986009c39a3d",
+      "gtest_body_sha256": "c54f46dfd94496c1a7ee11af4b9f9f86c7665984e7cf1dfa28477d95feb5c343"
+    },
+    {
+      "name": "list-sort-default-is-stable-and-keeps-node-identity",
+      "formal_test_name": "TranslateTest.CoreV2ListSortDefaultIsStableAndKeepsNodeIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2efb97733c7e2fa316132010eabe6965e8a03e0eb56ddbd0208e969fb6b3fdd1",
+      "original_case_source_sha256": "2efb97733c7e2fa316132010eabe6965e8a03e0eb56ddbd0208e969fb6b3fdd1",
+      "gtest_body_sha256": "3e69a5121fd0590091197a921e477914ea93d24376a0523a0406c96310625d3b"
+    },
+    {
+      "name": "list-sort-default-empty-singleton-and-two-nodes",
+      "formal_test_name": "TranslateTest.CoreV2ListSortDefaultEmptySingletonAndTwoNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "82e75af3a2677588d32487132c9a4a42a11134a5b2fa1f9d35d1375d7d82ca94",
+      "original_case_source_sha256": "82e75af3a2677588d32487132c9a4a42a11134a5b2fa1f9d35d1375d7d82ca94",
+      "gtest_body_sha256": "501ad39d8ff165883ef1bfd04133ab5ca6b4bbe11d31412dce1cdad46117fb5e"
+    },
+    {
+      "name": "list-merge-keeps-left-equals-first-and-reuses-owners",
+      "formal_test_name": "TranslateTest.CoreV2ListMergeKeepsLeftEqualsFirstAndReusesOwnersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "de711bf5fe5deedbf1c09551fe8d306a94b5d6fad0b9a62392c6164b9763ccca",
+      "original_case_source_sha256": "de711bf5fe5deedbf1c09551fe8d306a94b5d6fad0b9a62392c6164b9763ccca",
+      "gtest_body_sha256": "471e6a97a054bd863fa10b7ec52ac49c484f1d9440de48f9f37f4701be8665a5"
+    },
+    {
+      "name": "list-sort-explicit-order-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListSortExplicitOrderGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1a95b2d7972bd725a23a7b10f73c4bcd076765a9b11e96942e3d049dcc43f53e",
+      "original_case_source_sha256": "1a95b2d7972bd725a23a7b10f73c4bcd076765a9b11e96942e3d049dcc43f53e",
+      "gtest_body_sha256": "2d8d9271d8c8e0f237ab247f857f2cd0a99362ba4b66e636066e2738c8b1cfc1"
+    },
+    {
+      "name": "list-owner-relations-signed-difference",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnerRelationsSignedDifferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f3ccf824c4284272e680919a18cd7fde7c1b8a3c82ba2577b9f0c161bc0d8bf1",
+      "original_case_source_sha256": "f3ccf824c4284272e680919a18cd7fde7c1b8a3c82ba2577b9f0c161bc0d8bf1",
+      "gtest_body_sha256": "152a44ccf5e3d9c9374e573a15b0548445492a03a6483d5cbd1b0442feb458f7"
+    },
+    {
+      "name": "list-owner-relations-prefix-and-empty",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnerRelationsPrefixAndEmptyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a5d6b3b23f29ae73dcf9d595c1766376229e2c14622d5bc78f9a671c2d59a84c",
+      "original_case_source_sha256": "a5d6b3b23f29ae73dcf9d595c1766376229e2c14622d5bc78f9a671c2d59a84c",
+      "gtest_body_sha256": "06ea5073d6eb327fe853d8d90fe63b525c2091eea75446acbc4ed02e3c39eb6a"
+    },
+    {
+      "name": "list-owner-relations-evaluate-operands-once",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnerRelationsEvaluateOperandsOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "327c3def81a85a3a8868dead14da4db8555a6bf0aaba4bcbf9ca17d1c4d04e84",
+      "original_case_source_sha256": "327c3def81a85a3a8868dead14da4db8555a6bf0aaba4bcbf9ca17d1c4d04e84",
+      "gtest_body_sha256": "26189d4449212dfa4a88cbda7e5315a036c1e82bb1be7ce0c704bb8d0dee6fd7"
+    },
+    {
+      "name": "list-owner-relations-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListOwnerRelationsOtherElementGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "daa5793b368d345225f0c613e3ead96e70bfda6c6eec31f54939e77531664ad7",
+      "original_case_source_sha256": "daa5793b368d345225f0c613e3ead96e70bfda6c6eec31f54939e77531664ad7",
+      "gtest_body_sha256": "f587c57ae315cad77c6fa06d3c9ce9a68848526b4437ea716f2027649a291fa5"
+    },
+    {
+      "name": "list-resize-default-fill-and-repeated-count",
+      "formal_test_name": "TranslateTest.CoreV2ListResizeDefaultFillAndRepeatedCountRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3001b962b6c8b826d9e5b9df968dd12bac40e8c4a1eef7adb53e04115e8691d0",
+      "original_case_source_sha256": "3001b962b6c8b826d9e5b9df968dd12bac40e8c4a1eef7adb53e04115e8691d0",
+      "gtest_body_sha256": "a7ad071084695a13f9ed345498e234832f2cbff44e308ddece0f15ce72cec477"
+    },
+    {
+      "name": "list-resize-growth-keeps-chain-detached-and-reads-fill-after-allocation",
+      "formal_test_name": "TranslateTest.CoreV2ListResizeGrowthKeepsChainDetachedAndReadsFillAfterAllocationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a48a637fa30585071358ade2f495ef9a77e83999c2f0b0713cad88b4904c4e80",
+      "original_case_source_sha256": "a48a637fa30585071358ade2f495ef9a77e83999c2f0b0713cad88b4904c4e80",
+      "gtest_body_sha256": "565a096b0a024f5d8ad1f72a614cad246c00073d5100348695ac9059072487cb"
+    },
+    {
+      "name": "list-resize-shrink-unlinks-before-releasing-the-tail",
+      "formal_test_name": "TranslateTest.CoreV2ListResizeShrinkUnlinksBeforeReleasingTheTailRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5c361d152f5e25c83b1a655fbb2b1a8de52b6ad430f8ff36b35345a72b6ab98f",
+      "original_case_source_sha256": "5c361d152f5e25c83b1a655fbb2b1a8de52b6ad430f8ff36b35345a72b6ab98f",
+      "gtest_body_sha256": "93874275e0dd65c0ab3b8dbc95cf63136e48ec6a773888fb82821709095d869d"
+    },
+    {
+      "name": "list-resize-other-element-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListResizeOtherElementGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f7c988fb1f79c458a20fb8a0a140cd0ed805fd5a8e8d81a4dd6e7fe65abda054",
+      "original_case_source_sha256": "f7c988fb1f79c458a20fb8a0a140cd0ed805fd5a8e8d81a4dd6e7fe65abda054",
+      "gtest_body_sha256": "39057a7a5be53128d1406082a749837e86415970842e19bb4430950c1cb1d076"
+    },
+    {
+      "name": "list-long-stable-order-iterator-values-and-copy",
+      "formal_test_name": "TranslateTest.CoreV2ListLongStableOrderIteratorValuesAndCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f29a6514c47a4d66208510f7fcb052e765294e9c192d3cea7b4f6bc5bfe5ec40",
+      "original_case_source_sha256": "f29a6514c47a4d66208510f7fcb052e765294e9c192d3cea7b4f6bc5bfe5ec40",
+      "gtest_body_sha256": "6903e97822205b8dcd191ace0ed5ca5e237606d2deeb2f278fec15b7a3a7bca4"
+    },
+    {
+      "name": "list-unsigned-merges-and-compares-in-the-unsigned-domain",
+      "formal_test_name": "TranslateTest.CoreV2ListUnsignedMergesAndComparesInTheUnsignedDomainRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9ca2f8a9e35c49e27d9a37a4f0f8624f520e87b18a1291fdfffe50da5dcbe2c9",
+      "original_case_source_sha256": "9ca2f8a9e35c49e27d9a37a4f0f8624f520e87b18a1291fdfffe50da5dcbe2c9",
+      "gtest_body_sha256": "7810bdf684c382851547c008f1372b3e976995c24e72b8aa112d0cd2c830ec84"
+    },
+    {
+      "name": "list-unsigned-long-resize-insert-and-splice",
+      "formal_test_name": "TranslateTest.CoreV2ListUnsignedLongResizeInsertAndSpliceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "33d486e694c48c85fa097f57ebd7109cff57c502aeee032b719519b1ef17a052",
+      "original_case_source_sha256": "33d486e694c48c85fa097f57ebd7109cff57c502aeee032b719519b1ef17a052",
+      "gtest_body_sha256": "6a6d889fc876985491ad9d2e668e36f331443e9e291945b4c2a3009bed4b27a1"
+    },
+    {
+      "name": "list-long-long-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListLongLongGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7790e78c66d873034046e97e8050afc7d8ef7159b669d6c34b3547ac179b6a10",
+      "original_case_source_sha256": "7790e78c66d873034046e97e8050afc7d8ef7159b669d6c34b3547ac179b6a10",
+      "gtest_body_sha256": "1480ebdd4e018c41036a29484dad1d2a578589b739da2cd698beaf60640d2554"
+    },
+    {
+      "name": "list-observer-allocator-constructs-a-typed-owner",
+      "formal_test_name": "TranslateTest.CoreV2ListObserverAllocatorConstructsATypedOwnerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d64ca892a6f0d1a0d5465a25404fe62e05d0cb044e9b348df2d35de8bee58678",
+      "original_case_source_sha256": "d64ca892a6f0d1a0d5465a25404fe62e05d0cb044e9b348df2d35de8bee58678",
+      "gtest_body_sha256": "f8a032bbac5f3e66d4914fae490ba2e20c4eccaa3733452458542c81760cf5ff"
+    },
+    {
+      "name": "list-max-size-uses-the-checked-node-width",
+      "formal_test_name": "TranslateTest.CoreV2ListMaxSizeUsesTheCheckedNodeWidthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ad9056b209ac7bc479db0953e8ab43774cbb3f2f840cc1717ff44f0eca31f5a4",
+      "original_case_source_sha256": "ad9056b209ac7bc479db0953e8ab43774cbb3f2f840cc1717ff44f0eca31f5a4",
+      "gtest_body_sha256": "8a7cdd13476b07161350ffd61d54ee8d3cedd850c27889b1872ac636b5dff003"
+    },
+    {
+      "name": "list-observers-evaluate-a-pointer-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2ListObserversEvaluateAPointerReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cc27612ac9ca8e7046122383131b0bfd6b6eb21686e7be665acebbc7366a59d3",
+      "original_case_source_sha256": "cc27612ac9ca8e7046122383131b0bfd6b6eb21686e7be665acebbc7366a59d3",
+      "gtest_body_sha256": "ca6555a9da9eaf553171b8e49412e82e62592acfb2508f0adfb03e132d2eb16a"
+    },
+    {
+      "name": "list-remove-if-checks-each-element-before-splicing-a-run",
+      "formal_test_name": "TranslateTest.CoreV2ListRemoveIfChecksEachElementBeforeSplicingARunRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6cc6f20a1f44cf2282446d6d395508534b3a70a85773af5afd21334a01b88e07",
+      "original_case_source_sha256": "6cc6f20a1f44cf2282446d6d395508534b3a70a85773af5afd21334a01b88e07",
+      "gtest_body_sha256": "259a2e2997f3061c087642367323abe92b7c8f0edfe8b7d973b1d419e135ab62"
+    },
+    {
+      "name": "list-unique-predicate-compares-before-each-run-transfer",
+      "formal_test_name": "TranslateTest.CoreV2ListUniquePredicateComparesBeforeEachRunTransferRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8c58f336ee04363c91f04064fdbb4ad68bfcd7f9d10a289ddb49e7faf4bfa1c3",
+      "original_case_source_sha256": "8c58f336ee04363c91f04064fdbb4ad68bfcd7f9d10a289ddb49e7faf4bfa1c3",
+      "gtest_body_sha256": "8c1e7d9aa65b817792572079ea64ed6c7e61bab20fa5bd1780cfe580ed46fe31"
+    },
+    {
+      "name": "list-wide-signed-sort-and-resize-keep-full-values",
+      "formal_test_name": "TranslateTest.CoreV2ListWideSignedSortAndResizeKeepFullValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "081258d30371032ec6683435db4a06557405fd72a16202816fbbbc65afd39375",
+      "original_case_source_sha256": "081258d30371032ec6683435db4a06557405fd72a16202816fbbbc65afd39375",
+      "gtest_body_sha256": "c3241cfc35ae53ffe88eb9913fc7dbdd9a53e2285ab44214ceee5e4b4d04f05d"
+    },
+    {
+      "name": "list-wide-unsigned-merge-preserves-high-bit-and-stability",
+      "formal_test_name": "TranslateTest.CoreV2ListWideUnsignedMergePreservesHighBitAndStabilityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "da57faedb118e4e6db9b6ee0d76f1f8fd029602c74268d3af472c8ba54cdbc37",
+      "original_case_source_sha256": "da57faedb118e4e6db9b6ee0d76f1f8fd029602c74268d3af472c8ba54cdbc37",
+      "gtest_body_sha256": "07a775d5135dd423bf31bcdbb659f3cd110216de829342232e2bc4b2151a0108"
+    },
+    {
+      "name": "list-emplace-ends-return-mutable-references",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplaceEndsReturnMutableReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "30b3acf8024deec46fd8a590bcf4fc681438c6fa72d3c2a26d3b6f1c2cc66b3b",
+      "original_case_source_sha256": "30b3acf8024deec46fd8a590bcf4fc681438c6fa72d3c2a26d3b6f1c2cc66b3b",
+      "gtest_body_sha256": "7c53140a8ef7182e976aa64c35619d277e031b9f0892904b04c48039a73eccc2"
+    },
+    {
+      "name": "list-emplace-at-position-retains-neighbor-iterators",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplaceAtPositionRetainsNeighborIteratorsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f5959fd794c96a1969e0df64752a6a39a84fc60777b82e5f41ba91353d105321",
+      "original_case_source_sha256": "f5959fd794c96a1969e0df64752a6a39a84fc60777b82e5f41ba91353d105321",
+      "gtest_body_sha256": "87b12d3069ae4b9844819a5a6f7f22889ba11eed4ff32a2bb1a72a83116075eb"
+    },
+    {
+      "name": "list-emplace-reads-reference-after-allocation",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplaceReadsReferenceAfterAllocationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "db3a805a9a3231c1b0d23ce9ceb9b31f62751467c0403bab7a14627e3f594de2",
+      "original_case_source_sha256": "db3a805a9a3231c1b0d23ce9ceb9b31f62751467c0403bab7a14627e3f594de2",
+      "gtest_body_sha256": "2d26e5e2e6290610d925faefd2581424e15adde077256f50d43513bfb5c91ba8"
+    },
+    {
+      "name": "list-short-payload-sort-and-lvalue-store",
+      "formal_test_name": "TranslateTest.CoreV2ListShortPayloadSortAndLvalueStoreRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0a4bb64a34d115543635c451e488a39b6e252ff0f5c21a9a512110c98a8e5f2c",
+      "original_case_source_sha256": "0a4bb64a34d115543635c451e488a39b6e252ff0f5c21a9a512110c98a8e5f2c",
+      "gtest_body_sha256": "364d15982cd1a580c23abda0dac45896b157556e15891acb334f62f6f34a4d0c"
+    },
+    {
+      "name": "list-unsigned-short-payload-keeps-high-bit",
+      "formal_test_name": "TranslateTest.CoreV2ListUnsignedShortPayloadKeepsHighBitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4c2158e8e08b5cfb2f683cef444caddc1f8c3571cb90355b2f733a2ebfa98255",
+      "original_case_source_sha256": "4c2158e8e08b5cfb2f683cef444caddc1f8c3571cb90355b2f733a2ebfa98255",
+      "gtest_body_sha256": "95d20dded600068fcdaaff40f3c3652773f35c778f8f289c519103fa7b88731c"
+    },
+    {
+      "name": "list-character-payloads-keep-distinct-type-and-order",
+      "formal_test_name": "TranslateTest.CoreV2ListCharacterPayloadsKeepDistinctTypeAndOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5c191905b07cc7db922aca0b7041cbd732a8c9f7c94805e52617f6465c93cc44",
+      "original_case_source_sha256": "5c191905b07cc7db922aca0b7041cbd732a8c9f7c94805e52617f6465c93cc44",
+      "gtest_body_sha256": "5a9c0c77c02dc6271a6fe4c11771d89414473b5b66007f04ad1d0761d605696c"
+    },
+    {
+      "name": "list-count-assignment-shrinks-and-overwrites",
+      "formal_test_name": "TranslateTest.CoreV2ListCountAssignmentShrinksAndOverwritesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "47c70104d983765c84de249465cbe8a1cc5d2e1ca1e3d07a4815b8f65ef0447a",
+      "original_case_source_sha256": "47c70104d983765c84de249465cbe8a1cc5d2e1ca1e3d07a4815b8f65ef0447a",
+      "gtest_body_sha256": "935b17bc65023e3635b9f24934122f41bebc0ae67aa8dafb9c8e98875689b513"
+    },
+    {
+      "name": "list-count-assignment-copies-existing-nodes-before-allocation",
+      "formal_test_name": "TranslateTest.CoreV2ListCountAssignmentCopiesExistingNodesBeforeAllocationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c480dea47cd73585aa3c3647e48a07accfe6451872416954756b6ea6a655b9f1",
+      "original_case_source_sha256": "c480dea47cd73585aa3c3647e48a07accfe6451872416954756b6ea6a655b9f1",
+      "gtest_body_sha256": "5b36d1c9bde7e9f3d48fbcb599c0220b4da2d1ac0e34fefa9a1edd0b44bfdc7e"
+    },
+    {
+      "name": "list-count-assignment-zero-and-wide-regrowth",
+      "formal_test_name": "TranslateTest.CoreV2ListCountAssignmentZeroAndWideRegrowthRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2a75849e7a009a4aacd6b33a57b35792c359491a4c33391385cd9ca562f21ba3",
+      "original_case_source_sha256": "2a75849e7a009a4aacd6b33a57b35792c359491a4c33391385cd9ca562f21ba3",
+      "gtest_body_sha256": "2f645b56e4e079fcc461ba27ef9d3d90eb2c0a6b8df117519d343baeac5d968a"
+    },
+    {
+      "name": "list-range-assignment-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRangeAssignmentGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4528718e401d26bb9d51536fe44843697b9ecc4a1514a18d3fb75c57206cc6d0",
+      "original_case_source_sha256": "4528718e401d26bb9d51536fe44843697b9ecc4a1514a18d3fb75c57206cc6d0",
+      "gtest_body_sha256": "d6a2accd199906e6e358c871ce57da0ec7f56aaa30f40c6d7706bc4ceb961c9a"
+    },
+    {
+      "name": "list-converting-range-retains-nodes-and-defers-appends",
+      "formal_test_name": "TranslateTest.CoreV2ListConvertingRangeRetainsNodesAndDefersAppendsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a1edf12b29ea6dc8c84082179c92e7b6485c6e11d876d185ed8fe95db06ca916",
+      "original_case_source_sha256": "a1edf12b29ea6dc8c84082179c92e7b6485c6e11d876d185ed8fe95db06ca916",
+      "gtest_body_sha256": "413913fe691f5a95ff3eb975969f90b21aadae1dade809ad657e6a86c110b487"
+    },
+    {
+      "name": "list-iterator-range-overwrites-and-shrinks",
+      "formal_test_name": "TranslateTest.CoreV2ListIteratorRangeOverwritesAndShrinksRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "384155585936ef88a87d151a6ee882de5b5b173ffb06fd73cb95852b07c79668",
+      "original_case_source_sha256": "384155585936ef88a87d151a6ee882de5b5b173ffb06fd73cb95852b07c79668",
+      "gtest_body_sha256": "23e8055fd9e1db997e875428a34d3a641da9e4510196316bfe04bab553784e2a"
+    },
+    {
+      "name": "list-construct-by-count-value-and-default-allocator",
+      "formal_test_name": "TranslateTest.CoreV2ListConstructByCountValueAndDefaultAllocatorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a9a210417ce4a51da23f7efa34ea22154a175ac8592a68f9a3e77f26fb7ea281",
+      "original_case_source_sha256": "a9a210417ce4a51da23f7efa34ea22154a175ac8592a68f9a3e77f26fb7ea281",
+      "gtest_body_sha256": "8526055ff4732f15cdadd09ab5d45a714770ff2db063f3e244ba05df1f985ca0"
+    },
+    {
+      "name": "list-construct-raw-range-loads-after-allocation",
+      "formal_test_name": "TranslateTest.CoreV2ListConstructRawRangeLoadsAfterAllocationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7f95986ccd0870b57597b4988587ec1307b913df2ba4f82a73bcbd6d81b5345c",
+      "original_case_source_sha256": "7f95986ccd0870b57597b4988587ec1307b913df2ba4f82a73bcbd6d81b5345c",
+      "gtest_body_sha256": "d7e1ef633ba86d39da793003c51ef4408b3adf88c11f1dc44c4a4c4eb193f6e8"
+    },
+    {
+      "name": "list-construct-from-const-iterators-and-explicit-allocator",
+      "formal_test_name": "TranslateTest.CoreV2ListConstructFromConstIteratorsAndExplicitAllocatorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "eb21e65e0d4b3876210eeeb500eda74605b1f117032fb3c06d88a91544a6567c",
+      "original_case_source_sha256": "eb21e65e0d4b3876210eeeb500eda74605b1f117032fb3c06d88a91544a6567c",
+      "gtest_body_sha256": "b895710995ac504bf0eb4372e476dc33caf70e47f12ffa2acb9cf58ab4a18532"
+    },
+    {
+      "name": "list-assign-initializer-reuses-prefix-and-clears",
+      "formal_test_name": "TranslateTest.CoreV2ListAssignInitializerReusesPrefixAndClearsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5a781cb7222d39fa1f00c8bcf76dffeba2e209659894f498c60ad2e398c555e6",
+      "original_case_source_sha256": "5a781cb7222d39fa1f00c8bcf76dffeba2e209659894f498c60ad2e398c555e6",
+      "gtest_body_sha256": "5efbefb30183ee9ebd17ba638f34997857d9224a34dff71b3e2cdff5e7653423"
+    },
+    {
+      "name": "list-operator-assignment-by-initializer-retains-owner",
+      "formal_test_name": "TranslateTest.CoreV2ListOperatorAssignmentByInitializerRetainsOwnerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "daaeece8ac25e74f5b096f906d72f9f5fb57ab89499fca2ca7df842f2d12028a",
+      "original_case_source_sha256": "daaeece8ac25e74f5b096f906d72f9f5fb57ab89499fca2ca7df842f2d12028a",
+      "gtest_body_sha256": "240df70c6a0e1deb39691f91d8b85b28ebe930334557fe4998d165f5140bdb2a"
+    },
+    {
+      "name": "list-initializer-assignment-captures-right-side-first",
+      "formal_test_name": "TranslateTest.CoreV2ListInitializerAssignmentCapturesRightSideFirstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ae65321cfbdc491664fb9a523befc3abab9ca3a71a2c7c82b517bbada4c9911e",
+      "original_case_source_sha256": "ae65321cfbdc491664fb9a523befc3abab9ca3a71a2c7c82b517bbada4c9911e",
+      "gtest_body_sha256": "2a63fd552e101b33ce103f2f0611e57a42a5e5f6acf6a5b2278c04b0ed44d688"
+    },
+    {
+      "name": "list-insert-count-value-and-empty-range-return-position",
+      "formal_test_name": "TranslateTest.CoreV2ListInsertCountValueAndEmptyRangeReturnPositionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "23a36c9ecac79d91496ce0ecc8b9910cddafa51f5cc296f9dd6e12c35f1f794b",
+      "original_case_source_sha256": "23a36c9ecac79d91496ce0ecc8b9910cddafa51f5cc296f9dd6e12c35f1f794b",
+      "gtest_body_sha256": "bdaa91d47da952c7075aad2de6da4a993c9d13cfc839b915615b9b1a3bf03c96"
+    },
+    {
+      "name": "list-insert-converting-range-defers-all-links",
+      "formal_test_name": "TranslateTest.CoreV2ListInsertConvertingRangeDefersAllLinksRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cce5222be540bc1a6a23df0637179325644b7e937f46506ad586a24daabaf2b4",
+      "original_case_source_sha256": "cce5222be540bc1a6a23df0637179325644b7e937f46506ad586a24daabaf2b4",
+      "gtest_body_sha256": "c38d790d69d5c1dfb89173e4636b6f5afd8695b12ead31c1899adc53f3b06370"
+    },
+    {
+      "name": "list-insert-const-iterator-range-keeps-source-nodes",
+      "formal_test_name": "TranslateTest.CoreV2ListInsertConstIteratorRangeKeepsSourceNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7971ff7d7258af6ddbec2958f3ffa33d74956177b95b6eb951456bda3157587f",
+      "original_case_source_sha256": "7971ff7d7258af6ddbec2958f3ffa33d74956177b95b6eb951456bda3157587f",
+      "gtest_body_sha256": "d1ef49ecac075ad7314c485c696428213e1511ad70707ceb409655d0da583f85"
+    },
+    {
+      "name": "list-insert-initializer-at-begin-and-empty-at-end",
+      "formal_test_name": "TranslateTest.CoreV2ListInsertInitializerAtBeginAndEmptyAtEndRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0f3d342e65e2cb65171e5f041bae63a79df047e5ad91377edc481759c2dd869b",
+      "original_case_source_sha256": "0f3d342e65e2cb65171e5f041bae63a79df047e5ad91377edc481759c2dd869b",
+      "gtest_body_sha256": "319a28865cc9b8baf88faaaf51f2c9b69be2c39660048fe2d5cdb4119cb40af3"
+    },
+    {
+      "name": "list-explicit-order-wide-sort-preserves-equivalent-nodes",
+      "formal_test_name": "TranslateTest.CoreV2ListExplicitOrderWideSortPreservesEquivalentNodesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7b24c7fb04e974a35257592047abe90d6a0ea65412e9e984f5e2ab7dc78bf9c5",
+      "original_case_source_sha256": "7b24c7fb04e974a35257592047abe90d6a0ea65412e9e984f5e2ab7dc78bf9c5",
+      "gtest_body_sha256": "47ec941c83e81d6a319a737f54bae8b015e2036575e45b1c3b389901bb70f573"
+    },
+    {
+      "name": "list-explicit-order-merge-keeps-destination-ties-first",
+      "formal_test_name": "TranslateTest.CoreV2ListExplicitOrderMergeKeepsDestinationTiesFirstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "7ab2a30fb7173deb3c1acb4d32382bcd180b9c9d8e99dac9ce179af48d5f7bab",
+      "original_case_source_sha256": "7ab2a30fb7173deb3c1acb4d32382bcd180b9c9d8e99dac9ce179af48d5f7bab",
+      "gtest_body_sha256": "34365d96ef5a3248f6a55f02b4d4d06577063d7a31e75f7e7852d6066c8a87e8"
+    },
+    {
+      "name": "list-reverse-iterator-base-and-node-identity",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseIteratorBaseAndNodeIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2fd75a6f4d784ba20aefa13aca02052ff088bdbacafb14584283ade5dd4fcb04",
+      "original_case_source_sha256": "2fd75a6f4d784ba20aefa13aca02052ff088bdbacafb14584283ade5dd4fcb04",
+      "gtest_body_sha256": "a2aa846d5a7e69bcb66333546db2e532b1f3fe07e0ac46e3e3355c868feaaf1b"
+    },
+    {
+      "name": "list-const-reverse-iterator-empty-and-traversal",
+      "formal_test_name": "TranslateTest.CoreV2ListConstReverseIteratorEmptyAndTraversalRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "66d84919584eff2f0d41f4ac09a77bfc15ec538eff38b5265064c4d3c6f8556c",
+      "original_case_source_sha256": "66d84919584eff2f0d41f4ac09a77bfc15ec538eff38b5265064c4d3c6f8556c",
+      "gtest_body_sha256": "f9cd2a5151dde12ce6e39a0114e7db939e3540eb3a815ea1e018d602a49f584d"
+    },
+    {
+      "name": "list-reverse-iterator-factory-and-const-conversion",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseIteratorFactoryAndConstConversionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "170ef1a8a871b4cb0ec4493873eaa9dc323e4cef9438918ff1a52afdd13b723e",
+      "original_case_source_sha256": "170ef1a8a871b4cb0ec4493873eaa9dc323e4cef9438918ff1a52afdd13b723e",
+      "gtest_body_sha256": "18e6ad70faa742fc38981dbbe6ddf39d726543df8b071500e23ec2ce7b579f8c"
+    },
+    {
+      "name": "list-reverse-iterator-distance-source-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseIteratorDistanceSourceGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "141088247ba1e6fe5a42ea3829ba64fb94861dfedee84655f3fe84bdc7ab005a",
+      "original_case_source_sha256": "141088247ba1e6fe5a42ea3829ba64fb94861dfedee84655f3fe84bdc7ab005a",
+      "gtest_body_sha256": "f45b4be7716fbb7c979e2b8601baea8cecd215498ea5b5d531b1d9462c7a6086"
+    },
+    {
+      "name": "list-iterator-signed-advance-and-default-navigation",
+      "formal_test_name": "TranslateTest.CoreV2ListIteratorSignedAdvanceAndDefaultNavigationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9509310fea23fce205833cf6c772e11dd1bf55f4330795087d0cd9357c6783ec",
+      "original_case_source_sha256": "9509310fea23fce205833cf6c772e11dd1bf55f4330795087d0cd9357c6783ec",
+      "gtest_body_sha256": "88e689f64ecb55a78b3a3eaa82f106a8fb15574e964f18b49a2d94d1a6692d88"
+    },
+    {
+      "name": "list-const-reverse-navigation-directions",
+      "formal_test_name": "TranslateTest.CoreV2ListConstReverseNavigationDirectionsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "805e0a0d1705ce05aa37f30a8941c5f96d62d9ee799bd41bd79efb3a23732921",
+      "original_case_source_sha256": "805e0a0d1705ce05aa37f30a8941c5f96d62d9ee799bd41bd79efb3a23732921",
+      "gtest_body_sha256": "3d1d6d6914729abce3744b909aef9588985d87abef65a9c5709b222283432acc"
+    },
+    {
+      "name": "list-iterator-navigation-evaluates-distance-once",
+      "formal_test_name": "TranslateTest.CoreV2ListIteratorNavigationEvaluatesDistanceOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "339503536e338068d6bc7a25e9d1f7d19881f1edaa1662e0d7515188c332ad55",
+      "original_case_source_sha256": "339503536e338068d6bc7a25e9d1f7d19881f1edaa1662e0d7515188c332ad55",
+      "gtest_body_sha256": "e825d02f66f1b66bd8009975e4572315aa6df4c9997ef59039e68618959e4b57"
+    },
+    {
+      "name": "list-free-access-evaluates-receiver-once",
+      "formal_test_name": "TranslateTest.CoreV2ListFreeAccessEvaluatesReceiverOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "80093d853ba081c81c509dfb4802704e46ee0054a79cecded8b755ebbb64b363",
+      "original_case_source_sha256": "80093d853ba081c81c509dfb4802704e46ee0054a79cecded8b755ebbb64b363",
+      "gtest_body_sha256": "ac96c329732f171682739a270d17d96887a7029a8ae6843b49f2456dde76cd25"
+    },
+    {
+      "name": "list-free-const-access-matches-member-base",
+      "formal_test_name": "TranslateTest.CoreV2ListFreeConstAccessMatchesMemberBaseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a9e76fd82f22ee8935af0055dfec8243ca668dfcaac0cb39899b685187b6139d",
+      "original_case_source_sha256": "a9e76fd82f22ee8935af0055dfec8243ca668dfcaac0cb39899b685187b6139d",
+      "gtest_body_sha256": "dc5c899e811cd78f0a954a26a8a400fe02a7d452e5b201406fa48b9805289021"
+    },
+    {
+      "name": "list-free-reverse-access-preserves-mutable-and-empty-endpoints",
+      "formal_test_name": "TranslateTest.CoreV2ListFreeReverseAccessPreservesMutableAndEmptyEndpointsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "5e7e01353390b00fed2b8f0ae86329b2dd5c2e9067047f7beec4723c1f32d3c7",
+      "original_case_source_sha256": "5e7e01353390b00fed2b8f0ae86329b2dd5c2e9067047f7beec4723c1f32d3c7",
+      "gtest_body_sha256": "87923c8c512ef8154a73fb7faed6adf3fa8899c56466dc53b554920f28d3cfaf"
+    },
+    {
+      "name": "list-bool-addressable-references-and-node-identity",
+      "formal_test_name": "TranslateTest.CoreV2ListBoolAddressableReferencesAndNodeIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2ade3caed62e552057f52e47e903315e8bceddb94467baafa6694209745ad167",
+      "original_case_source_sha256": "2ade3caed62e552057f52e47e903315e8bceddb94467baafa6694209745ad167",
+      "gtest_body_sha256": "9d127c7065dd6df85a9cca46ff57c8570b451912783906ca18037e89f463ca0b"
+    },
+    {
+      "name": "list-bool-range-conversion-and-reused-prefix",
+      "formal_test_name": "TranslateTest.CoreV2ListBoolRangeConversionAndReusedPrefixRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3522d06749748f45f17609ab68561241c3084ba600241ced19f3e7f00b8d3581",
+      "original_case_source_sha256": "3522d06749748f45f17609ab68561241c3084ba600241ced19f3e7f00b8d3581",
+      "gtest_body_sha256": "72c5fca06f408964ebdb9fe9235c8fb4245760a1a85522bb1f3bbe4441b920f5"
+    },
+    {
+      "name": "list-bool-stable-order-and-unique",
+      "formal_test_name": "TranslateTest.CoreV2ListBoolStableOrderAndUniqueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "125fe7114be4651102de138bac02675bde80559794cc8c702fabc326855efb9c",
+      "original_case_source_sha256": "125fe7114be4651102de138bac02675bde80559794cc8c702fabc326855efb9c",
+      "gtest_body_sha256": "362c71d31183e68c785ee7ea6c410b183b296d338ea229489b4d3c4263bce66f"
+    },
+    {
+      "name": "list-bool-reverse-base-address-and-const-access",
+      "formal_test_name": "TranslateTest.CoreV2ListBoolReverseBaseAddressAndConstAccessRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e8bf584b753dfca787f51dc8718293e694a6b97ff96143a1de4e7ca52602d5ad",
+      "original_case_source_sha256": "e8bf584b753dfca787f51dc8718293e694a6b97ff96143a1de4e7ca52602d5ad",
+      "gtest_body_sha256": "ee7d64c9fcf677905b9c0cf9d7735b95e8a03603b94e2d255803d081724ea0d6"
+    },
+    {
+      "name": "list-standard-greater-keeps-signed-node-order",
+      "formal_test_name": "TranslateTest.CoreV2ListStandardGreaterKeepsSignedNodeOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c2a339d2ea8a1c8e7144ef7fc859d6b658634fecf9856125b30da906b5338ded",
+      "original_case_source_sha256": "c2a339d2ea8a1c8e7144ef7fc859d6b658634fecf9856125b30da906b5338ded",
+      "gtest_body_sha256": "39efbffe85685dbf80b2dcbda0bcb7130f23ba77a517e28e4133e391662027c1"
+    },
+    {
+      "name": "list-transparent-greater-move-merge-preserves-ties",
+      "formal_test_name": "TranslateTest.CoreV2ListTransparentGreaterMoveMergePreservesTiesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0a7853d38f5703fdb2511b58eb1e4373be7c47369609527e48ed3a711d1fad4b",
+      "original_case_source_sha256": "0a7853d38f5703fdb2511b58eb1e4373be7c47369609527e48ed3a711d1fad4b",
+      "gtest_body_sha256": "52cf7b9b9a9b6bff97d2fee6c1264185c10b6e61954d3bb5c7dd7b23aace343e"
+    },
+    {
+      "name": "list-explicit-standard-less-orders-lvalue-merge",
+      "formal_test_name": "TranslateTest.CoreV2ListExplicitStandardLessOrdersLvalueMergeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "65dffc3c444095086dc77132bf9f37c16b41b1f9b41182d638f60f000f3f92d9",
+      "original_case_source_sha256": "65dffc3c444095086dc77132bf9f37c16b41b1f9b41182d638f60f000f3f92d9",
+      "gtest_body_sha256": "59b1c2b44e13d2f0f050b5a4c515126e5035428d7e9500a81308c6315e658b02"
+    },
+    {
+      "name": "list-standard-order-user-lookalike-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListSortsWithSameTypeEmptyComparator",
+      "expected": "accept",
+      "source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
+      "original_case_source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
+      "gtest_body_sha256": "8e6fe3b32c6b62dc52fd9b6fc1d2943312d3a4b399f17b24ec47435722815fb7"
+    },
+    {
+      "name": "list-emplace-converting-long-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplacesWithIntegerConversionAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
+      "original_case_source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
+      "gtest_body_sha256": "42fabb61c32c2966c1cba26fe7d3363d92f118b7bd9f4b534cbb10b3a54d5926"
+    },
+    {
+      "name": "list-floating-initializer-assignment-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListAssignsDoubleInitializerAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
+      "original_case_source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
+      "gtest_body_sha256": "86090d5459834769c1467bc54c921093567ee7388a7aa7484ef167c566cce275"
+    },
+    {
+      "name": "list-floating-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListStoresDoubleElementsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
+      "original_case_source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
+      "gtest_body_sha256": "717ec0c87a59a62e81c852f35158bd49603b99c65eef94c965366e20d2dab5a4"
+    },
+    {
+      "name": "list-free-reverse-access-floating-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListReadsDoubleThroughFreeReverseAccess",
+      "expected": "accept",
+      "source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
+      "original_case_source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
+      "gtest_body_sha256": "22c272c92f435842b8da4d5e6a4b32e37fc49c47c7e9795249e10c3c6d628f64"
+    },
+    {
+      "name": "list-user-enum-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListStoresAFixedUnderlyingEnum",
+      "expected": "accept",
+      "source_sha256": "658fc3b81850df5d8044161a7ed27587da9ff874ac024eb5e877ababbef30e65",
+      "original_case_source_sha256": "658fc3b81850df5d8044161a7ed27587da9ff874ac024eb5e877ababbef30e65",
+      "gtest_body_sha256": "45a7a449087e4a297d1f3cbbc91860c78516e13b4b5979965cf8d0e7979e46ef"
+    },
+    {
+      "name": "list-free-access-record-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListProvidesFreeAccessToTrivialRecordElements",
+      "expected": "accept",
+      "source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
+      "original_case_source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
+      "gtest_body_sha256": "0cbce5548573ea686e8ff18f04f8b39718a303ed0f434ff5da868e0dace23984"
+    },
+    {
+      "name": "list-reverse-iterator-unsupported-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListReverseIteratorTraversesTrivialRecords",
+      "expected": "accept",
+      "source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
+      "original_case_source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
+      "gtest_body_sha256": "75dcbcb63e08972a4f6f1e3198f99be22de28586799b842ad6b06ccb94c13173"
+    },
+    {
+      "name": "list-iterator-non-scalar-navigation-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListIteratorNavigatesTrivialRecords",
+      "expected": "accept",
+      "source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
+      "original_case_source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
+      "gtest_body_sha256": "7845976720d211c751948551352f0103770b082495c83ccc79c56a986c0ac024"
+    },
+    {
+      "name": "list-bool-user-proxy-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListElementsUseRecordBoolConversion",
+      "expected": "accept",
+      "source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
+      "original_case_source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
+      "gtest_body_sha256": "b4c29f9320733642fd3bea33220eb1627482cf785f98c39a3b60aa54e376ade5"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-user-defined-integer-allocator-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListUserDefinedIntegerAllocatorGuardRejected",
+      "expected": "reject",
+      "source_sha256": "c5787342500a0eb9d8d937f12456c0b1a3cafa080be89ff226f3fef2947bdd7f",
+      "original_case_source_sha256": "c5787342500a0eb9d8d937f12456c0b1a3cafa080be89ff226f3fef2947bdd7f",
+      "gtest_body_sha256": "5bdc3ff878843242a366e3822dfe9b663dcf030b23ee670e122100b79509d915"
+    },
+    {
+      "name": "list-indirect-capacity-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListIndirectCapacityGuardRejected",
+      "expected": "reject",
+      "source_sha256": "b671aef68f2d7f99f99593be1af70096d596b4115cc9e9a803a7115d692ab8fb",
+      "original_case_source_sha256": "b671aef68f2d7f99f99593be1af70096d596b4115cc9e9a803a7115d692ab8fb",
+      "gtest_body_sha256": "ac286f3f34f3efcac222be9e2733e99e2d890f6be506f2b5338b6ae414eb27e9"
+    },
+    {
+      "name": "list-remove-if-narrowing-predicate-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRemoveIfNarrowingPredicateGuardRejected",
+      "expected": "reject",
+      "source_sha256": "cbf52118b11b9cfaf23d04e9220abdc7e22ede0f665395034775cce5b4eb7033",
+      "original_case_source_sha256": "cbf52118b11b9cfaf23d04e9220abdc7e22ede0f665395034775cce5b4eb7033",
+      "gtest_body_sha256": "bca995d9655e3370087554decbf7106cfdf42bf1cbb7b90d2f243710a99bac32"
+    },
+    {
+      "name": "list-remove-if-stateful-object-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRemoveIfStatefulObjectGuardRejected",
+      "expected": "reject",
+      "source_sha256": "96bd4175d0306c16fd49e2f04091ff9efa5f3fc4ccf397633afb551c6f87ffe6",
+      "original_case_source_sha256": "96bd4175d0306c16fd49e2f04091ff9efa5f3fc4ccf397633afb551c6f87ffe6",
+      "gtest_body_sha256": "346ee52aa623d334eac389441a427e099ff1522666287a6c458ce74f57dddcb1"
+    },
+    {
+      "name": "list-emplace-user-conversion-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListEmplaceUserConversionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "77e593148f4899b14195921b63a9e41535c1cf413c6643a3ff047fc360b77eec",
+      "original_case_source_sha256": "77e593148f4899b14195921b63a9e41535c1cf413c6643a3ff047fc360b77eec",
+      "gtest_body_sha256": "e7f64668e148131f1d6a3d4a121b3411457390aba20e5663e16b5474d2edf0df"
+    },
+    {
+      "name": "list-assign-range-volatile-input-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListAssignRangeVolatileInputGuardRejected",
+      "expected": "reject",
+      "source_sha256": "6be75ce42e52d365d507d7372cc6713b116eb5a6f700f55c71c0a514ee4ebf50",
+      "original_case_source_sha256": "6be75ce42e52d365d507d7372cc6713b116eb5a6f700f55c71c0a514ee4ebf50",
+      "gtest_body_sha256": "9ca29affcd56ed13e33863820f83f8496730b5d8d4cce197b19d084e51af7b55"
+    },
+    {
+      "name": "list-assign-range-floating-input-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListAssignRangeFloatingInputGuardRejected",
+      "expected": "reject",
+      "source_sha256": "07fa70966bb65f736f7150d595bc7ef0b7032ae53e4e2c74c4b0bfc390ee9855",
+      "original_case_source_sha256": "07fa70966bb65f736f7150d595bc7ef0b7032ae53e4e2c74c4b0bfc390ee9855",
+      "gtest_body_sha256": "eefd48a0b95ee89f6407eebca8e1ecd97d39cdaad21a3a3b06e18d02b145f43a"
+    },
+    {
+      "name": "list-construct-range-volatile-input-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListConstructRangeVolatileInputGuardRejected",
+      "expected": "reject",
+      "source_sha256": "1e7b710634f7713b3528863b276760322941f51c97011f66513dc8e397232827",
+      "original_case_source_sha256": "1e7b710634f7713b3528863b276760322941f51c97011f66513dc8e397232827",
+      "gtest_body_sha256": "f5ed7e3b002d8a7e049b0d298c25b71468bc5c186565d70d8646a21a97263530"
+    },
+    {
+      "name": "list-insert-volatile-pointer-range-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListInsertVolatilePointerRangeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "de4bcff5f8b3775bdd8c2e906d6648d859dfb532b503013917a888b4fc6a6194",
+      "original_case_source_sha256": "de4bcff5f8b3775bdd8c2e906d6648d859dfb532b503013917a888b4fc6a6194",
+      "gtest_body_sha256": "1f8191d96fc2a29292c82e3c1831524ae36ee5a80f4cf67bbb748561e0c2bc4b"
+    },
+    {
+      "name": "list-order-function-with-observable-body-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListOrderFunctionWithObservableBodyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "2a70a3c90995780b7ad29ad40d97a63bfdf51bb0bf4cc639902dae298a434375",
+      "original_case_source_sha256": "2a70a3c90995780b7ad29ad40d97a63bfdf51bb0bf4cc639902dae298a434375",
+      "gtest_body_sha256": "9b9ca5854dc78a6ed36a609ffee43c22548e064e3e312219606fe9c17c86a956"
+    },
+    {
+      "name": "list-order-function-with-converting-signature-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListOrderFunctionWithConvertingSignatureGuardRejected",
+      "expected": "reject",
+      "source_sha256": "aab0b9d0c83388c9a6e8c8ba83248e71366fc08a042de2b375c5947929872d98",
+      "original_case_source_sha256": "aab0b9d0c83388c9a6e8c8ba83248e71366fc08a042de2b375c5947929872d98",
+      "gtest_body_sha256": "d9c2116c507a14689fffa0db2371f8213c1cf4a811212fe5715422ddfd49322c"
+    },
+    {
+      "name": "list-standard-order-width-conversion-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListStandardOrderWidthConversionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "f1b8eba67c0b42bd2ff2ca4593ed2ac62402aaca98b102e2aacf2d29dfa130d8",
+      "original_case_source_sha256": "f1b8eba67c0b42bd2ff2ca4593ed2ac62402aaca98b102e2aacf2d29dfa130d8",
+      "gtest_body_sha256": "24127ecc135891c2704d787e2e870285d19b6f01044487944fec2c16a935aaec"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-reverse-retains-iterators-references-and-size",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{11, 5, 17, -2};\n  auto first = values.begin();\n  auto middle = first;\n  ++middle;\n  int* address = &*middle;\n  auto end = values.end();\n  values.reverse();\n  auto item = values.begin();\n  if (values.size() != 4 || values.end() != end || values.front() != -2 || values.back() != 11)\n    return 1;\n  if (*item++ != -2 || *item++ != 17 || item != middle || &*item != address)\n    return 2;\n  *address = 31;\n  if (*item++ != 31 || item != first || *item++ != 11 || item != end)\n    return 3;\n  return *--end != 11;\n}\n",
+      "source_sha256": "5889ec9985b60b1307874a91438e0389780dbbaad0a6c9384f700ccc5f09571b",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-reverse-empty-singleton-and-double-reversal",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values;\n  values.reverse();\n  if (!values.empty() || values.begin() != values.end())\n    return 1;\n  values.push_back(19);\n  auto original = values.begin();\n  values.reverse();\n  if (values.begin() != original || values.front() != 19 || values.back() != 19)\n    return 2;\n  values.push_back(20);\n  values.reverse();\n  values.reverse();\n  return values.size() != 2 || values.begin() != original || values.front() != 19 || values.back() != 20;\n}\n",
+      "source_sha256": "b60e785829f114dd01d33f8cb8ac10e6e3cb59196b6a34ddb7fea6585d3b8410",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-reverse-evaluates-pointer-receiver-once",
+      "expected": "accept",
+      "source": "#include <list>\nstd::list<int>* lookup(std::list<int>& values, int& calls) {\n  ++calls;\n  return &values;\n}\nint main() {\n  std::list<int> values{5, 7, 8};\n  int calls = 0;\n  lookup(values, calls)->reverse();\n  if (calls != 1 || values.front() != 8 || values.back() != 5)\n    return 1;\n  values.pop_front();\n  auto item = values.begin();\n  return values.size() != 2 || *item++ != 7 || *item++ != 5 || item != values.end();\n}\n",
+      "source_sha256": "a01feb133bb1af8309114506742440a10e347d98d1dccd9c2efb73c81e6c1801",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-reverse-other-element-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<long> values{6L, 9L};\n  values.reverse();\n  return values.front() != 9L;\n}\n",
+      "source_sha256": "a706060cabe04c8d5831a677e3c98f12d4fd10747d47401e5b0ad60d3332c5a3",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-range-erase-preserves-boundary-and-empty-range",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{2, 5, 7, 11, 13};\n  auto first = values.cbegin();\n  ++first;\n  auto last = values.cend();\n  --last;\n  const int* last_address = &*last;\n  auto end = values.end();\n  auto item = values.erase(first, last);\n  if (&*item != last_address || values.size() != 2 || values.front() != 2 || values.end() != end)\n    return 1;\n  auto unchanged = values.erase(last, last);\n  if (unchanged != item || values.size() != 2)\n    return 2;\n  return values.erase(values.cbegin(), values.cend()) != end || !values.empty();\n}\n",
+      "source_sha256": "5ff04e7ef40bc778c6afcb9b10201bb7cfb1ad6b8ab8357231f5d5c3c72a3bbf",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-range-erase-unlinks-before-release",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic std::list<int>* observed;\nstatic int released, bad;\nvoid* operator new(Size n) { return ::malloc(n); }\nvoid operator delete(void* memory) noexcept {\n  if (observed) {\n    ++released;\n    auto after = observed->begin();\n    ++after;\n    if (observed->front() != 10 || observed->back() != 50 || *after != 50 ||\n        observed->size() != static_cast<Size>(5 - released))\n      bad = 1;\n  }\n  ::free(memory);\n}\nint main() {\n  std::list<int> values{10, 20, 30, 40, 50};\n  auto first = values.cbegin();\n  ++first;\n  auto last = values.cend();\n  --last;\n  observed = &values;\n  auto result = values.erase(first, last);\n  observed = nullptr;\n  return bad || released != 3 || *result != 50 || values.size() != 2;\n}\n",
+      "source_sha256": "c415331d464910dc32a91065bef0b23ea3c526b5bf6ef429179289de763df391",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-range-erase-other-element-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<long> values{5L, -7L};\n  return values.erase(values.cbegin(), values.cend()) != values.end();\n}\n",
+      "source_sha256": "308b6b7ee1d1143212c2aab540d2c9704fef3720a707851849b1407b5f016bd7",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-splice-whole-into-middle-preserves-address",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{1, 7};\n  std::list<int> source{3, 4, 5};\n  auto moved = source.begin();\n  ++moved;\n  auto* address = &*moved;\n  auto position = values.cbegin();\n  ++position;\n  auto end = values.end();\n  values.splice(position, source);\n  if (!source.empty() || source.begin() != source.end() || values.size() != 5 ||\n      values.end() != end || values.front() != 1 || values.back() != 7)\n    return 1;\n  auto item = values.begin();\n  if (*item++ != 1 || *item++ != 3 || item != moved || &*item != address ||\n      *item++ != 4 || *item++ != 5 || *item++ != 7 || item != end)\n    return 2;\n  source.push_back(11);\n  return source.front() != 11 || values.size() != 5;\n}\n",
+      "source_sha256": "11a8fcb6477e5551dfcc58c1ee31eba604fbed28771c5b5a3a7204578592354e",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-splice-rvalue-into-empty-owner",
+      "expected": "accept",
+      "source": "#include <list>\n#include <utility>\nint main() {\n  std::list<int> values;\n  std::list<int> source{13, 21};\n  auto first = source.begin();\n  values.splice(values.cend(), std::move(source));\n  if (!source.empty() || values.size() != 2 || values.begin() != first ||\n      values.front() != 13 || values.back() != 21)\n    return 1;\n  source.splice(source.cend(), std::move(values));\n  return !values.empty() || source.size() != 2 || source.begin() != first || source.back() != 21;\n}\n",
+      "source_sha256": "84783713ebbc4be3f43c76bfef6b93138f64277a84a8d504c362d2f8f1938634",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-splice-empty-source-leaves-an-existing-position",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{9, 14};\n  std::list<int> source;\n  auto position = values.cbegin();\n  ++position;\n  const int* address = &*position;\n  values.splice(position, source);\n  return !source.empty() || values.size() != 2 || &values.back() != address || *position != 14;\n}\n",
+      "source_sha256": "1b94ba5167f53023e003c4368dbe3aa3196e504fbd51377a8b68d4c6b1f46a7b",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-splice-single-transfers-address-and-count",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{2, 5};\n  std::list<int> source{3, 7};\n  auto position = values.cbegin();\n  ++position;\n  auto moved = source.begin();\n  const int* address = &*moved;\n  values.splice(position, source, moved);\n  if (source.size() != 1 || source.front() != 7 || source.back() != 7 || values.size() != 3)\n    return 1;\n  auto check = values.begin();\n  ++check;\n  if (check != moved || &*check != address || *check != 3)\n    return 2;\n  ++check;\n  return check != position || *check != 5;\n}\n",
+      "source_sha256": "cd29abf205a18346e85f2fa5626556ae4b3c76a6ba59cefb63a5afb4077a6e80",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-splice-single-within-owner-and-adjacent-no-ops",
+      "expected": "accept",
+      "source": "#include <list>\n#include <utility>\nint main() {\n  std::list<int> values{2, 3, 5, 7};\n  auto moved = values.begin();\n  ++moved;\n  auto next = moved;\n  ++next;\n  const int* address = &*moved;\n  values.splice(moved, values, moved);\n  values.splice(next, values, moved);\n  if (values.front() != 2 || values.back() != 7 || values.size() != 4 || *next != 5)\n    return 1;\n  auto after_first = values.begin();\n  ++after_first;\n  if (after_first != moved)\n    return 2;\n  values.splice(values.cend(), std::move(values), moved);\n  auto tail = values.end();\n  --tail;\n  return values.size() != 4 || values.front() != 2 || values.back() != 3 ||\n      tail != moved || &*tail != address || *--tail != 7;\n}\n",
+      "source_sha256": "eaff48ff20706d4b029e804d632633702b12e69bb3240f7a54451196ba7fa794",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-splice-rvalue-range-keeps-both-owner-boundaries",
+      "expected": "accept",
+      "source": "#include <list>\n#include <utility>\nint main() {\n  std::list<int> values{2, 11};\n  std::list<int> source{3, 5, 7, 13};\n  auto first = source.begin();\n  ++first;\n  auto after = source.end();\n  --after;\n  auto position = values.end();\n  --position;\n  const int* address = &*first;\n  values.splice(position, std::move(source), first, after);\n  if (source.size() != 2 || source.front() != 3 || source.back() != 13 ||\n      values.size() != 4 || values.front() != 2 || values.back() != 11)\n    return 1;\n  auto check = values.begin();\n  ++check;\n  if (check != first || &*check != address || *check++ != 5 || *check++ != 7 || check != position)\n    return 2;\n  return *--after != 3;\n}\n",
+      "source_sha256": "c1324e456e1c6949a725d1a0433e86aee547cddb7b79b63c13ce3ae5798f35c9",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-splice-range-within-owner-and-empty-range",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{2, 3, 5, 7, 11};\n  auto first = values.begin();\n  auto after = first;\n  ++after;\n  ++after;\n  auto end = values.end();\n  const int* address = &*first;\n  values.splice(after, values, first, after);\n  values.splice(first, values, after, after);\n  if (values.begin() != first || values.front() != 2 || values.back() != 11 || values.size() != 5)\n    return 1;\n  values.splice(end, values, first, after);\n  auto check = values.begin();\n  if (check != after || *check++ != 5 || *check++ != 7 || *check++ != 11 || check != first ||\n      &*check != address || *check++ != 2 || *check++ != 3 || check != end)\n    return 2;\n  return values.size() != 5 || values.end() != end;\n}\n",
+      "source_sha256": "98d228caf1eab671e01c449bb409ac4f8cb019820a266ee21b871afce1b2e1fd",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-splice-other-element-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<long> values{3, 5};\n  std::list<long> source{7};\n  values.splice(values.cbegin(), source, source.cbegin());\n  return values.front() != 7;\n}\n",
+      "source_sha256": "a126af55a4fba87aee26c59245049af5e653e6271e80cda718c0d4b4724b3e1e",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-remove-value-aliased-to-first-node",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> items{3, 3, 5, 3, 7, 3};\n  auto kept = items.begin();\n  ++kept;\n  ++kept;\n  const int* address = &*kept;\n  const int& selected = items.front();\n  items.remove(selected);\n  if (items.size() != 2 || items.begin() != kept || &items.front() != address || items.front() != 5 || items.back() != 7)\n    return 1;\n  items.remove(11);\n  if (items.size() != 2 || items.begin() != kept)\n    return 2;\n  std::list<int> equal{13, 13, 13};\n  equal.remove(equal.back());\n  equal.remove(13);\n  return !equal.empty() || equal.begin() != equal.end();\n}\n",
+      "source_sha256": "5b86526917c7b5d5d8971b10c0ecef25c159af27c4129434ad9f5f4110d79d9a",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-unique-keeps-first-node-of-each-run",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> empty;\n  empty.unique();\n  std::list<int> single{17};\n  auto only = single.begin();\n  single.unique();\n  if (!empty.empty() || single.size() != 1 || single.begin() != only)\n    return 1;\n  std::list<int> items{3, 3, 7, 3, 3, 3, 5, 5, 3};\n  auto first = items.begin();\n  auto later = items.end();\n  --later;\n  auto end = items.end();\n  items.unique();\n  if (items.size() != 5 || items.begin() != first || items.end() != end)\n    return 2;\n  auto current = items.begin();\n  if (*current++ != 3 || *current++ != 7 || *current++ != 3 || *current++ != 5 || current != later ||\n      *current++ != 3 || current != end)\n    return 3;\n  return *--later != 5;\n}\n",
+      "source_sha256": "0d8b3440c2583afc11bb73761791e78eb51009ac1026b36b4bcbb1d70192111c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-remove-and-unique-unlink-before-first-release",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic std::list<int>* observed;\nstatic int expected_front, expected_back, released, bad;\nvoid* operator new(Size n) { return ::malloc(n); }\nvoid operator delete(void* p) noexcept {\n  if (observed) {\n    ++released;\n    if (observed->size() != 2 || observed->front() != expected_front || observed->back() != expected_back) {\n      bad = 1;\n    } else {\n      auto i = observed->begin();\n      ++i;\n      if (*i != expected_back || ++i != observed->end())\n        bad = 1;\n    }\n  }\n  ::free(p);\n}\nint main() {\n  std::list<int> removed{3, 5, 3, 9, 3};\n  expected_front = 5;\n  expected_back = 9;\n  observed = &removed;\n  removed.remove(removed.front());\n  observed = nullptr;\n  if (bad || released != 3 || removed.size() != 2)\n    return 1;\n  std::list<int> unique{7, 7, 11, 11, 11};\n  expected_front = 7;\n  expected_back = 11;\n  released = 0;\n  observed = &unique;\n  unique.unique();\n  observed = nullptr;\n  return bad || released != 3 || unique.size() != 2;\n}\n",
+      "source_sha256": "7732f1f6a2f2ec76284cef17527febdec6b7b96225a1364709b43809277bd772",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-unique-user-predicate-guard",
+      "expected": "accept",
+      "source": "#include <list>\nbool same(int left, int right) { return left == right; }\nint main() {\n  std::list<int> items{3, 3, 5};\n  items.unique(same);\n  return items.size() != 2;\n}\n",
+      "source_sha256": "708c1681e240fc10285c493801bfa6ee569c0e1d5716082d9d1f986009c39a3d",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-sort-default-is-stable-and-keeps-node-identity",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> items{-3, 7, -3, 1, 7, 0, -8};\n  auto first = items.begin();\n  auto second = first;\n  ++second;\n  auto third = second;\n  ++third;\n  const int* first_address = &*first;\n  const int* second_address = &*second;\n  auto end = items.end();\n  items.sort();\n  if (items.front() != -8 || items.back() != 7 || items.size() != 7 || items.end() != end)\n    return 1;\n  auto item = items.begin();\n  ++item;\n  if (item != first || &*item != first_address || *item++ != -3 || item != third ||\n      *item++ != -3 || *item++ != 0 || *item++ != 1 || item != second ||\n      &*item != second_address || *item++ != 7 || *item++ != 7 || item != end)\n    return 2;\n  return *--end != 7 || *--end != 7 || *--end != 1;\n}\n",
+      "source_sha256": "2efb97733c7e2fa316132010eabe6965e8a03e0eb56ddbd0208e969fb6b3fdd1",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-sort-default-empty-singleton-and-two-nodes",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> empty;\n  empty.sort();\n  std::list<int> single{24};\n  auto one = single.begin();\n  single.sort();\n  if (!empty.empty() || single.size() != 1 || single.begin() != one || single.front() != 24)\n    return 1;\n  std::list<int> pair{7, 3};\n  auto old_first = pair.begin();\n  auto end = pair.end();\n  pair.sort();\n  pair.sort();\n  auto last = pair.end();\n  --last;\n  return pair.size() != 2 || pair.front() != 3 || pair.back() != 7 || last != old_first || pair.end() != end;\n}\n",
+      "source_sha256": "82e75af3a2677588d32487132c9a4a42a11134a5b2fa1f9d35d1375d7d82ca94",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-merge-keeps-left-equals-first-and-reuses-owners",
+      "expected": "accept",
+      "source": "#include <list>\n#include <utility>\nint main() {\n  std::list<int> left{-7, 3, 7};\n  std::list<int> right{-9, 3, 3, 11};\n  auto first_equal = left.begin();\n  ++first_equal;\n  auto moved = right.begin();\n  ++moved;\n  const int* address = &*moved;\n  left.merge(std::move(right));\n  if (left.size() != 7 || !right.empty() || right.begin() != right.end())\n    return 1;\n  auto item = left.begin();\n  if (*item++ != -9 || *item++ != -7 || item != first_equal || *item++ != 3 ||\n      item != moved || &*item != address || *item++ != 3 || *item++ != 3 || *item++ != 7 ||\n      *item++ != 11 || item != left.end())\n    return 2;\n  left.merge(left);\n  right.merge(left);\n  return !left.empty() || right.size() != 7 || right.front() != -9 || right.back() != 11;\n}\n",
+      "source_sha256": "de711bf5fe5deedbf1c09551fe8d306a94b5d6fad0b9a62392c6164b9763ccca",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-sort-explicit-order-guard",
+      "expected": "accept",
+      "source": "#include <list>\nbool descending(int left, int right) { return left > right; }\nint main() {\n  std::list<int> items{3, 7, 5};\n  items.sort(descending);\n  return items.front() != 7;\n}\n",
+      "source_sha256": "1a95b2d7972bd725a23a7b10f73c4bcd076765a9b11e96942e3d049dcc43f53e",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-owner-relations-signed-difference",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::list<int> first{3, -5, 11};\n  const std::list<int> second{3, 5, -11};\n  return !(first < second) || !(second > first) || first >= second || second <= first ||\n      !(first <= second) || !(second >= first) || first == second || !(first != second);\n}\n",
+      "source_sha256": "f3ccf824c4284272e680919a18cd7fde7c1b8a3c82ba2577b9f0c161bc0d8bf1",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-owner-relations-prefix-and-empty",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> empty, empty_again, first{3, 5}, second{3, 5, -7}, same{3, 5};\n  if (!(empty == empty_again) || empty != empty_again || empty < empty || !(empty >= empty))\n    return 1;\n  if (!(empty < first) || !(first < second) || second < first || first == second)\n    return 2;\n  if (!(first == same) || first != same || first < same || first > same ||\n      !(first <= same) || !(first >= same))\n    return 3;\n  return &first.front() == &same.front();\n}\n",
+      "source_sha256": "a5d6b3b23f29ae73dcf9d595c1766376229e2c14622d5bc78f9a671c2d59a84c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-owner-relations-evaluate-operands-once",
+      "expected": "accept",
+      "source": "#include <list>\nstatic int left_calls, right_calls;\nusing List = std::list<int>;\nconst List& left(const List& x) { ++left_calls; return x; }\nconst List& right(const List& x) { ++right_calls; return x; }\nint main() {\n  const List first{-11}, second{-3};\n  if (!(left(first) < right(second)) || left_calls != 1 || right_calls != 1)\n    return 1;\n  if (std::operator==(left(first), right(second)) || left_calls != 2 || right_calls != 2)\n    return 2;\n  return 0;\n}\n",
+      "source_sha256": "327c3def81a85a3a8868dead14da4db8555a6bf0aaba4bcbf9ca17d1c4d04e84",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-owner-relations-other-element-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::list<long> first{3L, 5L}, second{7L, 9L};\n  return !(first < second) || first == second;\n}\n",
+      "source_sha256": "daa5793b368d345225f0c613e3ead96e70bfda6c6eec31f54939e77531664ad7",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-resize-default-fill-and-repeated-count",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> items{7, 13};\n  auto first = items.begin();\n  const int* address = &*first;\n  auto end = items.end();\n  items.resize(4);\n  if (items.size() != 4 || items.begin() != first || items.end() != end || items.back() != 0)\n    return 1;\n  items.resize(6, -5);\n  items.resize(6, 9);\n  auto tail = items.end();\n  if (*--tail != -5 || *--tail != -5 || *--tail != 0)\n    return 2;\n  items.resize(1);\n  if (items.size() != 1 || items.begin() != first || &items.front() != address || items.back() != 7)\n    return 3;\n  items.resize(0, 11);\n  return !items.empty() || items.begin() != end || items.end() != end;\n}\n",
+      "source_sha256": "3001b962b6c8b826d9e5b9df968dd12bac40e8c4a1eef7adb53e04115e8691d0",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-resize-growth-keeps-chain-detached-and-reads-fill-after-allocation",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic std::list<int>* observed;\nstatic int calls, bad;\nvoid* operator new(Size bytes) {\n  if (observed) {\n    ++calls;\n    if (observed->size() != 2 || observed->back() != 20)\n      bad = 1;\n    ++observed->front();\n  }\n  return ::malloc(bytes);\n}\nvoid operator delete(void* p) noexcept { ::free(p); }\nint main() {\n  std::list<int> items{10, 20};\n  observed = &items;\n  items.resize(5, items.front());\n  observed = nullptr;\n  if (calls != 3 || bad || items.size() != 5)\n    return 1;\n  auto it = items.begin();\n  return *it++ != 13 || *it++ != 20 || *it++ != 11 || *it++ != 12 || *it++ != 13 || it != items.end();\n}\n",
+      "source_sha256": "a48a637fa30585071358ade2f495ef9a77e83999c2f0b0713cad88b4904c4e80",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-resize-shrink-unlinks-before-releasing-the-tail",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic std::list<int>* observed;\nstatic int deletes, bad;\nvoid* operator new(Size bytes) { return ::malloc(bytes); }\nvoid operator delete(void* p) noexcept {\n  if (observed) {\n    ++deletes;\n    auto last = observed->end();\n    if (observed->front() != 2 || *--last != 3 || observed->size() != static_cast<Size>(5 - deletes))\n      bad = 1;\n  }\n  ::free(p);\n}\nint main() {\n  std::list<int> items{2, 3, 5, 7, 11};\n  auto kept = items.begin();\n  ++kept;\n  observed = &items;\n  items.resize(2, 17);\n  observed = nullptr;\n  return bad || deletes != 3 || items.size() != 2 || &items.back() != &*kept;\n}\n",
+      "source_sha256": "5c361d152f5e25c83b1a655fbb2b1a8de52b6ad430f8ff36b35345a72b6ab98f",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-resize-other-element-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<long> items{3L, 5L};\n  items.resize(4, 7L);\n  return items.back() != 7L;\n}\n",
+      "source_sha256": "f7c988fb1f79c458a20fb8a0a140cd0ed805fd5a8e8d81a4dd6e7fe65abda054",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-long-stable-order-iterator-values-and-copy",
+      "expected": "accept",
+      "source": "#include <list>\n#include <utility>\nint main() {\n  constexpr long hi = sizeof(long) == 8 ? static_cast<long>(4294967301LL) : 1879048197L;\n  constexpr long lo = sizeof(long) == 8 ? static_cast<long>(-4294967303LL) : -1879048199L;\n  std::list<long> items{hi, lo, hi, 3L};\n  auto first_hi = items.begin();\n  const auto* address = first_hi.operator->();\n  items.sort();\n  if (items.front() != lo || items.back() != hi || items.size() != 4 || *address != hi)\n    return 1;\n  items.unique();\n  auto last = items.end();\n  if (--last != first_hi || last.operator->() != address || items.size() != 3)\n    return 2;\n  const std::list<long> copied(items);\n  if (copied != items || &copied.back() == &items.back() || *copied.cbegin() != lo)\n    return 3;\n  items.reverse();\n  std::list<long> moved(std::move(items));\n  return !items.empty() || moved.begin() != first_hi || moved.front() != hi || moved.back() != lo;\n}\n",
+      "source_sha256": "f29a6514c47a4d66208510f7fcb052e765294e9c192d3cea7b4f6bc5bfe5ec40",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-unsigned-merges-and-compares-in-the-unsigned-domain",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  constexpr unsigned maximum = static_cast<unsigned>(-1);\n  std::list<unsigned> lhs{1u, maximum}, rhs{2u, maximum};\n  auto moved = rhs.cbegin();\n  auto* moved_address = &*moved;\n  lhs.merge(rhs);\n  const std::list<unsigned> prefix{1u, 2u};\n  if (!rhs.empty() || lhs.size() != 4 || lhs.back() != maximum || !(prefix < lhs) || lhs < prefix)\n    return 1;\n  const std::list<unsigned> smaller{1u, 2u, maximum - 1u, maximum};\n  if (!(smaller < lhs) || lhs < smaller)\n    return 2;\n  lhs.remove(lhs.front());\n  return lhs.cbegin() != moved || &lhs.front() != moved_address || lhs.front() != 2u || lhs.size() != 3;\n}\n",
+      "source_sha256": "9ca2f8a9e35c49e27d9a37a4f0f8624f520e87b18a1291fdfffe50da5dcbe2c9",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-unsigned-long-resize-insert-and-splice",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  constexpr unsigned long maximum = static_cast<unsigned long>(-1);\n  std::list<unsigned long> items{2UL};\n  items.resize(4, maximum);\n  items.resize(5);\n  if (items.size() != 5 || items.front() != 2UL || items.back() != 0UL)\n    return 1;\n  auto moved = items.begin();\n  ++moved;\n  std::list<unsigned long> out{3UL};\n  out.splice(out.cend(), items, moved);\n  auto* address = &*moved;\n  auto inserted = out.insert(out.cbegin(), maximum - 2UL);\n  if (*inserted != maximum - 2UL || out.size() != 3 || items.size() != 4 || &out.back() != address)\n    return 2;\n  items.erase(items.cbegin(), items.cend());\n  out.pop_front();\n  return !items.empty() || out.front() != 3UL || out.back() != maximum;\n}\n",
+      "source_sha256": "33d486e694c48c85fa097f57ebd7109cff57c502aeee032b719519b1ef17a052",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-long-long-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<long long> items{3LL, 5LL};\n  items.push_back(7LL);\n  return items.back() != 7LL;\n}\n",
+      "source_sha256": "7790e78c66d873034046e97e8050afc7d8ef7159b669d6c34b3547ac179b6a10",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-observer-allocator-constructs-a-typed-owner",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::list<unsigned long> first{3UL, 7UL};\n  auto allocator = first.get_allocator();\n  std::list<unsigned long> second(allocator);\n  if (!second.empty() || first.size() != 2 || first.front() != 3UL)\n    return 1;\n  second.push_back(static_cast<unsigned long>(-1));\n  return second.size() != 1 || second.back() != static_cast<unsigned long>(-1);\n}\n",
+      "source_sha256": "d64ca892a6f0d1a0d5465a25404fe62e05d0cb044e9b348df2d35de8bee58678",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-max-size-uses-the-checked-node-width",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  using Size = decltype(sizeof(0));\n  const Size maximum = static_cast<Size>(-1) / 24;\n  const std::list<int> empty;\n  const std::list<long> first{3L, 5L, 7L};\n  const std::list<unsigned long> second{9UL, 11UL};\n  return empty.max_size() != maximum || first.max_size() != maximum || second.max_size() != maximum;\n}\n",
+      "source_sha256": "ad9056b209ac7bc479db0953e8ab43774cbb3f2f840cc1717ff44f0eca31f5a4",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-observers-evaluate-a-pointer-receiver-once",
+      "expected": "accept",
+      "source": "#include <list>\nconst std::list<int>* observe(const std::list<int>& items, int& calls) {\n  ++calls;\n  return &items;\n}\nint main() {\n  const std::list<int> first{4, 7};\n  int calls = 0;\n  if (observe(first, calls)->max_size() <= 2 || calls != 1)\n    return 1;\n  std::list<int> second(observe(first, calls)->get_allocator());\n  return calls != 2 || !second.empty() || first.size() != 2;\n}\n",
+      "source_sha256": "cc27612ac9ca8e7046122383131b0bfd6b6eb21686e7be665acebbc7366a59d3",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-remove-if-checks-each-element-before-splicing-a-run",
+      "expected": "accept",
+      "source": "#include <list>\nstd::list<unsigned>* active;\nint sequence, sizes, selections;\nbool even(unsigned value) {\n  sequence = sequence * 10 + static_cast<int>(value);\n  sizes = sizes * 10 + static_cast<int>(active->size());\n  return value % 2u == 0u;\n}\nusing Predicate = bool (*)(unsigned);\nPredicate select() {\n  ++selections;\n  return &even;\n}\nint main() {\n  std::list<unsigned> values{2u, 4u, 3u, 6u, 5u};\n  active = &values;\n  auto first = values.begin();\n  ++first;\n  ++first;\n  auto last = values.end();\n  --last;\n  values.remove_if(select());\n  if (sequence != 24365 || sizes != 55533 || selections != 1 || values.size() != 2)\n    return 1;\n  auto item = values.begin();\n  return item != first || *item++ != 3u || item != last || *item++ != 5u || item != values.end();\n}\n",
+      "source_sha256": "6cc6f20a1f44cf2282446d6d395508534b3a70a85773af5afd21334a01b88e07",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-unique-predicate-compares-before-each-run-transfer",
+      "expected": "accept",
+      "source": "#include <list>\nstd::list<long>* active;\nint sizes;\nbool same_parity(long left, long right) {\n  sizes = sizes * 10 + static_cast<int>(active->size());\n  return (left & 1L) == (right & 1L);\n}\nint main() {\n  std::list<long> values{10L, 12L, 11L, 13L, 14L};\n  active = &values;\n  auto first = values.begin();\n  auto second = first;\n  ++second;\n  ++second;\n  values.unique(&same_parity);\n  if (sizes != 5544 || values.size() != 3)\n    return 1;\n  auto item = values.begin();\n  return item != first || *item++ != 10L || item != second || *item++ != 11L ||\n         *item++ != 14L || item != values.end();\n}\n",
+      "source_sha256": "8c58f336ee04363c91f04064fdbb4ad68bfcd7f9d10a289ddb49e7faf4bfa1c3",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-wide-signed-sort-and-resize-keep-full-values",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const long long low = -5000000001LL;\n  const long long high = 7000000003LL;\n  std::list<long long> values{high, low, high, 2LL};\n  auto first = values.begin();\n  auto low_node = first;\n  ++low_node;\n  values.sort();\n  auto item = values.begin();\n  if (item != low_node || *item++ != low || *item++ != 2LL || item != first || *item++ != high)\n    return 1;\n  values.resize(6, values.back());\n  return values.size() != 6 || values.front() != low || values.back() != high || *first != high;\n}\n",
+      "source_sha256": "081258d30371032ec6683435db4a06557405fd72a16202816fbbbc65afd39375",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-wide-unsigned-merge-preserves-high-bit-and-stability",
+      "expected": "accept",
+      "source": "#include <list>\n#include <utility>\nint main() {\n  const unsigned long long high = 0x8000000000000007ULL;\n  const unsigned long long max = 0xffffffffffffffffULL;\n  std::list<unsigned long long> left{3ULL, high};\n  std::list<unsigned long long> right{high, max};\n  auto left_high = left.end();\n  --left_high;\n  auto right_high = right.begin();\n  auto allocation = left.get_allocator();\n  std::list<unsigned long long> empty(allocation);\n  left.merge(std::move(right));\n  auto item = left.begin();\n  if (!right.empty() || !empty.empty() || left.max_size() == 0 || *item++ != 3ULL ||\n      item != left_high || *item++ != high || item != right_high || *item++ != high)\n    return 1;\n  return *item++ != max || item != left.end();\n}\n",
+      "source_sha256": "da57faedb118e4e6db9b6ee0d76f1f8fd029602c74268d3af472c8ba54cdbc37",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-emplace-ends-return-mutable-references",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const long long high = 7000000003LL;\n  std::list<long long> values{13LL};\n  auto middle = values.begin();\n  auto end = values.end();\n  long long& first = values.emplace_front();\n  if (first != 0 || &first != &values.front())\n    return 1;\n  long long& last = values.emplace_back(high);\n  first = -17LL;\n  if (&last != &values.back() || last != high || values.size() != 3)\n    return 2;\n  auto item = values.begin();\n  return *item++ != -17LL || item != middle || *item++ != 13LL ||\n         *item++ != high || item != end || end != values.end();\n}\n",
+      "source_sha256": "30b3acf8024deec46fd8a590bcf4fc681438c6fa72d3c2a26d3b6f1c2cc66b3b",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-emplace-at-position-retains-neighbor-iterators",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<unsigned> values{5u, 9u};\n  auto first = values.begin();\n  auto last = values.end();\n  --last;\n  auto position = values.cbegin();\n  ++position;\n  auto inserted = values.emplace(position, 7u);\n  auto zero = values.emplace(values.cend());\n  auto item = values.begin();\n  return item != first || *item++ != 5u || item != inserted || *item++ != 7u ||\n         item != last || *item++ != 9u || item != zero || *item++ != 0u || item != values.end();\n}\n",
+      "source_sha256": "f5959fd794c96a1969e0df64752a6a39a84fc60777b82e5f41ba91353d105321",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-emplace-reads-reference-after-allocation",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic std::list<int>* observed;\nstatic int value = 9, calls, seen_size;\nvoid* operator new(Size count) {\n  if (observed) {\n    ++calls;\n    seen_size = static_cast<int>(observed->size());\n    value = 27;\n  }\n  return ::malloc(count);\n}\nvoid operator delete(void* p) noexcept { ::free(p); }\nint main() {\n  std::list<int> values{3};\n  observed = &values;\n  const int& fill = value;\n  int& item = values.emplace_back(fill);\n  observed = nullptr;\n  return calls != 1 || seen_size != 1 || item != 27 || values.size() != 2 || &item != &values.back();\n}\n",
+      "source_sha256": "db3a805a9a3231c1b0d23ce9ceb9b31f62751467c0403bab7a14627e3f594de2",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-short-payload-sort-and-lvalue-store",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<short> values{31000, -30000, 2500};\n  auto high = values.begin();\n  values.sort();\n  auto item = values.begin();\n  if (*item++ != -30000 || *item++ != 2500 || item != high || *item != 31000)\n    return 1;\n  *item = -255;\n  return values.back() != -255 || &*high != &values.back() || ++item != values.end();\n}\n",
+      "source_sha256": "0a4bb64a34d115543635c451e488a39b6e252ff0f5c21a9a512110c98a8e5f2c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-unsigned-short-payload-keeps-high-bit",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<unsigned short> left{9, 33000};\n  std::list<unsigned short> right{33000, 65535};\n  auto first_moved = right.begin();\n  left.merge(right);\n  auto item = left.begin();\n  if (!right.empty() || *item++ != 9 || *item++ != 33000 ||\n      item != first_moved || *item++ != 33000 || *item++ != 65535)\n    return 1;\n  left.resize(6, left.back());\n  return left.back() != 65535 || left.size() != 6;\n}\n",
+      "source_sha256": "4c2158e8e08b5cfb2f683cef444caddc1f8c3571cb90355b2f733a2ebfa98255",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-character-payloads-keep-distinct-type-and-order",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<signed char> signed_values{-120, 100, -2};\n  signed_values.sort();\n  auto s = signed_values.begin();\n  if (*s++ != -120 || *s++ != -2 || *s++ != 100 || s != signed_values.end())\n    return 1;\n  std::list<unsigned char> unsigned_values{250, 3, 128};\n  unsigned_values.sort();\n  auto u = unsigned_values.begin();\n  if (*u++ != 3 || *u++ != 128 || *u++ != 250 || u != unsigned_values.end())\n    return 2;\n  std::list<char> plain{'x', 'y'};\n  plain.reverse();\n  return plain.front() != 'y' || plain.back() != 'x';\n}\n",
+      "source_sha256": "5c191905b07cc7db922aca0b7041cbd732a8c9f7c94805e52617f6465c93cc44",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-count-assignment-shrinks-and-overwrites",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{1, 2, 3, 4};\n  values.assign(2, -5);\n  auto current = values.begin();\n  return values.size() != 2 || *current++ != -5 || *current++ != -5 || current != values.end();\n}\n",
+      "source_sha256": "47c70104d983765c84de249465cbe8a1cc5d2e1ca1e3d07a4815b8f65ef0447a",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-count-assignment-copies-existing-nodes-before-allocation",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic std::list<long>* observed;\nstatic long fill = 13L;\nstatic int allocations, bad;\nvoid* operator new(Size size) {\n  if (observed) {\n    ++allocations;\n    if (observed->size() != 1 || observed->front() != 13L)\n      bad = 1;\n    fill = 25L;\n  }\n  return ::malloc(size);\n}\nvoid operator delete(void* p) noexcept { ::free(p); }\nint main() {\n  std::list<long> values{1L};\n  observed = &values;\n  values.assign(3, fill);\n  observed = nullptr;\n  auto item = values.begin();\n  return bad || allocations != 2 || values.size() != 3 || *item++ != 13L ||\n         *item++ != 25L || *item++ != 25L || item != values.end();\n}\n",
+      "source_sha256": "c480dea47cd73585aa3c3647e48a07accfe6451872416954756b6ea6a655b9f1",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-count-assignment-zero-and-wide-regrowth",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const long long wide = -7000000009LL;\n  std::list<long long> values{9LL, 13LL};\n  values.assign(0, wide);\n  if (!values.empty() || values.begin() != values.end())\n    return 1;\n  values.assign(3, wide);\n  auto item = values.begin();\n  return values.size() != 3 || *item++ != wide || *item++ != wide ||\n         *item++ != wide || item != values.end();\n}\n",
+      "source_sha256": "2a75849e7a009a4aacd6b33a57b35792c359491a4c33391385cd9ca562f21ba3",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-range-assignment-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  int values[]{2, 3, 5};\n  std::list<int> list;\n  list.assign(values, values + 3);\n  return list.size() != 3 || list.back() != 5;\n}\n",
+      "source_sha256": "4528718e401d26bb9d51536fe44843697b9ecc4a1514a18d3fb75c57206cc6d0",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-converting-range-retains-nodes-and-defers-appends",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic short input[]{-9, 10, -20};\nstatic std::list<long long>* observed;\nstatic int allocations, bad;\nvoid* operator new(Size size) {\n  if (observed) {\n    ++allocations;\n    if (observed->size() != 1 || observed->front() != -9LL)\n      bad = 1;\n    input[1] = 13 + allocations;\n    input[2] = -23 - allocations;\n  }\n  return ::malloc(size);\n}\nvoid operator delete(void* p) noexcept { ::free(p); }\nint main() {\n  std::list<long long> values{3LL};\n  auto first = values.begin();\n  const short* data = input;\n  observed = &values;\n  values.assign(data, data + 3);\n  observed = nullptr;\n  auto item = values.begin();\n  return bad || allocations != 2 || values.size() != 3 || item != first ||\n         *item++ != -9LL || *item++ != 14LL || *item++ != -25LL || item != values.end();\n}\n",
+      "source_sha256": "a1edf12b29ea6dc8c84082179c92e7b6485c6e11d876d185ed8fe95db06ca916",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-iterator-range-overwrites-and-shrinks",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::list<unsigned short> input{65000, 17, 60000};\n  std::list<unsigned short> values{2, 3, 4};\n  auto first = values.begin();\n  auto second = first;\n  ++second;\n  auto start = input.cbegin();\n  ++start;\n  values.assign(start, input.cend());\n  auto item = values.begin();\n  if (values.size() != 2 || item != first || *item++ != 17 ||\n      item != second || *item++ != 60000 || item != values.end())\n    return 1;\n  values.assign(input.cend(), input.cend());\n  return !values.empty() || values.begin() != values.end();\n}\n",
+      "source_sha256": "384155585936ef88a87d151a6ee882de5b5b173ffb06fd73cb95852b07c79668",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-construct-by-count-value-and-default-allocator",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::allocator<long> alloc;\n  const std::list<long> zero(0, alloc);\n  const std::list<long> defaults(2, alloc);\n  const std::list<unsigned long long> filled(3, 18446744073709551607ULL);\n  auto cursor = filled.cbegin();\n  return !zero.empty() || defaults.size() != 2 || defaults.front() || defaults.back() ||\n         filled.size() != 3 || *cursor++ != 18446744073709551607ULL ||\n         *cursor++ != 18446744073709551607ULL || *cursor++ != 18446744073709551607ULL ||\n         cursor != filled.cend();\n}\n",
+      "source_sha256": "a9a210417ce4a51da23f7efa34ea22154a175ac8592a68f9a3e77f26fb7ea281",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-construct-raw-range-loads-after-allocation",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic signed char input[]{1, 2};\nstatic int calls;\nstatic bool observe;\nvoid* operator new(Size bytes) {\n  if (observe) {\n    ++calls;\n    input[0] = static_cast<signed char>(-90 - calls);\n    input[1] = static_cast<signed char>(90 + calls);\n  }\n  return ::malloc(bytes);\n}\nvoid operator delete(void* memory) noexcept { ::free(memory); }\nint main() {\n  const signed char* first = input;\n  observe = true;\n  const std::list<long> values(first, first + 2);\n  observe = false;\n  return calls != 2 || values.size() != 2 || values.front() != -91L || values.back() != 92L;\n}\n",
+      "source_sha256": "7f95986ccd0870b57597b4988587ec1307b913df2ba4f82a73bcbd6d81b5345c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-construct-from-const-iterators-and-explicit-allocator",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::list<unsigned short> original{2, 65000, 4};\n  auto start = original.cbegin();\n  ++start;\n  const std::allocator<unsigned short> alloc;\n  const std::list<unsigned short> values(start, original.cend(), alloc);\n  return original.size() != 3 || values.size() != 2 || values.front() != 65000 ||\n         values.back() != 4 || &values.front() == &*start;\n}\n",
+      "source_sha256": "eb21e65e0d4b3876210eeeb500eda74605b1f117032fb3c06d88a91544a6567c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-assign-initializer-reuses-prefix-and-clears",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{1, 2, 3};\n  auto first = values.begin();\n  auto second = first;\n  ++second;\n  values.assign({6, -3});\n  auto item = values.begin();\n  if (values.size() != 2 || item != first || *item++ != 6 ||\n      item != second || *item++ != -3 || item != values.end())\n    return 1;\n  values.assign({});\n  return !values.empty() || values.begin() != values.end();\n}\n",
+      "source_sha256": "5a781cb7222d39fa1f00c8bcf76dffeba2e209659894f498c60ad2e398c555e6",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-operator-assignment-by-initializer-retains-owner",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<unsigned long long> values{11ULL};\n  auto first = values.begin();\n  auto& result = (values = {18446744073709551607ULL, 18ULL, 19ULL});\n  auto item = values.begin();\n  return &result != &values || values.size() != 3 || item != first ||\n         *item++ != 18446744073709551607ULL || *item++ != 18ULL ||\n         *item++ != 19ULL || item != values.end();\n}\n",
+      "source_sha256": "daaeece8ac25e74f5b096f906d72f9f5fb57ab89499fca2ca7df842f2d12028a",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-initializer-assignment-captures-right-side-first",
+      "expected": "accept",
+      "source": "#include <list>\nint ordering;\nstd::list<long>& target(std::list<long>& value) {\n  ordering = ordering * 10 + 2;\n  return value;\n}\nlong element(long result) {\n  ordering = ordering * 10 + 1;\n  return result;\n}\nint main() {\n  std::list<long> values{5L};\n  target(values) = {element(7L), element(-9L)};\n  return ordering != 112 || values.size() != 2 || values.front() != 7L || values.back() != -9L;\n}\n",
+      "source_sha256": "ae65321cfbdc491664fb9a523befc3abab9ca3a71a2c7c82b517bbada4c9911e",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-insert-count-value-and-empty-range-return-position",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<unsigned long long> values{1ULL, 5ULL};\n  auto before = values.begin();\n  auto position = before;\n  ++position;\n  if (values.insert(position, 0, 9ULL) != position)\n    return 1;\n  auto first = values.insert(position, 2, 18446744073709551607ULL);\n  auto item = values.begin();\n  return values.size() != 4 || item != before || *item++ != 1ULL || item != first ||\n         *item++ != 18446744073709551607ULL || *item++ != 18446744073709551607ULL ||\n         item != position || *item++ != 5ULL || item != values.end();\n}\n",
+      "source_sha256": "23a36c9ecac79d91496ce0ecc8b9910cddafa51f5cc296f9dd6e12c35f1f794b",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-insert-converting-range-defers-all-links",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <new>\n#include <list>\nstatic short input[]{-9, 10};\nstatic std::list<long>* observed;\nstatic int calls, bad;\nvoid* operator new(Size size) {\n  if (observed) {\n    ++calls;\n    if (observed->size() != 2 || observed->front() != 1L || observed->back() != 5L)\n      bad = 1;\n    input[0] = -11 - calls;\n    input[1] = 20 + calls;\n  }\n  return ::malloc(size);\n}\nvoid operator delete(void* p) noexcept { ::free(p); }\nint main() {\n  std::list<long> values{1L, 5L};\n  auto position = values.begin();\n  ++position;\n  const short* start = input;\n  observed = &values;\n  auto first = values.insert(position, start, start + 2);\n  observed = nullptr;\n  auto item = values.begin();\n  ++item;\n  return bad || calls != 2 || values.size() != 4 || item != first ||\n         *item++ != -12L || *item++ != 22L || item != position;\n}\n",
+      "source_sha256": "cce5222be540bc1a6a23df0637179325644b7e937f46506ad586a24daabaf2b4",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-insert-const-iterator-range-keeps-source-nodes",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::list<unsigned short> from{60000, 65000};\n  std::list<unsigned short> values{1};\n  auto first = values.insert(values.cend(), from.cbegin(), from.cend());\n  auto next = first;\n  return from.size() != 2 || values.size() != 3 || &*first == &from.front() ||\n         *next++ != 60000 || *next++ != 65000 || next != values.end();\n}\n",
+      "source_sha256": "7971ff7d7258af6ddbec2958f3ffa33d74956177b95b6eb951456bda3157587f",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-insert-initializer-at-begin-and-empty-at-end",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values{19};\n  auto old = values.begin();\n  auto first = values.insert(old, {2, -7});\n  auto item = values.begin();\n  if (item != first || *item++ != 2 || *item++ != -7 || item != old || *item != 19)\n    return 1;\n  return values.insert(values.cend(), {}) != values.end() || values.size() != 3;\n}\n",
+      "source_sha256": "0f3d342e65e2cb65171e5f041bae63a79df047e5ad91377edc481759c2dd869b",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-explicit-order-wide-sort-preserves-equivalent-nodes",
+      "expected": "accept",
+      "source": "#include <list>\nbool higher(unsigned long long left, unsigned long long right) { return right < left; }\nint main() {\n  const auto high = 18446744073709551607ULL;\n  std::list<unsigned long long> values{2ULL, high, 1ULL, high, 6ULL};\n  auto early = values.begin();\n  ++early;\n  auto late = early;\n  ++late;\n  ++late;\n  values.sort(&higher);\n  auto item = values.begin();\n  return item != early || *item++ != high || item != late || *item++ != high ||\n         *item++ != 6ULL || *item++ != 2ULL || *item++ != 1ULL || item != values.end();\n}\n",
+      "source_sha256": "7b24c7fb04e974a35257592047abe90d6a0ea65412e9e984f5e2ab7dc78bf9c5",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-explicit-order-merge-keeps-destination-ties-first",
+      "expected": "accept",
+      "source": "#include <list>\n#include <utility>\nbool higher(long left, long right) { return left > right; }\nint main() {\n  std::list<long> destination{7L, 5L, -1L};\n  std::list<long> source{7L, 6L, -8L};\n  auto dst = destination.begin();\n  auto src = source.begin();\n  destination.merge(std::move(source), higher);\n  auto item = destination.begin();\n  return !source.empty() || destination.size() != 6 || item != dst || *item++ != 7L ||\n         item != src || *item++ != 7L || *item++ != 6L || *item++ != 5L ||\n         *item++ != -1L || *item++ != -8L || item != destination.end();\n}\n",
+      "source_sha256": "7ab2a30fb7173deb3c1acb4d32382bcd180b9c9d8e99dac9ce179af48d5f7bab",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-reverse-iterator-base-and-node-identity",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<long> values{3L, -4L, 8L};\n  auto top = values.rbegin();\n  auto end = values.rend();\n  if (top.base() != values.end() || end.base() != values.begin() || *top != 8L)\n    return 1;\n  *top = 12L;\n  auto item = top;\n  auto previous = item++;\n  if (previous != top || *item != -4L || values.back() != 12L)\n    return 2;\n  ++item;\n  auto old = item--;\n  --item;\n  return *old == 3L && item == top ? 0 : 3;\n}\n",
+      "source_sha256": "2fd75a6f4d784ba20aefa13aca02052ff088bdbacafb14584283ade5dd4fcb04",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-const-reverse-iterator-empty-and-traversal",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::list<unsigned short> values{2, 5, 5, 7};\n  auto it = values.crbegin();\n  unsigned result = 0;\n  while (it != values.crend()) {\n    result = result * 10 + *it;\n    ++it;\n  }\n  const std::list<unsigned short> empty;\n  return result == 7552 && empty.rbegin() == empty.rend() && values.rbegin() == values.crbegin()\n      && values.rend().base() == values.cbegin() ? 0 : 1;\n}\n",
+      "source_sha256": "66d84919584eff2f0d41f4ac09a77bfc15ec538eff38b5265064c4d3c6f8556c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-reverse-iterator-factory-and-const-conversion",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  std::list<int> values{1, 4, 9};\n  auto from = std::make_reverse_iterator(values.end());\n  std::reverse_iterator<std::list<int>::iterator> first(values.end());\n  std::list<int>::const_reverse_iterator converted(from), assigned;\n  assigned = first;\n  if (first != converted || converted != assigned || first.base() != values.end())\n    return 1;\n  int *last = first.operator->();\n  *last = 11;\n  return *converted == 11 && values.back() == 11 ? 0 : 2;\n}\n",
+      "source_sha256": "170ef1a8a871b4cb0ec4493873eaa9dc323e4cef9438918ff1a52afdd13b723e",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-reverse-iterator-distance-source-guard",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  std::list<int> values{1, 2, 3};\n  return std::distance(values.rbegin(), values.rend()) == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "141088247ba1e6fe5a42ea3829ba64fb94861dfedee84655f3fe84bdc7ab005a",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-iterator-signed-advance-and-default-navigation",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  std::list<long> values{-2L, 3L, 6L, 8L};\n  auto last = std::prev(values.end());\n  auto second = std::next(values.begin());\n  if (*last != 8L || *second != 3L || std::distance(second, values.end()) != 3)\n    return 1;\n  std::advance(last, -2);\n  if (last != second || std::distance(last, second) != 0)\n    return 2;\n  std::advance(last, 2);\n  return *last == 8L && *std::prev(last, 2) == 3L ? 0 : 3;\n}\n",
+      "source_sha256": "9509310fea23fce205833cf6c772e11dd1bf55f4330795087d0cd9357c6783ec",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-const-reverse-navigation-directions",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  const std::list<unsigned int> values{2u, 3u, 5u, 7u, 8u};\n  auto head = values.crbegin();\n  auto cursor = std::next(head, 2);\n  if (*head != 8u || *cursor != 5u || std::distance(head, cursor) != 2)\n    return 1;\n  std::advance(cursor, -1);\n  if (*cursor != 7u || std::prev(cursor) != head)\n    return 2;\n  std::advance(cursor, 3);\n  return *cursor == 2u && std::next(cursor) == values.crend() ? 0 : 3;\n}\n",
+      "source_sha256": "805e0a0d1705ce05aa37f30a8941c5f96d62d9ee799bd41bd79efb3a23732921",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-iterator-navigation-evaluates-distance-once",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint calls;\nint distance_value() { ++calls; return 1; }\nint main() {\n  std::list<int> values{1, 2, 3};\n  auto cursor = values.begin();\n  std::advance(cursor, distance_value());\n  auto first = std::prev(cursor, distance_value());\n  return *cursor == 2 && *first == 1 && calls == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "339503536e338068d6bc7a25e9d1f7d19881f1edaa1662e0d7515188c332ad55",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-free-access-evaluates-receiver-once",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint calls;\nstd::list<long> &observe(std::list<long> &values) { ++calls; return values; }\nint main() {\n  std::list<long> values{3L, 8L};\n  auto begin = std::begin(observe(values));\n  auto end = std::end(observe(values));\n  *begin = -4L;\n  if (end != values.end() || values.front() != -4L)\n    return 1;\n  return std::size(observe(values)) == 2 && !std::empty(observe(values)) && calls == 4 ? 0 : 2;\n}\n",
+      "source_sha256": "80093d853ba081c81c509dfb4802704e46ee0054a79cecded8b755ebbb64b363",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-free-const-access-matches-member-base",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  const std::list<short> values{2, 5, 9};\n  auto first = std::cbegin(values);\n  auto last = std::cend(values);\n  auto top = std::crbegin(values);\n  auto end = std::crend(values);\n  return first == values.begin() && last == values.end() && *top == 9 &&\n      top.base() == last && end.base() == first && *std::next(top) == 5 ? 0 : 1;\n}\n",
+      "source_sha256": "a9e76fd82f22ee8935af0055dfec8243ca668dfcaac0cb39899b685187b6139d",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-free-reverse-access-preserves-mutable-and-empty-endpoints",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  std::list<int> values{4, 7};\n  auto from = std::rbegin(values);\n  *from = 11;\n  if (std::rend(values).base() != values.begin() || values.back() != 11)\n    return 1;\n  values.clear();\n  return std::empty(values) && std::size(values) == 0 && std::begin(values) == std::end(values)\n      && std::rbegin(values) == std::rend(values) ? 0 : 2;\n}\n",
+      "source_sha256": "5e7e01353390b00fed2b8f0ae86329b2dd5c2e9067047f7beec4723c1f32d3c7",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-bool-addressable-references-and-node-identity",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<bool> values{true, false, true};\n  auto it = values.begin();\n  bool *first = &*it;\n  *first = false;\n  ++it;\n  if (values.front() || first == &*it)\n    return 1;\n  values.insert(values.end(), true);\n  values.reverse();\n  return values.size() == 4 && values.front() && !values.back() && &values.back() == first ? 0 : 2;\n}\n",
+      "source_sha256": "2ade3caed62e552057f52e47e903315e8bceddb94467baafa6694209745ad167",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-bool-range-conversion-and-reused-prefix",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  int input[]{0, 5, -2};\n  std::list<bool> values{true};\n  bool *first = &values.front();\n  values.assign(input, input + 3);\n  if (values.size() != 3 || values.front() || &values.front() != first)\n    return 1;\n  auto item = values.begin();\n  ++item;\n  return *item && *++item && &*item == &values.back() ? 0 : 2;\n}\n",
+      "source_sha256": "3522d06749748f45f17609ab68561241c3084ba600241ced19f3e7f00b8d3581",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-bool-stable-order-and-unique",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<bool> values{true, false, true, false};\n  auto first_true = values.begin();\n  auto first_false = first_true;\n  ++first_false;\n  values.sort();\n  if (values.begin() != first_false || *first_false || !*first_true)\n    return 1;\n  values.unique();\n  auto item = values.begin();\n  ++item;\n  return values.size() == 2 && values.begin() == first_false && item == first_true ? 0 : 2;\n}\n",
+      "source_sha256": "125fe7114be4651102de138bac02675bde80559794cc8c702fabc326855efb9c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-bool-reverse-base-address-and-const-access",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  std::list<bool> values{false, true};\n  auto last = std::rbegin(values);\n  bool *element = last.operator->();\n  *element = false;\n  std::list<bool>::const_reverse_iterator checked(last);\n  return checked.base() == values.cend() && *checked == false && &values.back() == element ? 0 : 1;\n}\n",
+      "source_sha256": "e8bf584b753dfca787f51dc8718293e694a6b97ff96143a1de4e7ca52602d5ad",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-standard-greater-keeps-signed-node-order",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <list>\nint main() {\n  const long maximum = sizeof(long) == 8 ? static_cast<long>(4294967301LL) : 19L;\n  std::list<long> values{-3L, maximum, maximum, 4L};\n  auto original = values.begin();\n  ++original;\n  values.sort(std::greater<long>{});\n  auto it = values.begin();\n  return it != original || *it++ != maximum || *it++ != maximum || *it++ != 4L ||\n         *it++ != -3L || it != values.end();\n}\n",
+      "source_sha256": "c2a339d2ea8a1c8e7144ef7fc859d6b658634fecf9856125b30da906b5338ded",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-transparent-greater-move-merge-preserves-ties",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <list>\n#include <utility>\nint main() {\n  const unsigned long long high = 4294967303ULL;\n  std::list<unsigned long long> left{high, 7ULL}, right{high, 9ULL, 0ULL};\n  auto left_first = left.begin();\n  auto right_first = right.begin();\n  left.merge(std::move(right), std::greater<>{});\n  auto it = left.begin();\n  return !right.empty() || it != left_first || *it++ != high || it != right_first ||\n         *it++ != high || *it++ != 9ULL || *it++ != 7ULL || *it++ != 0ULL || it != left.end();\n}\n",
+      "source_sha256": "0a7853d38f5703fdb2511b58eb1e4373be7c47369609527e48ed3a711d1fad4b",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-explicit-standard-less-orders-lvalue-merge",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <list>\nint main() {\n  std::list<int> left{-3, 6}, right{-2, 4};\n  const std::less<int> order{};\n  left.merge(right, order);\n  auto item = left.begin();\n  return !right.empty() || *item++ != -3 || *item++ != -2 || *item++ != 4 || *item++ != 6;\n}\n",
+      "source_sha256": "65dffc3c444095086dc77132bf9f37c16b41b1f9b41182d638f60f000f3f92d9",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-standard-order-user-lookalike-guard",
+      "expected": "accept",
+      "source": "#include <functional>\n#include <list>\nstruct greater {\n  bool operator()(int left, int right) const { return left > right; }\n};\nint main() {\n  std::list<int> values{1, 4};\n  values.sort(greater{});\n  return values.front() != 4;\n}\n",
+      "source_sha256": "8ab6fd5485ed58dd35004fa03b14b11d8bc124de85e364570dd3e183707dd776",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-emplace-converting-long-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<int> values;\n  const long value = 9;\n  return values.emplace_front(value) != 9;\n}\n",
+      "source_sha256": "0c9ae3a8394a2bf22790bc132d738a7b40ca7f126cf23a3d6ccbe37005b243c5",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-floating-initializer-assignment-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<double> values;\n  values = {1.5, 2.25};\n  return values.size() != 2;\n}\n",
+      "source_sha256": "15686b9eb4d8b3ab079776405a98e533ec884d43eea17eacae0bf50d06970935",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-floating-payload-guard",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  std::list<double> values{3.0, 5.0};\n  values.push_back(7.0);\n  return values.back() != 7.0;\n}\n",
+      "source_sha256": "9fbaf29c8766f66acc0aaa7a4ddbfe9ea4e6d7cf86755cd48e125c7e7c9199f7",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-free-reverse-access-floating-payload-guard",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nint main() {\n  const std::list<double> values{2.0, 3.0};\n  return *std::crbegin(values) == 3.0 ? 0 : 1;\n}\n",
+      "source_sha256": "1393ba101730f7d4f5ebca12a4ae5cfd4859317043e28468ff3910f6d8ed957c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-user-enum-payload-guard",
+      "expected": "accept",
+      "source": "#include <list>\nenum Code : unsigned char { First = 1, Second = 2 };\nint main() {\n  std::list<Code> values{First};\n  values.push_back(Second);\n  return values.back() != Second;\n}\n",
+      "source_sha256": "658fc3b81850df5d8044161a7ed27587da9ff874ac024eb5e877ababbef30e65",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-free-access-record-payload-guard",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nstruct Record { int field; };\nint main() {\n  std::list<Record> values{Record{2}};\n  return std::begin(values)->field == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "e310a1cd1fe6c3bc495d4329b8c2ddd1554348af204fedbb63b0f35a40b7fef3",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-reverse-iterator-unsupported-payload-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Record { int member; };\nint main() {\n  const std::list<Record> values{Record{2}, Record{5}};\n  return values.rbegin()->member == 5 ? 0 : 1;\n}\n",
+      "source_sha256": "845de3750e448e2b4d98a1963399e2d48c88859049d504eb695c3b9b9b9dbaa3",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-iterator-non-scalar-navigation-guard",
+      "expected": "accept",
+      "source": "#include <iterator>\n#include <list>\nstruct Record { int value; };\nint main() {\n  std::list<Record> values{Record{1}, Record{3}};\n  return std::next(values.begin())->value == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "7865f35e8a59a8e085e348b21603ff8006017fbd141fc58585cedfaeedf9bcbe",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-bool-user-proxy-payload-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Proxy { bool value; operator bool() const { return value; } };\nint main() {\n  std::list<Proxy> values{Proxy{true}, Proxy{false}};\n  return values.front() && !values.back() ? 0 : 1;\n}\n",
+      "source_sha256": "76c301e3f6d09ddaf53daeb1f59db383a0c6f58c660f1585d9c9b9afe965731c",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-user-defined-integer-allocator-guard",
+      "expected": "reject",
+      "source": "#include <list>\n#include <memory>\ntemplate <class T> struct LocalAllocator : std::allocator<T> {\n  using value_type = T;\n  template <class U> struct rebind { using other = LocalAllocator<U>; };\n  LocalAllocator() noexcept = default;\n  template <class U> LocalAllocator(const LocalAllocator<U>&) noexcept {}\n};\nint main() {\n  std::list<long, LocalAllocator<long>> items{3L, 7L};\n  items.reverse();\n  return items.front() != 7L;\n}\n",
+      "source_sha256": "c5787342500a0eb9d8d937f12456c0b1a3cafa080be89ff226f3fef2947bdd7f",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-indirect-capacity-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  using List = std::list<int>;\n  const List items{3, 7};\n  const auto method = &List::max_size;\n  return (items.*method)() <= 2;\n}\n",
+      "source_sha256": "b671aef68f2d7f99f99593be1af70096d596b4115cc9e9a803a7115d692ab8fb",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-remove-if-narrowing-predicate-guard",
+      "expected": "reject",
+      "source": "#include <list>\nbool positive(int value) { return value > 0; }\nint main() {\n  std::list<long> items{0L, 1L};\n  items.remove_if(&positive);\n  return items.size() != 1;\n}\n",
+      "source_sha256": "cbf52118b11b9cfaf23d04e9220abdc7e22ede0f665395034775cce5b4eb7033",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-remove-if-stateful-object-guard",
+      "expected": "reject",
+      "source": "#include <list>\nstruct Matches {\n  unsigned value;\n  bool operator()(unsigned item) const { return item == value; }\n};\nint main() {\n  std::list<unsigned> items{1u, 2u};\n  items.remove_if(Matches{2u});\n  return items.front() != 1u;\n}\n",
+      "source_sha256": "96bd4175d0306c16fd49e2f04091ff9efa5f3fc4ccf397633afb551c6f87ffe6",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-emplace-user-conversion-guard",
+      "expected": "reject",
+      "source": "#include <list>\nstruct Value {\n  operator int() const { return 4; }\n};\nint main() {\n  std::list<int> values;\n  return values.emplace_back(Value{}) != 4;\n}\n",
+      "source_sha256": "77e593148f4899b14195921b63a9e41535c1cf413c6643a3ff047fc360b77eec",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-assign-range-volatile-input-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  volatile unsigned int input[]{1, 2};\n  std::list<unsigned int> values;\n  values.assign(input, input + 2);\n  return values.size() != 2;\n}\n",
+      "source_sha256": "6be75ce42e52d365d507d7372cc6713b116eb5a6f700f55c71c0a514ee4ebf50",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-assign-range-floating-input-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  const double input[]{-1.5, 2.75};\n  std::list<int> values;\n  values.assign(input, input + 2);\n  return values.size() != 2;\n}\n",
+      "source_sha256": "07fa70966bb65f736f7150d595bc7ef0b7032ae53e4e2c74c4b0bfc390ee9855",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-construct-range-volatile-input-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  volatile short source[]{3, 4};\n  const std::list<int> values(source, source + 2);\n  return values.size() != 2;\n}\n",
+      "source_sha256": "1e7b710634f7713b3528863b276760322941f51c97011f66513dc8e397232827",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-insert-volatile-pointer-range-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  volatile short source[]{9, 10};\n  std::list<int> values;\n  values.insert(values.cend(), source, source + 2);\n  return values.size() != 2;\n}\n",
+      "source_sha256": "de4bcff5f8b3775bdd8c2e906d6648d859dfb532b503013917a888b4fc6a6194",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-order-function-with-observable-body-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint calls;\nbool greater(int left, int right) {\n  ++calls;\n  return left > right;\n}\nint main() {\n  std::list<int> values{2, 5, 7};\n  values.sort(&greater);\n  return calls == 0 || values.front() != 7;\n}\n",
+      "source_sha256": "2a70a3c90995780b7ad29ad40d97a63bfdf51bb0bf4cc639902dae298a434375",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-order-function-with-converting-signature-guard",
+      "expected": "reject",
+      "source": "#include <list>\nbool greater(long left, long right) { return left > right; }\nint main() {\n  std::list<int> values{2, 5, 7};\n  values.sort(&greater);\n  return values.front() != 7;\n}\n",
+      "source_sha256": "aab0b9d0c83388c9a6e8c8ba83248e71366fc08a042de2b375c5947929872d98",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-standard-order-width-conversion-guard",
+      "expected": "reject",
+      "source": "#include <functional>\n#include <list>\nint main() {\n  std::list<long> values{2L, 5L};\n  values.sort(std::greater<int>{});\n  return values.front() != 5L;\n}\n",
+      "source_sha256": "f1b8eba67c0b42bd2ff2ca4593ed2ac62402aaca98b102e2aacf2d29dfa130d8",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListReverseRetainsIteratorsReferencesAndSizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListReverseEmptySingletonAndDoubleReversalRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListReverseEvaluatesPointerReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListReverseOtherElementGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRangeErasePreservesBoundaryAndEmptyRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRangeEraseUnlinksBeforeReleaseRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRangeEraseOtherElementGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSpliceWholeIntoMiddlePreservesAddressRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSpliceRvalueIntoEmptyOwnerRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSpliceEmptySourceLeavesAnExistingPositionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSpliceSingleTransfersAddressAndCountRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSpliceSingleWithinOwnerAndAdjacentNoOpsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSpliceRvalueRangeKeepsBothOwnerBoundariesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSpliceRangeWithinOwnerAndEmptyRangeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSpliceOtherElementGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRemoveValueAliasedToFirstNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUniqueKeepsFirstNodeOfEachRunRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRemoveAndUniqueUnlinkBeforeFirstReleaseRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUniqueUserPredicateGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSortDefaultIsStableAndKeepsNodeIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSortDefaultEmptySingletonAndTwoNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListMergeKeepsLeftEqualsFirstAndReusesOwnersRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSortExplicitOrderGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListOwnerRelationsSignedDifferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListOwnerRelationsPrefixAndEmptyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListOwnerRelationsEvaluateOperandsOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListOwnerRelationsOtherElementGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListResizeDefaultFillAndRepeatedCountRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListResizeGrowthKeepsChainDetachedAndReadsFillAfterAllocationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListResizeShrinkUnlinksBeforeReleasingTheTailRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListResizeOtherElementGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListLongStableOrderIteratorValuesAndCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUnsignedMergesAndComparesInTheUnsignedDomainRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUnsignedLongResizeInsertAndSpliceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListLongLongGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListObserverAllocatorConstructsATypedOwnerRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListMaxSizeUsesTheCheckedNodeWidthRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListObserversEvaluateAPointerReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRemoveIfChecksEachElementBeforeSplicingARunRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUniquePredicateComparesBeforeEachRunTransferRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListWideSignedSortAndResizeKeepFullValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListWideUnsignedMergePreservesHighBitAndStabilityRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListEmplaceEndsReturnMutableReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListEmplaceAtPositionRetainsNeighborIteratorsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListEmplaceReadsReferenceAfterAllocationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListShortPayloadSortAndLvalueStoreRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUnsignedShortPayloadKeepsHighBitRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListCharacterPayloadsKeepDistinctTypeAndOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListCountAssignmentShrinksAndOverwritesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListCountAssignmentCopiesExistingNodesBeforeAllocationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListCountAssignmentZeroAndWideRegrowthRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRangeAssignmentGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListConvertingRangeRetainsNodesAndDefersAppendsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListIteratorRangeOverwritesAndShrinksRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListConstructByCountValueAndDefaultAllocatorRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListConstructRawRangeLoadsAfterAllocationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListConstructFromConstIteratorsAndExplicitAllocatorRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListAssignInitializerReusesPrefixAndClearsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListOperatorAssignmentByInitializerRetainsOwnerRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListInitializerAssignmentCapturesRightSideFirstRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListInsertCountValueAndEmptyRangeReturnPositionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListInsertConvertingRangeDefersAllLinksRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListInsertConstIteratorRangeKeepsSourceNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListInsertInitializerAtBeginAndEmptyAtEndRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListExplicitOrderWideSortPreservesEquivalentNodesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListExplicitOrderMergeKeepsDestinationTiesFirstRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListReverseIteratorBaseAndNodeIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListConstReverseIteratorEmptyAndTraversalRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListReverseIteratorFactoryAndConstConversionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListReverseIteratorDistanceSourceGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListIteratorSignedAdvanceAndDefaultNavigationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListConstReverseNavigationDirectionsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListIteratorNavigationEvaluatesDistanceOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListFreeAccessEvaluatesReceiverOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListFreeConstAccessMatchesMemberBaseRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListFreeReverseAccessPreservesMutableAndEmptyEndpointsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListBoolAddressableReferencesAndNodeIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListBoolRangeConversionAndReusedPrefixRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListBoolStableOrderAndUniqueRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListBoolReverseBaseAddressAndConstAccessRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListStandardGreaterKeepsSignedNodeOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListTransparentGreaterMoveMergePreservesTiesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListExplicitStandardLessOrdersLvalueMergeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSortsWithSameTypeEmptyComparator",
+    "TranslateTest.CoreV2ListEmplacesWithIntegerConversionAtBothOptimizations",
+    "TranslateTest.CoreV2ListAssignsDoubleInitializerAtBothOptimizations",
+    "TranslateTest.CoreV2ListStoresDoubleElementsAtBothOptimizations",
+    "TranslateTest.CoreV2ListReadsDoubleThroughFreeReverseAccess",
+    "TranslateTest.CoreV2ListStoresAFixedUnderlyingEnum",
+    "TranslateTest.CoreV2ListProvidesFreeAccessToTrivialRecordElements",
+    "TranslateTest.CoreV2ListReverseIteratorTraversesTrivialRecords",
+    "TranslateTest.CoreV2ListIteratorNavigatesTrivialRecords",
+    "TranslateTest.CoreV2ListElementsUseRecordBoolConversion",
+    "TranslateTest.CoreV2ListUserDefinedIntegerAllocatorGuardRejected",
+    "TranslateTest.CoreV2ListIndirectCapacityGuardRejected",
+    "TranslateTest.CoreV2ListRemoveIfNarrowingPredicateGuardRejected",
+    "TranslateTest.CoreV2ListRemoveIfStatefulObjectGuardRejected",
+    "TranslateTest.CoreV2ListEmplaceUserConversionGuardRejected",
+    "TranslateTest.CoreV2ListAssignRangeVolatileInputGuardRejected",
+    "TranslateTest.CoreV2ListAssignRangeFloatingInputGuardRejected",
+    "TranslateTest.CoreV2ListConstructRangeVolatileInputGuardRejected",
+    "TranslateTest.CoreV2ListInsertVolatilePointerRangeGuardRejected",
+    "TranslateTest.CoreV2ListOrderFunctionWithObservableBodyGuardRejected",
+    "TranslateTest.CoreV2ListOrderFunctionWithConvertingSignatureGuardRejected",
+    "TranslateTest.CoreV2ListStandardOrderWidthConversionGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "5b1a84a87f5913c88deb9c169543072faf124676ed0de5495716a18d15f0842d",
+  "maintained_original_sha256": "f1fdc23a93ac4d46500dd6b8cb91a37bdf94b7fa0202b2a5a6c3fb596b2bc9f0",
+  "previous_registered_source_sha256": "d21c62d01a15fd6090e297a8319691dd40cd2cbee5a2a6f8d38da6d96731f895",
+  "previous_maintained_original_sha256": "3441751b94a0f994016ef5bc936adebd867e52331ea969aafab490e4dc7e2ad8",
+  "restorer_sha256": "04c449a4a0b7e712062d0dfa1376f3b7d58f9d0cc446ba1542e0e1a33b920d95",
+  "extractor_sha256": "2daa482343be710cf4cc99345e667a8326fa0524ae04ac333d39d49466e2fdc4",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9365,
+  "current_python_registry_tests": 334,
+  "native_reference_selected_executions": 186,
+  "planned_generated_c23_executions": 186,
+  "native_reference_proofs": {
+    "linked-list-fixed-enumerations": "72b5a08f98b321f6768571dfc6d17c651152bda07f57545ffc64f634752d6b25",
+    "linked-list-floating-elements": "502dd6fd3e2e30b842111938720b1d038f62c9c19d71bd1280f96182d362a4bb",
+    "linked-list-order-and-short-payload": "ce66053be3a3ab0ab14d3f0e8a24de543892c1e9b66ecb4ae0f256c2dc666c53",
+    "linked-list-trivial-records": "edf1f3c9008b2db90aa95a4a097a00441e0a19496801b86832f69ccf3ae136de",
+    "list-bool-payload": "547031ac6a07136ffcc275265b960d3f294e307de9c1bac6b317a8c9bbb516ad",
+    "list-bulk-insertion": "739e9ac51cb5b6798e044745b77039727830c03c2451587ea038cf2c65fe21fb",
+    "list-converting-emplace": "b01fc933796ba878497fe433b0bb3877fd3bfbf0b4c4e347dc1b765fac6275ad",
+    "list-count-assignment": "22ec32ea3109fc859250957c2e823445c7934e76e63140e5d2b03eec0707f641",
+    "list-direct-order": "a439cc15c0c1c91df052ff3a5efe55f3d6a9b9040fde2aefa4d0e9b159dcba0c",
+    "list-filter-and-order": "b5fed1a1a50d4f20a9cadf79d9d3a9af1283b952672f41881deca40e03552302",
+    "list-free-access": "51695b6364ce345b8b4436a98b8d7284344545150e963df07a39b9cd22eeb67e",
+    "list-initializer-assignment": "4afca78d260cf34883d6a6e9a763a82511ed68943280721966ecace9b046d943",
+    "list-integer-types": "b60a25fb4cc589abd4e10f39fc8c278d8aa52cc85a8adf54f85925b92f870d81",
+    "list-iterator-navigation": "de7a8038edc0a9f0eaf31b7997f671d4caa81f1edf29d699ca2aee9157bc4f69",
+    "list-observers": "b35a49332ad3746b71b4e4b192cc20ca4fa01bae30e981e23e5c2f94b8260d9d",
+    "list-owner-comparisons": "8c482d622d8dfb1c00c8b6060e5677b540d77662e6ff3850d6e4927658f0794a",
+    "list-range-assignment": "bdd3714cab7fb74594de48a7519296580f55d425b597a46d0f9397deb0b6749e",
+    "list-resize": "7ad243171d4e8f9dccc52b1c1ec14f2cbe301fc2076488bc1a0e2378de10f69a",
+    "list-reverse-and-range-erase": "b48476c132fc7c8a645b4aaae26af6c21f1f19f63773c36bd912ffcd5782f2bd",
+    "list-reverse-iterator": "70300c202fcd0459701f596bd98f55786706b05331aba9871eff46fbe2815cd1",
+    "list-scalar-construction": "f2c21aedfffe1fba9c62f03c20bc2a5eecf8a7df19946ccbda723563b1b76b48",
+    "list-scalar-emplacement": "44714db4db218fee811b69e34bbb13af6e711eb8cdf6470bb49374658c653151",
+    "list-small-integer-payloads": "b238c8c05f3ff9f722d0a9eac8dde3f5d2003a89be74168be55ded0f49e5c9c8",
+    "list-splice": "494519b1143a6fc8d9b0abca8ec2c095829eda76c88d9b23cd8f462864074b2b",
+    "list-standard-order": "671780d1d42344d56f9e1da9ce2381611f7c5f990885ed369dba3a9ec317b9b3",
+    "list-typed-predicates": "0a67c2e592e69bb11710d45ffdca0a1b4ce94e1fd5110bb01b662245284feda7",
+    "list-wide-payloads": "52f656e5f176ab3892cf34a611ce75f0a78ee28d1548a3c92b3eda1c10c36a11"
+  },
+  "native_reference_authentication_sha256": "63f91bf74c1f9d76f75b67fffab5a2f89973e291304432c69ebbe29e260c7d41",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}

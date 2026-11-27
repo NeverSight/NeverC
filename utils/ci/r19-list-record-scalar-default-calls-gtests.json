@@ -1,0 +1,113 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-record-default-call-scalar-earlier-field",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordDefaultCallScalarEarlierFieldRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b1489aa23a5727726855a4871fea5d4f6ac8bb776b9b83205db3091b97d08eb2",
+      "original_case_source_sha256": "b1489aa23a5727726855a4871fea5d4f6ac8bb776b9b83205db3091b97d08eb2",
+      "gtest_body_sha256": "c7f904132eb7b10e9bdc685c01aebe1ffc46d72519791d07fa8bb2f1050a2c87"
+    },
+    {
+      "name": "forward-list-record-default-call-nested-scalar",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordDefaultCallNestedScalarRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bde9cb826eb452013e8b4a5b977ed5e1aa030f13f4f42904ca4cae1a02fef4b1",
+      "original_case_source_sha256": "bde9cb826eb452013e8b4a5b977ed5e1aa030f13f4f42904ca4cae1a02fef4b1",
+      "gtest_body_sha256": "d73de26d9f32ad29470ee066ec5fa6ced44cda3a97b1739ca05ccd16be9af7fc"
+    },
+    {
+      "name": "list-record-default-call-floating-scalar",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordDefaultCallFloatingScalarRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6de9e79108d5dd71c4f655015decab55cf94af15e1b17d6f57160356948d63e0",
+      "original_case_source_sha256": "6de9e79108d5dd71c4f655015decab55cf94af15e1b17d6f57160356948d63e0",
+      "gtest_body_sha256": "9e7e1932a3882b181f813633d44503d2cd4aff81c7d00bf8d65d7a53fd9e5bcd"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-record-default-call-reference-argument-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordDefaultCallReferenceArgumentGuardRejected",
+      "expected": "reject",
+      "source_sha256": "ddc72e475277fe06d450dc83a9cfebd5363ea930bb4b9398644e70ae19885cf7",
+      "original_case_source_sha256": "ddc72e475277fe06d450dc83a9cfebd5363ea930bb4b9398644e70ae19885cf7",
+      "gtest_body_sha256": "fa745a5fb2aabb6429bd03b44293c438dfcf0f6c103394fb80db872145ef8f87"
+    },
+    {
+      "name": "forward-list-record-default-call-nonliteral-default-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordDefaultCallNonliteralDefaultGuardRejected",
+      "expected": "reject",
+      "source_sha256": "0663bdd2b8cbeac0900d34bf62adefbf3366971bfc21ca859343b53c3dfc96d5",
+      "original_case_source_sha256": "0663bdd2b8cbeac0900d34bf62adefbf3366971bfc21ca859343b53c3dfc96d5",
+      "gtest_body_sha256": "2f5c427687c55d73c946fa16748ad2940e4ef8fe5c673b240843bca1d866c82d"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-record-default-call-scalar-earlier-field",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint calls;\nint offset(int amount) { return amount + ++calls; }\nint tag(int id, int code) { return id * 10 + code; }\nstruct Entry { int id = offset(3); int checksum = tag(id, 5); };\nint main() {\n  std::list<Entry> rows(0);\n  if (calls != 0) return 1;\n  rows.resize(2);\n  auto first = rows.begin();\n  if (calls != 2 || first->id != 4 || first->checksum != 45 || rows.back().checksum != 55) return 1;\n  rows.emplace_back();\n  return calls != 3 || first != rows.begin() || rows.back().checksum != 65;\n}\n",
+      "source_sha256": "b1489aa23a5727726855a4871fea5d4f6ac8bb776b9b83205db3091b97d08eb2"
+    },
+    {
+      "name": "forward-list-record-default-call-nested-scalar",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nint calls;\nint offset(int amount) { return amount + ++calls; }\nint tag(int id, bool odd = true) { return id * 10 + odd; }\nstruct Entry { int checksum = tag(offset(2)); };\nint main() {\n  std::forward_list<Entry> rows(2);\n  auto first = rows.begin();\n  auto second = first;\n  ++second;\n  if (calls != 2 || first->checksum != 31 || second->checksum != 41) return 1;\n  rows.resize(2);\n  auto third = rows.emplace_after(second);\n  return calls != 3 || third->checksum != 51 || first != rows.begin();\n}\n",
+      "source_sha256": "bde9cb826eb452013e8b4a5b977ed5e1aa030f13f4f42904ca4cae1a02fef4b1"
+    },
+    {
+      "name": "list-record-default-call-floating-scalar",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint calls;\ndouble measure(double base = 1.5) { return base * ++calls; }\nstruct Entry { double value = measure(); double doubled = measure(value); };\nint main() {\n  std::list<Entry> rows(2);\n  auto first = rows.begin();\n  if (calls != 4 || first->value != 1.5 || first->doubled != 3.0 ||\n      rows.back().value != 4.5 || rows.back().doubled != 18.0) return 1;\n  rows.resize(1);\n  return calls != 4 || first != rows.begin() || rows.back().doubled != 3.0;\n}\n",
+      "source_sha256": "6de9e79108d5dd71c4f655015decab55cf94af15e1b17d6f57160356948d63e0"
+    },
+    {
+      "name": "list-record-default-call-reference-argument-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nint change(int& value) { return ++value; }\nstruct Entry { int id = 1; int checksum = change(id); };\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().id != 2 || rows.front().checksum != 2;\n}\n",
+      "source_sha256": "ddc72e475277fe06d450dc83a9cfebd5363ea930bb4b9398644e70ae19885cf7"
+    },
+    {
+      "name": "forward-list-record-default-call-nonliteral-default-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <forward_list>\nint calls;\nint seed() { return ++calls; }\nint tag(int value = seed()) { return value; }\nstruct Entry { int checksum = tag(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().checksum != 1 || calls != 1;\n}\n",
+      "source_sha256": "0663bdd2b8cbeac0900d34bf62adefbf3366971bfc21ca859343b53c3dfc96d5"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListRecordDefaultCallScalarEarlierFieldRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordDefaultCallNestedScalarRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordDefaultCallFloatingScalarRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordDefaultCallReferenceArgumentGuardRejected",
+    "TranslateTest.CoreV2ForwardListRecordDefaultCallNonliteralDefaultGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "272b0e6a1e87efce458692940bd83393711e84a5c8ff7a55deb78c47d7e3106d",
+  "maintained_original_sha256": "7967742b23fb7fba325570fa421b7167167dd8178ac93807de53bc4c5ed2fa09",
+  "previous_registered_source_sha256": "7a2bdf2980bf0a682418f7f2223983f99745615d36b18223d036a1c087f5fe22",
+  "previous_maintained_original_sha256": "e55c001a50d465a80ca24202f4561ee48de8bf564954262a02f0c9d9f0ab5345",
+  "restorer_sha256": "f8352246f572fa1fea8e99b9828d539eebd0d4e1c568a5bbc06794243e49309c",
+  "extractor_sha256": "46ad2cba42a5b20912fe0eb588fabb308dcbf46adef84d4ca4683eab2f4f26e4",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9537,
+  "current_python_registry_tests": 366,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "linked-list-record-scalar-default-calls": "07bcfc5e4cb38bfbe0b9f2164e82ab3fd239e4b8b75c12f55eed8e66691859c1"
+  },
+  "native_reference_authentication_sha256": "d0b4ae3329a6d0c0e1714775a0fde8f2ed60d5558c5e473cb5afea28fd881353",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}
