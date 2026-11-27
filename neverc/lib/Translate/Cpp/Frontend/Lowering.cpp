@@ -765,6 +765,8 @@ class FunctionLowering {
         Converted.push_back(cast(
             address(json::Object(*Argument), Parameter->getPointeeType(), L),
             type(Parameter, L), L));
+      else if (recordValue(Parameter))
+        Converted.push_back(json::Object(*Argument));
       else
         Converted.push_back(
             cast(json::Object(*Argument), type(Parameter, L), L));

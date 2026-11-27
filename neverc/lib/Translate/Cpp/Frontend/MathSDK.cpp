@@ -54921,14 +54921,20 @@ bool linkedListNamedRecordOrder(const State &S, const SourceManager &SM, const E
       !linkedListCallbackPointer(Value->getType(), Element, 2, Context, true))
     return false;
   const auto *Prototype = Value->getType()->getPointeeType()->getAs<FunctionProtoType>();
-  if (!Prototype->getParamType(0)->isLValueReferenceType()) return false;
+  if (!Prototype->getParamType(0)->isLValueReferenceType()) {
+    const auto *Layout = Record->getDefinition();
+    if (!Layout || !Layout->isTriviallyCopyable()) return false;
+  }
   const Expr *Target = Value->IgnoreParenImpCasts();
   if (const auto *Address = dyn_cast<UnaryOperator>(Target); Address && Address->getOpcode() == UO_AddrOf)
     Target = Address->getSubExpr()->IgnoreParenImpCasts();
   const auto *Reference = dyn_cast<DeclRefExpr>(Target);
   const auto *Function = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
   const auto *Definition = linkedListRecordOrderDefinition(S, SM, Function);
-  return Definition && linkedListRecordComparisonBody(Definition, Record, Context);
+  if (!Definition) return false;
+  for (const auto *Parameter : Definition->parameters())
+    if (Parameter->getType().isVolatileQualified()) return false;
+  return linkedListRecordComparisonBody(Definition, Record, Context);
 }
 
 const CXXMethodDecl *linkedListRecordMemberOperator(
