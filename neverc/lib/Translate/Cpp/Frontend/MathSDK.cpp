@@ -54240,7 +54240,44 @@ bool linkedListTrivialRecordField(
     QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
     unsigned Depth, unsigned &RemainingFields);
 
-bool linkedListLiteralMemberDefaults(const CXXRecordDecl *Record,
+bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field) {
+  llvm::SmallVector<const Expr *, 8> Pending{Init};
+  const auto *Owner = Field->getParent()->getCanonicalDecl();
+  while (!Pending.empty()) {
+    const auto *Value = Pending.pop_back_val()->IgnoreParenImpCasts();
+    if (isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral,
+            CXXNullPtrLiteralExpr>(Value))
+      continue;
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(Value);
+        Reference && isa<EnumConstantDecl>(Reference->getDecl()))
+      continue;
+    if (const auto *Member = dyn_cast<MemberExpr>(Value)) {
+      const auto *Earlier = dyn_cast<FieldDecl>(Member->getMemberDecl());
+      if (!Earlier || Earlier->getParent()->getCanonicalDecl() != Owner ||
+          Earlier->getFieldIndex() >= Field->getFieldIndex() ||
+          !isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()))
+        return false;
+      continue;
+    }
+    if (const auto *Unary = dyn_cast<UnaryOperator>(Value)) {
+      if (Unary->getOpcode() != UO_Plus && Unary->getOpcode() != UO_Minus &&
+          Unary->getOpcode() != UO_LNot)
+        return false;
+      Pending.push_back(Unary->getSubExpr());
+      continue;
+    }
+    const auto *Binary = dyn_cast<BinaryOperator>(Value);
+    if (!Binary || (!Binary->isComparisonOp() && Binary->getOpcode() != BO_Add &&
+        Binary->getOpcode() != BO_Sub && Binary->getOpcode() != BO_Mul &&
+        Binary->getOpcode() != BO_LAnd && Binary->getOpcode() != BO_LOr))
+      return false;
+    Pending.push_back(Binary->getLHS());
+    Pending.push_back(Binary->getRHS());
+  }
+  return true;
+}
+
+bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
     const LinkedListRecordSource *Source) {
   if (!Record->isTriviallyCopyable() || !Record->hasTrivialDestructor()) return false;
   bool HasDefault = false;
@@ -54249,12 +54286,7 @@ bool linkedListLiteralMemberDefaults(const CXXRecordDecl *Record,
     const auto *Init = Field->getInClassInitializer();
     if (!Init || (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())))
       return false;
-    const auto *Value = Init->IgnoreParenImpCasts();
-    const auto *Reference = dyn_cast<DeclRefExpr>(Value);
-    if (!isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral,
-             CXXNullPtrLiteralExpr>(Value) &&
-        !(Reference && isa<EnumConstantDecl>(Reference->getDecl())))
-      return false;
+    if (!linkedListDefaultExpression(Init, Field)) return false;
     HasDefault = true;
   }
   return HasDefault;
@@ -54270,7 +54302,7 @@ const CXXRecordDecl *linkedListTrivialRecordLayout(
       Record->isUnion() || Record->getNumBases() || !Record->isStandardLayout() ||
       !Record->isAggregate() || Record->field_empty())
     return nullptr;
-  if (!Record->isTrivial() && (Depth || !linkedListLiteralMemberDefaults(Record, Source)))
+  if (!Record->isTrivial() && (Depth || !linkedListCheckedMemberDefaults(Record, Source)))
     return nullptr;
   if (Source && !Source->Program.owns(Source->Sources, Record->getLocation()))
     return nullptr;
@@ -54345,7 +54377,7 @@ bool linkedListTrivialElementMember(const State &S, const SourceManager &SM,
   const LinkedListRecordSource Source{S, SM};
   const auto *Record = linkedListTrivialRecordElement(Element, Context, &Source);
   return Record && Record->getCanonicalDecl() == Method->getParent()->getCanonicalDecl() &&
-      (Method->isTrivial() || linkedListLiteralMemberDefaults(Record, &Source));
+      (Method->isTrivial() || linkedListCheckedMemberDefaults(Record, &Source));
 }
 
 bool forwardListLeaves(const State &S, const SourceManager &SM,

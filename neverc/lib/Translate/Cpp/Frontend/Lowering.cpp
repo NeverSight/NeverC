@@ -27366,6 +27366,9 @@ class FunctionLowering {
     const auto *Record = Element->getAsCXXRecordDecl();
     Record = Record ? Record->getDefinition() : nullptr;
     if (!Record || Record->isTrivial()) return;
+    auto SavedThis = ThisPointer;
+    ThisPointer = address(Place, Element, L);
+    auto RestoreThis = llvm::make_scope_exit([&] { ThisPointer = std::move(SavedThis); });
     for (const auto *Field : Record->fields())
       if (const auto *Init = Field->getInClassInitializer())
         initialize(fieldStorage(Place, Field, L), Init, L);
