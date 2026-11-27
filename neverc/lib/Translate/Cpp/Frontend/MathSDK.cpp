@@ -54931,7 +54931,7 @@ bool linkedListNamedRecordOrder(const State &S, const SourceManager &SM, const E
   return Definition && linkedListRecordComparisonBody(Definition, Record, Context);
 }
 
-const CXXMethodDecl *linkedListMemberOwnerOperator(
+const CXXMethodDecl *linkedListRecordMemberOperator(
     const State &S, const SourceManager &SM, const CXXOperatorCallExpr *Call,
     QualType Element, const ASTContext &Context) {
   const auto *Selected = Call->getDirectCallee();
@@ -54958,7 +54958,7 @@ const CXXMethodDecl *linkedListMemberOwnerOperator(
 
 bool bindLinkedListDefaultRecordComparison(const State &S, const SourceManager &SM,
     const CallExpr *Call, QualType Element, const ASTContext &Context,
-    const FunctionDecl **Selected, OverloadedOperatorKind Kind, bool OwnerComparison) {
+    const FunctionDecl **Selected, OverloadedOperatorKind Kind) {
   if (!Selected) return false;
   const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
   if (!Operator || Operator->getOperator() != Kind || Operator->getNumArgs() != 2)
@@ -54968,8 +54968,8 @@ bool bindLinkedListDefaultRecordComparison(const State &S, const SourceManager &
   const bool DirectEquality = Kind == OO_EqualEqual && (File->Path == "list" || File->Path == "forward_list");
   if (!DirectEquality && File->Path != "__algorithm/comp.h") return false;
   const auto *Definition = linkedListRecordOrderDefinition(S, SM, Operator->getDirectCallee());
-  if (!Definition && OwnerComparison)
-    Definition = linkedListMemberOwnerOperator(S, SM, Operator, Element, Context);
+  if (!Definition)
+    Definition = linkedListRecordMemberOperator(S, SM, Operator, Element, Context);
   if (!Definition || (*Selected && (*Selected)->getCanonicalDecl() != Definition->getCanonicalDecl()))
     return false;
   for (const auto *Declaration : Definition->redecls())
@@ -55601,8 +55601,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!forwardListScalarDestruction(S, SM, Call, Context, Owner) &&
           !bindLinkedListDefaultRecordComparison(S, SM, Call, Owner.Value->getType(), Context,
-                                                DefaultRecordComparison, DefaultOperator,
-                                                !isa<CXXMethodDecl>(Root)) &&
+                                                DefaultRecordComparison, DefaultOperator) &&
           !(DirectOrder && forwardListSDKOrderCall(S, SM, Call, Owner.Value->getType(), Context, OrderMethod)) &&
           !(DirectFilter && forwardListSDKFilterCall(Call, Root, Owner.Value->getType(), Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
@@ -57645,8 +57644,7 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!listScalarDestruction(S, SM, Call, Context, Owner) &&
           !bindLinkedListDefaultRecordComparison(S, SM, Call, Owner.Value->getType(), Context,
-                                                DefaultRecordComparison, DefaultOperator,
-                                                !isa<CXXMethodDecl>(Root)) &&
+                                                DefaultRecordComparison, DefaultOperator) &&
           !(PredicateCount && listSDKPredicateCall(Call, Root, Owner.Value->getType(), PredicateCount, Context)) &&
           !(!Compare.isNull() && listSDKOrderCall(S, SM, Call, cast<CXXMethodDecl>(Root)->getParent(),
                                                       Compare, Owner.Value->getType(), Context, OrderMethod)) &&
