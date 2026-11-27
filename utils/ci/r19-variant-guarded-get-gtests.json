@@ -1,0 +1,164 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-guarded-get-mutable-reference",
+      "formal_test_name": "TranslateTest.CoreV2VariantGuardedGetMutableReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d7c9d5fb24ae68e62cb495b3ed723133e85940121ea732941d960e4231e9e17f",
+      "original_case_source_sha256": "d7c9d5fb24ae68e62cb495b3ed723133e85940121ea732941d960e4231e9e17f",
+      "gtest_body_sha256": "c7496dde637b86e24bb509cef9805d40254e5c4d514749e0f4a991e374b037e5"
+    },
+    {
+      "name": "variant-guarded-get-const-reference",
+      "formal_test_name": "TranslateTest.CoreV2VariantGuardedGetConstReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "63c0ce25e7a2f81467420716e379a4bd88fb15fd398e339e06c638a2951bdf56",
+      "original_case_source_sha256": "63c0ce25e7a2f81467420716e379a4bd88fb15fd398e339e06c638a2951bdf56",
+      "gtest_body_sha256": "ec8d3c1630945f4c075e290bf09dca0a225c4ad843d0c433d770495a44299df7"
+    },
+    {
+      "name": "variant-guarded-get-short-circuit",
+      "formal_test_name": "TranslateTest.CoreV2VariantGuardedGetShortCircuitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "66343d7f7e6523567ababc577d5a4cf8ee558ddaabaa3c8c85d911ebe8d4ee2a",
+      "original_case_source_sha256": "66343d7f7e6523567ababc577d5a4cf8ee558ddaabaa3c8c85d911ebe8d4ee2a",
+      "gtest_body_sha256": "fe3d8847d9b060f227495c3d5e30bd579f168df820e2c9c5a8a9450147383506"
+    },
+    {
+      "name": "variant-guarded-get-recheck-after-emplace",
+      "formal_test_name": "TranslateTest.CoreV2VariantGuardedGetRecheckAfterEmplaceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "afb2e7a2e32d528fb9ffcb19f33c6a0db82acaa94b8bd6fbacd2f77ce1c58d68",
+      "original_case_source_sha256": "afb2e7a2e32d528fb9ffcb19f33c6a0db82acaa94b8bd6fbacd2f77ce1c58d68",
+      "gtest_body_sha256": "512296d0c0d763ef48e9ca9a51acd4ab636a2002fe624eb09798514c46a349ea"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-guarded-get-guard-for-other-object",
+      "formal_test_name": "TranslateTest.CoreV2VariantGuardedGetGuardForOtherObjectRejected",
+      "expected": "reject",
+      "source_sha256": "e534d3b1cd9c08a49ab66bbab4fa3fae62b924cf18dd1d28993e71c872e5ba52",
+      "original_case_source_sha256": "e534d3b1cd9c08a49ab66bbab4fa3fae62b924cf18dd1d28993e71c872e5ba52",
+      "gtest_body_sha256": "4cf10f5b02322cd0d9a730f02fa7fd999f2763d533cea8db34dc61d23167fe39"
+    },
+    {
+      "name": "variant-guarded-get-guard-for-other-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantGuardedGetGuardForOtherAlternativeRejected",
+      "expected": "reject",
+      "source_sha256": "0b2354e75a130a73ba55fc264b1707808fedd98ed09ad060efc7976b588b79e9",
+      "original_case_source_sha256": "0b2354e75a130a73ba55fc264b1707808fedd98ed09ad060efc7976b588b79e9",
+      "gtest_body_sha256": "c07dff43ab1222a0bf77ef9bd24dd43c53ae6fbe7d32613c3c1b7f6a7aedf129"
+    },
+    {
+      "name": "variant-guarded-get-changed-after-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantGuardedGetChangedAfterGuardRejected",
+      "expected": "reject",
+      "source_sha256": "8bd77b6d624427e13a6531d3e208229d09f878d897ead637272881e7ed0a7088",
+      "original_case_source_sha256": "8bd77b6d624427e13a6531d3e208229d09f878d897ead637272881e7ed0a7088",
+      "gtest_body_sha256": "3ad5b5d4d990ba8192d3887e5096500f23b00b56a6d804d7ae51004d095911a9"
+    },
+    {
+      "name": "variant-guarded-get-false-path",
+      "formal_test_name": "TranslateTest.CoreV2VariantGuardedGetFalsePathRejected",
+      "expected": "reject",
+      "source_sha256": "6e03e927da9b267d98507bbf9ba891926070161fc6a244c92a080979a426a58a",
+      "original_case_source_sha256": "6e03e927da9b267d98507bbf9ba891926070161fc6a244c92a080979a426a58a",
+      "gtest_body_sha256": "5a280d250e6b3ede016283312d90718fc5a5fa215e4558fc9dbed01ad524437a"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-guarded-get-mutable-reference",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing V = std::variant<int, int>;\nint increment(V& state) {\n  if (state.index() == 1) {\n    int& item = (std::get<1>(state));\n    item += 3;\n    return &item == std::get_if<1>(&state) ? item : -2;\n  }\n  return -1;\n}\nint main() {\n  V active(std::in_place_index<1>, 4);\n  V inactive(std::in_place_index<0>, 2);\n  return increment(active) != 7 || increment(inactive) != -1 ||\n         *std::get_if<1>(&active) != 7 || *std::get_if<0>(&inactive) != 2;\n}\n",
+      "source_sha256": "d7c9d5fb24ae68e62cb495b3ed723133e85940121ea732941d960e4231e9e17f"
+    },
+    {
+      "name": "variant-guarded-get-const-reference",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nint read(const V& state) {\n  if (std::holds_alternative<double>(state))\n    return std::get<double>(state);\n  return -1;\n}\nint main() {\n  const V active{42.5};\n  const V inactive{7};\n  return read(active) != 42 || read(inactive) != -1;\n}\n",
+      "source_sha256": "63c0ce25e7a2f81467420716e379a4bd88fb15fd398e339e06c638a2951bdf56"
+    },
+    {
+      "name": "variant-guarded-get-short-circuit",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nbool read(V& state) {\n  return std::holds_alternative<int>(state) && std::get<int>(state);\n}\nint main() {\n  V zero{0};\n  V nonzero{6};\n  V inactive{4.5};\n  return read(zero) || !read(nonzero) || read(inactive);\n}\n",
+      "source_sha256": "66343d7f7e6523567ababc577d5a4cf8ee558ddaabaa3c8c85d911ebe8d4ee2a"
+    },
+    {
+      "name": "variant-guarded-get-recheck-after-emplace",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing V = std::variant<std::monostate, long>;\nint main() {\n  V state;\n  if (std::holds_alternative<std::monostate>(state)) {\n    auto& empty = std::get<std::monostate>(state);\n    if (&empty != std::get_if<0>(&state)) return 1;\n  }\n  state.emplace<1>(2L);\n  if (std::holds_alternative<long>(state)) {\n    long& item = std::get<1>(state);\n    item *= 7;\n    return item != 14 || std::get_if<0>(&state) != nullptr;\n  }\n  return 2;\n}\n",
+      "source_sha256": "afb2e7a2e32d528fb9ffcb19f33c6a0db82acaa94b8bd6fbacd2f77ce1c58d68"
+    },
+    {
+      "name": "variant-guarded-get-guard-for-other-object",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nint read(V& a, V& b) {\n  if (std::holds_alternative<int>(a)) return std::get<int>(b);\n  return 0;\n}\nint main() { V a{1}; V b{2.5}; return read(a, b); }\n",
+      "source_sha256": "e534d3b1cd9c08a49ab66bbab4fa3fae62b924cf18dd1d28993e71c872e5ba52"
+    },
+    {
+      "name": "variant-guarded-get-guard-for-other-alternative",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nint read(V& state) {\n  if (std::holds_alternative<double>(state)) return std::get<0>(state);\n  return 0;\n}\nint main() { V state{2.5}; return read(state); }\n",
+      "source_sha256": "0b2354e75a130a73ba55fc264b1707808fedd98ed09ad060efc7976b588b79e9"
+    },
+    {
+      "name": "variant-guarded-get-changed-after-guard",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nint read(V& state) {\n  if (std::holds_alternative<int>(state)) {\n    state.emplace<1>(2.5);\n    return std::get<0>(state);\n  }\n  return 0;\n}\nint main() { V state{1}; return read(state); }\n",
+      "source_sha256": "8bd77b6d624427e13a6531d3e208229d09f878d897ead637272881e7ed0a7088"
+    },
+    {
+      "name": "variant-guarded-get-false-path",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nusing V = std::variant<int, double>;\nbool read(V& state) {\n  return std::holds_alternative<int>(state) || std::get<int>(state);\n}\nint main() { V state{2.5}; return read(state); }\n",
+      "source_sha256": "6e03e927da9b267d98507bbf9ba891926070161fc6a244c92a080979a426a58a"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantGuardedGetMutableReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantGuardedGetConstReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantGuardedGetShortCircuitRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantGuardedGetRecheckAfterEmplaceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantGuardedGetGuardForOtherObjectRejected",
+    "TranslateTest.CoreV2VariantGuardedGetGuardForOtherAlternativeRejected",
+    "TranslateTest.CoreV2VariantGuardedGetChangedAfterGuardRejected",
+    "TranslateTest.CoreV2VariantGuardedGetFalsePathRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "065f3f97fb865e13adcd83f37c7fa7bf47223329894a5fce7da802cbe9f00dc7",
+  "maintained_original_sha256": "428d544caff0c79322d8d0a239a9680dc0c01a016e357f8506aebf19a683b702",
+  "previous_registered_source_sha256": "06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a",
+  "previous_maintained_original_sha256": "1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462",
+  "restorer_sha256": "3ae6891fb4308bbda6eb1cab06723137458554aef0769ee0a074996ffabe7c10",
+  "extractor_sha256": "ae560d865cfbd4c6a3ab0cf29ab4ad3cc4286d9834662d7a444375016acc71b4",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8278,
+  "current_python_registry_tests": 156,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "variant-guarded-get": "4fa92518aae9e483cf1788860a8239cd4ab6c79227e4ff663496454c569f7514"
+  },
+  "native_reference_authentication_sha256": "1b7a53858b36ae08c4d9466d047443b81a34cf2c5d9524b595bd393a20a6a284",
+  "source_proof_sha256": "214f35315521bea5b68cc697d88a37966940508d54813069f5ce3d4c64f91a6b"
+}

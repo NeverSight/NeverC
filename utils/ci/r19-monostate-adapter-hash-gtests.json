@@ -1,0 +1,147 @@
+{
+  "positive_cases": [
+    {
+      "name": "monostate-adapter-hash-direct-invoke",
+      "formal_test_name": "TranslateTest.CoreV2MonostateAdapterHashDirectInvokeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4e8afe67703b57fe9b988882827432b3425b2ac9c92e212f60670087de987317",
+      "original_case_source_sha256": "4e8afe67703b57fe9b988882827432b3425b2ac9c92e212f60670087de987317",
+      "gtest_body_sha256": "af5668d442bf847aa60c4fb921babbae2df0f78ba68b938e4ff373e8ddbec431"
+    },
+    {
+      "name": "monostate-adapter-hash-tuple-of-references",
+      "formal_test_name": "TranslateTest.CoreV2MonostateAdapterHashTupleOfReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c62def4d2558a10eaff2a868a683aa764f74182b1eed27df401d953ef76a2ed2",
+      "original_case_source_sha256": "c62def4d2558a10eaff2a868a683aa764f74182b1eed27df401d953ef76a2ed2",
+      "gtest_body_sha256": "dbee999529067615f7efdd1f82c49716a67635ce411e43bdf2e88b0f05775a4c"
+    },
+    {
+      "name": "monostate-adapter-hash-reference-wrapper-call",
+      "formal_test_name": "TranslateTest.CoreV2MonostateAdapterHashReferenceWrapperCallRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "816d06cf6e5a4823d3c38ec8e864c37351faa32d4aafeebd63dd7181201237be",
+      "original_case_source_sha256": "816d06cf6e5a4823d3c38ec8e864c37351faa32d4aafeebd63dd7181201237be",
+      "gtest_body_sha256": "23e456cce385ca1df416bc168d22d8b092df458d38a153fbe25ca7e4b5059aa4"
+    },
+    {
+      "name": "monostate-adapter-hash-wrapped-hasher-through-invoke",
+      "formal_test_name": "TranslateTest.CoreV2MonostateAdapterHashWrappedHasherThroughInvokeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c47bf6e88c39c7731b4ef759edc5adc49cb84eaf4ab2d7edd173f31b5caf1b48",
+      "original_case_source_sha256": "c47bf6e88c39c7731b4ef759edc5adc49cb84eaf4ab2d7edd173f31b5caf1b48",
+      "gtest_body_sha256": "7463b550cbf7aa73685b6e461cf613b4f8d6c9bdd46721c59336028db9772bce"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "monostate-adapter-hash-source-conversion",
+      "formal_test_name": "TranslateTest.CoreV2MonostateAdapterHashSourceConversionRejected",
+      "expected": "reject",
+      "source_sha256": "283b0b34dcadd3f785c4494bacdaaa719c2d00003daebb70a8f9e34461e9dbe9",
+      "original_case_source_sha256": "283b0b34dcadd3f785c4494bacdaaa719c2d00003daebb70a8f9e34461e9dbe9",
+      "gtest_body_sha256": "a5758ec50ca60f73d76433695cddfecff2c89ad08416cee246f40642a18cbff5"
+    },
+    {
+      "name": "monostate-adapter-hash-renamed-sdk-monostate",
+      "formal_test_name": "TranslateTest.CoreV2MonostateAdapterHashRenamedSdkMonostateRejected",
+      "expected": "reject",
+      "source_sha256": "81b18286a56e25e828390e6d042d0553f5f8434be20abc33536d038a8ef919b8",
+      "original_case_source_sha256": "81b18286a56e25e828390e6d042d0553f5f8434be20abc33536d038a8ef919b8",
+      "gtest_body_sha256": "a2c3d20478fcccbeed086fe68baec6949ac1372c798e44446941905a3ad69f1d"
+    },
+    {
+      "name": "monostate-adapter-hash-member-address-through-invoke",
+      "formal_test_name": "TranslateTest.CoreV2MonostateAdapterHashMemberAddressThroughInvokeRejected",
+      "expected": "reject",
+      "source_sha256": "380bf2997cb9d9ae6753a72b516f39bd5d763970d1bb5bd43cbd1bccabbbee1e",
+      "original_case_source_sha256": "380bf2997cb9d9ae6753a72b516f39bd5d763970d1bb5bd43cbd1bccabbbee1e",
+      "gtest_body_sha256": "b01f9f038254f30329e3be9f7c240532d8d22ffdc35ff69d94454020e33dbe2b"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "monostate-adapter-hash-direct-invoke",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <variant>\nusing M = std::monostate;\nusing H = std::hash<M>;\nint hasher_calls, value_calls;\nconst H& get_hasher(const H& h) { ++hasher_calls; return h; }\nconst M& get_value(const M& m) { ++value_calls; return m; }\nint main() {\n  const H h{};\n  const M m{};\n  if (std::invoke(H{}, m) != 66740831) return 1;\n  if (std::invoke(get_hasher(h), get_value(m)) != 66740831) return 2;\n  return hasher_calls != 1 || value_calls != 1;\n}\n",
+      "source_sha256": "4e8afe67703b57fe9b988882827432b3425b2ac9c92e212f60670087de987317"
+    },
+    {
+      "name": "monostate-adapter-hash-tuple-of-references",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <tuple>\n#include <variant>\nusing M = std::monostate;\nusing Args = std::tuple<const M&>;\nint calls;\nconst M& borrow(const M& m) { ++calls; return m; }\nint main() {\n  const M m{};\n  const Args args = std::tie(borrow(m));\n  return std::apply(std::hash<M>{}, args) != 66740831 || calls != 1;\n}\n",
+      "source_sha256": "c62def4d2558a10eaff2a868a683aa764f74182b1eed27df401d953ef76a2ed2"
+    },
+    {
+      "name": "monostate-adapter-hash-reference-wrapper-call",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <variant>\nusing M = std::monostate;\nusing H = std::hash<M>;\nint calls;\nconst M& borrow(const M& m) { ++calls; return m; }\nint main() {\n  H h{};\n  const M m{};\n  auto ref = std::ref(h);\n  auto cref = std::cref(h);\n  return ref(borrow(m)) != 66740831 || cref(borrow(m)) != 66740831 ||\n         calls != 2;\n}\n",
+      "source_sha256": "816d06cf6e5a4823d3c38ec8e864c37351faa32d4aafeebd63dd7181201237be"
+    },
+    {
+      "name": "monostate-adapter-hash-wrapped-hasher-through-invoke",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <functional>\n#include <variant>\nusing M = std::monostate;\nusing H = std::hash<M>;\nint calls;\nconst M& borrow(const M& m) { ++calls; return m; }\nint main() {\n  const H h{};\n  const M m{};\n  auto ref = std::cref(h);\n  return std::invoke(ref, borrow(m)) != 66740831 || calls != 1;\n}\n",
+      "source_sha256": "c47bf6e88c39c7731b4ef759edc5adc49cb84eaf4ab2d7edd173f31b5caf1b48"
+    },
+    {
+      "name": "monostate-adapter-hash-source-conversion",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <functional>\n#include <variant>\nstruct Source { operator std::monostate() const { return {}; } };\nint main() { return std::invoke(std::hash<std::monostate>{}, Source{}) != 66740831; }\n",
+      "source_sha256": "283b0b34dcadd3f785c4494bacdaaa719c2d00003daebb70a8f9e34461e9dbe9"
+    },
+    {
+      "name": "monostate-adapter-hash-renamed-sdk-monostate",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#define monostate changed_monostate\n#include <variant>\n#undef monostate\n#include <functional>\nint main() {\n  std::changed_monostate m{};\n  return std::invoke(std::hash<std::changed_monostate>{}, m) != 66740831;\n}\n",
+      "source_sha256": "81b18286a56e25e828390e6d042d0553f5f8434be20abc33536d038a8ef919b8"
+    },
+    {
+      "name": "monostate-adapter-hash-member-address-through-invoke",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <functional>\n#include <variant>\nusing M = std::monostate;\nusing H = std::hash<M>;\nint main() {\n  const H h{};\n  const M m{};\n  auto pointer = &H::operator();\n  return std::invoke(pointer, h, m) != 66740831;\n}\n",
+      "source_sha256": "380bf2997cb9d9ae6753a72b516f39bd5d763970d1bb5bd43cbd1bccabbbee1e"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2MonostateAdapterHashDirectInvokeRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateAdapterHashTupleOfReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateAdapterHashReferenceWrapperCallRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateAdapterHashWrappedHasherThroughInvokeRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateAdapterHashSourceConversionRejected",
+    "TranslateTest.CoreV2MonostateAdapterHashRenamedSdkMonostateRejected",
+    "TranslateTest.CoreV2MonostateAdapterHashMemberAddressThroughInvokeRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "06eb0fe12a4802e83958fd3f71d749046514ef2892301ad3f1bd8fc3e2bb981a",
+  "maintained_original_sha256": "1e41b38a7df2478c43bf82959c64a4633b553bc93617880d9ef6d2e9c4a7c462",
+  "previous_registered_source_sha256": "f4e563671fa504ae4b0530dc0fa5cd213df7ad32c8965cc6b0d7119c555a4854",
+  "previous_maintained_original_sha256": "1a39c3d2d7c96ed5470131a21ef92d8b098fe9d56ecb012ed91cd0ecc9d540d7",
+  "restorer_sha256": "b5f6c9ad9106e9bf54d0998178210e7e008a00d8b1d0f88eab3b4f0762de9ccd",
+  "extractor_sha256": "3b6200edc4618439ed8e947423414ca6f9c38793ff947b72582511952ff14284",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8270,
+  "current_python_registry_tests": 154,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "monostate-adapter-hash": "b9c94c8bc596267e18165da8b586203189d7592fa595b1a2b7834cc8b1a33179"
+  },
+  "native_reference_authentication_sha256": "3ac079fc76fe08a4c43a0189842aa1e05c4e2386125dc24fa0780c0f42d14fbd",
+  "source_proof_sha256": "214f35315521bea5b68cc697d88a37966940508d54813069f5ce3d4c64f91a6b"
+}
