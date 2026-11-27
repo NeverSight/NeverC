@@ -55058,15 +55058,20 @@ const CXXMethodDecl *linkedListRecordMemberOperator(
   const auto *Selected = Call->getDirectCallee();
   const auto *Method = Selected ? dyn_cast_or_null<CXXMethodDecl>(Selected->getDefinition()) : nullptr;
   const auto *Record = Element->getAsCXXRecordDecl();
-  if (!Method || !Record || Method->isInvalidDecl() || Method->getBuiltinID() ||
+  if (!Method || !Record || Method->isInvalidDecl() || Method->getBuiltinID())
+    return nullptr;
+  const QualType Result = Method->getReturnType();
+  const bool SupportedResult =
+      (Result->isBuiltinType() && Result->isIntegerType() && Context.getTypeSize(Result) <= 64) ||
+      Context.hasSameType(Result.getUnqualifiedType(), Context.FloatTy) ||
+      Context.hasSameType(Result.getUnqualifiedType(), Context.DoubleTy);
+  if (!SupportedResult ||
       Method->getOverloadedOperator() != Call->getOperator() ||
       !Method->isConst() || Method->isVolatile() ||
       Method->isStatic() || Method->isVirtual() || Method->isDeleted() ||
       Method->getRefQualifier() == RQ_RValue || !S.owns(SM, Method->getLocation()) ||
       Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
-      !Method->getReturnType()->isBuiltinType() || !Method->getReturnType()->isIntegerType() ||
-      Context.getTypeSize(Method->getReturnType()) > 64 ||
       Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg() ||
       !Context.hasSameType(Method->getParamDecl(0)->getType(),
                            Context.getLValueReferenceType(Element.withConst())))
