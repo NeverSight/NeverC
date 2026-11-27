@@ -54770,15 +54770,36 @@ bool forwardListGetAllocatorBody(const State &S, const SourceManager &SM,
   return forwardListAllocatorMember(S, SM, Method->getParent(), Node.Record, Construction->getArg(0), Context);
 }
 
-bool forwardListCallbackPointer(QualType Type, QualType Element, unsigned Arity,
-                                const ASTContext &Context) {
+bool linkedListCallbackPointer(QualType Type, QualType Element, unsigned Arity,
+                               const ASTContext &Context, bool AllowRecordReference = false) {
   const auto *Prototype = Type->isFunctionPointerType()
       ? Type->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
   if (!Prototype || Prototype->isVariadic() || Prototype->getCallConv() != CC_C ||
       Prototype->hasExtParameterInfos() || Prototype->getNumParams() != Arity ||
       !Context.hasSameType(Prototype->getReturnType(), Context.BoolTy)) return false;
+  auto Expected = Element;
+  if (AllowRecordReference && Element->isRecordType() && Arity &&
+      Prototype->getParamType(0)->isLValueReferenceType())
+    Expected = Context.getLValueReferenceType(Element.withConst());
   for (auto Parameter : Prototype->param_types())
-    if (!Context.hasSameType(Parameter, Element)) return false;
+    if (!Context.hasSameType(Parameter, Expected)) return false;
+  return true;
+}
+
+bool linkedListFilterArguments(const CallExpr *Call, QualType Callback,
+                               QualType Element, const ASTContext &Context) {
+  const auto *Prototype = Callback->getPointeeType()->getAs<FunctionProtoType>();
+  for (unsigned Index = 0; Index < Call->getNumArgs(); ++Index) {
+    const auto *Argument = Call->getArg(Index);
+    const auto ArgumentType = Argument->getType();
+    if (Prototype->getParamType(Index)->isLValueReferenceType()) {
+      if (!Argument->isLValue() || ArgumentType.isVolatileQualified() ||
+          !Context.hasSameType(ArgumentType.getUnqualifiedType(), Element))
+        return false;
+    } else if (!Context.hasSameType(ArgumentType, Element)) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -54793,7 +54814,7 @@ std::optional<UtilityForwardListOperation> forwardListPredicateSignature(
   const auto *Arguments = Method->getTemplateSpecializationArgs();
   if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
-      !forwardListCallbackPointer(Type, Element, Remove ? 1 : 2, Context)) return std::nullopt;
+      !linkedListCallbackPointer(Type, Element, Remove ? 1 : 2, Context, true)) return std::nullopt;
   return Remove ? UtilityForwardListOperation::RemoveIf : UtilityForwardListOperation::UniqueWithPredicate;
 }
 
@@ -54807,19 +54828,93 @@ bool forwardListSDKFilterCall(const CallExpr *Call, const FunctionDecl *Root, Qu
   if (!Arity || Call->getNumArgs() != Arity || !Definition ||
       !Context.hasSameType(Call->getType(), Context.BoolTy) ||
       !variantParameter(Call->getCallee(), Definition->getParamDecl(0)) ||
-      !forwardListCallbackPointer(Definition->getParamDecl(0)->getType(), Element, Arity, Context)) return false;
-  for (const auto *Argument : Call->arguments())
-    if (!Context.hasSameType(Argument->getType(), Element)) return false;
-  return true;
+      !linkedListCallbackPointer(Definition->getParamDecl(0)->getType(), Element, Arity, Context, true))
+    return false;
+  return linkedListFilterArguments(Call, Definition->getParamDecl(0)->getType(), Element, Context);
 }
 
-std::optional<bool> forwardListOrderDirection(const FunctionDecl *Definition) {
+const BinaryOperator *linkedListOrderExpression(const FunctionDecl *Definition) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition->getBody());
   const auto *Return = Body && Body->size() == 1 ? dyn_cast<ReturnStmt>(Body->body_front()) : nullptr;
   const auto *Comparison = Return && Return->getRetValue()
       ? dyn_cast<BinaryOperator>(Return->getRetValue()->IgnoreParenImpCasts()) : nullptr;
   if (!Comparison || (Comparison->getOpcode() != BO_LT && Comparison->getOpcode() != BO_GT))
-    return std::nullopt;
+    return nullptr;
+  return Comparison;
+}
+
+const FunctionDecl *linkedListRecordOrderDefinition(
+    const State &S, const SourceManager &SM, const FunctionDecl *Function) {
+  const auto *Definition = Function ? Function->getDefinition() : nullptr;
+  if (!Definition || Definition->getNumParams() != 2 || Definition->getBuiltinID() ||
+      !S.owns(SM, Definition->getLocation()) || isa<CXXMethodDecl>(Definition) ||
+      Definition->getTemplatedKind() != FunctionDecl::TK_NonTemplate)
+    return nullptr;
+  return Definition;
+}
+
+bool linkedListRecordOrderBody(const FunctionDecl *Definition, const CXXRecordDecl *Record) {
+  const auto *Comparison = linkedListOrderExpression(Definition);
+  if (!Comparison) return false;
+  const auto *Left = dyn_cast<MemberExpr>(Comparison->getLHS()->IgnoreParenImpCasts());
+  const auto *Right = dyn_cast<MemberExpr>(Comparison->getRHS()->IgnoreParenImpCasts());
+  if (!Left || !Right || Left->isArrow() || Right->isArrow()) return false;
+  const auto *Field = dyn_cast<FieldDecl>(Left->getMemberDecl());
+  if (!Field || Field != Right->getMemberDecl() || Field->isBitField() ||
+      !Field->getType()->isBuiltinType() || !Field->getType()->isIntegerType() ||
+      Field->getType().hasLocalQualifiers() || Field->getType().isVolatileQualified() ||
+      Field->getParent()->getCanonicalDecl() != Record->getCanonicalDecl())
+    return false;
+  const auto *First = Definition->getParamDecl(0);
+  const auto *Second = Definition->getParamDecl(1);
+  return (variantParameter(Left->getBase(), First) && variantParameter(Right->getBase(), Second)) ||
+         (variantParameter(Left->getBase(), Second) && variantParameter(Right->getBase(), First));
+}
+
+bool linkedListNamedRecordOrder(const State &S, const SourceManager &SM, const Expr *Value,
+    QualType Element, const ASTContext &Context) {
+  const auto *Record = Element->getAsCXXRecordDecl();
+  if (!Record || !Value || !S.owns(SM, Value->getExprLoc()) ||
+      !linkedListCallbackPointer(Value->getType(), Element, 2, Context, true))
+    return false;
+  const auto *Prototype = Value->getType()->getPointeeType()->getAs<FunctionProtoType>();
+  if (!Prototype->getParamType(0)->isLValueReferenceType()) return false;
+  const Expr *Target = Value->IgnoreParenImpCasts();
+  if (const auto *Address = dyn_cast<UnaryOperator>(Target); Address && Address->getOpcode() == UO_AddrOf)
+    Target = Address->getSubExpr()->IgnoreParenImpCasts();
+  const auto *Reference = dyn_cast<DeclRefExpr>(Target);
+  const auto *Function = Reference ? dyn_cast<FunctionDecl>(Reference->getDecl()) : nullptr;
+  const auto *Definition = linkedListRecordOrderDefinition(S, SM, Function);
+  return Definition && linkedListRecordOrderBody(Definition, Record);
+}
+
+bool bindLinkedListDefaultRecordOrder(const State &S, const SourceManager &SM,
+    const CallExpr *Call, QualType Element, const ASTContext &Context,
+    const FunctionDecl **Order) {
+  if (!Order) return false;
+  const auto *Operator = dyn_cast<CXXOperatorCallExpr>(Call);
+  if (!Operator || Operator->getOperator() != OO_Less || Operator->getNumArgs() != 2)
+    return false;
+  const auto File = S.sdkFile(SM, Operator->getOperatorLoc());
+  if (!File || File->Root != "libcxx" || File->Path != "__algorithm/comp.h") return false;
+  const auto *Definition = linkedListRecordOrderDefinition(S, SM, Operator->getDirectCallee());
+  if (!Definition || (*Order && (*Order)->getCanonicalDecl() != Definition->getCanonicalDecl()))
+    return false;
+  for (const auto *Declaration : Definition->redecls())
+    if (!S.owns(SM, Declaration->getLocation())) return false;
+  const auto *Record = Element->getAsCXXRecordDecl();
+  const auto Pointer = Context.getPointerType(Definition->getType());
+  if (!Record || !linkedListCallbackPointer(Pointer, Element, 2, Context, true) ||
+      !Definition->getParamDecl(0)->getType()->isLValueReferenceType() ||
+      !linkedListFilterArguments(Call, Pointer, Element, Context) ||
+      !linkedListRecordOrderBody(Definition, Record)) return false;
+  *Order = Definition;
+  return true;
+}
+
+std::optional<bool> forwardListOrderDirection(const FunctionDecl *Definition) {
+  const auto *Comparison = linkedListOrderExpression(Definition);
+  if (!Comparison) return std::nullopt;
   const auto *First = Definition->getParamDecl(0);
   const auto *Second = Definition->getParamDecl(1);
   const bool Forward = variantParameter(Comparison->getLHS(), First) &&
@@ -54901,7 +54996,7 @@ std::optional<UtilityForwardListOperation> forwardListCustomOrderSignature(
   }
   const auto Callback = Method->getParamDecl(Merge ? 1 : 0)->getType();
   if (Callback->isReferenceType() ||
-      (!forwardListCallbackPointer(Callback, Element, 2, Context) &&
+      (!linkedListCallbackPointer(Callback, Element, 2, Context, true) &&
        !forwardListOrderObject(S, SM, Callback, Element, Context) &&
        !scalarListStandardOrder(S, SM, Callback, Element, Context)) ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Callback)) return std::nullopt;
@@ -54911,7 +55006,7 @@ std::optional<UtilityForwardListOperation> forwardListCustomOrderSignature(
 bool forwardListDirectOrder(const State &S, const SourceManager &SM, const Expr *Argument,
                             QualType Element, const ASTContext &Context) {
   if (!Argument || !S.owns(SM, Argument->getExprLoc()) ||
-      !forwardListCallbackPointer(Argument->getType().getNonReferenceType(), Element, 2, Context)) return false;
+      !linkedListCallbackPointer(Argument->getType().getNonReferenceType(), Element, 2, Context)) return false;
   const Expr *Target = Argument->IgnoreParenImpCasts();
   if (const auto *Address = dyn_cast<UnaryOperator>(Target); Address && Address->getOpcode() == UO_AddrOf)
     Target = Address->getSubExpr()->IgnoreParenImpCasts();
@@ -54946,9 +55041,10 @@ bool forwardListSDKOrderCall(const State &S, const SourceManager &SM, const Call
   const auto Compared = Parameter->getType().getNonReferenceType();
   const bool CorrectCallback = ObjectMethod
       ? Context.hasSameType(Compared, Context.getRecordType(ObjectMethod->getParent()))
-      : forwardListCallbackPointer(Compared, Element, 2, Context);
-  return CorrectCallback && Context.hasSameType(Call->getType(), Context.BoolTy) &&
-         Context.hasSameType(Call->getArg(Offset)->getType(), Element) &&
+      : linkedListCallbackPointer(Compared, Element, 2, Context, true);
+  if (!CorrectCallback || !Context.hasSameType(Call->getType(), Context.BoolTy)) return false;
+  if (!ObjectMethod) return linkedListFilterArguments(Call, Compared, Element, Context);
+  return Context.hasSameType(Call->getArg(Offset)->getType(), Element) &&
          Context.hasSameType(Call->getArg(Offset + 1)->getType(), Element);
 }
 
@@ -55335,7 +55431,8 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context,
                          const UtilityForwardListNodeRecord &Owner,
                          bool DirectOrder = false, bool DirectFilter = false,
-                         const CXXMethodDecl *OrderMethod = nullptr) {
+                         const CXXMethodDecl *OrderMethod = nullptr,
+                         const FunctionDecl **DefaultRecordOrder = nullptr) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -55428,6 +55525,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!forwardListScalarDestruction(S, SM, Call, Context, Owner) &&
+          !bindLinkedListDefaultRecordOrder(S, SM, Call, Owner.Value->getType(), Context, DefaultRecordOrder) &&
           !(DirectOrder && forwardListSDKOrderCall(S, SM, Call, Owner.Value->getType(), Context, OrderMethod)) &&
           !(DirectFilter && forwardListSDKFilterCall(Call, Root, Owner.Value->getType(), Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
@@ -56231,7 +56329,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
     const auto Index = Call->getNumArgs() - 1;
     const auto *Argument = Call->getArg(Index);
     const auto Element = Node->Value->getType();
-    if (!forwardListDirectOrder(S, SM, Argument, Element, Context)) {
+    if (!forwardListDirectOrder(S, SM, Argument, Element, Context) &&
+        !linkedListNamedRecordOrder(S, SM, Argument, Element, Context)) {
       const auto Type = Method->getParamDecl(Index)->getType();
       if (!S.owns(SM, Argument->getExprLoc()) || !Context.hasSameType(Argument->getType(), Type))
         return std::nullopt;
@@ -56246,8 +56345,13 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   const bool DirectFilter = *Operation == UtilityForwardListOperation::RemoveIf ||
                             *Operation == UtilityForwardListOperation::UniqueWithPredicate;
   const bool SourceOrder = DirectOrder && (!OrderDirection || ObjectOrder);
+  const bool RecordOrder = Node->Value->getType()->isRecordType() &&
+      (*Operation == UtilityForwardListOperation::Sort || *Operation == UtilityForwardListOperation::Merge);
+  const FunctionDecl *DefaultRecordOrder = nullptr;
   if (!forwardListSourceGraph(S, SM, Method, Context, *Node, SourceOrder, DirectFilter,
-                              ObjectOrder ? ObjectOrder->Method : nullptr)) return std::nullopt;
+                              ObjectOrder ? ObjectOrder->Method : nullptr,
+                              RecordOrder ? &DefaultRecordOrder : nullptr) ||
+      (RecordOrder && !DefaultRecordOrder)) return std::nullopt;
   if (*Operation == UtilityForwardListOperation::GetAllocator && !forwardListGetAllocatorBody(S, SM, Method, *Node, Context))
     return std::nullopt;
   std::optional<uint64_t> Maximum;
@@ -56304,7 +56408,7 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
-  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum, OrderDirection};
+  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum, OrderDirection, DefaultRecordOrder};
 }
 
 
@@ -56774,17 +56878,6 @@ bool listGetAllocatorBody(const State &S, const SourceManager &SM,
   return listNodeAllocatorMember(S, SM, Storage, Owner.Node.Record, Construction->getArg(0), Context);
 }
 
-bool listPredicatePointer(QualType Type, QualType Element, unsigned Count, const ASTContext &Context) {
-  const auto *Prototype = Type->isFunctionPointerType()
-      ? Type->getPointeeType()->getAs<FunctionProtoType>() : nullptr;
-  if (!Prototype || Prototype->isVariadic() || Prototype->getCallConv() != CC_C ||
-      Prototype->hasExtParameterInfos() || Prototype->getNumParams() != Count ||
-      !Context.hasSameType(Prototype->getReturnType(), Context.BoolTy)) return false;
-  for (auto Parameter : Prototype->param_types())
-    if (!Context.hasSameType(Parameter, Element)) return false;
-  return true;
-}
-
 std::optional<UtilityListOperation> listPredicateSignature(
     const CXXMethodDecl *M, QualType Element, const ASTContext &Context) {
   if (!M->getIdentifier() || M->isConst() || M->getRefQualifier() != RQ_None ||
@@ -56797,7 +56890,7 @@ std::optional<UtilityListOperation> listPredicateSignature(
   const auto *Arguments = M->getTemplateSpecializationArgs();
   if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Type) ||
-      !listPredicatePointer(Type, Element, Remove ? 1 : 2, Context)) return std::nullopt;
+      !linkedListCallbackPointer(Type, Element, Remove ? 1 : 2, Context, true)) return std::nullopt;
   return Remove ? UtilityListOperation::RemoveIf : UtilityListOperation::UniqueWithPredicate;
 }
 
@@ -56807,10 +56900,9 @@ bool listSDKPredicateCall(const CallExpr *Call, const FunctionDecl *Root, QualTy
   if (Call->getDirectCallee() || !Definition || Definition->getNumParams() != 1 ||
       Call->getNumArgs() != Count || !Context.hasSameType(Call->getType(), Context.BoolTy) ||
       !variantParameter(Call->getCallee(), Definition->getParamDecl(0)) ||
-      !listPredicatePointer(Definition->getParamDecl(0)->getType(), Element, Count, Context)) return false;
-  for (const auto *Value : Call->arguments())
-    if (!Context.hasSameType(Value->getType(), Element)) return false;
-  return true;
+      !linkedListCallbackPointer(Definition->getParamDecl(0)->getType(), Element, Count, Context, true))
+    return false;
+  return linkedListFilterArguments(Call, Definition->getParamDecl(0)->getType(), Element, Context);
 }
 
 bool listPredicateBody(const FunctionDecl *F) {
@@ -56889,7 +56981,7 @@ std::optional<UtilityListOperation> listOrderSignature(
   const auto *Arguments = M->getTemplateSpecializationArgs();
   if (!Arguments || Arguments->size() != 1 || Arguments->get(0).getKind() != TemplateArgument::Type ||
       !Context.hasSameType(Arguments->get(0).getAsType(), Compare) ||
-      (!listPredicatePointer(Compare, Element, 2, Context) &&
+      (!linkedListCallbackPointer(Compare, Element, 2, Context, true) &&
        !scalarListStandardOrder(S, SM, Compare, Element, Context) &&
        !forwardListOrderObject(S, SM, Compare, Element, Context))) return std::nullopt;
   if (Sort) return UtilityListOperation::Sort;
@@ -56903,7 +56995,7 @@ std::optional<UtilityListOperation> listOrderSignature(
 
 std::optional<bool> listDirectOrder(const State &S, const SourceManager &SM, const Expr *Value,
     QualType Element, const ASTContext &Context) {
-  if (!Value || !S.owns(SM, Value->getExprLoc()) || !listPredicatePointer(Value->getType(), Element, 2, Context))
+  if (!Value || !S.owns(SM, Value->getExprLoc()) || !linkedListCallbackPointer(Value->getType(), Element, 2, Context))
     return std::nullopt;
   const Expr *Target = Value->IgnoreParenImpCasts();
   if (const auto *Address = dyn_cast<UnaryOperator>(Target); Address && Address->getOpcode() == UO_AddrOf)
@@ -57348,6 +57440,7 @@ bool listSDKOrderCall(const State &S, const SourceManager &SM, const CallExpr *C
         Method->getParamDecl(3) == Parameter && Parameter->getType()->isLValueReferenceType()) &&
       !(Method->getName() == "merge" && !Method->isStatic() && Method->getNumParams() == 2 &&
         Method->getParamDecl(1) == Parameter && !Parameter->getType()->isReferenceType())) return false;
+  if (!ObjectMethod) return linkedListFilterArguments(Call, Compare, Element, Context);
   return Context.hasSameType(Call->getArg(Offset)->getType(), Element) &&
          Context.hasSameType(Call->getArg(Offset + 1)->getType(), Element);
 }
@@ -57373,7 +57466,8 @@ bool listForwardedOrderCopy(const CXXConstructExpr *Construct, const FunctionDec
 bool listSourceGraph(const State &S, const SourceManager &SM,
                          const FunctionDecl *Root, const ASTContext &Context,
                          const UtilityListNodeRecord &Owner, unsigned PredicateCount = 0, QualType Compare = {},
-                         const CXXMethodDecl *OrderMethod = nullptr) {
+                         const CXXMethodDecl *OrderMethod = nullptr,
+                         const FunctionDecl **DefaultRecordOrder = nullptr) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -57466,6 +57560,7 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Node))
       if (!listScalarDestruction(S, SM, Call, Context, Owner) &&
+          !bindLinkedListDefaultRecordOrder(S, SM, Call, Owner.Value->getType(), Context, DefaultRecordOrder) &&
           !(PredicateCount && listSDKPredicateCall(Call, Root, Owner.Value->getType(), PredicateCount, Context)) &&
           !(!Compare.isNull() && listSDKOrderCall(S, SM, Call, cast<CXXMethodDecl>(Root)->getParent(),
                                                       Compare, Owner.Value->getType(), Context, OrderMethod)) &&
@@ -57584,8 +57679,9 @@ std::optional<UtilityListCall> approvedUtilityListCall(
     const auto *Argument = Call->getArg(Index);
     const auto Element = Node->Value->getType();
     const auto Type = Method->getParamDecl(Index)->getType();
-    Descending = listDirectOrder(S, SM, Argument, Element, Context);
-    if (Descending) {
+    const bool RecordOrder = linkedListNamedRecordOrder(S, SM, Argument, Element, Context);
+    if (!RecordOrder) Descending = listDirectOrder(S, SM, Argument, Element, Context);
+    if (RecordOrder || Descending) {
       Compare = Type;
     } else {
       if (!S.owns(SM, Argument->getExprLoc()) || !Context.hasSameType(Argument->getType(), Type))
@@ -57600,8 +57696,13 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       }
     }
   }
+  const bool RecordOrder = !Method->getPrimaryTemplate() && Node->Value->getType()->isRecordType() &&
+      (*Operation == UtilityListOperation::Sort || *Operation == UtilityListOperation::Merge);
+  const FunctionDecl *DefaultRecordOrder = nullptr;
   if ((Predicates && !listPredicateBody(Method)) ||
-      !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare, OrderMethod)) return std::nullopt;
+      !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare, OrderMethod,
+                        RecordOrder ? &DefaultRecordOrder : nullptr) ||
+      (RecordOrder && !DefaultRecordOrder)) return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
   if (const auto *Member = dyn_cast<CXXMemberCallExpr>(Call)) {
@@ -57624,7 +57725,7 @@ std::optional<UtilityListCall> approvedUtilityListCall(
     Maximum = containerNodeMaximum(S, SM, Method, Context, "list", "__list_node");
     if (!Maximum) return std::nullopt;
   }
-  return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum, Descending};
+  return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum, Descending, DefaultRecordOrder};
 }
 
 

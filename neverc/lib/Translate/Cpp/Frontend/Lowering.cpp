@@ -27776,7 +27776,10 @@ class FunctionLowering {
     std::optional<Expression> Comparator;
     QualType ComparatorType;
     const bool Descending = Proof->ObjectOrderDescending.value_or(false);
-    if ((CustomSort || CustomMerge) && !Proof->ObjectOrderDescending) {
+    if (const auto *Order = Proof->DefaultRecordOrder) {
+      Comparator = A.functionAddress(Order, L);
+      ComparatorType = A.Context.getPointerType(Order->getType());
+    } else if ((CustomSort || CustomMerge) && !Proof->ObjectOrderDescending) {
       const unsigned Index = CustomMerge ? 1 : 0;
       Comparator = Operands[Index];
       ComparatorType = Method->getParamDecl(Index)->getType();
@@ -29383,7 +29386,17 @@ class FunctionLowering {
     destroyListStorage(Removed, Info.Node, L);
   }
 
-  void listMergeValueStorage(Expression Place, Expression Source, QualType Element, bool Descending, SourceLocation L) {
+  Expression listNodePrecedes(const Expression &Right, const Expression &Left, QualType Element,
+      const std::optional<Expression> &Comparator, QualType ComparatorType, bool Descending, SourceLocation L) {
+    auto RightValue = listValue(Right, Element, true, L);
+    auto LeftValue = listValue(Left, Element, true, L);
+    if (Comparator)
+      return emitBinaryPredicate(*Comparator, ComparatorType, std::move(RightValue), std::move(LeftValue), L);
+    return binary(Descending ? ">" : "<", std::move(RightValue), std::move(LeftValue), "bool", L);
+  }
+
+  void listMergeValueStorage(Expression Place, Expression Source, QualType Element,
+      const std::optional<Expression> &Comparator, QualType ComparatorType, bool Descending, SourceLocation L) {
     auto End = snapshot(listSentinel(Place, L), L);
     auto SourceEnd = snapshot(listSentinel(Source, L), L);
     const auto Start = labelName(), CheckLeft = labelName(), CheckRight = labelName();
@@ -29398,7 +29411,7 @@ class FunctionLowering {
     label(CheckRight, L);
     branch(binary("!=", Right, SourceEnd, "bool", L), Compare, Done, L);
     label(Compare, L);
-    branch(binary(Descending ? ">" : "<", listValue(Right, Element, true, L), listValue(Left, Element, true, L), "bool", L), Move, Keep, L);
+    branch(listNodePrecedes(Right, Left, Element, Comparator, ComparatorType, Descending, L), Move, Keep, L);
     label(Move, L);
     auto Node = snapshot(Right, L);
     assign(Right, snapshot(listLink(Node, false, L), L), L);
@@ -29412,7 +29425,8 @@ class FunctionLowering {
     jump(Done, L); label(Done, L);
   }
 
-  void listSortValueStorage(Expression Place, QualType Element, bool Descending, SourceLocation L) {
+  void listSortValueStorage(Expression Place, QualType Element,
+      const std::optional<Expression> &Comparator, QualType ComparatorType, bool Descending, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     auto Length = snapshot(listMember(Place, "nct_list_size", L), L);
     auto End = snapshot(listSentinel(Place, L), L);
@@ -29448,7 +29462,7 @@ class FunctionLowering {
     label(CheckLeft, L);
     branch(binary("!=", LeftCount, quantity(0, Size, L), "bool", L), Compare, Advance, L);
     label(Compare, L);
-    branch(binary(Descending ? ">" : "<", listValue(Right, Element, true, L), listValue(Left, Element, true, L), "bool", L), Transfer, Keep, L);
+    branch(listNodePrecedes(Right, Left, Element, Comparator, ComparatorType, Descending, L), Transfer, Keep, L);
     label(Transfer, L);
     auto Node = snapshot(Right, L);
     auto After = snapshot(listLink(Node, false, L), L);
@@ -29882,12 +29896,23 @@ class FunctionLowering {
       listFilterValueStorage(Place, *Owner, Value, L);
       return Expression{};
     }
-    if (Operation == UtilityListOperation::Merge) {
-      listMergeValueStorage(Place, dereference(Operands[0], L), Element, Proof->Descending.value_or(false), L);
-      return Expression{};
-    }
-    if (Operation == UtilityListOperation::Sort) {
-      listSortValueStorage(Place, Element, Proof->Descending.value_or(false), L);
+    if (Operation == UtilityListOperation::Merge || Operation == UtilityListOperation::Sort) {
+      const bool Merge = Operation == UtilityListOperation::Merge;
+      std::optional<Expression> Comparator;
+      QualType ComparatorType;
+      if (const auto *Order = Proof->DefaultRecordOrder) {
+        Comparator = A.functionAddress(Order, L);
+        ComparatorType = A.Context.getPointerType(Order->getType());
+      } else if (Method->getPrimaryTemplate() && !Proof->Descending) {
+        const unsigned Index = Merge ? 1 : 0;
+        Comparator = Operands[Index];
+        ComparatorType = Method->getParamDecl(Index)->getType();
+      }
+      const bool Descending = Proof->Descending.value_or(false);
+      if (Merge)
+        listMergeValueStorage(Place, dereference(Operands[0], L), Element, Comparator, ComparatorType, Descending, L);
+      else
+        listSortValueStorage(Place, Element, Comparator, ComparatorType, Descending, L);
       return Expression{};
     }
     if (Operation == UtilityListOperation::Swap) {

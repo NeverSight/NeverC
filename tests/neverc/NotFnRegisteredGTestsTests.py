@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_record_algorithms_registered = cls.registered
+        cls.list_record_algorithms_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_algorithms_original = cls.adapter.restore_original_gtests(cls.list_record_algorithms_registered,
+                                                                        cls.list_record_algorithms_suffix)
+        cls.registered = cls.adapter.restore_list_record_algorithms_history(cls.list_record_algorithms_registered)
         cls.list_trivial_records_registered = cls.registered
         cls.list_trivial_records_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_trivial_records_original = cls.adapter.restore_original_gtests(cls.list_trivial_records_registered,
@@ -4395,6 +4400,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_trivial_records_history(self.list_trivial_records_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_trivial_records_registered, self.list_trivial_records_suffix + b' ')
+
+
+    def test_list_record_algorithms_retains_published_bodies(self):
+        self.assertEqual(self.list_record_algorithms_original + self.list_record_algorithms_suffix, self.list_record_algorithms_registered)
+        self.assertEqual(self.adapter.restore_list_record_algorithms_history(self.list_record_algorithms_original),
+                         self.list_trivial_records_original)
+        output, evidence = self.extractor.extract(self.list_record_algorithms_original, ['TranslateTest.CoreV2ListRecordRemoveIfBorrowsNodeValueRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordUniqueBorrowsAdjacentValuesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordRemoveIfKeepsNodeAddressesRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordUniqueKeepsFirstOfRunRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordFieldStableSortRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordFieldStableMergeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordFieldStableSortRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordFieldStableMergeRunAtBothOptimizations', 'TranslateTest.CoreV2ListDefaultRecordOrderStableMergeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultRecordOrderStableSortRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultRecordOrderStableMergeRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordVolatileReferencePredicateGuardRejected', 'TranslateTest.CoreV2ForwardListScalarReferencePredicateGuardRejected', 'TranslateTest.CoreV2ListRecordByValueFieldComparatorGuardRejected', 'TranslateTest.CoreV2ForwardListCapturingFieldComparatorGuardRejected', 'TranslateTest.CoreV2ListRecordMemberDefaultOrderGuardRejected', 'TranslateTest.CoreV2ForwardListRecordCompoundDefaultOrderGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9456)
+        self.assertEqual(evidence['selected_count'], 17)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'forward-list-default-record-order-stable-sort', output)
+        self.assertIn(b'list-record-member-default-order-guard', output)
+
+    def test_list_record_algorithms_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_algorithms_history(self.list_record_algorithms_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_algorithms_registered, self.list_record_algorithms_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -18751,3 +18751,9 @@ The checked default-allocator list and forward_list store naturally aligned triv
 records with scalar fields, nested trivial records and fixed arrays. Node allocation
 uses the verified layout on each target. Supported range and copy operations preserve
 the stored values, and relinking preserves element addresses.
+
+## Linked-list record filtering and stable ordering
+
+The checked default-allocator list and forward_list pass stored records by const reference
+to the supported remove_if and unique predicates. Stable sort and merge support named
+comparators for integer fields and exact source-owned default ordering operators.

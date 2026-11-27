@@ -415193,7 +415193,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2ListTrivialRecordCustomDefaultOrderGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListSortUsesSelectedRecordOperator) {
   const auto Source = tmpFile("list-trivial-record-custom-default-order-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 struct Entry { int code; };
@@ -415206,10 +415206,17 @@ int main() {
   return values.front().code != 3;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-trivial-record-custom-default-order-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-trivial-record-custom-default-order-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ListRecordNodeSizesAllocationAndClearRunAtBothOptimizations) {
@@ -415780,6 +415787,439 @@ int main() {
   auto& entry = values.emplace_back();
   entry.signs[0] = 13;
   return values.back().signs[0] != 13;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordRemoveIfBorrowsNodeValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-remove-if-borrows-node-value.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { int code; int data[2]; };
+const Entry* watched;
+bool observed;
+bool remove_value(const Entry& value) {
+  if (value.code == 6) observed = &value == watched;
+  return value.code % 2 == 0;
+}
+int main() {
+  std::list<Entry> values{{3, {7, 11}}, {6, {13, 17}}, {9, {19, 23}}};
+  auto saved = values.begin();
+  auto removed = saved;
+  ++removed;
+  watched = &*removed;
+  values.remove_if(&remove_value);
+  return !observed || values.size() != 2 || &*saved != &values.front() ||
+         values.front().data[1] != 11 || values.back().code != 9;
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-remove-if-borrows-node-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-remove-if-borrows-node-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordUniqueBorrowsAdjacentValuesRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-unique-borrows-adjacent-values.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { short code; short tag; };
+bool same_code(const Entry& left, const Entry& right) {
+  return left.code == right.code;
+}
+int main() {
+  std::list<Entry> values{{2, 11}, {2, 13}, {5, 17}, {5, 19}};
+  auto first = values.begin();
+  bool (*compare)(const Entry&, const Entry&) = &same_code;
+  values.unique(compare);
+  return values.size() != 2 || &*first != &values.front() ||
+         values.front().tag != 11 || values.back().tag != 17;
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-unique-borrows-adjacent-values.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-unique-borrows-adjacent-values" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordRemoveIfKeepsNodeAddressesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-remove-if-keeps-node-addresses.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Detail { float score; };
+struct Entry { Detail data; int tag; };
+bool bad_score(const Entry& value) { return value.data.score < 0.0f; }
+int main() {
+  std::forward_list<Entry> values{{{-1.5f}, 5}, {{2.0f}, 7}, {{3.5f}, 11}};
+  auto kept = values.begin();
+  ++kept;
+  auto* address = &*kept;
+  values.remove_if(bad_score);
+  auto position = values.begin();
+  if (&*position != address || position->tag != 7) return 1;
+  ++position;
+  return position->tag != 11 || ++position != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-remove-if-keeps-node-addresses.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-remove-if-keeps-node-addresses" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordUniqueKeepsFirstOfRunRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-unique-keeps-first-of-run.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { int code; int tag; };
+bool same_code(const Entry& left, const Entry& right) {
+  return left.code == right.code;
+}
+int main() {
+  std::forward_list<Entry> values{{3, 11}, {3, 13}, {5, 17}, {3, 19}};
+  auto first = values.begin();
+  values.unique(&same_code);
+  auto position = values.begin();
+  if (&*position != &*first || position->tag != 11) return 1;
+  ++position;
+  if (position->tag != 17) return 2;
+  ++position;
+  return position->tag != 19 || ++position != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-unique-keeps-first-of-run.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-unique-keeps-first-of-run" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordVolatileReferencePredicateGuardRejected) {
+  const auto Source = tmpFile("list-record-volatile-reference-predicate-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { int value; };
+bool negative(const volatile Entry& value) { return value.value < 0; }
+int main() {
+  std::list<Entry> values{{-2}, {4}};
+  values.remove_if(&negative);
+  return values.front().value != 4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListScalarReferencePredicateGuardRejected) {
+  const auto Source = tmpFile("forward-list-scalar-reference-predicate-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+bool odd(const int& value) { return value % 2 != 0; }
+int main() {
+  std::forward_list<int> values{1, 2};
+  values.remove_if(&odd);
+  return values.front() != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordFieldStableSortRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-field-stable-sort.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Item { short rank; short id; };
+bool descending(const Item& left, const Item& right) { return right.rank < left.rank; }
+int main() {
+  std::list<Item> entries{{2, 11}, {4, 13}, {2, 17}, {3, 19}};
+  auto first = entries.begin();
+  const Item* address = &*first;
+  entries.sort(&descending);
+  auto item = entries.begin();
+  if (item->id != 13 || (++item)->id != 19) return 1;
+  return &*++item != address || item->id != 11 ||
+         (++item)->id != 17 || ++item != entries.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-field-stable-sort.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-field-stable-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordFieldStableMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-field-stable-merge.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Item { int rank; int id; };
+bool ascending(const Item& left, const Item& right) { return left.rank < right.rank; }
+int main() {
+  std::list<Item> into{{1, 11}, {3, 13}, {5, 17}};
+  std::list<Item> from{{2, 19}, {3, 23}, {7, 29}};
+  auto retained = from.begin();
+  into.merge(from, ascending);
+  auto item = into.begin();
+  if (!from.empty() || into.size() != 6 || item->id != 11) return 1;
+  if (++item != retained || item->id != 19 || (++item)->id != 13) return 2;
+  return (++item)->id != 23 || (++item)->id != 17 ||
+         (++item)->id != 29 || ++item != into.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-field-stable-merge.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-field-stable-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordFieldStableSortRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-field-stable-sort.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Item { int rank; int id; };
+bool ascending(const Item& left, const Item& right) { return left.rank < right.rank; }
+int main() {
+  std::forward_list<Item> entries{{4, 11}, {2, 13}, {4, 17}, {1, 19}};
+  auto saved = entries.begin();
+  const Item* address = &*saved;
+  entries.sort(ascending);
+  auto item = entries.begin();
+  if (item->id != 19 || (++item)->id != 13) return 1;
+  return &*++item != address || item->id != 11 ||
+         (++item)->id != 17 || ++item != entries.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-field-stable-sort.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-field-stable-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordFieldStableMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-field-stable-merge.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Item { unsigned rank; short id; };
+bool descending(const Item& left, const Item& right) { return left.rank > right.rank; }
+int main() {
+  std::forward_list<Item> into{{7, 11}, {4, 13}, {3, 17}};
+  std::forward_list<Item> from{{6, 19}, {4, 23}, {1, 29}};
+  auto moved = from.begin();
+  into.merge(from, &descending);
+  auto item = into.begin();
+  if (!from.empty() || item->id != 11 ||
+      ++item != moved || item->id != 19 || (++item)->id != 13) return 1;
+  return (++item)->id != 23 || (++item)->id != 17 ||
+         (++item)->id != 29 || ++item != into.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-field-stable-merge.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-field-stable-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordByValueFieldComparatorGuardRejected) {
+  const auto Source = tmpFile("list-record-by-value-field-comparator-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Item { int rank; };
+bool less(Item left, Item right) { return left.rank < right.rank; }
+int main() {
+  std::list<Item> values{{7}, {2}};
+  values.sort(&less);
+  return values.front().rank != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListCapturingFieldComparatorGuardRejected) {
+  const auto Source = tmpFile("forward-list-capturing-field-comparator-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Item { int rank; };
+int main() {
+  std::forward_list<Item> values{{7}, {2}};
+  bool descending = true;
+  values.sort([descending](const Item& left, const Item& right) {
+    return descending ? left.rank > right.rank : left.rank < right.rank;
+  });
+  return values.front().rank != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListDefaultRecordOrderStableMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-default-record-order-stable-merge.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Item { int rank; int id; };
+bool operator<(const Item& left, const Item& right) { return left.rank < right.rank; }
+int main() {
+  std::list<Item> into{{1, 11}, {4, 13}};
+  std::list<Item> from{{2, 17}, {4, 19}};
+  auto moved = from.begin();
+  into.merge(from);
+  auto item = into.begin();
+  if (!from.empty() || into.size() != 4 || item->id != 11) return 1;
+  if (++item != moved || item->id != 17) return 2;
+  return (++item)->id != 13 || (++item)->id != 19 || ++item != into.end();
+}
+)r19containers");
+  const auto Output = tmpFile("list-default-record-order-stable-merge.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-default-record-order-stable-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDefaultRecordOrderStableSortRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-default-record-order-stable-sort.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Item { short rank; short id; };
+bool operator<(const Item& left, const Item& right) { return left.rank < right.rank; }
+int main() {
+  std::forward_list<Item> values{{4, 11}, {2, 13}, {4, 17}};
+  auto saved = values.begin();
+  values.sort();
+  auto item = values.begin();
+  if (item->id != 13 || ++item != saved || item->id != 11) return 1;
+  return (++item)->id != 17 || ++item != values.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-default-record-order-stable-sort.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-default-record-order-stable-sort" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDefaultRecordOrderStableMergeRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-default-record-order-stable-merge.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Item { unsigned rank; short id; };
+bool operator<(const Item& left, const Item& right) { return left.rank > right.rank; }
+int main() {
+  std::forward_list<Item> into{{7, 11}, {3, 13}};
+  std::forward_list<Item> from{{5, 17}, {3, 19}};
+  auto moved = from.begin();
+  into.merge(from);
+  auto item = into.begin();
+  if (!from.empty() || item->id != 11 || ++item != moved || item->id != 17) return 1;
+  return (++item)->id != 13 || (++item)->id != 19 || ++item != into.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-default-record-order-stable-merge.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-default-record-order-stable-merge" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordMemberDefaultOrderGuardRejected) {
+  const auto Source = tmpFile("list-record-member-default-order-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Item {
+  int rank;
+  bool operator<(const Item& other) const { return rank < other.rank; }
+};
+int main() {
+  std::list<Item> values{{7}, {2}};
+  values.sort();
+  return values.front().rank != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordCompoundDefaultOrderGuardRejected) {
+  const auto Source = tmpFile("forward-list-record-compound-default-order-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Item { int rank; };
+bool operator<(const Item& left, const Item& right) { return !(left.rank >= right.rank); }
+int main() {
+  std::forward_list<Item> values{{7}, {2}};
+  values.sort();
+  return values.front().rank != 2;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
