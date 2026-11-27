@@ -1,0 +1,78 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-visit-instantiates-selected-visitor-operator",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitInstantiatesSelectedVisitorOperatorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2d622b511f585b6718818b7a334153d5dee2b5bbf48d3366be2fca8c51972d70",
+      "original_case_source_sha256": "2d622b511f585b6718818b7a334153d5dee2b5bbf48d3366be2fca8c51972d70",
+      "gtest_body_sha256": "25c4d24e2a46c9a685f56cf389edb361c02fef3b8c5987a5bed128d553338a03"
+    },
+    {
+      "name": "variant-visit-instantiates-two-template-arguments",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitInstantiatesTwoTemplateArgumentsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b8b61b27eec5b469e07da8c1050026cf53cfebaf84a0bb9436e5f899e5772dec",
+      "original_case_source_sha256": "b8b61b27eec5b469e07da8c1050026cf53cfebaf84a0bb9436e5f899e5772dec",
+      "gtest_body_sha256": "9b0f82bf1e0504d2aa59fa822af8f87e6b77b5301ef26a5d31982df8af521249"
+    },
+    {
+      "name": "variant-visit-instantiates-void-visitor-operator",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitInstantiatesVoidVisitorOperatorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ddb618902e17c290065558da90a35ba527cc90c6c96a5ab0eb63c6c8856914e9",
+      "original_case_source_sha256": "ddb618902e17c290065558da90a35ba527cc90c6c96a5ab0eb63c6c8856914e9",
+      "gtest_body_sha256": "3a5ccda87e0ee8f5aaf399a6652604852e18e41de26f2a0be0fb039af39bc0f5"
+    }
+  ],
+  "negative_cases": [],
+  "source_cases": [
+    {
+      "name": "variant-visit-instantiates-selected-visitor-operator",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Measure {\n  template<class T> int operator()(T value) const { return 10 * int(sizeof(T)) + int(value); }\n};\nint main() {\n  std::variant<int, short> value(std::in_place_index<1>, short(5));\n  const Measure measure{};\n  return std::visit(measure, value) != 10 * int(sizeof(short)) + 5;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "2d622b511f585b6718818b7a334153d5dee2b5bbf48d3366be2fca8c51972d70"
+    },
+    {
+      "name": "variant-visit-instantiates-two-template-arguments",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Difference {\n  template<class L, class R>\n  int operator()(const L& left, const R& right) const {\n    return int(left) - int(right) + int(sizeof(L)) - int(sizeof(R));\n  }\n};\nint main() {\n  using Item = std::variant<int, short>;\n  Item left(18);\n  const Item right(std::in_place_index<1>, short(6));\n  Difference difference{};\n  return std::visit(difference, left, right) != 12 + int(sizeof(int)) - int(sizeof(short));\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "b8b61b27eec5b469e07da8c1050026cf53cfebaf84a0bb9436e5f899e5772dec"
+    },
+    {
+      "name": "variant-visit-instantiates-void-visitor-operator",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Write {\n  int* output;\n  template<class T> void operator()(const T& value) const { *output = int(value); }\n};\nint main() {\n  std::variant<int, short> value(std::in_place_index<1>, short(11));\n  int output = 0;\n  const Write write{&output};\n  std::visit(write, value);\n  return output != 11;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "ddb618902e17c290065558da90a35ba527cc90c6c96a5ab0eb63c6c8856914e9"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantVisitInstantiatesSelectedVisitorOperatorRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitInstantiatesTwoTemplateArgumentsRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitInstantiatesVoidVisitorOperatorRunAtBothOptimizations"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "09743ceb993860cd5315ea8d340ccb1f1e5e15ba5f084f8242173aad8e67d4d1",
+  "maintained_original_sha256": "5067723d6daf17e8fcc1a67b0ef269ebb100726af8e5adb2e1911ff4fdfeadd0",
+  "previous_registered_source_sha256": "67a66f70e5adb5a9455ea4ee4801e73256e6d488aab8f386a4069565e08fb6af",
+  "previous_maintained_original_sha256": "bcb628bf52b6a9c1a3ae33ff8235e9112668e9ea0a2b1b6b98f828725d28e7c7",
+  "restorer_sha256": "2c92a5150f7f5a30ffab93152000a7b4dfc93e2e786f8a12943d49aa36a15f8f",
+  "extractor_sha256": "6ddb9864c4fa3d74115e969e74c560c2a14c1f76c280d5b07b18bba029953501",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9083,
+  "current_python_registry_tests": 300,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "variant-templated-visitor": "4da0c07453460e2cb2a71ff719162f6785087af9fab56824a1899d78eccf7f35"
+  },
+  "native_reference_authentication_sha256": "48d0691d393478600f9451e718e070eb4b2863f50f3d7d1c879f4f0035b15eff",
+  "source_proof_sha256": "780d5a5a5cddd2fcb92208e81b43dcaa0a7e1602a40547f538033a718e2b82cd"
+}
