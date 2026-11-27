@@ -54944,7 +54944,8 @@ const CXXMethodDecl *linkedListRecordMemberOperator(
       Method->getRefQualifier() == RQ_RValue || !S.owns(SM, Method->getLocation()) ||
       Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
-      !Context.hasSameType(Method->getReturnType(), Context.BoolTy) ||
+      !Method->getReturnType()->isBuiltinType() || !Method->getReturnType()->isIntegerType() ||
+      Context.getTypeSize(Method->getReturnType()) > 64 ||
       Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg() ||
       !Context.hasSameType(Method->getParamDecl(0)->getType(),
                            Context.getLValueReferenceType(Element.withConst())))

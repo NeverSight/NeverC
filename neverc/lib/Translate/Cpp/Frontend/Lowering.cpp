@@ -38989,16 +38989,17 @@ class FunctionLowering {
                    L));
     }
     chargeCall(Args, L);
-    auto Compared = temporary("bool", L);
+    const FunctionDecl *Comparison = MemberComparison ? MemberComparison : FreeComparison;
+    const auto ResultType = type(Comparison->getReturnType(), L);
+    auto Compared = temporary(ResultType, L);
     Body.push_back(json::Object{
         {"op", "call"},
-        {"callee", A.name(MemberComparison ? static_cast<const FunctionDecl *>(
-                                                 MemberComparison)
-                                           : FreeComparison)},
+        {"callee", A.name(Comparison)},
         {"args", std::move(Args)},
         {"target", json::Object(Compared)},
         {"loc", A.loc(L)}});
-    return Compared;
+    if (ResultType == "bool") return Compared;
+    return cast(std::move(Compared), "bool", L);
   }
 
   Expression stringShortSize(Expression Word, bool AlternateLayout,
