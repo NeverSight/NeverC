@@ -27239,6 +27239,8 @@ class FunctionLowering {
   }
   void forwardListReleaseNode(Expression Node, const UtilityForwardListNodeRecord &Info,
                               SourceLocation L) {
+    const auto Element = Info.Value->getType();
+    destroy(forwardListValue(Node, Element, L), Element, L);
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
         linkedListNodeSize(Info.Record, L), L);
   }
@@ -29156,6 +29158,8 @@ class FunctionLowering {
     return Node;
   }
   void listReleaseNode(Expression Node, const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Element = Info.Value->getType();
+    destroy(listValue(Node, Element, false, L), Element, L);
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
         linkedListNodeSize(Info.Record, L), L);
   }
