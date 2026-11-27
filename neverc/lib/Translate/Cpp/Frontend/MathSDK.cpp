@@ -54245,11 +54245,15 @@ bool linkedListDefaultCall(const CallExpr *Call, const LinkedListRecordSource *S
   const auto *Function = Call->getDirectCallee();
   if (!Function || !Callee || Callee->getDecl() != Function || Function->getKind() != Decl::Function ||
       Function->isInvalidDecl() || Function->isImplicit() || Function->isDeleted() ||
-      Function->getBuiltinID() || Function->isVariadic() || Function->getNumParams() ||
-      Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate || Call->getNumArgs() ||
-      !Call->getType()->isArithmeticType())
+      Function->getBuiltinID() || Function->isVariadic() ||
+      Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Call->getNumArgs() != Function->getNumParams() || !Call->getType()->isArithmeticType())
     return false;
-  if (!Function->getDefinition()) return false;
+  if (!Function->getDefinition() ||
+      !llvm::all_of(Function->parameters(), [](const ParmVarDecl *Parameter) {
+        return Parameter->getType()->isArithmeticType();
+      }))
+    return false;
   // Ordinary expression validation and lowering inspect and emit the call.
   // Here the SDK proof can only use a source-owned scalar result.
   return !Source || llvm::all_of(Function->redecls(), [&](const FunctionDecl *D) {
@@ -54279,6 +54283,19 @@ bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
     }
     if (const auto *Call = dyn_cast<CallExpr>(Value)) {
       if (!linkedListDefaultCall(Call, Source)) return false;
+      for (const auto *Argument : Call->arguments()) {
+        const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument);
+        if (!Default) {
+          Pending.push_back(Argument);
+          continue;
+        }
+        // A selected literal needs no recursive parameter-initializer traversal.
+        const auto *Init = selectedDefaultArgument(Default, Field->getASTContext());
+        if (!Init || (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())) ||
+            !isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral>(
+                Init->IgnoreParenImpCasts()))
+          return false;
+      }
       continue;
     }
     if (const auto *Unary = dyn_cast<UnaryOperator>(Value)) {
