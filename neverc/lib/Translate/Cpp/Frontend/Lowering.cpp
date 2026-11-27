@@ -5650,7 +5650,7 @@ class FunctionLowering {
             address(std::move(LeftValue), SourceElement.withConst(), L), L);
         auto RightAddress = snapshot(
             address(std::move(RightValue), SourceElement.withConst(), L), L);
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress), Comparison->Member,
             Comparison->Friend ? Comparison->Friend : Comparison->Namespace, L);
       }
@@ -5799,7 +5799,7 @@ class FunctionLowering {
             address(std::move(LeftValue), SourceElement.withConst(), L), L);
         auto RightAddress = snapshot(
             address(std::move(RightValue), SourceElement.withConst(), L), L);
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress),
             SourceComparison->Member,
             SourceComparison->Friend ? SourceComparison->Friend
@@ -9337,7 +9337,7 @@ class FunctionLowering {
       label(Compare, L);
       auto Equal =
           SourceComparison
-              ? compareVectorSourceElements(
+              ? compareSourceRecordElements(
                     json::Object(Current), json::Object(ValueAddress),
                     SourceComparison->Member,
                     SourceComparison->Friend ? SourceComparison->Friend
@@ -9434,7 +9434,7 @@ class FunctionLowering {
       label(Compare, L);
       auto Equal =
           SourceComparison
-              ? compareVectorSourceElements(
+              ? compareSourceRecordElements(
                     json::Object(Current), json::Object(ValueAddress),
                     SourceComparison->Member,
                     SourceComparison->Friend ? SourceComparison->Friend
@@ -9576,7 +9576,7 @@ class FunctionLowering {
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(First), json::Object(Second),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10331,7 +10331,7 @@ class FunctionLowering {
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Current), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(First), json::Object(Current),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10424,7 +10424,7 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
       branch(SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(Current), json::Object(ValueAddress),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10525,7 +10525,7 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
       branch(SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(Current), json::Object(OldAddress),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10634,7 +10634,7 @@ class FunctionLowering {
                                        dereference(json::Object(Output), L),
                                        dereference(json::Object(Current), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(Output), json::Object(Current),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10751,7 +10751,7 @@ class FunctionLowering {
                                        dereference(json::Object(Previous), L),
                                        dereference(json::Object(Current), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(Previous), json::Object(Current),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -11175,7 +11175,7 @@ class FunctionLowering {
                           dereference(json::Object(Current), L),
                           dereference(json::Object(ValueAddress), L), L)
           : SourceComparison
-              ? compareVectorSourceElements(
+              ? compareSourceRecordElements(
                     json::Object(Current), json::Object(ValueAddress),
                     SourceComparison->Member,
                     SourceComparison->Friend ? SourceComparison->Friend
@@ -11319,7 +11319,7 @@ class FunctionLowering {
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(First), json::Object(Second),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -11942,7 +11942,7 @@ class FunctionLowering {
               address(std::move(Left), SourceElement.withConst(), L), L);
           auto RightAddress = snapshot(
               address(std::move(Right), SourceElement.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -12879,7 +12879,7 @@ class FunctionLowering {
               snapshot(address(std::move(Left), Element.withConst(), L), L);
           auto RightAddress =
               snapshot(address(std::move(Right), Element.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -13184,7 +13184,7 @@ class FunctionLowering {
               snapshot(address(std::move(Left), Element.withConst(), L), L);
           auto RightAddress =
               snapshot(address(std::move(Right), Element.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -13301,7 +13301,7 @@ class FunctionLowering {
               address(std::move(Left), InputElement.withConst(), L), L);
           auto RightAddress = snapshot(
               address(std::move(Right), InputElement.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -13417,7 +13417,7 @@ class FunctionLowering {
               address(std::move(LeftValue), Element.withConst(), L), L);
           auto RightAddress = snapshot(
               address(std::move(RightValue), Element.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -13559,7 +13559,7 @@ class FunctionLowering {
               snapshot(address(std::move(Left), Element.withConst(), L), L);
           auto RightAddress =
               snapshot(address(std::move(Right), Element.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -18315,6 +18315,20 @@ class FunctionLowering {
         assign(orderedIteratorCursor(Output, L), std::move(Node), L);
         return Output;
       }
+      if (approvedUtilityListRecord(A.S, A.Sources, Source->getType()->getAsCXXRecordDecl(), A.Context)) {
+        const auto Parameter = Call->getDirectCallee()->getParamDecl(0)->getType();
+        auto Place = dereference(argument(Source, Parameter), L);
+        if (Operation == UtilityOperation::IteratorSize || Operation == UtilityOperation::IteratorEmpty) {
+          auto Size = listMember(std::move(Place), "nct_list_size", L);
+          if (Operation == UtilityOperation::IteratorSize) return Size;
+          return binary("==", std::move(Size), A.zero(A.Context.getSizeType(), L), "bool", L);
+        }
+        auto Node = listIteratorBoundary(std::move(Place), Operation == UtilityOperation::IteratorEnd,
+                                         Parameter->getPointeeType().isConstQualified(), L);
+        auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
+        assign(listIteratorMember(Output, L), std::move(Node), L);
+        return Output;
+      }
       const auto *Native = A.Context.getAsConstantArrayType(Source->getType());
       auto Array = ArrayFor(Source->getType());
       if (!Native && !Array)
@@ -18360,15 +18374,14 @@ class FunctionLowering {
                                   type(A.Context.getPointerDiffType(), L), L),
                              L);
       auto Iterator = dereference(std::move(IteratorAddress), L);
-      if (approvedOrderedSetIteratorRecord(A.S, A.Sources, IteratorType->getAsCXXRecordDecl(), A.Context)) {
-        auto Cursor = orderedIteratorCursor(std::move(Iterator), L);
-        assign(Cursor, stepOrderedIteratorBy(Cursor, std::move(Offset), false, L), L);
-        return {};
-      }
       auto Reverse = ReverseFor(IteratorType, true);
-      if (Reverse && !Reverse->OrderedElementType.isNull()) {
-        auto Slot = ReverseCurrent(std::move(Iterator), *Reverse);
-        assign(Slot, stepOrderedIteratorBy(Slot, std::move(Offset), true, L), L);
+      const bool LinkedReverse = Reverse && !Reverse->linkedElementType().isNull();
+      const auto *Record = IteratorType->getAsCXXRecordDecl();
+      const bool List = Reverse ? !Reverse->ListElementType.isNull() :
+          approvedUtilityListIteratorRecord(A.S, A.Sources, Record, A.Context).has_value();
+      if (List || LinkedReverse || approvedOrderedSetIteratorRecord(A.S, A.Sources, Record, A.Context)) {
+        auto Slot = linkedIteratorSlot(std::move(Iterator), LinkedReverse ? &*Reverse : nullptr, List, L);
+        assign(Slot, stepLinkedIteratorBy(Slot, std::move(Offset), LinkedReverse, List, L), L);
         return {};
       }
       const auto Wrapped = approvedUtilityWrapIteratorRecord(
@@ -18399,13 +18412,15 @@ class FunctionLowering {
     case UtilityOperation::IteratorDistance: {
       const auto Type = Call->getArg(0)->getType();
       auto Reverse = ReverseFor(Type, true);
-      const bool OrderedReverse = Reverse && !Reverse->OrderedElementType.isNull();
-      if (OrderedReverse ||
-          approvedOrderedSetIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context)) {
-        const auto *Layout = OrderedReverse ? &*Reverse : nullptr;
-        auto First = loadOrderedIteratorArgument(Call, 0, L, Layout);
-        auto Last = loadOrderedIteratorArgument(Call, 1, L, Layout);
-        return countOrderedIteratorSteps(std::move(First), std::move(Last), !OrderedReverse, L);
+      const bool LinkedReverse = Reverse && !Reverse->linkedElementType().isNull();
+      const auto *Record = Type->getAsCXXRecordDecl();
+      const bool List = Reverse ? !Reverse->ListElementType.isNull() :
+          approvedUtilityListIteratorRecord(A.S, A.Sources, Record, A.Context).has_value();
+      if (List || LinkedReverse || approvedOrderedSetIteratorRecord(A.S, A.Sources, Record, A.Context)) {
+        const auto *Layout = LinkedReverse ? &*Reverse : nullptr;
+        auto First = loadLinkedIteratorArgument(Call, 0, L, Layout, List);
+        auto Last = loadLinkedIteratorArgument(Call, 1, L, Layout, List);
+        return countLinkedIteratorSteps(std::move(First), std::move(Last), !LinkedReverse, List, L);
       }
       auto First = AlgorithmRangeValue(0).first;
       auto Last = AlgorithmRangeValue(1).first;
@@ -18439,18 +18454,20 @@ class FunctionLowering {
       };
       const auto Type = Call->getArg(0)->getType();
       auto Reverse = ReverseFor(Type, true);
-      const bool OrderedReverse = Reverse && !Reverse->OrderedElementType.isNull();
-      if (OrderedReverse ||
-          approvedOrderedSetIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context)) {
-        const auto *Layout = OrderedReverse ? &*Reverse : nullptr;
-        auto Input = loadOrderedIteratorArgument(Call, 0, L, Layout);
+      const bool LinkedReverse = Reverse && !Reverse->linkedElementType().isNull();
+      const auto *Record = Type->getAsCXXRecordDecl();
+      const bool List = Reverse ? !Reverse->ListElementType.isNull() :
+          approvedUtilityListIteratorRecord(A.S, A.Sources, Record, A.Context).has_value();
+      if (List || LinkedReverse || approvedOrderedSetIteratorRecord(A.S, A.Sources, Record, A.Context)) {
+        const auto *Layout = LinkedReverse ? &*Reverse : nullptr;
+        auto Input = loadLinkedIteratorArgument(Call, 0, L, Layout, List);
         auto Offset = LoadOffset();
-        const bool WalkBack = OrderedReverse != (Operation == UtilityOperation::IteratorPrev);
-        auto Position = stepOrderedIteratorBy(std::move(Input), std::move(Offset), WalkBack, L);
-        if (OrderedReverse)
+        const bool WalkBack = LinkedReverse != (Operation == UtilityOperation::IteratorPrev);
+        auto Position = stepLinkedIteratorBy(std::move(Input), std::move(Offset), WalkBack, List, L);
+        if (LinkedReverse)
           return ReverseValue(std::move(Position), *Reverse);
         auto Output = Destination ? std::move(*Destination) : objectTemporary(Call->getType(), L);
-        assign(orderedIteratorCursor(Output, L), std::move(Position), L);
+        assign(linkedIteratorSlot(Output, nullptr, List, L), std::move(Position), L);
         return Output;
       }
       auto IteratorRange = AlgorithmRangeValue(0);
@@ -18496,6 +18513,17 @@ class FunctionLowering {
         assign(reverseIteratorSlot(Output, Reverse->Current, *Reverse, L), std::move(Node), L);
         return Output;
       }
+      if (!Member &&
+          approvedUtilityListRecord(A.S, A.Sources, Source->getType()->getAsCXXRecordDecl(), A.Context)) {
+        const auto Reverse = ReverseFor(Call->getType(), true);
+        if (!Reverse || Reverse->ListElementType.isNull())
+          reject(L, "list reverse access", "The checked list reverse iterator layout is required.");
+        const auto Parameter = Call->getDirectCallee()->getParamDecl(0)->getType();
+        auto Place = dereference(argument(Source, Parameter), L);
+        auto Base = listIteratorBoundary(std::move(Place), Operation == UtilityOperation::IteratorRBegin,
+                                         Parameter->getPointeeType().isConstQualified(), L);
+        return ReverseValue(std::move(Base), *Reverse);
+      }
       const auto *Native =
           Source ? A.Context.getAsConstantArrayType(Source->getType())
                  : nullptr;
@@ -18530,6 +18558,8 @@ class FunctionLowering {
         reject(L, "make reverse iterator",
                "The selected reverse iterator layout is unavailable.");
       auto Iterator = snapshot(expression(Call->getArg(0)), L);
+      if (!Reverse->ListElementType.isNull())
+        return ReverseValue(listIteratorMember(std::move(Iterator), L), *Reverse);
       if (!Reverse->OrderedElementType.isNull())
         return ReverseValue(orderedIteratorCursor(std::move(Iterator), L), *Reverse);
       return ReverseValue(
@@ -18549,7 +18579,7 @@ class FunctionLowering {
                "The selected reverse iterator layout is unavailable.");
       if (Operation == UtilityOperation::ReverseBase) {
         auto Current = fieldStorage(lvalue(Object), Reverse->Current, L);
-        if (!Reverse->WrappedCurrent && Reverse->OrderedElementType.isNull())
+        if (!Reverse->WrappedCurrent && Reverse->linkedElementType().isNull())
           return snapshot(std::move(Current), L);
         auto Place = Destination ? std::move(*Destination)
                                  : objectTemporary(Call->getType(), L);
@@ -18561,6 +18591,13 @@ class FunctionLowering {
         return Place;
       }
       auto Current = snapshot(ReverseCurrent(lvalue(Object), *Reverse), L);
+      if (!Reverse->ListElementType.isNull()) {
+        const auto ElementType = Reverse->ListElementType;
+        auto Node = snapshot(listLink(std::move(Current), true, L), L);
+        auto Element = listValue(std::move(Node), ElementType.getUnqualifiedType(), ElementType.isConstQualified(), L);
+        return Operation == UtilityOperation::ReverseArrow
+            ? address(std::move(Element), ElementType, L) : Element;
+      }
       if (!Reverse->OrderedElementType.isNull()) {
         auto Node = stepOrderedIterator(std::move(Current), false, L);
         auto Element = nodeFieldAt(std::move(Node), Reverse->OrderedElementType, Reverse->OrderedValueOffset, L);
@@ -18603,11 +18640,15 @@ class FunctionLowering {
       const bool Increment =
           Operation == UtilityOperation::ReversePreIncrement ||
           Operation == UtilityOperation::ReversePostIncrement;
-      auto Next = !Reverse->OrderedElementType.isNull()
-          ? stepOrderedIterator(std::move(Value), !Increment, L)
-          : binary(Increment ? "-" : "+", std::move(Value),
-                   quantity(1, type(A.Context.getPointerDiffType(), L), L),
-                   type(Reverse->PointerType, L), L);
+      Expression Next;
+      if (!Reverse->ListElementType.isNull())
+        Next = snapshot(listLink(std::move(Value), Increment, L), L);
+      else if (!Reverse->OrderedElementType.isNull())
+        Next = stepOrderedIterator(std::move(Value), !Increment, L);
+      else
+        Next = binary(Increment ? "-" : "+", std::move(Value),
+                      quantity(1, type(A.Context.getPointerDiffType(), L), L),
+                      type(Reverse->PointerType, L), L);
       assign(Current, std::move(Next), L);
       return Post ? std::move(Result) : std::move(Stored);
     }
@@ -18825,7 +18866,7 @@ class FunctionLowering {
               address(std::move(Left), LeftValueType.withConst(), L), L);
           auto RightAddress = snapshot(
               address(std::move(Right), RightValueType.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -23334,7 +23375,7 @@ class FunctionLowering {
                       : snapshot(std::move(Value), L);
       };
       auto CompareSource = [&](Expression Left, Expression Right) {
-        return compareVectorSourceElements(std::move(Left), std::move(Right),
+        return compareSourceRecordElements(std::move(Left), std::move(Right),
                                            MemberComparison, FreeComparison, L);
       };
       auto CompareStrings = [&]() {
@@ -27077,11 +27118,11 @@ class FunctionLowering {
   Expression forwardListNext(Expression Node, SourceLocation L) {
     return nodeFieldAt(std::move(Node), A.Context.VoidPtrTy, 0, L);
   }
-  Expression forwardListValue(Expression Node, bool Const, SourceLocation L) {
+  Expression forwardListValue(Expression Node, QualType Element, SourceLocation L) {
     auto Bytes = binary("+", cast(std::move(Node), "ptr:u8", L),
         quantity(8, "u64", L), "ptr:u8", L);
     return dereference(cast(cast(std::move(Bytes), "ptr:void", L),
-        Const ? "cptr:int" : "ptr:int", L), L);
+        type(A.Context.getPointerType(Element), L), L), L);
   }
   Expression forwardListIterator(QualType T, Expression Node, SourceLocation L) {
     const auto Info = approvedUtilityForwardListIteratorRecord(A.S, A.Sources,
@@ -27091,36 +27132,545 @@ class FunctionLowering {
     assign(forwardListMember(Result, true, L), std::move(Node), L);
     return Result;
   }
+  Expression forwardListInputValue(Expression Reference, QualType InputElement,
+                                   QualType Element, SourceLocation L) {
+    auto Value = dereference(std::move(Reference), L);
+    if (!InputElement.isNull() && !A.Context.hasSameType(InputElement, Element))
+      return cast(std::move(Value), type(Element, L), L);
+    return Value;
+  }
+  Expression linkedListNodeSize(const CXXRecordDecl *Node, SourceLocation L) {
+    return quantity(A.Context.getTypeSizeInChars(A.Context.getRecordType(Node)).getQuantity(),
+                    type(A.Context.getSizeType(), L), L);
+  }
   Expression forwardListCreateNode(Expression ValueReference, Expression Next,
-      const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+      const UtilityForwardListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
-        quantity(16, "u64", L), L), "ptr:void", L), L);
+        linkedListNodeSize(Info.Record, L), L), "ptr:void", L), L);
     assign(forwardListNext(Node, L), std::move(Next), L);
-    // The SDK constructs the int after allocation, so an aliased reference
+    // The SDK constructs the element after allocation, so an aliased reference
     // observes any source-defined allocation callback before this load.
-    assign(forwardListValue(Node, false, L), dereference(ValueReference, L), L);
+    const auto Element = Info.Value->getType();
+    assign(forwardListValue(Node, Element, L),
+           forwardListInputValue(std::move(ValueReference), InputElement, Element, L), L);
     return Node;
+  }
+  struct ForwardListInput {
+    enum Kind { Nodes, CountedArray, RepeatedValue, PointerRange, IteratorRange };
+    Expression Current;
+    std::optional<Expression> Limit;
+    Kind Mode = Nodes;
+    QualType PointerElement = {};
+  };
+
+  ForwardListInput forwardListInitializerInput(Expression Carrier, const CXXRecordDecl *Record,
+                                                QualType Element, SourceLocation L) {
+    const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources, Record, A.Context);
+    if (!List || !A.Context.hasSameType(List->ElementType, Element))
+      reject(L, "forward-list initializer", "The pinned initializer-list carrier must match the node element type.");
+    auto Current = snapshot(fieldStorage(Carrier, List->Begin, L), L);
+    auto Remaining = snapshot(cast(fieldStorage(std::move(Carrier), List->Size, L), "u64", L), L);
+    return {std::move(Current), std::move(Remaining), ForwardListInput::CountedArray};
+  }
+  ForwardListInput forwardListPointerInput(Expression First, Expression End, QualType PointerType, SourceLocation L) {
+    const auto Element = PointerType->getPointeeType().getUnqualifiedType();
+    const auto Pointer = type(A.Context.getPointerType(Element.withConst()), L);
+    auto Current = snapshot(cast(std::move(First), Pointer, L), L);
+    auto Last = snapshot(cast(std::move(End), Pointer, L), L);
+    return {std::move(Current), std::move(Last), ForwardListInput::PointerRange, Element};
+  }
+  ForwardListInput forwardListIteratorInput(Expression First, Expression Last, SourceLocation L) {
+    auto Current = snapshot(forwardListMember(dereference(std::move(First), L), true, L), L);
+    auto Limit = snapshot(forwardListMember(dereference(std::move(Last), L), true, L), L);
+    return {std::move(Current), std::move(Limit), ForwardListInput::IteratorRange};
+  }
+  Expression forwardListHasInput(const ForwardListInput &Input, SourceLocation L) {
+    if (Input.Mode == ForwardListInput::Nodes) return cast(Input.Current, "bool", L);
+    if (Input.Mode == ForwardListInput::PointerRange || Input.Mode == ForwardListInput::IteratorRange)
+      return binary("!=", Input.Current, *Input.Limit, "bool", L);
+    return cast(*Input.Limit, "bool", L);
+  }
+  Expression forwardListInputReference(const ForwardListInput &Input, const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    if (Input.Mode != ForwardListInput::Nodes && Input.Mode != ForwardListInput::IteratorRange) return Input.Current;
+    const auto Element = Info.Value->getType().withConst();
+    return address(forwardListValue(Input.Current, Element, L), Element, L);
+  }
+  void advanceForwardListInput(const ForwardListInput &Input, const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    if (Input.Mode == ForwardListInput::Nodes || Input.Mode == ForwardListInput::IteratorRange) {
+      assign(Input.Current, forwardListNext(Input.Current, L), L);
+      return;
+    }
+    if (Input.Mode != ForwardListInput::RepeatedValue) {
+      auto One = quantity(1, type(A.Context.getPointerDiffType(), L), L);
+      const auto Element = Input.Mode == ForwardListInput::PointerRange
+          ? Input.PointerElement : Info.Value->getType();
+      auto Next = index(Input.Current, std::move(One), type(Element, L), L);
+      assign(Input.Current, address(std::move(Next), Element.withConst(), L), L);
+    }
+    if (Input.Mode != ForwardListInput::PointerRange)
+      assign(*Input.Limit, binary("-", *Input.Limit, quantity(1, "u64", L), "u64", L), L);
+  }
+  void insertForwardListChain(Expression Link, const ForwardListInput &Input,
+                              const UtilityForwardListNodeRecord &Info, SourceLocation L,
+                              std::optional<Expression> LastInserted = std::nullopt) {
+    auto First = temporary("ptr:void", L);
+    auto LastLink = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
+    initializeZero(First, A.Context.VoidPtrTy, L);
+    assign(LastLink, address(First, A.Context.VoidPtrTy, L), L);
+    const auto Check = labelName(), Add = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(forwardListHasInput(Input, L), Add, Done, L);
+    label(Add, L);
+    auto Value = forwardListInputReference(Input, Info, L);
+    auto Node = forwardListCreateNode(std::move(Value), A.zero(A.Context.VoidPtrTy, L), Info, L,
+                                      Input.PointerElement);
+    assign(dereference(LastLink, L), Node, L);
+    assign(LastLink, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
+    if (LastInserted) assign(*LastInserted, Node, L);
+    advanceForwardListInput(Input, Info, L);
+    jump(Check, L); label(Done, L);
+    // The range insertion attaches the detached chain after construction.
+    const auto Publish = labelName(), Finish = labelName();
+    branch(cast(First, "bool", L), Publish, Finish, L);
+    label(Publish, L);
+    assign(dereference(LastLink, L), Link, L);
+    assign(Link, First, L);
+    jump(Finish, L); label(Finish, L);
   }
   void forwardListReleaseNode(Expression Node, const UtilityForwardListNodeRecord &Info,
                               SourceLocation L) {
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
-        quantity(16, "u64", L), L);
+        linkedListNodeSize(Info.Record, L), L);
   }
-  void destroyForwardListStorage(Expression Place, const UtilityForwardListNodeRecord &Info,
-                                  SourceLocation L) {
+  void releaseForwardListChain(Expression Head, Expression End, const UtilityForwardListNodeRecord &Info,
+                               SourceLocation L) {
     auto Current = temporary("ptr:void", L);
-    assign(Current, forwardListMember(Place, false, L), L);
+    assign(Current, std::move(Head), L);
     const auto Check = labelName(), Release = labelName(), Done = labelName();
     jump(Check, L); label(Check, L);
-    branch(cast(Current, "bool", L), Release, Done, L);
+    branch(binary("!=", Current, End, "bool", L), Release, Done, L);
     label(Release, L);
     auto Next = snapshot(forwardListNext(Current, L), L);
     forwardListReleaseNode(Current, Info, L);
     assign(Current, Next, L);
     jump(Check, L); label(Done, L);
+  }
+  Expression eraseForwardListRange(const UtilityForwardListRecord &Owner, QualType ResultType,
+                                   Expression First, Expression End, SourceLocation L) {
+    const auto Read = labelName(), Unlink = labelName(), Done = labelName();
+    branch(binary("!=", First, End, "bool", L), Read, Done, L);
+    label(Read, L);
+    auto Current = snapshot(forwardListNext(First, L), L);
+    branch(binary("!=", Current, End, "bool", L), Unlink, Done, L);
+    label(Unlink, L);
+    assign(forwardListNext(First, L), End, L);
+    releaseForwardListChain(Current, End, Owner.Node, L);
+    jump(Done, L); label(Done, L);
+    return forwardListIterator(ResultType, End, L);
+  }
+  void destroyForwardListStorage(Expression Place, const UtilityForwardListNodeRecord &Info,
+                                  SourceLocation L) {
+    releaseForwardListChain(forwardListMember(Place, false, L), A.zero(A.Context.VoidPtrTy, L), Info, L);
     // Unlike pop_front/erase_after, SDK clear leaves its head unchanged until
     // the entire deletion loop has finished.
     initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
+  }
+  Expression combineForwardListConditions(llvm::StringRef Operation, Expression Left,
+                                          Expression Right, SourceLocation L) {
+    // These are already-lowered, side-effect-free truth values.
+    auto LeftValue = cast(std::move(Left), "int", L);
+    auto RightValue = cast(std::move(Right), "int", L);
+    return cast(binary(Operation, std::move(LeftValue), std::move(RightValue), "int", L), "bool", L);
+  }
+  void assignForwardListStorage(Expression Place, const ForwardListInput &Input,
+                                 const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Output = temporary("ptr:void", L);
+    auto Link = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
+    assign(Link, address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
+    assign(Output, dereference(Link, L), L);
+    const auto Check = labelName(), Replace = labelName(), Resize = labelName();
+    const auto Grow = labelName(), Shrink = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(combineForwardListConditions("&", forwardListHasInput(Input, L), cast(Output, "bool", L), L), Replace, Resize, L);
+    label(Replace, L);
+    const auto Element = Info.Value->getType();
+    auto Value = forwardListInputValue(forwardListInputReference(Input, Info, L),
+                                       Input.PointerElement, Element, L);
+    assign(forwardListValue(Output, Element, L), std::move(Value), L);
+    advanceForwardListInput(Input, Info, L);
+    assign(Link, address(forwardListNext(Output, L), A.Context.VoidPtrTy, L), L);
+    assign(Output, dereference(Link, L), L);
+    jump(Check, L); label(Resize, L);
+    branch(forwardListHasInput(Input, L), Grow, Shrink, L);
+    label(Grow, L);
+    insertForwardListChain(dereference(Link, L), Input, Info, L);
+    jump(Done, L); label(Shrink, L);
+    // Range erasure unlinks the suffix before releasing it.
+    initializeZero(dereference(Link, L), A.Context.VoidPtrTy, L);
+    releaseForwardListChain(Output, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    jump(Done, L); label(Done, L);
+  }
+  void resizeForwardListStorage(Expression Place, Expression Count, Expression ValueReference,
+                                const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Remaining = snapshot(cast(std::move(Count), "u64", L), L);
+    auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
+    auto Current = snapshot(dereference(Link, L), L);
+    const auto Check = labelName(), Keep = labelName(), Resize = labelName();
+    const auto Trim = labelName(), GrowCheck = labelName(), Grow = labelName(), Done = labelName();
+    auto Decrement = [&] {
+      assign(Remaining, binary("-", Remaining, quantity(1, "u64", L), "u64", L), L);
+    };
+    jump(Check, L); label(Check, L);
+    branch(combineForwardListConditions("&", cast(Current, "bool", L), cast(Remaining, "bool", L), L), Keep, Resize, L);
+    label(Keep, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    assign(Current, dereference(Link, L), L);
+    Decrement();
+    jump(Check, L); label(Resize, L);
+    branch(cast(Current, "bool", L), Trim, GrowCheck, L);
+    label(Trim, L);
+    initializeZero(dereference(Link, L), A.Context.VoidPtrTy, L);
+    releaseForwardListChain(Current, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    jump(Done, L); label(GrowCheck, L);
+    branch(cast(Remaining, "bool", L), Grow, Done, L);
+    label(Grow, L);
+    auto Node = forwardListCreateNode(ValueReference, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    // The SDK resize loop appends each node before the next allocation.
+    assign(dereference(Link, L), Node, L);
+    assign(Link, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
+    Decrement();
+    jump(GrowCheck, L); label(Done, L);
+  }
+  template <class Match>
+  Expression detachForwardListMatches(Expression Link, Expression First, Expression Removed,
+                                      const Match &Matches, SourceLocation L) {
+    auto Last = snapshot(First, L);
+    auto Following = snapshot(forwardListNext(Last, L), L);
+    const auto Check = labelName(), Compare = labelName(), Extend = labelName(), Detach = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Following, "bool", L), Compare, Detach, L);
+    label(Compare, L);
+    branch(Matches(Following), Extend, Detach, L);
+    label(Extend, L);
+    assign(Last, Following, L);
+    assign(Following, forwardListNext(Last, L), L);
+    jump(Check, L); label(Detach, L);
+    // The SDK splices each removed run onto the front of its release list.
+    assign(forwardListNext(Last, L), Removed, L);
+    assign(Removed, First, L);
+    assign(Link, Following, L);
+    return Following;
+  }
+  void initializeLinkedListValue(Expression Place, QualType Element, SourceLocation L) {
+    initializeZero(Place, Element, L);
+    const auto *Record = Element->getAsCXXRecordDecl();
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || Record->isTrivial()) return;
+    for (const auto *Field : Record->fields())
+      if (const auto *Init = Field->getInClassInitializer())
+        initialize(fieldStorage(Place, Field, L), Init, L);
+  }
+
+  Expression compareLinkedListElements(StringRef Operator, Expression Left, Expression Right,
+      const FunctionDecl *Comparison, SourceLocation L) {
+    if (const auto *Member = dyn_cast_or_null<CXXMethodDecl>(Comparison)) {
+      const auto Receiver = Member->getThisType()->getPointeeType();
+      const auto Argument = Member->getParamDecl(0)->getType().getNonReferenceType();
+      return compareSourceRecordElements(address(std::move(Left), Receiver, L),
+                                         address(std::move(Right), Argument, L), Member, nullptr, L);
+    }
+    if (Comparison)
+      return emitBinaryPredicate(A.functionAddress(Comparison, L), A.Context.getPointerType(Comparison->getType()),
+                                 std::move(Left), std::move(Right), L);
+    return binary(Operator, std::move(Left), std::move(Right), "bool", L);
+  }
+
+  void removeForwardListValues(Expression Place, Expression Filter, QualType PredicateType,
+                               const UtilityForwardListNodeRecord &Info,
+                               const FunctionDecl *Equality, SourceLocation L) {
+    const auto Matches = [&](const Expression &Node) {
+      auto Value = forwardListValue(Node, Info.Value->getType().withConst(), L);
+      return PredicateType.isNull()
+          ? compareLinkedListElements("==", std::move(Value), dereference(Filter, L), Equality, L)
+          : emitUnaryPredicate(Filter, PredicateType, std::move(Value), L);
+    };
+    auto Removed = temporary("ptr:void", L);
+    initializeZero(Removed, A.Context.VoidPtrTy, L);
+    auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
+    auto Current = temporary("ptr:void", L);
+    const auto Check = labelName(), Compare = labelName(), Remove = labelName();
+    const auto Advance = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    assign(Current, dereference(Link, L), L);
+    branch(cast(Current, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(Matches(Current), Remove, Advance, L);
+    label(Remove, L);
+    assign(Current, detachForwardListMatches(dereference(Link, L), Current, Removed, Matches, L), L);
+    branch(cast(Current, "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Done, L);
+    // The value reference may designate an element that was removed.
+    releaseForwardListChain(Removed, A.zero(A.Context.VoidPtrTy, L), Info, L);
+  }
+  void uniqueForwardListValues(Expression Place, std::optional<Expression> Predicate, QualType PredicateType,
+                               const FunctionDecl *Equality,
+                               const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+    auto Removed = temporary("ptr:void", L);
+    initializeZero(Removed, A.Context.VoidPtrTy, L);
+    auto Current = snapshot(forwardListMember(Place, false, L), L);
+    const auto Check = labelName(), Inspect = labelName(), Compare = labelName();
+    const auto Remove = labelName(), Advance = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Current, "bool", L), Inspect, Done, L);
+    label(Inspect, L);
+    auto Link = forwardListNext(Current, L);
+    auto Successor = snapshot(Link, L);
+    branch(cast(Successor, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    const auto Matches = [&](const Expression &Node) {
+      auto First = forwardListValue(Current, Info.Value->getType().withConst(), L);
+      auto Next = forwardListValue(Node, Info.Value->getType().withConst(), L);
+      return Predicate
+          ? emitBinaryPredicate(*Predicate, PredicateType, std::move(First), std::move(Next), L)
+          : compareLinkedListElements("==", std::move(First), std::move(Next), Equality, L);
+    };
+    branch(Matches(Successor), Remove, Advance, L);
+    label(Remove, L);
+    assign(Current, detachForwardListMatches(Link, Successor, Removed, Matches, L), L);
+    jump(Check, L); label(Advance, L);
+    assign(Current, Successor, L);
+    jump(Check, L); label(Done, L);
+    releaseForwardListChain(Removed, A.zero(A.Context.VoidPtrTy, L), Info, L);
+  }
+  Expression mergeForwardListChains(Expression LeftHead, Expression RightHead,
+                                    const std::optional<Expression> &Comparator, QualType ComparatorType, QualType Element,
+                                    SourceLocation L, bool Descending, const FunctionDecl *DefaultComparison) {
+    auto Left = snapshot(std::move(LeftHead), L), Right = snapshot(std::move(RightHead), L);
+    auto Head = temporary("ptr:void", L);
+    auto Link = snapshot(address(Head, A.Context.VoidPtrTy, L), L);
+    auto Item = temporary("ptr:void", L);
+    const auto Check = labelName(), Compare = labelName(), PickLeft = labelName();
+    const auto PickRight = labelName(), Attach = labelName(), Tail = labelName();
+    const auto LeftTail = labelName(), RightTail = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(combineForwardListConditions("&", cast(Left, "bool", L), cast(Right, "bool", L), L), Compare, Tail, L);
+    label(Compare, L);
+    // Equal elements from the destination precede those from the source.
+    auto RightValue = forwardListValue(Right, Element.withConst(), L);
+    auto LeftValue = forwardListValue(Left, Element.withConst(), L);
+    auto PickSource = Comparator
+        ? emitBinaryPredicate(*Comparator, ComparatorType, std::move(RightValue), std::move(LeftValue), L)
+        : compareLinkedListElements(Descending ? ">" : "<", std::move(RightValue),
+                                    std::move(LeftValue), DefaultComparison, L);
+    branch(std::move(PickSource), PickRight, PickLeft, L);
+    label(PickLeft, L);
+    assign(Item, Left, L);
+    assign(Left, forwardListNext(Left, L), L);
+    jump(Attach, L); label(PickRight, L);
+    assign(Item, Right, L);
+    assign(Right, forwardListNext(Right, L), L);
+    jump(Attach, L); label(Attach, L);
+    assign(dereference(Link, L), Item, L);
+    assign(Link, address(forwardListNext(Item, L), A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Tail, L);
+    branch(cast(Left, "bool", L), LeftTail, RightTail, L);
+    label(LeftTail, L);
+    assign(dereference(Link, L), Left, L);
+    jump(Done, L); label(RightTail, L);
+    assign(dereference(Link, L), Right, L);
+    jump(Done, L); label(Done, L);
+    return Head;
+  }
+  Expression splitForwardListRun(Expression Head, Expression Width, SourceLocation L) {
+    auto Node = snapshot(std::move(Head), L);
+    auto Rest = temporary("ptr:void", L);
+    initializeZero(Rest, A.Context.VoidPtrTy, L);
+    auto Remaining = snapshot(binary("-", Width, quantity(1, "u64", L), "u64", L), L);
+    const auto Walk = labelName(), CheckNext = labelName(), Advance = labelName();
+    const auto Split = labelName(), Done = labelName();
+    branch(cast(Node, "bool", L), Walk, Done, L);
+    label(Walk, L);
+    branch(cast(Remaining, "bool", L), CheckNext, Split, L);
+    label(CheckNext, L);
+    auto Next = snapshot(forwardListNext(Node, L), L);
+    branch(cast(Next, "bool", L), Advance, Done, L);
+    label(Advance, L);
+    assign(Node, Next, L);
+    assign(Remaining, binary("-", Remaining, quantity(1, "u64", L), "u64", L), L);
+    jump(Walk, L); label(Split, L);
+    assign(Rest, forwardListNext(Node, L), L);
+    initializeZero(forwardListNext(Node, L), A.Context.VoidPtrTy, L);
+    jump(Done, L); label(Done, L);
+    return Rest;
+  }
+  void sortForwardListStorage(Expression Place, const std::optional<Expression> &Comparator,
+                              QualType ComparatorType, QualType Element, SourceLocation L, bool Descending, const FunctionDecl *DefaultComparison) {
+    auto Head = snapshot(forwardListMember(Place, false, L), L);
+    auto Width = snapshot(quantity(1, "u64", L), L);
+    auto Unsorted = temporary("ptr:void", L);
+    auto Output = temporary("ptr:void", L);
+    auto More = temporary("bool", L);
+    auto Link = temporary(type(A.Context.getPointerType(A.Context.VoidPtrTy), L), L);
+    const auto Start = labelName(), Check = labelName(), Merge = labelName(), Walk = labelName();
+    const auto Advance = labelName(), NextPair = labelName(), Pass = labelName();
+    const auto Widen = labelName(), Done = labelName();
+    jump(Start, L); label(Start, L);
+    assign(Unsorted, Head, L);
+    initializeZero(Output, A.Context.VoidPtrTy, L);
+    initializeZero(More, A.Context.BoolTy, L);
+    assign(Link, address(Output, A.Context.VoidPtrTy, L), L);
+    jump(Check, L); label(Check, L);
+    branch(cast(Unsorted, "bool", L), Merge, Pass, L);
+    label(Merge, L);
+    auto Left = snapshot(Unsorted, L);
+    auto Right = splitForwardListRun(Left, Width, L);
+    auto Rest = splitForwardListRun(Right, Width, L);
+    assign(More, combineForwardListConditions("|", More, cast(Rest, "bool", L), L), L);
+    auto Merged = mergeForwardListChains(Left, Right, Comparator, ComparatorType, Element, L, Descending, DefaultComparison);
+    assign(dereference(Link, L), Merged, L);
+    auto Current = snapshot(Merged, L);
+    jump(Walk, L); label(Walk, L);
+    branch(cast(Current, "bool", L), Advance, NextPair, L);
+    label(Advance, L);
+    assign(Link, address(forwardListNext(Current, L), A.Context.VoidPtrTy, L), L);
+    assign(Current, dereference(Link, L), L);
+    jump(Walk, L); label(NextPair, L);
+    assign(Unsorted, Rest, L);
+    jump(Check, L); label(Pass, L);
+    assign(Head, Output, L);
+    branch(More, Widen, Done, L);
+    label(Widen, L);
+    // A following pair exists only when the list has more than twice this width.
+    assign(Width, binary("+", Width, Width, "u64", L), L);
+    jump(Start, L); label(Done, L);
+    assign(forwardListMember(Place, false, L), Head, L);
+  }
+  void transferForwardListStorage(Expression Place, Expression Source, SourceLocation L) {
+    auto Head = snapshot(forwardListMember(Source, false, L), L);
+    assign(forwardListMember(Place, false, L), std::move(Head), L);
+    assign(forwardListMember(Source, false, L), A.zero(A.Context.VoidPtrTy, L), L);
+  }
+  void swapForwardListStorage(Expression Left, Expression Right, SourceLocation L) {
+    auto Head = snapshot(forwardListMember(Left, false, L), L);
+    assign(forwardListMember(Left, false, L), forwardListMember(Right, false, L), L);
+    assign(forwardListMember(Right, false, L), std::move(Head), L);
+  }
+  void reverseForwardListStorage(Expression Place, SourceLocation L) {
+    auto Current = temporary("ptr:void", L);
+    auto Head = temporary("ptr:void", L);
+    assign(Current, forwardListMember(Place, false, L), L);
+    initializeZero(Head, A.Context.VoidPtrTy, L);
+    const auto Check = labelName(), Reverse = labelName(), Done = labelName();
+    jump(Check, L); label(Check, L);
+    branch(cast(Current, "bool", L), Reverse, Done, L);
+    label(Reverse, L);
+    auto Next = snapshot(forwardListNext(Current, L), L);
+    assign(forwardListNext(Current, L), Head, L);
+    assign(Head, Current, L);
+    assign(Current, Next, L);
+    jump(Check, L); label(Done, L);
+    assign(forwardListMember(Place, false, L), Head, L);
+  }
+  void spliceForwardListChain(Expression Position, Expression Source, SourceLocation L) {
+    auto First = snapshot(forwardListMember(Source, false, L), L);
+    const auto Move = labelName(), Check = labelName(), Step = labelName();
+    const auto Join = labelName(), Transfer = labelName(), Done = labelName();
+    branch(cast(First, "bool", L), Move, Done, L);
+    label(Move, L);
+    auto Following = snapshot(forwardListNext(Position, L), L);
+    auto Tail = temporary("ptr:void", L);
+    assign(Tail, First, L);
+    // If the destination position is already last, the source tail is
+    // untouched and no traversal is needed.
+    branch(cast(Following, "bool", L), Check, Transfer, L);
+    label(Check, L);
+    auto Next = snapshot(forwardListNext(Tail, L), L);
+    branch(cast(Next, "bool", L), Step, Join, L);
+    label(Step, L);
+    assign(Tail, Next, L);
+    jump(Check, L); label(Join, L);
+    assign(forwardListNext(Tail, L), Following, L);
+    jump(Transfer, L); label(Transfer, L);
+    assign(forwardListNext(Position, L), First, L);
+    initializeZero(forwardListMember(Source, false, L), A.Context.VoidPtrTy, L);
+    jump(Done, L); label(Done, L);
+  }
+  void spliceForwardListNode(Expression Position, Expression Predecessor, SourceLocation L) {
+    auto Node = snapshot(forwardListNext(Predecessor, L), L);
+    const auto Transfer = labelName(), Done = labelName();
+    auto Distinct = combineForwardListConditions("&", binary("!=", Position, Predecessor, "bool", L),
+        binary("!=", Position, Node, "bool", L), L);
+    branch(std::move(Distinct), Transfer, Done, L);
+    label(Transfer, L);
+    assign(forwardListNext(Predecessor, L), forwardListNext(Node, L), L);
+    assign(forwardListNext(Node, L), forwardListNext(Position, L), L);
+    assign(forwardListNext(Position, L), Node, L);
+    jump(Done, L); label(Done, L);
+  }
+  void spliceForwardListRange(Expression Position, Expression First, Expression End, SourceLocation L) {
+    const auto Scan = labelName(), Check = labelName(), Step = labelName();
+    const auto Transfer = labelName(), Nonempty = labelName(), Done = labelName();
+    auto Distinct = combineForwardListConditions("&", binary("!=", First, End, "bool", L),
+        binary("!=", Position, First, "bool", L), L);
+    branch(std::move(Distinct), Scan, Done, L);
+    label(Scan, L);
+    auto Tail = temporary("ptr:void", L);
+    assign(Tail, First, L);
+    jump(Check, L); label(Check, L);
+    auto Next = snapshot(forwardListNext(Tail, L), L);
+    branch(binary("!=", Next, End, "bool", L), Step, Nonempty, L);
+    label(Step, L);
+    assign(Tail, Next, L);
+    jump(Check, L); label(Nonempty, L);
+    branch(binary("!=", First, Tail, "bool", L), Transfer, Done, L);
+    label(Transfer, L);
+    // The range can belong to the receiving list. Link it before
+    // restoring the source predecessor's successor.
+    assign(forwardListNext(Tail, L), forwardListNext(Position, L), L);
+    assign(forwardListNext(Position, L), forwardListNext(First, L), L);
+    assign(forwardListNext(First, L), End, L);
+    jump(Done, L); label(Done, L);
+  }
+  Expression compareForwardListOwners(Expression Left, Expression Right, bool Ordered, bool Invert, QualType Element, const FunctionDecl *ElementComparison,
+      SourceLocation L) {
+    auto LeftNode = snapshot(forwardListMember(Left, false, L), L);
+    auto RightNode = snapshot(forwardListMember(Right, false, L), L);
+    auto Result = temporary("bool", L);
+    const auto Check = labelName(), Compare = labelName(), Advance = labelName();
+    const auto Different = labelName(), End = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(combineForwardListConditions("&", cast(LeftNode, "bool", L), cast(RightNode, "bool", L), L), Compare, End, L);
+    label(Compare, L);
+    const auto LValue = forwardListValue(LeftNode, Element.withConst(), L);
+    const auto RValue = forwardListValue(RightNode, Element.withConst(), L);
+    if (Ordered) {
+      // The elements tie when neither ordered comparison is true.
+      const auto Reverse = labelName(), Less = labelName();
+      branch(compareLinkedListElements("<", LValue, RValue, ElementComparison, L), Less, Reverse, L);
+      label(Less, L);
+      assign(Result, boolean(true, L), L);
+      jump(Done, L);
+      label(Reverse, L);
+      branch(compareLinkedListElements("<", RValue, LValue, ElementComparison, L), Different, Advance, L);
+    } else {
+      branch(compareLinkedListElements("==", LValue, RValue, ElementComparison, L), Advance, Different, L);
+    }
+    label(Advance, L);
+    assign(LeftNode, forwardListNext(LeftNode, L), L);
+    assign(RightNode, forwardListNext(RightNode, L), L);
+    jump(Check, L);
+    label(Different, L);
+    assign(Result, boolean(false, L), L);
+    jump(Done, L);
+    label(End, L);
+    assign(Result, Ordered ? combineForwardListConditions("&", binary("==", LeftNode, A.zero(A.Context.VoidPtrTy, L), "bool", L),
+        cast(RightNode, "bool", L), L) : binary("==", LeftNode, RightNode, "bool", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Invert ? binary("==", Result, boolean(false, L), "bool", L) : Result;
   }
   Expression utilityForwardListOperation(const CallExpr *Call) {
     const auto L = Call->getExprLoc();
@@ -27129,21 +27679,42 @@ class FunctionLowering {
       reject(L, "forward-list operation", "The selected SDK body, layout and operands are required.");
     const auto Operation = Proof->Operation;
     std::optional<Expression> Receiver;
-    if (Proof->Receiver) {
-      const auto *Object = Proof->Receiver;
-      Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
-          : address(lvalue(Object), Object->getType(), L), L);
-    }
+    auto CaptureReceiver = [&] {
+      if (const auto *Object = Proof->Receiver)
+        Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
+            : address(lvalue(Object), Object->getType(), L), L);
+    };
+    const bool AssignmentSyntax = isa<CXXOperatorCallExpr>(Call) &&
+        (Operation == UtilityForwardListOperation::MoveAssign ||
+         Operation == UtilityForwardListOperation::CopyAssign ||
+         Operation == UtilityForwardListOperation::AssignInitializerListOperator);
+    if (!AssignmentSyntax) CaptureReceiver();
     std::vector<Expression> Operands;
     for (unsigned I = 0; I != Proof->Function->getNumParams(); ++I)
       Operands.push_back(snapshot(argument(Call->getArg(I + Proof->ArgumentOffset),
           Proof->Function->getParamDecl(I)->getType()), L));
+    if (AssignmentSyntax) CaptureReceiver();
+    if (Operation == UtilityForwardListOperation::OwnerEqual || Operation == UtilityForwardListOperation::OwnerNotEqual ||
+        Operation == UtilityForwardListOperation::OwnerLess || Operation == UtilityForwardListOperation::OwnerGreater ||
+        Operation == UtilityForwardListOperation::OwnerLessEqual || Operation == UtilityForwardListOperation::OwnerGreaterEqual) {
+      const bool Ordered = Operation != UtilityForwardListOperation::OwnerEqual && Operation != UtilityForwardListOperation::OwnerNotEqual;
+      const bool Swap = Operation == UtilityForwardListOperation::OwnerGreater || Operation == UtilityForwardListOperation::OwnerLessEqual;
+      const bool Invert = Operation == UtilityForwardListOperation::OwnerNotEqual ||
+          Operation == UtilityForwardListOperation::OwnerLessEqual || Operation == UtilityForwardListOperation::OwnerGreaterEqual;
+      const auto Element = Proof->Function->getTemplateSpecializationArgs()->get(0).getAsType();
+      return compareForwardListOwners(dereference(Operands[Swap ? 1 : 0], L), dereference(Operands[Swap ? 0 : 1], L),
+          Ordered, Invert, Element, Proof->DefaultRecordComparison, L);
+    }
     if (Operation == UtilityForwardListOperation::IteratorEqual ||
         Operation == UtilityForwardListOperation::IteratorNotEqual) {
       auto Left = forwardListMember(dereference(Operands[0], L), true, L);
       auto Right = forwardListMember(dereference(Operands[1], L), true, L);
       return binary(Operation == UtilityForwardListOperation::IteratorEqual ? "==" : "!=",
           std::move(Left), std::move(Right), "bool", L);
+    }
+    if (Operation == UtilityForwardListOperation::FreeSwap) {
+      swapForwardListStorage(dereference(Operands[0], L), dereference(Operands[1], L), L);
+      return Expression{};
     }
     if (!Receiver) reject(L, "forward-list receiver", "A checked receiver is required.");
     auto Place = dereference(*Receiver, L);
@@ -27157,12 +27728,13 @@ class FunctionLowering {
         return Place;
       }
       auto Node = snapshot(forwardListMember(Place, true, L), L);
+      const auto Value = Iterator->Node.Value->getType();
+      const auto Element = Iterator->Const ? Value.withConst() : Value;
       if (Operation == UtilityForwardListOperation::IteratorDereference)
-        return forwardListValue(Node, Iterator->Const, L);
+        return forwardListValue(Node, Element, L);
       if (Operation == UtilityForwardListOperation::IteratorArrow)
-        return cast(address(forwardListValue(Node, Iterator->Const, L),
-            Iterator->Const ? A.Context.IntTy.withConst() : A.Context.IntTy, L),
-            Iterator->Const ? "cptr:int" : "ptr:int", L);
+        return cast(address(forwardListValue(Node, Element, L), Element, L),
+                    type(Method->getReturnType(), L), L);
       if (Operation == UtilityForwardListOperation::IteratorPreIncrement ||
           Operation == UtilityForwardListOperation::IteratorPostIncrement) {
         std::optional<Expression> Previous;
@@ -27175,6 +27747,114 @@ class FunctionLowering {
     }
     const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Method->getParent(), A.Context);
     if (!Owner) reject(L, "forward-list owner", "The selected integer owner layout is required.");
+    const auto Element = Owner->Node.Value->getType();
+    if (Operation == UtilityForwardListOperation::CopyAssign) {
+      const auto Copy = labelName(), Done = labelName();
+      branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(Operands.front(), "ptr:void", L), "bool", L),
+          Copy, Done, L);
+      label(Copy, L);
+      auto Head = snapshot(forwardListMember(dereference(Operands.front(), L), false, L), L);
+      assignForwardListStorage(Place, {std::move(Head), std::nullopt}, Owner->Node, L);
+      jump(Done, L); label(Done, L);
+      return Place;
+    }
+    if (Operation == UtilityForwardListOperation::AssignInitializerList ||
+        Operation == UtilityForwardListOperation::AssignInitializerListOperator) {
+      const auto *Record = Method->getParamDecl(0)->getType()->getAsCXXRecordDecl();
+      auto Input = forwardListInitializerInput(dereference(Operands.front(), L), Record, Element, L);
+      assignForwardListStorage(Place, Input, Owner->Node, L);
+      if (Operation == UtilityForwardListOperation::AssignInitializerListOperator) return Place;
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::AssignCount) {
+      auto Count = snapshot(cast(Operands[0], "u64", L), L);
+      assignForwardListStorage(Place, {Operands[1], std::move(Count), ForwardListInput::RepeatedValue}, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::AssignIteratorRange) {
+      auto Input = forwardListIteratorInput(Operands[0], Operands[1], L);
+      assignForwardListStorage(Place, Input, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::AssignPointerRange) {
+      auto Input = forwardListPointerInput(Operands[0], Operands[1], Method->getParamDecl(0)->getType(), L);
+      assignForwardListStorage(Place, Input, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Resize ||
+        Operation == UtilityForwardListOperation::ResizeFill) {
+      Expression ValueReference;
+      if (Operation == UtilityForwardListOperation::ResizeFill) {
+        ValueReference = Operands[1];
+      } else {
+        auto Value = temporary(type(Element, L), L);
+        initializeLinkedListValue(Value, Element, L);
+        ValueReference = address(Value, Element, L);
+      }
+      resizeForwardListStorage(Place, Operands[0], std::move(ValueReference), Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::RemoveValue || Operation == UtilityForwardListOperation::RemoveIf) {
+      const auto PredicateType = Operation == UtilityForwardListOperation::RemoveIf
+          ? Method->getParamDecl(0)->getType() : QualType{};
+      removeForwardListValues(Place, Operands[0], PredicateType, Owner->Node, Proof->DefaultRecordComparison, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Unique || Operation == UtilityForwardListOperation::UniqueWithPredicate) {
+      std::optional<Expression> Predicate;
+      QualType PredicateType;
+      if (Operation == UtilityForwardListOperation::UniqueWithPredicate) {
+        Predicate = Operands[0];
+        PredicateType = Method->getParamDecl(0)->getType();
+      }
+      uniqueForwardListValues(Place, std::move(Predicate), PredicateType,
+                              Proof->DefaultRecordComparison, Owner->Node, L);
+      return Expression{};
+    }
+    const bool CustomSort = Operation == UtilityForwardListOperation::SortWithOrder;
+    const bool CustomMerge = Operation == UtilityForwardListOperation::MergeWithOrder;
+    std::optional<Expression> Comparator;
+    QualType ComparatorType;
+    const bool Descending = Proof->ObjectOrderDescending.value_or(false);
+    const auto *DefaultComparison = Proof->DefaultRecordComparison;
+    if (!DefaultComparison && (CustomSort || CustomMerge) && !Proof->ObjectOrderDescending) {
+      const unsigned Index = CustomMerge ? 1 : 0;
+      Comparator = Operands[Index];
+      ComparatorType = Method->getParamDecl(Index)->getType();
+    }
+    if (CustomSort || Operation == UtilityForwardListOperation::Sort) {
+      sortForwardListStorage(Place, Comparator, ComparatorType, Element, L, Descending, DefaultComparison);
+      return Expression{};
+    }
+    if (CustomMerge || Operation == UtilityForwardListOperation::Merge) {
+      const auto Merge = labelName(), Done = labelName();
+      branch(binary("!=", cast(*Receiver, "ptr:void", L), cast(Operands.front(), "ptr:void", L), "bool", L),
+          Merge, Done, L);
+      label(Merge, L);
+      auto Destination = forwardListMember(Place, false, L);
+      auto Source = forwardListMember(dereference(Operands.front(), L), false, L);
+      auto Head = mergeForwardListChains(Destination, Source, Comparator, ComparatorType, Element, L, Descending, DefaultComparison);
+      assign(Destination, Head, L);
+      initializeZero(Source, A.Context.VoidPtrTy, L);
+      jump(Done, L); label(Done, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::MoveAssign) {
+      auto Source = dereference(Operands.front(), L);
+      destroyForwardListStorage(Place, Owner->Node, L);
+      transferForwardListStorage(Place, Source, L);
+      return Place;
+    }
+    if (Operation == UtilityForwardListOperation::GetAllocator) {
+      auto Allocator = temporary(type(Call->getType(), L), L);
+      initializeZero(Allocator, Call->getType(), L);
+      return Allocator;
+    }
+    if (Operation == UtilityForwardListOperation::MaxSize) {
+      if (!Proof->Maximum)
+        reject(L, "forward-list max_size", "The authenticated node allocator capacity is required.");
+      return quantity(*Proof->Maximum, type(Call->getType(), L), L);
+    }
     if (Operation == UtilityForwardListOperation::Empty)
       return binary("==", forwardListMember(Place, false, L), A.zero(A.Context.VoidPtrTy, L), "bool", L);
     if (Operation == UtilityForwardListOperation::Begin ||
@@ -27188,10 +27868,86 @@ class FunctionLowering {
       return forwardListIterator(Method->getReturnType(), std::move(Node), L);
     }
     if (Operation == UtilityForwardListOperation::Front)
-      return forwardListValue(snapshot(forwardListMember(Place, false, L), L), Method->isConst(), L);
+      return forwardListValue(snapshot(forwardListMember(Place, false, L), L),
+                              Method->isConst() ? Element.withConst() : Element, L);
+    if (Operation == UtilityForwardListOperation::Reverse) {
+      reverseForwardListStorage(Place, L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::Swap) {
+      swapForwardListStorage(Place, dereference(Operands.front(), L), L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::SpliceAll) {
+      auto Position = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
+      spliceForwardListChain(std::move(Position), dereference(Operands[1], L), L);
+      return Expression{};
+    }
+    if (Operation == UtilityForwardListOperation::SpliceOne ||
+        Operation == UtilityForwardListOperation::SpliceRange) {
+      auto Position = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
+      auto First = snapshot(forwardListMember(dereference(Operands[2], L), true, L), L);
+      if (Operation == UtilityForwardListOperation::SpliceOne) {
+        spliceForwardListNode(std::move(Position), std::move(First), L);
+      } else {
+        auto End = snapshot(forwardListMember(dereference(Operands[3], L), true, L), L);
+        spliceForwardListRange(std::move(Position), std::move(First), std::move(End), L);
+      }
+      return Expression{};
+    }
     if (Operation == UtilityForwardListOperation::Clear) {
       destroyForwardListStorage(Place, Owner->Node, L);
       return Expression{};
+    }
+    const bool EmplaceAfter = Operation == UtilityForwardListOperation::EmplaceAfter;
+    if (EmplaceAfter || Operation == UtilityForwardListOperation::EmplaceFront) {
+      auto Link = EmplaceAfter
+          ? forwardListNext(snapshot(forwardListMember(dereference(Operands[0], L), true, L), L), L)
+          : forwardListMember(Place, false, L);
+      const unsigned PositionArgs = EmplaceAfter ? 1 : 0;
+      Expression ValueReference;
+      QualType InputElement;
+      if (Operands.size() == PositionArgs) {
+        auto Value = temporary(type(Element, L), L);
+        initializeLinkedListValue(Value, Element, L);
+        ValueReference = address(Value, Element, L);
+      } else {
+        ValueReference = Operands[PositionArgs];
+        InputElement = Method->getParamDecl(PositionArgs)->getType()
+                           ->getPointeeType().getUnqualifiedType();
+      }
+      auto Next = snapshot(Link, L);
+      auto Node = forwardListCreateNode(std::move(ValueReference), std::move(Next), Owner->Node, L, InputElement);
+      assign(Link, Node, L);
+      auto Inserted = snapshot(Link, L);
+      if (EmplaceAfter) return forwardListIterator(Method->getReturnType(), std::move(Inserted), L);
+      return forwardListValue(std::move(Inserted), Element, L);
+    }
+    if (Operation == UtilityForwardListOperation::EraseRange) {
+      auto First = snapshot(forwardListMember(dereference(Operands[0], L), true, L), L);
+      auto End = snapshot(forwardListMember(dereference(Operands[1], L), true, L), L);
+      return eraseForwardListRange(*Owner, Method->getReturnType(), std::move(First), std::move(End), L);
+    }
+    if (Operation == UtilityForwardListOperation::InsertAfterCount ||
+        Operation == UtilityForwardListOperation::InsertAfterInitializerList ||
+        Operation == UtilityForwardListOperation::InsertAfterPointerRange ||
+        Operation == UtilityForwardListOperation::InsertAfterIteratorRange) {
+      auto Position = snapshot(forwardListMember(dereference(Operands.front(), L), true, L), L);
+      auto LastInserted = snapshot(Position, L);
+      auto Input = [&]() -> ForwardListInput {
+        if (Operation == UtilityForwardListOperation::InsertAfterCount) {
+          auto Count = snapshot(cast(Operands[1], "u64", L), L);
+          return {Operands[2], std::move(Count), ForwardListInput::RepeatedValue};
+        }
+        if (Operation == UtilityForwardListOperation::InsertAfterPointerRange)
+          return forwardListPointerInput(Operands[1], Operands[2], Method->getParamDecl(1)->getType(), L);
+        if (Operation == UtilityForwardListOperation::InsertAfterIteratorRange)
+          return forwardListIteratorInput(Operands[1], Operands[2], L);
+        const auto *Record = Method->getParamDecl(1)->getType()->getAsCXXRecordDecl();
+        return forwardListInitializerInput(dereference(Operands[1], L), Record, Element, L);
+      }();
+      insertForwardListChain(forwardListNext(Position, L), Input, Owner->Node, L, LastInserted);
+      return forwardListIterator(Method->getReturnType(), std::move(LastInserted), L);
     }
     const bool Insert = Operation == UtilityForwardListOperation::InsertAfter;
     const bool Erase = Operation == UtilityForwardListOperation::EraseAfter;
@@ -27333,19 +28089,37 @@ class FunctionLowering {
       const UtilityReverseIteratorRecord &Info, SourceLocation L) {
     auto Stored = fieldStorage(std::move(Place), Field, L);
     if (!Info.OrderedElementType.isNull()) return orderedIteratorCursor(std::move(Stored), L);
+    if (!Info.ListElementType.isNull()) return listIteratorMember(std::move(Stored), L);
     return Info.WrappedCurrent ? fieldStorage(std::move(Stored), Info.WrappedCurrent, L) : Stored;
   }
 
-  Expression loadOrderedIteratorArgument(const CallExpr *Call, unsigned Index, SourceLocation L,
-      const UtilityReverseIteratorRecord *Layout) {
+  void initializeReverseIteratorSlots(Expression Place, Expression Cursor,
+      const UtilityReverseIteratorRecord &Info, SourceLocation L) {
+    auto Value = snapshot(cast(std::move(Cursor), type(Info.PointerType, L), L), L);
+    assign(reverseIteratorSlot(Place, Info.Legacy, Info, L), json::Object(Value), L);
+    assign(reverseIteratorSlot(std::move(Place), Info.Current, Info, L), std::move(Value), L);
+  }
+
+  Expression linkedIteratorSlot(Expression Place, const UtilityReverseIteratorRecord *Layout,
+      bool List, SourceLocation L) {
+    if (Layout) return reverseIteratorSlot(std::move(Place), Layout->Current, *Layout, L);
+    return List ? listIteratorMember(std::move(Place), L) : orderedIteratorCursor(std::move(Place), L);
+  }
+
+  Expression loadLinkedIteratorArgument(const CallExpr *Call, unsigned Index, SourceLocation L,
+      const UtilityReverseIteratorRecord *Layout, bool List) {
     const auto Parameter = Call->getDirectCallee()->getParamDecl(Index)->getType();
     auto Argument = dereference(argument(Call->getArg(Index), Parameter), L);
-    auto Cursor = Layout ? reverseIteratorSlot(std::move(Argument), Layout->Current, *Layout, L)
-                         : orderedIteratorCursor(std::move(Argument), L);
+    auto Cursor = linkedIteratorSlot(std::move(Argument), Layout, List, L);
     return snapshot(std::move(Cursor), L);
   }
 
-  Expression stepOrderedIteratorBy(Expression Node, Expression Offset, bool Reverse, SourceLocation L) {
+  Expression stepLinkedIterator(Expression Node, bool Forward, bool List, SourceLocation L) {
+    if (List) return snapshot(listLink(std::move(Node), !Forward, L), L);
+    return stepOrderedIterator(std::move(Node), Forward, L);
+  }
+
+  Expression stepLinkedIteratorBy(Expression Node, Expression Offset, bool Reverse, bool List, SourceLocation L) {
     const auto Difference = type(A.Context.getPointerDiffType(), L);
     const auto Zero = A.zero(A.Context.getPointerDiffType(), L);
     auto Current = snapshot(std::move(Node), L);
@@ -27358,18 +28132,19 @@ class FunctionLowering {
     label(Direction, L);
     branch(binary(">", Remaining, Zero, "bool", L), Forward, Backward, L);
     label(Forward, L);
-    assign(Current, stepOrderedIterator(Current, !Reverse, L), L);
+    assign(Current, stepLinkedIterator(Current, !Reverse, List, L), L);
     assign(Remaining, binary("-", Remaining, one(Difference, L), Difference, L), L);
     jump(Check, L);
     label(Backward, L);
-    assign(Current, stepOrderedIterator(Current, Reverse, L), L);
+    assign(Current, stepLinkedIterator(Current, Reverse, List, L), L);
     assign(Remaining, binary("+", Remaining, one(Difference, L), Difference, L), L);
     jump(Check, L);
     label(Done, L);
     return Current;
   }
 
-  Expression countOrderedIteratorSteps(Expression Current, Expression Last, bool Forward, SourceLocation L) {
+  Expression countLinkedIteratorSteps(Expression Current, Expression Last, bool Forward, bool List,
+                                      SourceLocation L) {
     const auto Difference = type(A.Context.getPointerDiffType(), L);
     auto Count = snapshot(A.zero(A.Context.getPointerDiffType(), L), L);
     const auto Check = labelName(), Step = labelName(), Done = labelName();
@@ -27377,7 +28152,7 @@ class FunctionLowering {
     label(Check, L);
     branch(binary("!=", Current, Last, "bool", L), Step, Done, L);
     label(Step, L);
-    assign(Current, stepOrderedIterator(Current, Forward, L), L);
+    assign(Current, stepLinkedIterator(Current, Forward, List, L), L);
     assign(Count, binary("+", Count, one(Difference, L), Difference, L), L);
     jump(Check, L);
     label(Done, L);
@@ -28337,15 +29112,19 @@ class FunctionLowering {
   Expression listLink(Expression Node, bool Prev, SourceLocation L) {
     return nodeFieldAt(std::move(Node), A.Context.VoidPtrTy, Prev ? 0 : 8, L);
   }
-  Expression listValue(Expression Node, bool Const, SourceLocation L) {
+  Expression listValue(Expression Node, QualType Element, bool Const, SourceLocation L) {
     auto Bytes = binary("+", cast(std::move(Node), "ptr:u8", L),
         quantity(16, type(A.Context.getSizeType(), L), L), "ptr:u8", L);
     return dereference(cast(cast(std::move(Bytes), "ptr:void", L),
-        Const ? "cptr:int" : "ptr:int", L), L);
+        type(A.Context.getPointerType(Const ? Element.withConst() : Element), L), L), L);
   }
   Expression listSentinel(Expression Place, SourceLocation L, bool ReadOnly = false) {
     return cast(address(listMember(std::move(Place), "nct_list_prev", L),
         ReadOnly ? A.Context.VoidPtrTy.withConst() : A.Context.VoidPtrTy, L), "ptr:void", L);
+  }
+  Expression listIteratorBoundary(Expression Place, bool AtEnd, bool ReadOnly, SourceLocation L) {
+    return AtEnd ? listSentinel(std::move(Place), L, ReadOnly) :
+        listMember(std::move(Place), "nct_list_next", L);
   }
   Expression listIteratorMember(Expression Place, SourceLocation L) {
     return Expression{{"kind", "member"}, {"type", "ptr:void"}, {"name", "nct_list_iterator"},
@@ -28364,17 +29143,21 @@ class FunctionLowering {
     assign(listIteratorMember(Result, L), std::move(Node), L);
     return Result;
   }
-  Expression listCreateNode(Expression ValueReference, const UtilityListNodeRecord &Info, SourceLocation L) {
+  Expression listCreateNode(Expression ValueReference, const UtilityListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
-        quantity(24, type(A.Context.getSizeType(), L), L), L), "ptr:void", L), L);
+        linkedListNodeSize(Info.Record, L), L), "ptr:void", L), L);
     initializeZero(listLink(Node, true, L), A.Context.VoidPtrTy, L);
     initializeZero(listLink(Node, false, L), A.Context.VoidPtrTy, L);
-    assign(listValue(Node, false, L), dereference(ValueReference, L), L);
+    const auto Element = Info.Value->getType();
+    auto Value = dereference(std::move(ValueReference), L);
+    if (!InputElement.isNull() && !A.Context.hasSameType(InputElement, Element))
+      Value = cast(std::move(Value), type(Element, L), L);
+    assign(listValue(Node, Element, false, L), std::move(Value), L);
     return Node;
   }
   void listReleaseNode(Expression Node, const UtilityListNodeRecord &Info, SourceLocation L) {
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
-        quantity(24, type(A.Context.getSizeType(), L), L), L);
+        linkedListNodeSize(Info.Record, L), L);
   }
   void listInsertNode(Expression Place, Expression Position, Expression Node, SourceLocation L) {
     auto Prev = snapshot(listLink(Position, true, L), L);
@@ -28399,6 +29182,63 @@ class FunctionLowering {
     return Next;
   }
 
+  void listEraseRange(Expression Place, Expression First, Expression End,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Unlink = labelName(), Release = labelName(), Done = labelName();
+    branch(binary("!=", First, End, "bool", L), Unlink, Done, L);
+    label(Unlink, L);
+    auto Before = snapshot(listLink(First, true, L), L);
+    assign(listLink(Before, false, L), End, L);
+    assign(listLink(End, true, L), Before, L);
+    auto Current = temporary("ptr:void", L);
+    assign(Current, First, L);
+    jump(Release, L);
+    label(Release, L);
+    auto Removed = snapshot(Current, L);
+    assign(Current, snapshot(listLink(Removed, false, L), L), L);
+    auto Count = listMember(Place, "nct_list_size", L);
+    assign(Count, binary("-", Count, quantity(1, Size, L), Size, L), L);
+    listReleaseNode(Removed, Info, L);
+    branch(binary("!=", Current, End, "bool", L), Release, Done, L);
+    label(Done, L);
+  }
+
+  void listResizeValueStorage(Expression Place, Expression SizeRequested, std::optional<Expression> Fill,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto CurrentSize = snapshot(listMember(Place, "nct_list_size", L), L);
+    const auto Shrink = labelName(), CheckGrow = labelName(), Grow = labelName(), Done = labelName();
+    branch(binary("<", SizeRequested, CurrentSize, "bool", L), Shrink, CheckGrow, L);
+    label(Shrink, L);
+    auto Cursor = temporary("ptr:void", L), Remaining = temporary(Size, L);
+    assign(Cursor, listMember(Place, "nct_list_next", L), L);
+    assign(Remaining, SizeRequested, L);
+    const auto CountShrink = labelName(), Follow = labelName(), Erase = labelName();
+    jump(CountShrink, L); label(CountShrink, L);
+    branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Follow, Erase, L);
+    label(Follow, L);
+    assign(Cursor, snapshot(listLink(Cursor, false, L), L), L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+    jump(CountShrink, L);
+    label(Erase, L);
+    listEraseRange(Place, snapshot(Cursor, L), snapshot(listSentinel(Place, L), L), Info, L);
+    jump(Done, L);
+    label(CheckGrow, L);
+    branch(binary(">", SizeRequested, CurrentSize, "bool", L), Grow, Done, L);
+    label(Grow, L);
+    if (!Fill) {
+      const auto Element = Info.Value->getType();
+      auto Zero = temporary(type(Element, L), L);
+      initializeLinkedListValue(Zero, Element, L);
+      Fill = address(Zero, Element, L);
+    }
+    auto Added = snapshot(binary("-", SizeRequested, CurrentSize, Size, L), L);
+    auto Input = listRepeatedInput(Added, *Fill, L);
+    listInsertInputStorage(Place, snapshot(listSentinel(Place, L), L), Input, Info, L);
+    jump(Done, L); label(Done, L);
+  }
+
   void destroyListStorage(Expression Place, const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Release = labelName(), Check = labelName(), Element = labelName(), Done = labelName();
     const auto Size = type(A.Context.getSizeType(), L);
@@ -28419,23 +29259,7 @@ class FunctionLowering {
     jump(Check, L); label(Done, L);
   }
 
-  void listCopyValueStorage(Expression Place, Expression Source,
-      const UtilityListNodeRecord &Info, SourceLocation L) {
-    auto Current = temporary("ptr:void", L);
-    assign(Current, listMember(Source, "nct_list_next", L), L);
-    auto End = snapshot(listSentinel(Source, L, true), L);
-    const auto Check = labelName(), Append = labelName(), Done = labelName();
-    jump(Check, L); label(Check, L);
-    branch(binary("!=", Current, End, "bool", L), Append, Done, L);
-    label(Append, L);
-    auto Value = address(listValue(Current, true, L), A.Context.IntTy.withConst(), L);
-    auto Node = listCreateNode(Value, Info, L);
-    listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
-    assign(Current, snapshot(listLink(Current, false, L), L), L);
-    jump(Check, L); label(Done, L);
-  }
-
-  void listSpliceAllValueStorage(Expression Place, Expression Source, SourceLocation L) {
+  void listSpliceAllValueStorage(Expression Place, Expression Source, Expression Position, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     const auto Transfer = labelName(), Done = labelName();
     branch(binary("!=", listMember(Source, "nct_list_size", L), quantity(0, Size, L), "bool", L), Transfer, Done, L);
@@ -28443,7 +29267,6 @@ class FunctionLowering {
     auto First = snapshot(listMember(Source, "nct_list_next", L), L);
     auto Last = snapshot(listMember(Source, "nct_list_prev", L), L);
     auto Count = snapshot(listMember(Source, "nct_list_size", L), L);
-    auto Position = snapshot(listSentinel(Place, L), L);
     auto Previous = snapshot(listLink(Position, true, L), L);
     initializeListStorage(Source, L);
     assign(listLink(Previous, false, L), First, L);
@@ -28452,6 +29275,262 @@ class FunctionLowering {
     assign(listLink(Position, true, L), Last, L);
     assign(listMember(Place, "nct_list_size", L), binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
     jump(Done, L); label(Done, L);
+  }
+
+  void listRelinkSpliceRange(Expression Position, Expression First, Expression Last, Expression After, SourceLocation L) {
+    auto Previous = snapshot(listLink(First, true, L), L);
+    assign(listLink(Previous, false, L), After, L);
+    assign(listLink(After, true, L), Previous, L);
+    // When Position is After in a same-owner range, it now has a different prev.
+    auto TargetPrevious = snapshot(listLink(Position, true, L), L);
+    assign(listLink(TargetPrevious, false, L), First, L);
+    assign(listLink(First, true, L), TargetPrevious, L);
+    assign(listLink(Last, false, L), Position, L);
+    assign(listLink(Position, true, L), Last, L);
+  }
+
+  void listSpliceOneValueStorage(Expression Place, Expression Source, Expression Position, Expression Node, SourceLocation L) {
+    const auto CheckNext = labelName(), Transfer = labelName(), Done = labelName();
+    branch(binary("!=", Position, Node, "bool", L), CheckNext, Done, L);
+    label(CheckNext, L);
+    auto Next = snapshot(listLink(Node, false, L), L);
+    branch(binary("!=", Position, Next, "bool", L), Transfer, Done, L);
+    label(Transfer, L);
+    listRelinkSpliceRange(Position, Node, Node, Next, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    assign(listMember(Source, "nct_list_size", L),
+        binary("-", listMember(Source, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("+", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void listSpliceRangeValueStorage(Expression Place, Expression Source, Expression Position,
+      Expression First, Expression After, SourceLocation L) {
+    const auto Prepare = labelName(), CountNodes = labelName(), CountCheck = labelName(), Advance = labelName();
+    const auto Resize = labelName(), Transfer = labelName(), Done = labelName();
+    branch(binary("!=", First, After, "bool", L), Prepare, Done, L);
+    label(Prepare, L);
+    auto Last = snapshot(listLink(After, true, L), L);
+    branch(binary("!=", listSentinel(Place, L), listSentinel(Source, L), "bool", L), CountNodes, Transfer, L);
+    label(CountNodes, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Current = temporary("ptr:void", L), Count = temporary(Size, L);
+    assign(Current, First, L);
+    assign(Count, quantity(0, Size, L), L);
+    jump(CountCheck, L); label(CountCheck, L);
+    branch(binary("!=", Current, After, "bool", L), Advance, Resize, L);
+    label(Advance, L);
+    assign(Current, snapshot(listLink(Current, false, L), L), L);
+    assign(Count, binary("+", Count, quantity(1, Size, L), Size, L), L);
+    jump(CountCheck, L);
+    label(Resize, L);
+    assign(listMember(Source, "nct_list_size", L), binary("-", listMember(Source, "nct_list_size", L), Count, Size, L), L);
+    assign(listMember(Place, "nct_list_size", L), binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    jump(Transfer, L);
+    label(Transfer, L);
+    listRelinkSpliceRange(Position, First, Last, After, L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void listFilterPredicateStorage(Expression Place, const UtilityListRecord &Info,
+      Expression Predicate, QualType PredicateType, bool Adjacent, SourceLocation L) {
+    const auto Element = Info.Node.Value->getType();
+    auto Removed = temporary(type(A.Context.getRecordType(Info.Record), L), L);
+    initializeListStorage(Removed, L);
+    auto RemovedEnd = snapshot(listSentinel(Removed, L), L);
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto Current = temporary("ptr:void", L), Next = temporary("ptr:void", L);
+    assign(Current, listMember(Place, "nct_list_next", L), L);
+    const auto Check = labelName(), Visit = labelName(), Scan = labelName(), Compare = labelName();
+    const auto Advance = labelName(), Transfer = labelName(), Finish = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Current, End, "bool", L), Visit, Finish, L);
+    label(Visit, L);
+    auto Start = snapshot(Adjacent ? listLink(Current, false, L) : Current, L);
+    assign(Next, Start, L);
+    jump(Scan, L);
+    label(Scan, L);
+    branch(binary("!=", Next, End, "bool", L), Compare, Transfer, L);
+    label(Compare, L);
+    auto Candidate = listValue(Next, Element, true, L);
+    auto Match = Adjacent
+        ? emitBinaryPredicate(Predicate, PredicateType, listValue(Current, Element, true, L), std::move(Candidate), L)
+        : emitUnaryPredicate(Predicate, PredicateType, std::move(Candidate), L);
+    branch(Match, Advance, Transfer, L);
+    label(Advance, L);
+    assign(Next, snapshot(listLink(Next, false, L), L), L);
+    jump(Scan, L);
+    label(Transfer, L);
+    // Callbacks can observe the owner. Move each matched run only after the scan.
+    listSpliceRangeValueStorage(Removed, Place, RemovedEnd, Start, Next, L);
+    if (Adjacent) {
+      assign(Current, Next, L);
+    } else {
+      const auto Skip = labelName();
+      branch(binary("!=", Next, End, "bool", L), Skip, Finish, L);
+      label(Skip, L);
+      assign(Current, snapshot(listLink(Next, false, L), L), L);
+    }
+    jump(Check, L);
+    label(Finish, L);
+    destroyListStorage(Removed, Info.Node, L);
+  }
+
+  void listFilterValueStorage(Expression Place, const UtilityListRecord &Info,
+      const std::optional<Expression> &Value, const FunctionDecl *Equality, SourceLocation L) {
+    auto Removed = temporary(type(A.Context.getRecordType(Info.Record), L), L);
+    initializeListStorage(Removed, L);
+    auto RemovedEnd = snapshot(listSentinel(Removed, L), L);
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto Current = temporary("ptr:void", L);
+    assign(Current, listMember(Place, "nct_list_next", L), L);
+    const auto Check = labelName(), Visit = labelName(), Transfer = labelName();
+    const auto Keep = labelName(), Advance = labelName(), Finish = labelName();
+    std::optional<Expression> Previous;
+    if (!Value) {
+      const auto KeepFirst = labelName();
+      branch(binary("!=", Current, End, "bool", L), KeepFirst, Finish, L);
+      label(KeepFirst, L);
+      Previous = temporary("ptr:void", L);
+      assign(*Previous, Current, L);
+      assign(Current, snapshot(listLink(Current, false, L), L), L);
+    }
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", Current, End, "bool", L), Visit, Finish, L);
+    label(Visit, L);
+    auto Node = snapshot(Current, L);
+    auto Next = snapshot(listLink(Node, false, L), L);
+    const auto Element = Info.Node.Value->getType();
+    auto Compare = Value ? *Value : listValue(*Previous, Element, true, L);
+    branch(compareLinkedListElements("==", listValue(Node, Element, true, L), std::move(Compare), Equality, L),
+           Transfer, Keep, L);
+    label(Transfer, L);
+    // Keep unlinked nodes alive while the value can still alias one of them.
+    listRelinkSpliceRange(RemovedEnd, Node, Node, Next, L);
+    const auto Size = type(A.Context.getSizeType(), L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("-", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    assign(listMember(Removed, "nct_list_size", L),
+        binary("+", listMember(Removed, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
+    jump(Advance, L);
+    label(Keep, L);
+    if (Previous) assign(*Previous, Node, L);
+    jump(Advance, L);
+    label(Advance, L);
+    assign(Current, Next, L);
+    jump(Check, L);
+    label(Finish, L);
+    destroyListStorage(Removed, Info.Node, L);
+  }
+
+  Expression listNodePrecedes(const Expression &Right, const Expression &Left, QualType Element,
+      const std::optional<Expression> &Comparator, QualType ComparatorType, bool Descending,
+      const FunctionDecl *DefaultComparison, SourceLocation L) {
+    auto RightValue = listValue(Right, Element, true, L);
+    auto LeftValue = listValue(Left, Element, true, L);
+    if (Comparator)
+      return emitBinaryPredicate(*Comparator, ComparatorType, std::move(RightValue), std::move(LeftValue), L);
+    return compareLinkedListElements(Descending ? ">" : "<", std::move(RightValue),
+                                     std::move(LeftValue), DefaultComparison, L);
+  }
+
+  void listMergeValueStorage(Expression Place, Expression Source, QualType Element,
+      const std::optional<Expression> &Comparator, QualType ComparatorType, bool Descending,
+      const FunctionDecl *DefaultComparison, SourceLocation L) {
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto SourceEnd = snapshot(listSentinel(Source, L), L);
+    const auto Start = labelName(), CheckLeft = labelName(), CheckRight = labelName();
+    const auto Compare = labelName(), Move = labelName(), Keep = labelName(), Tail = labelName(), Done = labelName();
+    branch(binary("!=", End, SourceEnd, "bool", L), Start, Done, L);
+    label(Start, L);
+    auto Left = temporary("ptr:void", L), Right = temporary("ptr:void", L);
+    assign(Left, listMember(Place, "nct_list_next", L), L);
+    assign(Right, listMember(Source, "nct_list_next", L), L);
+    jump(CheckLeft, L); label(CheckLeft, L);
+    branch(binary("!=", Left, End, "bool", L), CheckRight, Tail, L);
+    label(CheckRight, L);
+    branch(binary("!=", Right, SourceEnd, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    branch(listNodePrecedes(Right, Left, Element, Comparator, ComparatorType, Descending, DefaultComparison, L), Move, Keep, L);
+    label(Move, L);
+    auto Node = snapshot(Right, L);
+    assign(Right, snapshot(listLink(Node, false, L), L), L);
+    listSpliceOneValueStorage(Place, Source, Left, Node, L);
+    jump(CheckLeft, L);
+    label(Keep, L);
+    assign(Left, snapshot(listLink(Left, false, L), L), L);
+    jump(CheckLeft, L);
+    label(Tail, L);
+    listSpliceAllValueStorage(Place, Source, End, L);
+    jump(Done, L); label(Done, L);
+  }
+
+  void listSortValueStorage(Expression Place, QualType Element,
+      const std::optional<Expression> &Comparator, QualType ComparatorType, bool Descending,
+      const FunctionDecl *DefaultComparison, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Length = snapshot(listMember(Place, "nct_list_size", L), L);
+    auto End = snapshot(listSentinel(Place, L), L);
+    auto Width = temporary(Size, L), LeftCount = temporary(Size, L), RightCount = temporary(Size, L);
+    auto First = temporary("ptr:void", L), Left = temporary("ptr:void", L), Right = temporary("ptr:void", L);
+    assign(Width, quantity(1, Size, L), L);
+    const auto Pass = labelName(), Split = labelName(), CheckSplit = labelName();
+    const auto CheckSplitWidth = labelName(), SplitStep = labelName(), BeginMerge = labelName();
+    const auto CheckRight = labelName(), CheckRightWidth = labelName(), CheckLeft = labelName();
+    const auto Compare = labelName(), Transfer = labelName(), Keep = labelName(), Advance = labelName();
+    const auto NextPair = labelName(), PassEnd = labelName(), Grow = labelName(), Done = labelName();
+    branch(binary(">", Length, Width, "bool", L), Pass, Done, L);
+    label(Pass, L);
+    assign(First, listMember(Place, "nct_list_next", L), L);
+    jump(Split, L); label(Split, L);
+    assign(Right, First, L);
+    assign(LeftCount, quantity(0, Size, L), L);
+    jump(CheckSplit, L); label(CheckSplit, L);
+    branch(binary("!=", Right, End, "bool", L), CheckSplitWidth, PassEnd, L);
+    label(CheckSplitWidth, L);
+    branch(binary("<", LeftCount, Width, "bool", L), SplitStep, BeginMerge, L);
+    label(SplitStep, L);
+    assign(Right, snapshot(listLink(Right, false, L), L), L);
+    assign(LeftCount, binary("+", LeftCount, quantity(1, Size, L), Size, L), L);
+    jump(CheckSplit, L);
+    label(BeginMerge, L);
+    assign(Left, First, L);
+    assign(RightCount, quantity(0, Size, L), L);
+    jump(CheckRight, L); label(CheckRight, L);
+    branch(binary("!=", Right, End, "bool", L), CheckRightWidth, PassEnd, L);
+    label(CheckRightWidth, L);
+    branch(binary("<", RightCount, Width, "bool", L), CheckLeft, NextPair, L);
+    label(CheckLeft, L);
+    branch(binary("!=", LeftCount, quantity(0, Size, L), "bool", L), Compare, Advance, L);
+    label(Compare, L);
+    branch(listNodePrecedes(Right, Left, Element, Comparator, ComparatorType, Descending, DefaultComparison, L), Transfer, Keep, L);
+    label(Transfer, L);
+    auto Node = snapshot(Right, L);
+    auto After = snapshot(listLink(Node, false, L), L);
+    listRelinkSpliceRange(Left, Node, Node, After, L);
+    // The moved node's next now points into the left run.
+    assign(Right, After, L);
+    assign(RightCount, binary("+", RightCount, quantity(1, Size, L), Size, L), L);
+    jump(CheckRight, L);
+    label(Keep, L);
+    assign(Left, snapshot(listLink(Left, false, L), L), L);
+    assign(LeftCount, binary("-", LeftCount, quantity(1, Size, L), Size, L), L);
+    jump(CheckRight, L);
+    label(Advance, L);
+    assign(Right, snapshot(listLink(Right, false, L), L), L);
+    assign(RightCount, binary("+", RightCount, quantity(1, Size, L), Size, L), L);
+    jump(CheckRight, L);
+    label(NextPair, L);
+    assign(First, Right, L);
+    jump(Split, L);
+    label(PassEnd, L);
+    branch(binary("<", Width, binary("-", Length, Width, Size, L), "bool", L), Grow, Done, L);
+    label(Grow, L);
+    assign(Width, binary("+", Width, Width, Size, L), L);
+    jump(Pass, L);
+    label(Done, L);
   }
 
   void listSwapValueStorage(Expression Left, Expression Right, SourceLocation L) {
@@ -28479,61 +29558,281 @@ class FunctionLowering {
     Install(Right, LeftFirst, LeftLast, LeftSize, RightEnd);
   }
 
-  void listAssignValueStorage(Expression Place, Expression Source,
+  void reverseListStorage(Expression Place, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Start = labelName(), SwapLinks = labelName(), SwapSentinel = labelName(), Done = labelName();
+    branch(binary(">", listMember(Place, "nct_list_size", L), quantity(1, Size, L), "bool", L),
+           Start, Done, L);
+    label(Start, L);
+    auto Sentinel = snapshot(listSentinel(Place, L), L);
+    auto Node = temporary("ptr:void", L);
+    assign(Node, listMember(Place, "nct_list_next", L), L);
+    jump(SwapLinks, L);
+    label(SwapLinks, L);
+    auto Previous = snapshot(listLink(Node, true, L), L);
+    auto Next = snapshot(listLink(Node, false, L), L);
+    assign(listLink(Node, true, L), Next, L);
+    assign(listLink(Node, false, L), Previous, L);
+    assign(Node, Next, L);
+    branch(binary("!=", Node, Sentinel, "bool", L), SwapLinks, SwapSentinel, L);
+    label(SwapSentinel, L);
+    auto Last = snapshot(listMember(Place, "nct_list_prev", L), L);
+    auto First = snapshot(listMember(Place, "nct_list_next", L), L);
+    assign(listMember(Place, "nct_list_prev", L), First, L);
+    assign(listMember(Place, "nct_list_next", L), Last, L);
+    jump(Done, L);
+    label(Done, L);
+  }
+
+  struct ListAssignmentInput {
+    Expression Current;
+    Expression End;
+    QualType PointerElement;
+    std::optional<Expression> Remaining = std::nullopt;
+  };
+
+  ListAssignmentInput listAssignmentInput(Expression First, Expression Last,
+      QualType PointerElement, SourceLocation L) {
+    const auto Carrier = PointerElement.isNull() ? "ptr:void" :
+        type(A.Context.getPointerType(PointerElement.withConst()), L);
+    auto Current = temporary(Carrier, L);
+    assign(Current, PointerElement.isNull() ? std::move(First) : cast(std::move(First), Carrier, L), L);
+    auto End = snapshot(PointerElement.isNull() ? std::move(Last) : cast(std::move(Last), Carrier, L), L);
+    return {std::move(Current), std::move(End), PointerElement};
+  }
+
+  ListAssignmentInput listRepeatedInput(Expression Count, Expression Value, SourceLocation L) {
+    auto Remaining = temporary(type(A.Context.getSizeType(), L), L);
+    assign(Remaining, std::move(Count), L);
+    return {std::move(Value), {}, {}, std::move(Remaining)};
+  }
+
+  Expression listInputHasNext(const ListAssignmentInput &Input, SourceLocation L) {
+    if (Input.Remaining)
+      return binary("!=", *Input.Remaining, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
+    return binary("!=", Input.Current, Input.End, "bool", L);
+  }
+
+  Expression listAssignmentReference(const ListAssignmentInput &Input, QualType Element, SourceLocation L) {
+    if (Input.Remaining) return Input.Current;
+    return Input.PointerElement.isNull()
+        ? address(listValue(Input.Current, Element, true, L), Element.withConst(), L)
+        : Input.Current;
+  }
+
+  void advanceListAssignmentInput(const ListAssignmentInput &Input, SourceLocation L) {
+    if (Input.Remaining) {
+      const auto Size = type(A.Context.getSizeType(), L);
+      assign(*Input.Remaining, binary("-", *Input.Remaining, quantity(1, Size, L), Size, L), L);
+      return;
+    }
+    if (Input.PointerElement.isNull()) {
+      assign(Input.Current, snapshot(listLink(Input.Current, false, L), L), L);
+      return;
+    }
+    auto One = quantity(1, type(A.Context.getPointerDiffType(), L), L);
+    auto Value = index(Input.Current, std::move(One), type(Input.PointerElement, L), L);
+    assign(Input.Current, address(std::move(Value), Input.PointerElement.withConst(), L), L);
+  }
+
+  ListAssignmentInput listInitializerInput(Expression Operand,
+      QualType Parameter, QualType Element, SourceLocation L) {
+    const auto Approved = approvedUtilityInitializerListRecord(A.S, A.Sources, Parameter->getAsCXXRecordDecl(), A.Context);
+    if (!Approved || !A.Context.hasSameType(Approved->ElementType, Element))
+      reject(L, "list initializer", "The matching pinned scalar initializer-list carrier is required.");
+    const auto &List = *Approved;
+    auto Carrier = dereference(std::move(Operand), L);
+    auto First = snapshot(fieldStorage(Carrier, List.Begin, L), L);
+    auto Count = snapshot(fieldStorage(std::move(Carrier), List.Size, L), L);
+    auto Last = temporary(type(A.Context.getPointerType(Element.withConst()), L), L);
+    assign(Last, First, L);
+    const auto Nonempty = labelName(), Ready = labelName();
+    branch(binary("!=", Count, quantity(0, type(A.Context.getSizeType(), L), L), "bool", L), Nonempty, Ready, L);
+    label(Nonempty, L);
+    auto Offset = cast(Count, type(A.Context.getPointerDiffType(), L), L);
+    assign(Last, address(index(First, std::move(Offset), type(Element, L), L), Element.withConst(), L), L);
+    jump(Ready, L);
+    label(Ready, L);
+    return listAssignmentInput(std::move(First), std::move(Last), Element, L);
+  }
+
+  ListAssignmentInput listRangeInput(Expression First, Expression Last, QualType Type, SourceLocation L) {
+    if (Type->isPointerType())
+      return listAssignmentInput(std::move(First), std::move(Last),
+                                 Type->getPointeeType().getUnqualifiedType(), L);
+    return listAssignmentInput(listIteratorMember(dereference(std::move(First), L), L),
+                               listIteratorMember(dereference(std::move(Last), L), L), {}, L);
+  }
+
+  void listConstructRangeStorage(Expression Place, const ListAssignmentInput &Input,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Check = labelName(), Append = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Input.Current, Input.End, "bool", L), Append, Done, L);
+    label(Append, L);
+    auto Value = listAssignmentReference(Input, Info.Value->getType(), L);
+    auto Node = listCreateNode(std::move(Value), Info, L, Input.PointerElement);
+    listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
+    advanceListAssignmentInput(Input, L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
+  void listConstructCountStorage(Expression Place, Expression Count, Expression Value,
       const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
-    auto Input = temporary("ptr:void", L), Output = temporary("ptr:void", L);
-    assign(Input, listMember(Source, "nct_list_next", L), L);
-    auto InputEnd = snapshot(listSentinel(Source, L, true), L);
+    auto Remaining = temporary(Size, L);
+    assign(Remaining, std::move(Count), L);
+    const auto Check = labelName(), Append = labelName(), Done = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), Append, Done, L);
+    label(Append, L);
+    auto Node = listCreateNode(Value, Info, L);
+    listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Done, L);
+  }
+
+  Expression listInsertInputStorage(Expression Place, Expression Position, const ListAssignmentInput &Input,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    auto Count = temporary(Size, L), Result = temporary("ptr:void", L), Tail = temporary("ptr:void", L);
+    assign(Count, quantity(0, Size, L), L);
+    assign(Result, Position, L);
+    initializeZero(Tail, A.Context.VoidPtrTy, L);
+    const auto Make = labelName(), Link = labelName(), First = labelName(), Advance = labelName();
+    const auto Commit = labelName(), Done = labelName();
+    branch(listInputHasNext(Input, L), Make, Done, L);
+    label(Make, L);
+    auto Node = listCreateNode(listAssignmentReference(Input, Info.Value->getType(), L),
+                               Info, L, Input.PointerElement);
+    assign(listLink(Node, true, L), Tail, L);
+    branch(cast(Tail, "bool", L), Link, First, L);
+    label(Link, L);
+    assign(listLink(Tail, false, L), Node, L);
+    jump(Advance, L);
+    label(First, L);
+    assign(Result, Node, L);
+    jump(Advance, L);
+    label(Advance, L);
+    assign(Tail, Node, L);
+    assign(Count, binary("+", Count, quantity(1, Size, L), Size, L), L);
+    advanceListAssignmentInput(Input, L);
+    branch(listInputHasNext(Input, L), Make, Commit, L);
+    label(Commit, L);
+    // The complete chain is still detached during allocation callbacks.
+    auto Previous = snapshot(listLink(Position, true, L), L);
+    assign(listLink(Previous, false, L), Result, L);
+    assign(listLink(Result, true, L), Previous, L);
+    assign(listLink(Tail, false, L), Position, L);
+    assign(listLink(Position, true, L), Tail, L);
+    assign(listMember(Place, "nct_list_size", L),
+        binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Result;
+  }
+
+  void listAssignValueStorage(Expression Place, const ListAssignmentInput &Input,
+      const UtilityListNodeRecord &Info, SourceLocation L) {
+    auto Output = temporary("ptr:void", L);
     assign(Output, listMember(Place, "nct_list_next", L), L);
     auto OutputEnd = snapshot(listSentinel(Place, L), L);
     const auto CheckInput = labelName(), CheckOutput = labelName(), Store = labelName(), Erase = labelName(), Append = labelName(), Done = labelName();
     jump(CheckInput, L); label(CheckInput, L);
-    branch(binary("!=", Input, InputEnd, "bool", L), CheckOutput, Erase, L);
+    branch(binary("!=", Input.Current, Input.End, "bool", L), CheckOutput, Erase, L);
     label(CheckOutput, L);
     branch(binary("!=", Output, OutputEnd, "bool", L), Store, Append, L);
-    label(Store, L); assign(listValue(Output, false, L), listValue(Input, true, L), L);
-    assign(Input, snapshot(listLink(Input, false, L), L), L);
+    label(Store, L);
+    const auto Element = Info.Value->getType();
+    auto Value = dereference(listAssignmentReference(Input, Element, L), L);
+    if (!Input.PointerElement.isNull() && !A.Context.hasSameType(Input.PointerElement, Element))
+      Value = cast(std::move(Value), type(Element, L), L);
+    assign(listValue(Output, Element, false, L), std::move(Value), L);
+    advanceListAssignmentInput(Input, L);
     assign(Output, snapshot(listLink(Output, false, L), L), L);
     jump(CheckInput, L);
     label(Erase, L);
-    const auto Unlink = labelName(), EraseCheck = labelName(), Release = labelName();
-    branch(binary("!=", Output, OutputEnd, "bool", L), Unlink, Done, L);
-    label(Unlink, L);
-    auto Previous = snapshot(listLink(Output, true, L), L);
-    assign(listLink(Previous, false, L), OutputEnd, L); assign(listLink(OutputEnd, true, L), Previous, L);
-    jump(EraseCheck, L); label(EraseCheck, L);
-    branch(binary("!=", Output, OutputEnd, "bool", L), Release, Done, L);
-    label(Release, L);
-    auto Removed = snapshot(Output, L);
-    assign(Output, snapshot(listLink(Output, false, L), L), L);
-    assign(listMember(Place, "nct_list_size", L), binary("-", listMember(Place, "nct_list_size", L), quantity(1, Size, L), Size, L), L);
-    listReleaseNode(Removed, Info, L); jump(EraseCheck, L);
+    listEraseRange(Place, Output, OutputEnd, Info, L);
+    jump(Done, L);
     label(Append, L);
-    // SDK assignment builds its remaining range as a detached chain, then
-    // links it and changes the destination size after all allocation callbacks.
-    auto First = temporary("ptr:void", L), Last = temporary("ptr:void", L), Count = temporary(Size, L);
-    initializeZero(First, A.Context.VoidPtrTy, L); initializeZero(Last, A.Context.VoidPtrTy, L);
-    assign(Count, quantity(0, Size, L), L);
-    const auto AppendCheck = labelName(), Make = labelName(), Link = labelName(), SetFirst = labelName(), Advance = labelName(), Commit = labelName();
-    jump(AppendCheck, L); label(AppendCheck, L);
-    branch(binary("!=", Input, InputEnd, "bool", L), Make, Commit, L);
-    label(Make, L);
-    auto Value = address(listValue(Input, true, L), A.Context.IntTy.withConst(), L);
-    auto Node = listCreateNode(Value, Info, L);
-    assign(listLink(Node, true, L), Last, L);
-    branch(cast(First, "bool", L), Link, SetFirst, L);
-    label(Link, L); assign(listLink(Last, false, L), Node, L); jump(Advance, L);
-    label(SetFirst, L); assign(First, Node, L); jump(Advance, L);
-    label(Advance, L); assign(Last, Node, L);
-    assign(Count, binary("+", Count, quantity(1, Size, L), Size, L), L);
-    assign(Input, snapshot(listLink(Input, false, L), L), L);
-    jump(AppendCheck, L); label(Commit, L);
-    auto PreviousTail = snapshot(listLink(OutputEnd, true, L), L);
-    assign(listLink(PreviousTail, false, L), First, L); assign(listLink(First, true, L), PreviousTail, L);
-    assign(listLink(Last, false, L), OutputEnd, L); assign(listLink(OutputEnd, true, L), Last, L);
-    assign(listMember(Place, "nct_list_size", L), binary("+", listMember(Place, "nct_list_size", L), Count, Size, L), L);
+    listInsertInputStorage(Place, OutputEnd, Input, Info, L);
     jump(Done, L); label(Done, L);
+  }
+
+  Expression compareListOwners(Expression Left, Expression Right, QualType Element, bool Ordered, bool Invert, const FunctionDecl *ElementComparison,
+      SourceLocation L) {
+    auto LEnd = snapshot(listSentinel(Left, L, true), L);
+    auto REnd = snapshot(listSentinel(Right, L, true), L);
+    auto LNode = temporary("ptr:void", L), RNode = temporary("ptr:void", L);
+    auto Result = temporary("bool", L);
+    assign(Result, boolean(false, L), L);
+    const auto Start = labelName(), Check = labelName(), LeftEnd = labelName(), CheckRight = labelName();
+    const auto Compare = labelName(), Different = labelName(), Advance = labelName(), Done = labelName();
+    if (!Ordered) {
+      branch(binary("==", listMember(Left, "nct_list_size", L), listMember(Right, "nct_list_size", L), "bool", L),
+          Start, Done, L);
+      label(Start, L);
+    }
+    assign(LNode, listMember(Left, "nct_list_next", L), L);
+    assign(RNode, listMember(Right, "nct_list_next", L), L);
+    jump(Check, L); label(Check, L);
+    branch(binary("!=", LNode, LEnd, "bool", L), CheckRight, LeftEnd, L);
+    label(CheckRight, L);
+    branch(binary("!=", RNode, REnd, "bool", L), Compare, Done, L);
+    label(Compare, L);
+    const auto LValue = listValue(LNode, Element, true, L), RValue = listValue(RNode, Element, true, L);
+    if (Ordered) {
+      // The elements tie when neither ordered comparison is true.
+      const auto Reverse = labelName(), Less = labelName();
+      branch(compareLinkedListElements("<", LValue, RValue, ElementComparison, L), Less, Reverse, L);
+      label(Less, L);
+      assign(Result, boolean(true, L), L);
+      jump(Done, L);
+      label(Reverse, L);
+      branch(compareLinkedListElements("<", RValue, LValue, ElementComparison, L), Different, Advance, L);
+    } else {
+      branch(compareLinkedListElements("==", LValue, RValue, ElementComparison, L), Advance, Different, L);
+    }
+    label(Different, L);
+    jump(Done, L);
+    label(Advance, L);
+    assign(LNode, snapshot(listLink(LNode, false, L), L), L);
+    assign(RNode, snapshot(listLink(RNode, false, L), L), L);
+    jump(Check, L);
+    label(LeftEnd, L);
+    assign(Result, binary(Ordered ? "!=" : "==", RNode, REnd, "bool", L), L);
+    jump(Done, L);
+    label(Done, L);
+    return Invert ? binary("==", Result, boolean(false, L), "bool", L) : Result;
+  }
+
+  void listAssignCount(Expression Place, Expression Count, Expression Value,
+                       const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Size = type(A.Context.getSizeType(), L);
+    const auto Element = Info.Value->getType();
+    auto Target = snapshot(Count, L);
+    auto Remaining = temporary(Size, L);
+    assign(Remaining, Target, L);
+    auto Current = temporary("ptr:void", L);
+    assign(Current, listMember(Place, "nct_list_next", L), L);
+    auto End = snapshot(listSentinel(Place, L), L);
+    const auto Check = labelName(), CheckEnd = labelName(), Store = labelName(), Resize = labelName();
+    jump(Check, L);
+    label(Check, L);
+    branch(binary("!=", Remaining, quantity(0, Size, L), "bool", L), CheckEnd, Resize, L);
+    label(CheckEnd, L);
+    branch(binary("!=", Current, End, "bool", L), Store, Resize, L);
+    label(Store, L);
+    assign(listValue(Current, Element, false, L), dereference(Value, L), L);
+    assign(Current, snapshot(listLink(Current, false, L), L), L);
+    assign(Remaining, binary("-", Remaining, quantity(1, Size, L), Size, L), L);
+    jump(Check, L);
+    label(Resize, L);
+    listResizeValueStorage(Place, Target, std::move(Value), Info, L);
   }
 
   Expression utilityListOperation(const CallExpr *Call) {
@@ -28543,7 +29842,8 @@ class FunctionLowering {
     const auto Operation = Proof->Operation;
     std::optional<Expression> Receiver;
     const bool AssignmentSyntax = isa<CXXOperatorCallExpr>(Call) &&
-        (Operation == UtilityListOperation::CopyAssign || Operation == UtilityListOperation::MoveAssign);
+        (Operation == UtilityListOperation::CopyAssign || Operation == UtilityListOperation::MoveAssign ||
+         Operation == UtilityListOperation::AssignInitializer);
     auto CaptureReceiver = [&] {
       if (const auto *Object = Proof->Receiver)
         Receiver = snapshot(Object->getType()->isPointerType() ? expression(Object)
@@ -28559,6 +29859,19 @@ class FunctionLowering {
       return binary(Operation == UtilityListOperation::IteratorEqual ? "==" : "!=",
           listIteratorMember(dereference(Operands[0], L), L),
           listIteratorMember(dereference(Operands[1], L), L), "bool", L);
+    if (Operation == UtilityListOperation::OwnerEqual || Operation == UtilityListOperation::OwnerNotEqual ||
+        Operation == UtilityListOperation::OwnerLess || Operation == UtilityListOperation::OwnerGreater ||
+        Operation == UtilityListOperation::OwnerLessEqual || Operation == UtilityListOperation::OwnerGreaterEqual) {
+      const bool Ordered = Operation != UtilityListOperation::OwnerEqual && Operation != UtilityListOperation::OwnerNotEqual;
+      const bool Swap = Operation == UtilityListOperation::OwnerGreater || Operation == UtilityListOperation::OwnerLessEqual;
+      const bool Invert = Operation == UtilityListOperation::OwnerNotEqual ||
+          Operation == UtilityListOperation::OwnerLessEqual || Operation == UtilityListOperation::OwnerGreaterEqual;
+      const auto Type = Proof->Function->getParamDecl(0)->getType()->getPointeeType();
+      const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context);
+      if (!Owner) reject(L, "list comparison", "The compared list owner layout is required.");
+      return compareListOwners(dereference(Operands[Swap ? 1 : 0], L), dereference(Operands[Swap ? 0 : 1], L),
+          Owner->Node.Value->getType(), Ordered, Invert, Proof->DefaultRecordComparison, L);
+    }
     if (!Receiver && Operation == UtilityListOperation::Swap) {
       listSwapValueStorage(dereference(Operands[0], L), dereference(Operands[1], L), L);
       return Expression{};
@@ -28573,11 +29886,11 @@ class FunctionLowering {
         return Place;
       }
       auto Node = snapshot(listIteratorMember(Place, L), L);
-      if (Operation == UtilityListOperation::IteratorDereference) return listValue(Node, Iterator->Const, L);
+      const auto Element = Iterator->Node.Value->getType();
+      if (Operation == UtilityListOperation::IteratorDereference) return listValue(Node, Element, Iterator->Const, L);
       if (Operation == UtilityListOperation::IteratorArrow)
-        return cast(address(listValue(Node, Iterator->Const, L),
-            Iterator->Const ? A.Context.IntTy.withConst() : A.Context.IntTy, L),
-            Iterator->Const ? "cptr:int" : "ptr:int", L);
+        return cast(address(listValue(Node, Element, Iterator->Const, L),
+            Iterator->Const ? Element.withConst() : Element, L), type(Method->getReturnType(), L), L);
       const bool PreIncrement = Operation == UtilityListOperation::IteratorPreIncrement;
       const bool PostIncrement = Operation == UtilityListOperation::IteratorPostIncrement;
       const bool PreDecrement = Operation == UtilityListOperation::IteratorPreDecrement;
@@ -28592,34 +29905,144 @@ class FunctionLowering {
     }
     const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Method->getParent(), A.Context);
     if (!Owner) reject(L, "list owner", "The selected integer owner layout is required.");
+    const auto Element = Owner->Node.Value->getType();
     if (Operation == UtilityListOperation::CopyAssign || Operation == UtilityListOperation::MoveAssign) {
       auto Source = dereference(Operands[0], L);
       if (Operation == UtilityListOperation::CopyAssign) {
         const auto Copy = labelName(), Done = labelName();
         branch(binary("!=", listSentinel(Place, L), listSentinel(Source, L, true), "bool", L), Copy, Done, L);
-        label(Copy, L); listAssignValueStorage(Place, Source, Owner->Node, L); jump(Done, L); label(Done, L);
+        label(Copy, L);
+        auto Input = listAssignmentInput(listMember(Source, "nct_list_next", L),
+                                         listSentinel(Source, L, true), {}, L);
+        listAssignValueStorage(Place, Input, Owner->Node, L);
+        jump(Done, L); label(Done, L);
       } else {
         destroyListStorage(Place, Owner->Node, L);
-        listSpliceAllValueStorage(Place, Source, L);
+        listSpliceAllValueStorage(Place, Source, snapshot(listSentinel(Place, L), L), L);
       }
       return Place;
     }
+    if (Operation == UtilityListOperation::SpliceAll || Operation == UtilityListOperation::SpliceOne ||
+        Operation == UtilityListOperation::SpliceRange) {
+      auto Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
+      auto Source = dereference(Operands[1], L);
+      if (Operation == UtilityListOperation::SpliceAll) {
+        listSpliceAllValueStorage(Place, Source, Position, L);
+      } else {
+        auto First = snapshot(listIteratorMember(dereference(Operands[2], L), L), L);
+        if (Operation == UtilityListOperation::SpliceOne) {
+          listSpliceOneValueStorage(Place, Source, Position, First, L);
+        } else {
+          auto After = snapshot(listIteratorMember(dereference(Operands[3], L), L), L);
+          listSpliceRangeValueStorage(Place, Source, Position, First, After, L);
+        }
+      }
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::RemoveIf || Operation == UtilityListOperation::UniqueWithPredicate) {
+      listFilterPredicateStorage(Place, *Owner, Operands[0], Method->getParamDecl(0)->getType(),
+          Operation == UtilityListOperation::UniqueWithPredicate, L);
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::Remove || Operation == UtilityListOperation::Unique) {
+      std::optional<Expression> Value;
+      if (Operation == UtilityListOperation::Remove) Value = dereference(Operands[0], L);
+      listFilterValueStorage(Place, *Owner, Value, Proof->DefaultRecordComparison, L);
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::Merge || Operation == UtilityListOperation::Sort) {
+      const bool Merge = Operation == UtilityListOperation::Merge;
+      std::optional<Expression> Comparator;
+      QualType ComparatorType;
+      const auto *DefaultComparison = Proof->DefaultRecordComparison;
+      if (!DefaultComparison && Method->getPrimaryTemplate() && !Proof->Descending) {
+        const unsigned Index = Merge ? 1 : 0;
+        Comparator = Operands[Index];
+        ComparatorType = Method->getParamDecl(Index)->getType();
+      }
+      const bool Descending = Proof->Descending.value_or(false);
+      if (Merge)
+        listMergeValueStorage(Place, dereference(Operands[0], L), Element, Comparator, ComparatorType, Descending, DefaultComparison, L);
+      else
+        listSortValueStorage(Place, Element, Comparator, ComparatorType, Descending, DefaultComparison, L);
+      return Expression{};
+    }
     if (Operation == UtilityListOperation::Swap) {
       listSwapValueStorage(Place, dereference(Operands[0], L), L); return Expression{};
+    }
+    if (Operation == UtilityListOperation::GetAllocator) {
+      auto Allocator = temporary(type(Call->getType(), L), L);
+      initializeZero(Allocator, Call->getType(), L);
+      return Allocator;
+    }
+    if (Operation == UtilityListOperation::MaxSize) {
+      if (!Proof->Maximum) reject(L, "list max_size", "The checked node allocator capacity is required.");
+      return quantity(*Proof->Maximum, type(Call->getType(), L), L);
     }
     if (Operation == UtilityListOperation::Size) return listMember(Place, "nct_list_size", L);
     if (Operation == UtilityListOperation::Empty)
       return binary("==", listMember(Place, "nct_list_size", L),
           quantity(0, type(A.Context.getSizeType(), L), L), "bool", L);
+    if (Operation == UtilityListOperation::ReverseBegin || Operation == UtilityListOperation::ReverseEnd) {
+      const auto Type = Method->getReturnType();
+      const auto Reverse = approvedUtilityReverseIteratorRecord(A.S, A.Sources, Type->getAsCXXRecordDecl(), A.Context, true);
+      if (!Reverse || Reverse->ListElementType.isNull())
+        reject(L, "list reverse iterator", "The selected pinned reverse iterator layout is required.");
+      auto Cursor = listIteratorBoundary(Place, Operation == UtilityListOperation::ReverseBegin,
+                                         Method->isConst(), L);
+      auto Result = objectTemporary(Type, L);
+      initializeReverseIteratorSlots(Result, std::move(Cursor), *Reverse, L);
+      return Result;
+    }
     if (Operation == UtilityListOperation::Begin || Operation == UtilityListOperation::End)
-      return listIterator(Method->getReturnType(), Operation == UtilityListOperation::Begin
-          ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L, Method->isConst()), L), L);
+      return listIterator(Method->getReturnType(), snapshot(listIteratorBoundary(
+          Place, Operation == UtilityListOperation::End, Method->isConst(), L), L), L);
     if (Operation == UtilityListOperation::Front || Operation == UtilityListOperation::Back)
       return listValue(snapshot(listMember(Place,
-          Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Method->isConst(), L);
+          Operation == UtilityListOperation::Front ? "nct_list_next" : "nct_list_prev", L), L), Element, Method->isConst(), L);
+    if (Operation == UtilityListOperation::Reverse) {
+      reverseListStorage(Place, L);
+      return Expression{};
+    }
     if (Operation == UtilityListOperation::Clear) {
       destroyListStorage(Place, Owner->Node, L);
       return Expression{};
+    }
+    const bool Emplace = Operation == UtilityListOperation::Emplace;
+    if (Emplace || Operation == UtilityListOperation::EmplaceFront ||
+        Operation == UtilityListOperation::EmplaceBack) {
+      std::optional<Expression> Position;
+      if (Emplace) Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
+      const unsigned Offset = Emplace ? 1 : 0;
+      Expression Argument;
+      QualType InputElement;
+      if (Operands.size() == Offset) {
+        auto Zero = temporary(type(Element, L), L);
+        initializeLinkedListValue(Zero, Element, L);
+        Argument = address(Zero, Element, L);
+      } else {
+        Argument = Operands[Offset];
+        InputElement = Method->getParamDecl(Offset)->getType()->getPointeeType().getUnqualifiedType();
+      }
+      auto Node = listCreateNode(std::move(Argument), Owner->Node, L, InputElement);
+      if (!Position) Position = Operation == UtilityListOperation::EmplaceFront
+          ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
+      listInsertNode(Place, *Position, Node, L);
+      return Emplace ? listIterator(Method->getReturnType(), Node, L) : listValue(Node, Element, false, L);
+    }
+    if (Operation == UtilityListOperation::InsertCount || Operation == UtilityListOperation::InsertRange ||
+        Operation == UtilityListOperation::InsertInitializer) {
+      auto Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
+      const auto Parameter = Method->getParamDecl(1)->getType();
+      ListAssignmentInput Input;
+      if (Operation == UtilityListOperation::InsertCount)
+        Input = listRepeatedInput(Operands[1], Operands[2], L);
+      else if (Operation == UtilityListOperation::InsertRange)
+        Input = listRangeInput(Operands[1], Operands[2], Parameter, L);
+      else
+        Input = listInitializerInput(Operands[1], Parameter, Element, L);
+      auto First = listInsertInputStorage(Place, Position, Input, Owner->Node, L);
+      return listIterator(Method->getReturnType(), std::move(First), L);
     }
     const bool Insert = Operation == UtilityListOperation::Insert;
     if (Insert || Operation == UtilityListOperation::PushFront || Operation == UtilityListOperation::PushBack) {
@@ -28632,6 +30055,34 @@ class FunctionLowering {
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);
       return Insert ? listIterator(Method->getReturnType(), Node, L) : Expression{};
+    }
+    if (Operation == UtilityListOperation::AssignInitializer) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto Input = listInitializerInput(Operands[0], Parameter, Element, L);
+      listAssignValueStorage(Place, Input, Owner->Node, L);
+      return AssignmentSyntax ? Place : Expression{};
+    }
+    if (Operation == UtilityListOperation::AssignRange) {
+      const auto Parameter = Method->getParamDecl(0)->getType();
+      const auto Input = listRangeInput(Operands[0], Operands[1], Parameter, L);
+      listAssignValueStorage(Place, Input, Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::AssignCount) {
+      listAssignCount(Place, Operands[0], Operands[1], Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::Resize || Operation == UtilityListOperation::ResizeFill) {
+      std::optional<Expression> Fill;
+      if (Operation == UtilityListOperation::ResizeFill) Fill = Operands[1];
+      listResizeValueStorage(Place, Operands[0], std::move(Fill), Owner->Node, L);
+      return Expression{};
+    }
+    if (Operation == UtilityListOperation::EraseRange) {
+      auto First = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
+      auto End = snapshot(listIteratorMember(dereference(Operands[1], L), L), L);
+      listEraseRange(Place, First, End, Owner->Node, L);
+      return listIterator(Method->getReturnType(), End, L);
     }
     const bool Erase = Operation == UtilityListOperation::Erase;
     if (Erase || Operation == UtilityListOperation::PopFront || Operation == UtilityListOperation::PopBack) {
@@ -33006,7 +34457,7 @@ class FunctionLowering {
             snapshot(address(std::move(Left), LeftType.withConst(), L), L);
         auto RightAddress =
             snapshot(address(std::move(Right), RightType.withConst(), L), L);
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress),
             SourceComparison->Member,
             SourceComparison->Friend ? SourceComparison->Friend
@@ -33038,7 +34489,7 @@ class FunctionLowering {
       const auto SourceComparison = approvedUtilityTrivialSourceComparison(
           A.S, A.Sources, Call->getArg(0)->getType(), OO_Less, A.Context);
       if (SourceComparison)
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress),
             SourceComparison->Member,
             SourceComparison->Friend ? SourceComparison->Friend
@@ -33059,7 +34510,7 @@ class FunctionLowering {
             snapshot(address(std::move(Left), LeftType.withConst(), L), L);
         auto RightAddress =
             snapshot(address(std::move(Right), RightType.withConst(), L), L);
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress),
             SourceComparison->Member,
             SourceComparison->Friend ? SourceComparison->Friend
@@ -33134,13 +34585,7 @@ class FunctionLowering {
         reject(
             L, "reverse iterator result",
             "The destination type differs from the reverse iterator result.");
-      auto Value = snapshot(
-          cast(std::move(Pointer), type(Reverse.PointerType, L), L), L);
-      auto MemberPointer = [&](const FieldDecl *Field) {
-        return reverseIteratorSlot(Place, Field, Reverse, L);
-      };
-      assign(MemberPointer(Reverse.Legacy), json::Object(Value), L);
-      assign(MemberPointer(Reverse.Current), std::move(Value), L);
+      initializeReverseIteratorSlots(Place, std::move(Pointer), Reverse, L);
       return Place;
     };
     auto AllocatorMaximum = [&](const UtilityAllocatorRecord &Allocator,
@@ -34757,10 +36202,10 @@ class FunctionLowering {
         storeAnyScalar(Place, Made->Record, Made->ValueType, std::move(Value), L);
         return Place;
       }
-      if (const auto *Any = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
+      if (const auto Active = approvedUtilityAnyActiveValueCast(A.S, A.Sources, Call, A.Context)) {
         const auto Payload = Call->getType();
-        auto Slot = anyScalarField(lvalue(Call->getArg(0)), Any, Payload, checkedAnyScalar(Payload, L), L);
-        return Call->isLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
+        auto Slot = anyScalarField(lvalue(Active->Owner), Active->Record, Payload, checkedAnyScalar(Payload, L), L);
+        return Call->isGLValue() ? std::move(Slot) : snapshot(std::move(Slot), L);
       }
       if (const auto *Any = approvedUtilityAnyPointerCast(A.S, A.Sources, Call, A.Context))
         return anyCheckedPointerCast(Call, Any, L);
@@ -34885,16 +36330,20 @@ class FunctionLowering {
       if (const auto Visit = approvedUtilityVariantVisit(A.S, A.Sources, Call, A.Context)) {
         const auto *Visitor = Call->getArg(0);
         const bool Object = Visit->Callable->getPointeeType()->isRecordType();
-        auto Input = Object ? snapshot(address(lvalue(Visitor), Visitor->getType(), L), L)
-                            : captureUtilityConstructorArgument(Visitor, Visit->Callable);
+        Expression Input;
+        if (!Visit->InlineLambda)
+          Input = Object ? snapshot(address(lvalue(Visitor), Visitor->getType(), L), L)
+                         : captureUtilityConstructorArgument(Visitor, Visit->Callable);
         std::vector<Expression> Places;
         for (unsigned I = 0; I < Visit->Variants.size(); ++I) {
           const auto *Operand = Call->getArg(I + 1);
           auto Receiver = snapshot(address(lvalue(Operand), Operand->getType(), L), L);
           Places.push_back(dereference(std::move(Receiver), L));
         }
-        auto Callable = Object ? std::move(Input)
-                               : snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
+        Expression Callable;
+        if (!Visit->InlineLambda)
+          Callable = Object ? std::move(Input)
+                            : snapshot(utilityConstructorArgumentValue(std::move(Input), Visit->Callable, L), L);
         std::vector<Expression> Indices, Slots;
         for (unsigned I = 0; I < Visit->Variants.size(); ++I)
           Indices.push_back(snapshot(fieldStorage(Places[I], Visit->Variants[I].Index, L), L));
@@ -34911,6 +36360,25 @@ class FunctionLowering {
         auto Select = [&](auto &&Self, unsigned Dimension) -> void {
           if (Dimension == Visit->Variants.size()) {
             const auto *Method = Visit->Methods[Entry++];
+            if (Visit->InlineLambda) {
+              llvm::SmallVector<const Decl *, 4> Parameters;
+              auto Restore = llvm::make_scope_exit([&] {
+                for (const auto *Parameter : Parameters)
+                  this->Storage.erase(Parameter);
+              });
+              for (unsigned I = 0; I < Slots.size(); ++I) {
+                const auto *Param = Method->getParamDecl(I);
+                const auto *Key = Param->getCanonicalDecl();
+                if (this->Storage.count(Key))
+                  reject(L, "variant visitor parameter", "Expected a fresh inline visitor parameter.");
+                this->Storage.emplace(Key, snapshot(cast(Slots[I], type(Param->getType(), L), L), L));
+                Parameters.push_back(Key);
+              }
+              const auto *Body = llvm::cast<CompoundStmt>(Method->getBody());
+              const auto *Return = llvm::cast<ReturnStmt>(Body->body_front());
+              assign(Result, expression(Return->getRetValue()), L);
+              return;
+            }
             json::Array Arguments;
             if (Method)
               Arguments.push_back(snapshot(cast(Callable, type(Method->getThisType(), L), L), L));
@@ -37499,7 +38967,7 @@ class FunctionLowering {
     assign(std::move(Member), std::move(Pointer), L);
   }
 
-  Expression compareVectorSourceElements(Expression Left, Expression Right,
+  Expression compareSourceRecordElements(Expression Left, Expression Right,
                                          const CXXMethodDecl *MemberComparison,
                                          const FunctionDecl *FreeComparison,
                                          SourceLocation L) {
@@ -37996,7 +39464,7 @@ class FunctionLowering {
       const auto *FreeComparison =
           Comparison->Friend ? Comparison->Friend : Comparison->Namespace;
       auto Compare = [&](Expression First, Expression Second) {
-        return compareVectorSourceElements(std::move(First), std::move(Second),
+        return compareSourceRecordElements(std::move(First), std::move(Second),
                                            Comparison->Member, FreeComparison,
                                            L);
       };
@@ -38238,7 +39706,7 @@ class FunctionLowering {
         const auto *FreeComparison =
             FriendComparison ? FriendComparison : NamespaceComparison;
         auto CompareSource = [&](Expression Left, Expression Right) {
-          return compareVectorSourceElements(std::move(Left), std::move(Right),
+          return compareSourceRecordElements(std::move(Left), std::move(Right),
                                              MemberComparison, FreeComparison,
                                              L);
         };
@@ -41033,43 +42501,45 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       const auto Owner = approvedUtilityForwardListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "forward-list construction", "The checked integer owner layout is required.");
+      const auto Element = Owner->Node.Value->getType();
+      if (*Kind == UtilityForwardListConstruction::Move || *Kind == UtilityForwardListConstruction::AllocatorMove) {
+        auto Source = dereference(Operands.front(), L);
+        transferForwardListStorage(Place, Source, L);
+        return;
+      }
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
+      if (*Kind == UtilityForwardListConstruction::Count) {
+        auto Zero = temporary(type(Element, L), L);
+        initializeLinkedListValue(Zero, Element, L);
+        resizeForwardListStorage(Place, Operands[0], address(Zero, Element, L), Owner->Node, L);
+        return;
+      }
+      if (*Kind == UtilityForwardListConstruction::FillCount) {
+        auto Count = snapshot(cast(Operands[0], "u64", L), L);
+        insertForwardListChain(forwardListMember(Place, false, L),
+            {Operands[1], std::move(Count), ForwardListInput::RepeatedValue}, Owner->Node, L);
+        return;
+      }
+      if (*Kind == UtilityForwardListConstruction::IteratorRange) {
+        auto Input = forwardListIteratorInput(Operands[0], Operands[1], L);
+        insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);
+        return;
+      }
+      if (*Kind == UtilityForwardListConstruction::PointerRange) {
+        auto Input = forwardListPointerInput(Operands[0], Operands[1],
+                                            C->getConstructor()->getParamDecl(0)->getType(), L);
+        insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);
+        return;
+      }
+      if (*Kind == UtilityForwardListConstruction::Copy) {
+        auto Head = snapshot(forwardListMember(dereference(Operands.front(), L), false, L), L);
+        insertForwardListChain(forwardListMember(Place, false, L), {std::move(Head), std::nullopt}, Owner->Node, L);
+        return;
+      }
       if (*Kind != UtilityForwardListConstruction::InitializerList) return;
-      const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
-          C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-      if (!List) reject(L, "forward-list initializer", "The pinned integer initializer-list carrier is required.");
-      auto Input = snapshot(fieldStorage(dereference(Operands[0], L), List->Begin, L), L);
-      auto Count = snapshot(fieldStorage(dereference(Operands[0], L), List->Size, L), L);
-      auto Position = temporary("u64", L);
-      assign(Position, quantity(0, "u64", L), L);
-      auto First = temporary("ptr:void", L), Last = temporary("ptr:void", L);
-      initializeZero(First, A.Context.VoidPtrTy, L);
-      initializeZero(Last, A.Context.VoidPtrTy, L);
-      const auto Check = labelName(), Add = labelName(), Link = labelName(),
-          SetFirst = labelName(), Advance = labelName(), Built = labelName(),
-          Commit = labelName(), Done = labelName();
-      jump(Check, L); label(Check, L);
-      branch(binary("<", Position, Count, "bool", L), Add, Built, L);
-      label(Add, L);
-      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), "int", L),
-          A.Context.IntTy.withConst(), L);
-      auto Node = forwardListCreateNode(Value, A.zero(A.Context.VoidPtrTy, L), Owner->Node, L);
-      branch(cast(First, "bool", L), Link, SetFirst, L);
-      label(Link, L);
-      assign(forwardListNext(Last, L), Node, L);
-      jump(Advance, L); label(SetFirst, L);
-      assign(First, Node, L);
-      jump(Advance, L); label(Advance, L);
-      assign(Last, Node, L);
-      assign(Position, binary("+", Position, quantity(1, "u64", L), "u64", L), L);
-      jump(Check, L); label(Built, L);
-      branch(cast(First, "bool", L), Commit, Done, L);
-      label(Commit, L);
-      // SDK initializer-list construction builds a detached chain first and
-      // exposes it through the owner only after every allocation succeeds.
-      assign(forwardListNext(Last, L), forwardListMember(Place, false, L), L);
-      assign(forwardListMember(Place, false, L), First, L);
-      jump(Done, L); label(Done, L);
+      auto Input = forwardListInitializerInput(dereference(Operands.front(), L),
+          C->getArg(0)->getType()->getAsCXXRecordDecl(), Element, L);
+      insertForwardListChain(forwardListMember(Place, false, L), Input, Owner->Node, L);
       return;
     }
 
@@ -41168,17 +42638,40 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       const auto Owner = approvedUtilityListRecord(A.S, A.Sources, Record, A.Context);
       if (!Owner) reject(L, "list construction", "The selected integer owner layout is required.");
+      const auto Element = Owner->Node.Value->getType();
       initializeListStorage(Place, L);
       if (*Kind == UtilityListConstruction::Copy || *Kind == UtilityListConstruction::Move) {
         auto Source = dereference(Operands[0], L);
-        if (*Kind == UtilityListConstruction::Copy) listCopyValueStorage(Place, Source, Owner->Node, L);
-        else listSpliceAllValueStorage(Place, Source, L);
+        if (*Kind == UtilityListConstruction::Copy) {
+          auto Input = listAssignmentInput(listMember(Source, "nct_list_next", L),
+                                           listSentinel(Source, L, true), {}, L);
+          listConstructRangeStorage(Place, Input, Owner->Node, L);
+        } else {
+          listSpliceAllValueStorage(Place, Source, snapshot(listSentinel(Place, L), L), L);
+        }
+        return;
+      }
+      if (*Kind == UtilityListConstruction::Range) {
+        const auto Parameter = C->getConstructor()->getParamDecl(0)->getType();
+        auto Input = listRangeInput(Operands[0], Operands[1], Parameter, L);
+        listConstructRangeStorage(Place, Input, Owner->Node, L);
+        return;
+      }
+      if (*Kind == UtilityListConstruction::Count || *Kind == UtilityListConstruction::CountFill) {
+        if (*Kind == UtilityListConstruction::CountFill) {
+          listConstructCountStorage(Place, Operands[0], Operands[1], Owner->Node, L);
+        } else {
+          auto Zero = temporary(type(Element, L), L);
+          initializeLinkedListValue(Zero, Element, L);
+          listConstructCountStorage(Place, Operands[0], address(Zero, Element, L), Owner->Node, L);
+        }
         return;
       }
       if (*Kind != UtilityListConstruction::InitializerList) return;
       const auto List = approvedUtilityInitializerListRecord(A.S, A.Sources,
           C->getArg(0)->getType()->getAsCXXRecordDecl(), A.Context);
-      if (!List) reject(L, "list initializer", "The pinned integer initializer-list carrier is required.");
+      if (!List || !A.Context.hasSameType(List->ElementType, Element))
+        reject(L, "list initializer", "The matching pinned integer initializer-list carrier is required.");
       auto Input = snapshot(fieldStorage(dereference(Operands[0], L), List->Begin, L), L);
       auto Count = snapshot(fieldStorage(dereference(Operands[0], L), List->Size, L), L);
       const auto Size = type(A.Context.getSizeType(), L);
@@ -41188,8 +42681,8 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       jump(Check, L); label(Check, L);
       branch(binary("<", Position, Count, "bool", L), Append, Done, L);
       label(Append, L);
-      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), "int", L),
-          A.Context.IntTy.withConst(), L);
+      auto Value = address(index(Input, cast(Position, type(A.Context.getPointerDiffType(), L), L), type(Element, L), L),
+          Element.withConst(), L);
       auto Node = listCreateNode(Value, Owner->Node, L);
       listInsertNode(Place, snapshot(listSentinel(Place, L), L), Node, L);
       assign(Position, binary("+", Position, quantity(1, Size, L), Size, L), L);
@@ -41782,10 +43275,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return reverseIteratorSlot(Place, Field, *Reverse, L);
       };
       auto InitializePointer = [&](Expression Pointer) {
-        auto Value = snapshot(
-            cast(std::move(Pointer), type(Reverse->PointerType, L), L), L);
-        assign(MemberPointer(Reverse->Legacy), json::Object(Value), L);
-        assign(MemberPointer(Reverse->Current), std::move(Value), L);
+        initializeReverseIteratorSlots(Place, std::move(Pointer), *Reverse, L);
       };
       switch (*Kind) {
       case UtilityReverseIteratorConstruction::Default:
@@ -41795,6 +43285,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return;
       case UtilityReverseIteratorConstruction::Iterator: {
         auto Iterator = snapshot(expression(C->getArg(0)), L);
+        if (!Reverse->ListElementType.isNull()) {
+          InitializePointer(listIteratorMember(std::move(Iterator), L));
+          return;
+        }
         if (!Reverse->OrderedElementType.isNull()) {
           InitializePointer(orderedIteratorCursor(std::move(Iterator), L));
           return;
