@@ -1,0 +1,267 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-wide-char-native-signedness-and-iterator-identity",
+      "formal_test_name": "TranslateTest.CoreV2ListWideCharNativeSignednessAndIteratorIdentityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f0ed7554f35b3c2376b430d787c726ef485bddc6888308d1745fe59411977691",
+      "original_case_source_sha256": "f0ed7554f35b3c2376b430d787c726ef485bddc6888308d1745fe59411977691",
+      "gtest_body_sha256": "4eb6881ac0e4647c512439d70aad99fe52acba781076ddad4fd175f3999876cf"
+    },
+    {
+      "name": "forward-list-wide-char-resize-and-merge",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListWideCharResizeAndMergeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e25af6642ab42b0b573072718aa60052a0a9074db248a267ea55c2c54c46b43a",
+      "original_case_source_sha256": "e25af6642ab42b0b573072718aa60052a0a9074db248a267ea55c2c54c46b43a",
+      "gtest_body_sha256": "f609577d56279c7f4def3e66655c6eae654720a9f53afb61c888935ecdea9dd7"
+    },
+    {
+      "name": "list-utf16-pointer-range-widens-to-utf32",
+      "formal_test_name": "TranslateTest.CoreV2ListUtf16PointerRangeWidensToUtf32RunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "73c5d37cb6320073146cb2748c1250feb9d67c5614a53cb8c01e4f1e3f4190f0",
+      "original_case_source_sha256": "73c5d37cb6320073146cb2748c1250feb9d67c5614a53cb8c01e4f1e3f4190f0",
+      "gtest_body_sha256": "576e2ef1a1b3f4d2a2130e2ace5d83ad7f85fb91ba637a4507b8e77e6dafb5ec"
+    },
+    {
+      "name": "forward-list-utf16-keeps-stored-address",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUtf16KeepsStoredAddressRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "10184f2f7dc7c340fbe9b24301b57366e5e9ac86edb8a4a3c91d7b0500a063db",
+      "original_case_source_sha256": "10184f2f7dc7c340fbe9b24301b57366e5e9ac86edb8a4a3c91d7b0500a063db",
+      "gtest_body_sha256": "a2c3b056b4773f8f34f64eb8f1a0ef62f7a3aeabdeb0dc8484168185af2aa472"
+    },
+    {
+      "name": "list-utf16-const-reverse-iterator",
+      "formal_test_name": "TranslateTest.CoreV2ListUtf16ConstReverseIteratorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2b4fbd64ab229a4f321d2bf1dc44a502b40c1e520e2e288bec58fc7d722552b9",
+      "original_case_source_sha256": "2b4fbd64ab229a4f321d2bf1dc44a502b40c1e520e2e288bec58fc7d722552b9",
+      "gtest_body_sha256": "22b0f6de6f1f5901e30b7a54b8129a81741b8d4c1ce7754527f057e655836bd0"
+    },
+    {
+      "name": "forward-list-utf32-splice-preserves-node",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUtf32SplicePreservesNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c3447c93141a53e6aa7c4c64cf266b75ccb7c04888184e1451ab73bdfe823667",
+      "original_case_source_sha256": "c3447c93141a53e6aa7c4c64cf266b75ccb7c04888184e1451ab73bdfe823667",
+      "gtest_body_sha256": "cbf02dd47fe2cbccc4908917e52960868f6624751c4a1612553b3fd53f6f8432"
+    },
+    {
+      "name": "list-fixed-signed-enum-sort-preserves-references",
+      "formal_test_name": "TranslateTest.CoreV2ListFixedSignedEnumSortPreservesReferencesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f98d6ab87327f419150e3d77d46d77b923ad629814a915c3e5863556cc5ed5d1",
+      "original_case_source_sha256": "f98d6ab87327f419150e3d77d46d77b923ad629814a915c3e5863556cc5ed5d1",
+      "gtest_body_sha256": "d249b18efe44cc516be617d8d3b39204777c514f67d2e27b3ffd7d7d95c6399d"
+    },
+    {
+      "name": "list-fixed-wide-enum-range-and-comparison",
+      "formal_test_name": "TranslateTest.CoreV2ListFixedWideEnumRangeAndComparisonRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "92ef4cb87835278834e42e6d84d45e66b3cde941d9a58798ee284998a7bf1ede",
+      "original_case_source_sha256": "92ef4cb87835278834e42e6d84d45e66b3cde941d9a58798ee284998a7bf1ede",
+      "gtest_body_sha256": "26b6a96a9b328567ac737f2845d73a4e08300235cbda7be9f267659b5caa31cb"
+    },
+    {
+      "name": "forward-list-fixed-enum-range-and-default-initialization",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListFixedEnumRangeAndDefaultInitializationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "571a95827ef9a1897c5d01e917e2747060dac58e90f1c7c71ed9da7114d05f45",
+      "original_case_source_sha256": "571a95827ef9a1897c5d01e917e2747060dac58e90f1c7c71ed9da7114d05f45",
+      "gtest_body_sha256": "516b7aae6595da88c94c2eb034eb4c394a79cbf84fa8d8692e03ed658901a11c"
+    },
+    {
+      "name": "forward-list-fixed-enum-merge-preserves-stored-address",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListFixedEnumMergePreservesStoredAddressRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "99922f2092a0146824f0ae02401eb6cf94497f99eb72db6d1cd9f051eae2ee5b",
+      "original_case_source_sha256": "99922f2092a0146824f0ae02401eb6cf94497f99eb72db6d1cd9f051eae2ee5b",
+      "gtest_body_sha256": "682c50e12eabba940c4ae15c9d23f5d60d50af96fdf872725e6aeab150877f5b"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-utf16-volatile-pointer-range-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListUtf16VolatilePointerRangeGuardRejected",
+      "expected": "reject",
+      "source_sha256": "4a8c4be2a63fbea472cd96e25c04d1e650bcc9c2cbe81823fa0f15411604d5a9",
+      "original_case_source_sha256": "4a8c4be2a63fbea472cd96e25c04d1e650bcc9c2cbe81823fa0f15411604d5a9",
+      "gtest_body_sha256": "fde06f8b7a6e129f9e578fa290384fe28754da2e09efd062c44f76430f09c0c2"
+    },
+    {
+      "name": "forward-list-wide-char-volatile-emplacement-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListWideCharVolatileEmplacementGuardRejected",
+      "expected": "reject",
+      "source_sha256": "beea93cf179a53441e77eb521815ca0db9abd692e4c4ebc1351c21363cb5f8ad",
+      "original_case_source_sha256": "beea93cf179a53441e77eb521815ca0db9abd692e4c4ebc1351c21363cb5f8ad",
+      "gtest_body_sha256": "02af45fc7d6357690f0d2fa6f278f73e09626ef2e6c0170111b6e2a495429e35"
+    },
+    {
+      "name": "list-fixed-enum-custom-equality-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListFixedEnumCustomEqualityGuardRejected",
+      "expected": "reject",
+      "source_sha256": "8b16782464ca3d672b8cda9f755f704d9c8df589156b3b23ec0d38c236788810",
+      "original_case_source_sha256": "8b16782464ca3d672b8cda9f755f704d9c8df589156b3b23ec0d38c236788810",
+      "gtest_body_sha256": "e8e93d1cb0435b94bbedb84e426ad8e2dceacc6709d69cee91cb7f8c535f553b"
+    },
+    {
+      "name": "forward-list-fixed-enum-custom-default-order-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListFixedEnumCustomDefaultOrderGuardRejected",
+      "expected": "reject",
+      "source_sha256": "7cdba7ee3721b19ef130e3618403b7e2c0e702cfc7ab95209030e1c0f7680542",
+      "original_case_source_sha256": "7cdba7ee3721b19ef130e3618403b7e2c0e702cfc7ab95209030e1c0f7680542",
+      "gtest_body_sha256": "0c339315b200b2ffd904f110e94113405ac36636c1d26f6fe94a91b9177b044e"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-wide-char-native-signedness-and-iterator-identity",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  static_assert(sizeof(wchar_t) == 2 || sizeof(wchar_t) == 4);\n  const wchar_t high_or_negative = static_cast<wchar_t>(-2);\n  std::list<wchar_t> letters{L'\\u03bb', high_or_negative};\n  auto saved = letters.begin();\n  auto* original = &*saved;\n  letters.sort();\n  const wchar_t first = high_or_negative < L'\\u03bb' ? high_or_negative : L'\\u03bb';\n  const wchar_t second = high_or_negative < L'\\u03bb' ? L'\\u03bb' : high_or_negative;\n  return letters.front() != first || letters.back() != second || &*saved != original || *saved != L'\\u03bb';\n}\n",
+      "source_sha256": "f0ed7554f35b3c2376b430d787c726ef485bddc6888308d1745fe59411977691",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-wide-char-resize-and-merge",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<wchar_t> left{L'\\u03bb'}, right{L'\\u6c34'};\n  const wchar_t* old = &right.front();\n  left.merge(right);\n  left.resize(3);\n  auto value = left.cbegin();\n  if (!right.empty() || *value++ != L'\\u03bb' || &*value != old || *value++ != L'\\u6c34')\n    return 1;\n  return *value++ != wchar_t{} || value != left.cend();\n}\n",
+      "source_sha256": "e25af6642ab42b0b573072718aa60052a0a9074db248a267ea55c2c54c46b43a",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-utf16-pointer-range-widens-to-utf32",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const char16_t input[] = {u'A', u'\\u03bb', u'\\u6c34'};\n  std::list<char32_t> letters(input, input + 3);\n  auto value = letters.cbegin();\n  return letters.size() != 3 || *value++ != U'A' || *value++ != U'\\u03bb' ||\n         *value++ != U'\\u6c34' || value != letters.cend();\n}\n",
+      "source_sha256": "73c5d37cb6320073146cb2748c1250feb9d67c5614a53cb8c01e4f1e3f4190f0",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-utf16-keeps-stored-address",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  const char16_t first = u'\\ufffd';\n  std::forward_list<char16_t> letters{u'\\u03bb'};\n  auto& added = letters.emplace_front(first);\n  auto* saved = &added;\n  letters.sort();\n  auto value = letters.begin();\n  if (*value++ != u'\\u03bb' || &*value != saved || *value != first)\n    return 1;\n  *value++ = u'\\u6c34';\n  return value != letters.end() || added != u'\\u6c34';\n}\n",
+      "source_sha256": "10184f2f7dc7c340fbe9b24301b57366e5e9ac86edb8a4a3c91d7b0500a063db",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-utf16-const-reverse-iterator",
+      "expected": "accept",
+      "source": "#include <list>\nint main() {\n  const std::list<char16_t> letters{u'A', u'\\u03bb'};\n  auto value = letters.crbegin();\n  if (&*value != &letters.back() || *value != u'\\u03bb')\n    return 1;\n  ++value;\n  if (&*value != &letters.front() || *value != u'A')\n    return 2;\n  ++value;\n  return value != letters.crend();\n}\n",
+      "source_sha256": "2b4fbd64ab229a4f321d2bf1dc44a502b40c1e520e2e288bec58fc7d722552b9",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-utf32-splice-preserves-node",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint main() {\n  std::forward_list<char32_t> left{U'A'}, right{U'\\U0001f642'};\n  auto saved = right.begin();\n  auto* address = &*saved;\n  left.splice_after(left.cbefore_begin(), right);\n  auto value = left.begin();\n  return !right.empty() || value != saved || &*value != address ||\n         *value++ != U'\\U0001f642' || *value++ != U'A' || value != left.end();\n}\n",
+      "source_sha256": "c3447c93141a53e6aa7c4c64cf266b75ccb7c04888184e1451ab73bdfe823667",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-fixed-signed-enum-sort-preserves-references",
+      "expected": "accept",
+      "source": "#include <list>\nenum class Status : signed char { missing = -2, present = 3 };\nint main() {\n  std::list<Status> values{Status::present, Status::missing};\n  auto saved = values.begin();\n  Status* address = &*saved;\n  values.sort();\n  return values.front() != Status::missing || values.back() != Status::present ||\n         &values.back() != address || &*saved != address;\n}\n",
+      "source_sha256": "f98d6ab87327f419150e3d77d46d77b923ad629814a915c3e5863556cc5ed5d1",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-fixed-wide-enum-range-and-comparison",
+      "expected": "accept",
+      "source": "#include <list>\nenum class Tag : unsigned long long { empty = 0, high = 0x8000000000000000ULL };\nint main() {\n  const Tag input[] = {Tag::high, Tag::empty};\n  std::list<Tag> values(input, input + 2);\n  std::list<Tag> copy(values);\n  values.remove(Tag::high);\n  return values.size() != 1 || values.front() != Tag::empty ||\n         copy.size() != 2 || copy.front() != Tag::high || !(values < copy);\n}\n",
+      "source_sha256": "92ef4cb87835278834e42e6d84d45e66b3cde941d9a58798ee284998a7bf1ede",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-fixed-enum-range-and-default-initialization",
+      "expected": "accept",
+      "source": "#include <forward_list>\nenum Code : unsigned short { first = 3, second = 65531 };\nint main() {\n  const Code input[] = {first, second};\n  std::forward_list<Code> values;\n  values.assign(input, input + 2);\n  values.resize(3);\n  auto item = values.cbegin();\n  return *item++ != first || *item++ != second || *item++ != Code{} || item != values.cend();\n}\n",
+      "source_sha256": "571a95827ef9a1897c5d01e917e2747060dac58e90f1c7c71ed9da7114d05f45",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-fixed-enum-merge-preserves-stored-address",
+      "expected": "accept",
+      "source": "#include <forward_list>\nenum class Rank : short { lowest = -15, next = 7, highest = 61 };\nint main() {\n  std::forward_list<Rank> left{Rank::lowest, Rank::highest}, right{Rank::next};\n  Rank* original = &right.front();\n  left.merge(right);\n  auto item = left.begin();\n  return !right.empty() || *item++ != Rank::lowest || &*item != original ||\n         *item++ != Rank::next || *item++ != Rank::highest || item != left.end();\n}\n",
+      "source_sha256": "99922f2092a0146824f0ae02401eb6cf94497f99eb72db6d1cd9f051eae2ee5b",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-utf16-volatile-pointer-range-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint main() {\n  volatile char16_t input[] = {u'\\u03bb'};\n  std::list<char16_t> letters(input, input + 1);\n  return letters.front() != u'\\u03bb';\n}\n",
+      "source_sha256": "4a8c4be2a63fbea472cd96e25c04d1e650bcc9c2cbe81823fa0f15411604d5a9",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-wide-char-volatile-emplacement-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint main() {\n  volatile wchar_t input = L'\\u03bb';\n  std::forward_list<wchar_t> letters;\n  return letters.emplace_front(input) != L'\\u03bb';\n}\n",
+      "source_sha256": "beea93cf179a53441e77eb521815ca0db9abd692e4c4ebc1351c21363cb5f8ad",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-fixed-enum-custom-equality-guard",
+      "expected": "reject",
+      "source": "#include <list>\nenum class Code : unsigned short { a = 1, b = 3 };\nbool operator==(Code left, Code right) {\n  return (static_cast<unsigned short>(left) & 1) ==\n         (static_cast<unsigned short>(right) & 1);\n}\nint main() {\n  std::list<Code> left{Code::a}, right{Code::b};\n  return !(left == right);\n}\n",
+      "source_sha256": "8b16782464ca3d672b8cda9f755f704d9c8df589156b3b23ec0d38c236788810",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-fixed-enum-custom-default-order-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nenum class Rank : int { lowest = -30, highest = 47 };\nbool operator<(Rank left, Rank right) {\n  return static_cast<int>(left) > static_cast<int>(right);\n}\nint main() {\n  std::forward_list<Rank> ranks{Rank::lowest, Rank::highest};\n  ranks.sort();\n  return ranks.front() != Rank::highest;\n}\n",
+      "source_sha256": "7cdba7ee3721b19ef130e3618403b7e2c0e702cfc7ab95209030e1c0f7680542",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListWideCharNativeSignednessAndIteratorIdentityRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListWideCharResizeAndMergeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUtf16PointerRangeWidensToUtf32RunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListUtf16KeepsStoredAddressRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUtf16ConstReverseIteratorRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListUtf32SplicePreservesNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListFixedSignedEnumSortPreservesReferencesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListFixedWideEnumRangeAndComparisonRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListFixedEnumRangeAndDefaultInitializationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListFixedEnumMergePreservesStoredAddressRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUtf16VolatilePointerRangeGuardRejected",
+    "TranslateTest.CoreV2ForwardListWideCharVolatileEmplacementGuardRejected",
+    "TranslateTest.CoreV2ListFixedEnumCustomEqualityGuardRejected",
+    "TranslateTest.CoreV2ForwardListFixedEnumCustomDefaultOrderGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "40a6e51e56ec10e097a204aee78ac79ac4e0cae95816d88177cf680f8f15df92",
+  "maintained_original_sha256": "1f14c4e4c5ec608d657e66cb6cde6e196af14b69f7351276915636e7ab3441a7",
+  "previous_registered_source_sha256": "7717207fb06fb900af26dc75510202b95e08a139b0a78c068b895a1ffda9d33d",
+  "previous_maintained_original_sha256": "67d0a158ddb825331f6f40dead7af324824890142e82e50e833c37c2129457e3",
+  "restorer_sha256": "c73db51a25ca4a6e5c5a6a43e3525fb603cad4f2f6b9a632423d84af5ac1cc4f",
+  "extractor_sha256": "4ca7088dfce54769dfbcdfc8f61d6e3cd6154c3e275212fe8de2e7666a8a741b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9404,
+  "current_python_registry_tests": 340,
+  "native_reference_selected_executions": 22,
+  "planned_generated_c23_executions": 22,
+  "native_reference_proofs": {
+    "linked-list-fixed-enumerations": "72b5a08f98b321f6768571dfc6d17c651152bda07f57545ffc64f634752d6b25",
+    "linked-list-wide-characters": "9726f3b4a012370314b3d47bc7f39e69f882762753a7fe7faacd2440b4ddec64"
+  },
+  "native_reference_authentication_sha256": "499bf21be5ef04e037e82b9e344cf0cdf88a0666f8330d5561eb42deba594311",
+  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+}

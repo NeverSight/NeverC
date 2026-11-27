@@ -1,0 +1,96 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-visit-constructs-temporary-visitor-once",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitConstructsTemporaryVisitorOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bbc209274199d8c4348fd189ea6c22275c7c227e53ad974ce7b209701ad238a2",
+      "original_case_source_sha256": "bbc209274199d8c4348fd189ea6c22275c7c227e53ad974ce7b209701ad238a2",
+      "gtest_body_sha256": "5d6a68774cd6de27495907d3df02a8b69c7750dfc3572653b0c2d20ea821a01f"
+    },
+    {
+      "name": "variant-visit-matrix-uses-temporary-visitor",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitMatrixUsesTemporaryVisitorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1a38a0b4911a129bac1f8e6b7c16466b8acfc69b6554f83c9da0fbe85afc51a7",
+      "original_case_source_sha256": "1a38a0b4911a129bac1f8e6b7c16466b8acfc69b6554f83c9da0fbe85afc51a7",
+      "gtest_body_sha256": "0f489aebcb36e15861e33be9bb563feb6b74a509e1b818fcd3fbdaa27063b651"
+    },
+    {
+      "name": "variant-visit-temporary-visitor-void-result",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitTemporaryVisitorVoidResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4df96cbbb7a966a0c2b55765c6bb539c477c8cda7859f516d9f28bfb6578d7b2",
+      "original_case_source_sha256": "4df96cbbb7a966a0c2b55765c6bb539c477c8cda7859f516d9f28bfb6578d7b2",
+      "gtest_body_sha256": "06027ea1878d874761c02c66ff43cbb20561a0462b1293788134403ab55a9d3e"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-visit-reference-result-from-temporary-visitor-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitReferenceResultFromTemporaryVisitorGuardRejected",
+      "expected": "reject",
+      "source_sha256": "ce55cf458418d393bf25e1fbab3dd16b505d805e546c12f67a208ddc7444b923",
+      "original_case_source_sha256": "ce55cf458418d393bf25e1fbab3dd16b505d805e546c12f67a208ddc7444b923",
+      "gtest_body_sha256": "285ab25fb9cadb8c37efc9ed0d6808eab366cf5a262e2bd6fd3c021f30a22a4e"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-visit-constructs-temporary-visitor-once",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Add {\n  int bias;\n  int operator()(int value) const { return value + bias; }\n};\nint next_bias(int& calls) { ++calls; return calls + 3; }\nint main() {\n  std::variant<int, short> value(std::in_place_index<1>, short(6));\n  int calls = 0;\n  int output = std::visit(Add{next_bias(calls)}, value);\n  return output != 10 || calls != 1;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "bbc209274199d8c4348fd189ea6c22275c7c227e53ad974ce7b209701ad238a2"
+    },
+    {
+      "name": "variant-visit-matrix-uses-temporary-visitor",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct Difference {\n  int bias;\n  int operator()(int left, int right) const { return left - right + bias; }\n};\nint main() {\n  using Value = std::variant<int, short>;\n  Value left(13);\n  const Value right(std::in_place_index<1>, short(5));\n  return std::visit(Difference{2}, left, right) != 10;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "1a38a0b4911a129bac1f8e6b7c16466b8acfc69b6554f83c9da0fbe85afc51a7"
+    },
+    {
+      "name": "variant-visit-temporary-visitor-void-result",
+      "public_header": "variant",
+      "expected": "accept",
+      "source": "#include <variant>\nstruct SetValue {\n  int* out;\n  void operator()(int value) const { *out = value; }\n};\nint main() {\n  std::variant<int, short> value(std::in_place_index<1>, short(9));\n  int output = 0;\n  std::visit(SetValue{&output}, value);\n  return output != 9;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "4df96cbbb7a966a0c2b55765c6bb539c477c8cda7859f516d9f28bfb6578d7b2"
+    },
+    {
+      "name": "variant-visit-reference-result-from-temporary-visitor-guard",
+      "public_header": "variant",
+      "expected": "reject",
+      "source": "#include <variant>\nstruct Read {\n  int payload;\n  const int& operator()(int) const { return payload; }\n};\nint f(std::variant<int, short>& value) {\n  const int& result = std::visit(Read{4}, value);\n  return result;\n}\n",
+      "kind": "source-body-guard",
+      "source_sha256": "ce55cf458418d393bf25e1fbab3dd16b505d805e546c12f67a208ddc7444b923"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantVisitConstructsTemporaryVisitorOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitMatrixUsesTemporaryVisitorRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitTemporaryVisitorVoidResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantVisitReferenceResultFromTemporaryVisitorGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "67a66f70e5adb5a9455ea4ee4801e73256e6d488aab8f386a4069565e08fb6af",
+  "maintained_original_sha256": "bcb628bf52b6a9c1a3ae33ff8235e9112668e9ea0a2b1b6b98f828725d28e7c7",
+  "previous_registered_source_sha256": "d24f407c3db94555b36bf6d240d2f5d86b909f8c3ca657586b036d717284fae6",
+  "previous_maintained_original_sha256": "21710e5055cb1257bdf09df7aac3c1a08bfd230586e1bd0a3bba5cbf054b1a5b",
+  "restorer_sha256": "afc1210970a2d29735f5f220c97de5905a941ab2905548f80f17b65c0217be5e",
+  "extractor_sha256": "5158ad3b18e1379419096269202a4917653b7567f09948b04f9b582a60b3be19",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9080,
+  "current_python_registry_tests": 298,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "native_reference_proofs": {
+    "variant-temporary-visitor-binding": "baad57d4832bf9a73729a4a0fcd48b368882ba438a97f091c264bdf6d75f344f"
+  },
+  "native_reference_authentication_sha256": "d6db6568e66d3ca3e8052f9b509eaa8c35d5164356cf4157ddb4e9c7df712644",
+  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+}

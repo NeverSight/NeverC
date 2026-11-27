@@ -1,0 +1,149 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-record-member-lexicographic-sort",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordMemberLexicographicSortRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "39116e43a3c54b9f3db8cff9743383186859399231c2dbb23724e4978bae6c68",
+      "original_case_source_sha256": "39116e43a3c54b9f3db8cff9743383186859399231c2dbb23724e4978bae6c68",
+      "gtest_body_sha256": "c3f6a330053c73878628b50b152e8c117d74af828b8bfd0c076d40a8479ab79c"
+    },
+    {
+      "name": "forward-list-record-by-value-stable-merge",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordByValueStableMergeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "14fcff73edd83a4f22d4b3ce39ad6074f8c92d2fa85131f26a8deccccc583d80",
+      "original_case_source_sha256": "14fcff73edd83a4f22d4b3ce39ad6074f8c92d2fa85131f26a8deccccc583d80",
+      "gtest_body_sha256": "4c0ec81dbe90aadec922b9d1d9ec7c7518154485f1b650f3e9e85126aeba1e33"
+    },
+    {
+      "name": "list-record-by-value-descending-sort",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordByValueDescendingSortRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "514469bea681a3e927d7389234f7f2b620d13c6a7dcc9a45f8b5472309153e26",
+      "original_case_source_sha256": "514469bea681a3e927d7389234f7f2b620d13c6a7dcc9a45f8b5472309153e26",
+      "gtest_body_sha256": "06cc3bf369b3f19794e448d2c176c0206632a2358dd5c9fb40cb4f943753074e"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-record-effectful-member-order-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordEffectfulMemberOrderGuardRejected",
+      "expected": "reject",
+      "source_sha256": "575ab6a1c977009c9c86dfe762e0a50cfda3e7082c7a2b3e77e35f56211b5298",
+      "original_case_source_sha256": "575ab6a1c977009c9c86dfe762e0a50cfda3e7082c7a2b3e77e35f56211b5298",
+      "gtest_body_sha256": "cb92c413543b664c99b0b0ceec17397e28c2f35a1c815e7c3c4c6a28a36bf1d4"
+    },
+    {
+      "name": "list-record-by-value-mismatched-field-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordByValueMismatchedFieldGuardRejected",
+      "expected": "reject",
+      "source_sha256": "2c05e8790df10027a92d67aa2498d675999b33550e04b4bb9d7d9b61c48e3c7d",
+      "original_case_source_sha256": "2c05e8790df10027a92d67aa2498d675999b33550e04b4bb9d7d9b61c48e3c7d",
+      "gtest_body_sha256": "745c1ac83720cea0b110a0b83b12db3f364cc5739cc3bd8b59464de878e7cf60"
+    },
+    {
+      "name": "forward-list-record-by-value-effectful-copy-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordByValueEffectfulCopyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "15ae60affc88b99e098b1a03d69f062cf5ecfc1073f5ce631c96c8bdf2d99621",
+      "original_case_source_sha256": "15ae60affc88b99e098b1a03d69f062cf5ecfc1073f5ce631c96c8bdf2d99621",
+      "gtest_body_sha256": "34fceda43f82a2ae77154305e919567703ca0ff18b2865e8b649b12e471bb8a8"
+    },
+    {
+      "name": "list-record-by-value-volatile-parameter-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordByValueVolatileParameterGuardRejected",
+      "expected": "reject",
+      "source_sha256": "02c185c91648b502c9f2a9f73f9c14177ac293be7e974f59d4d0cf84eafee7ab",
+      "original_case_source_sha256": "02c185c91648b502c9f2a9f73f9c14177ac293be7e974f59d4d0cf84eafee7ab",
+      "gtest_body_sha256": "f28adc26b44c95125b4d2ff355d7fe5bff23c6977d3e4a532fef03b5185bcfe0"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-record-member-lexicographic-sort",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry {\n  int rank;\n  int tag;\n  int value;\n  bool operator<(const Entry& other) const {\n    return rank < other.rank || (rank == other.rank && tag < other.tag);\n  }\n};\nint main() {\n  std::list<Entry> values{{4, 1, 12}, {2, 8, 6}, {2, 4, 5}, {2, 4, 3}};\n  auto retained = values.begin();\n  values.sort();\n  auto it = values.begin();\n  if (it->value != 5) return 1;\n  ++it;\n  if (it->value != 3) return 2;\n  ++it;\n  if (it->value != 6) return 3;\n  ++it;\n  return it != retained || it->value != 12;\n}\n",
+      "source_sha256": "39116e43a3c54b9f3db8cff9743383186859399231c2dbb23724e4978bae6c68"
+    },
+    {
+      "name": "forward-list-record-by-value-stable-merge",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nstruct Row { short key; int marks[2]; };\nbool before(Row left, Row right) { return left.key < right.key; }\nint main() {\n  std::forward_list<Row> left{{1, {5, 7}}, {3, {6, 8}}};\n  std::forward_list<Row> right{{1, {2, 9}}, {4, {3, 10}}};\n  auto saved = right.begin();\n  left.merge(right, &before);\n  auto it = left.begin();\n  if (!right.empty() || it->marks[1] != 7) return 1;\n  ++it;\n  if (it != saved || it->marks[1] != 9) return 2;\n  ++it;\n  return it->key != 3 || it->marks[0] != 6;\n}\n",
+      "source_sha256": "14fcff73edd83a4f22d4b3ce39ad6074f8c92d2fa85131f26a8deccccc583d80"
+    },
+    {
+      "name": "list-record-by-value-descending-sort",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Row { long key; char value; };\nbool after(Row left, Row right) { return left.key > right.key; }\nint main() {\n  std::list<Row> rows{{3, 8}, {5, 4}, {3, 9}};\n  auto first = rows.begin();\n  rows.sort(&after);\n  auto it = rows.begin();\n  if (it->key != 5) return 1;\n  ++it;\n  return it != first || it->value != 8 || rows.back().value != 9;\n}\n",
+      "source_sha256": "514469bea681a3e927d7389234f7f2b620d13c6a7dcc9a45f8b5472309153e26"
+    },
+    {
+      "name": "list-record-effectful-member-order-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nint comparisons;\nstruct Entry {\n  int rank;\n  bool operator<(const Entry& other) const {\n    return ++comparisons && rank < other.rank;\n  }\n};\nint main() {\n  std::list<Entry> values{{4}, {2}};\n  values.sort();\n  return values.front().rank != 2;\n}\n",
+      "source_sha256": "575ab6a1c977009c9c86dfe762e0a50cfda3e7082c7a2b3e77e35f56211b5298"
+    },
+    {
+      "name": "list-record-by-value-mismatched-field-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nstruct Row { int key; int tag; };\nbool before(Row left, Row right) { return left.key < right.tag; }\nint main() {\n  std::list<Row> rows{{2, 6}, {1, 4}};\n  rows.sort(&before);\n  return rows.empty();\n}\n",
+      "source_sha256": "2c05e8790df10027a92d67aa2498d675999b33550e04b4bb9d7d9b61c48e3c7d"
+    },
+    {
+      "name": "forward-list-record-by-value-effectful-copy-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <forward_list>\nint copies;\nstruct Row {\n  int key;\n  Row(int value) : key(value) {}\n  Row(const Row& other) : key(other.key) { ++copies; }\n};\nbool before(Row left, Row right) { return left.key < right.key; }\nint main() {\n  std::forward_list<Row> rows{{2}, {1}};\n  rows.sort(&before);\n  return copies < 2;\n}\n",
+      "source_sha256": "15ae60affc88b99e098b1a03d69f062cf5ecfc1073f5ce631c96c8bdf2d99621"
+    },
+    {
+      "name": "list-record-by-value-volatile-parameter-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nstruct Row { int key; };\nbool before(volatile Row left, Row right) { return left.key < right.key; }\nint main() {\n  std::list<Row> rows{{2}, {1}};\n  rows.sort(&before);\n  return rows.front().key != 1;\n}\n",
+      "source_sha256": "02c185c91648b502c9f2a9f73f9c14177ac293be7e974f59d4d0cf84eafee7ab"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListRecordMemberLexicographicSortRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordByValueStableMergeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordByValueDescendingSortRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordEffectfulMemberOrderGuardRejected",
+    "TranslateTest.CoreV2ListRecordByValueMismatchedFieldGuardRejected",
+    "TranslateTest.CoreV2ForwardListRecordByValueEffectfulCopyGuardRejected",
+    "TranslateTest.CoreV2ListRecordByValueVolatileParameterGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "38ae70fc059a80239e6ee4ba5acc2b995ada276f21511388369e353548b63b47",
+  "maintained_original_sha256": "41e9dcd5aaacc8b11a432a6650633dfdeed44eb62a27bdb952db2cbf22478646",
+  "previous_registered_source_sha256": "947d644f8a1d350f2b0bad28ebb6f65468c2394fb93bc9df7466f3c46fb9d62c",
+  "previous_maintained_original_sha256": "c05a526d1aa2118f7439b6f0842358d4a9e1d4044e7487dd28a0377722228004",
+  "restorer_sha256": "5b9cdec04a97e5950f35476a904850817cc0b16b76d8baf3e3b2d5b5de05c92e",
+  "extractor_sha256": "9e725950a7f70aeed4178636f3df4693e7139acbef4a69572b62378027361b7b",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9497,
+  "current_python_registry_tests": 354,
+  "native_reference_selected_executions": 20,
+  "planned_generated_c23_executions": 20,
+  "native_reference_proofs": {
+    "linked-list-record-compound-comparisons": "3dc0031c82f1feb011da37f66a480045dbfbde1d22afa4034acd562f42c43d65",
+    "linked-list-record-compound-member-replay": "14b6ece41b0f95cd4e777605e18fc14d1ccc2787e73385573fa96435c0ef0c6c",
+    "linked-list-record-value-comparators": "cea884e4623dfbb9cfaf4238f5e4ae4251dad6706d5263cd16b8d14b2e6669ca"
+  },
+  "native_reference_authentication_sha256": "d0a4038b7dce03a7359b706348554b86aaf8d05cbd7f6fc148f777ceb3a5e3ed",
+  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+}

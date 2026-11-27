@@ -1,0 +1,96 @@
+{
+  "positive_cases": [
+    {
+      "name": "variant-monostate-hash-temporary",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateHashTemporaryRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "21f2d7718d21a05a4513bb8f2c095cae9e7b7aff7b1bc7064e8773ff42d7eca2",
+      "original_case_source_sha256": "21f2d7718d21a05a4513bb8f2c095cae9e7b7aff7b1bc7064e8773ff42d7eca2",
+      "gtest_body_sha256": "20cedb17ecd87996636b0d99ea983bc8200ea57df958ede98452d62fed4e1eb0"
+    },
+    {
+      "name": "variant-monostate-hash-receiver-and-operand-once",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateHashReceiverAndOperandOnceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "76c1f3a04e43cbdb85682c8c5ad90ff178099af121e9749fb951a4ad33fefe62",
+      "original_case_source_sha256": "76c1f3a04e43cbdb85682c8c5ad90ff178099af121e9749fb951a4ad33fefe62",
+      "gtest_body_sha256": "0a820f3f6585589af0253b0cc02b72e7d07de48f1cd77ed45d18324293c92f1a"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "variant-monostate-hash-alternate-sdk-spelling",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateHashAlternateSdkSpellingRejected",
+      "expected": "reject",
+      "source_sha256": "4276647f787243300fda75250cab27468314174cb7e1037def5a2e4e08bba65a",
+      "original_case_source_sha256": "4276647f787243300fda75250cab27468314174cb7e1037def5a2e4e08bba65a",
+      "gtest_body_sha256": "16dc6bcb2be8434f6161b09a446ad1e23d892703f9d69acd7d2a3b25b1efe9f6"
+    },
+    {
+      "name": "variant-monostate-hash-standalone-member-pointer",
+      "formal_test_name": "TranslateTest.CoreV2VariantMonostateHashStandaloneMemberPointerRejected",
+      "expected": "reject",
+      "source_sha256": "10c13e6f493976e92ca875b8a1d9e867f65ec531d61c6812d160b1bc71ee4016",
+      "original_case_source_sha256": "10c13e6f493976e92ca875b8a1d9e867f65ec531d61c6812d160b1bc71ee4016",
+      "gtest_body_sha256": "bc5efa543f23e25d822555fa65785892ae1ce7024ba549fec01e825c9554de44"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "variant-monostate-hash-temporary",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nint main() {\n  std::monostate value{};\n  return std::hash<std::monostate>{}(value) != 66740831;\n}\n",
+      "source_sha256": "21f2d7718d21a05a4513bb8f2c095cae9e7b7aff7b1bc7064e8773ff42d7eca2"
+    },
+    {
+      "name": "variant-monostate-hash-receiver-and-operand-once",
+      "expected": "accept",
+      "public_header": "variant",
+      "kind": "cpp17-operation",
+      "source": "#include <variant>\nusing Hash = std::hash<std::monostate>;\nint receiver_calls, value_calls;\nconst Hash& get_hash(const Hash& h) { ++receiver_calls; return h; }\nconst std::monostate& get_value(const std::monostate& v) {\n  ++value_calls;\n  return v;\n}\nint main() {\n  const Hash h{};\n  const std::monostate value{};\n  if (get_hash(h)(get_value(value)) != 66740831) return 1;\n  return receiver_calls != 1 || value_calls != 1;\n}\n",
+      "source_sha256": "76c1f3a04e43cbdb85682c8c5ad90ff178099af121e9749fb951a4ad33fefe62"
+    },
+    {
+      "name": "variant-monostate-hash-alternate-sdk-spelling",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#define monostate alternate_monostate\n#include <variant>\n#undef monostate\nint main() {\n  std::alternate_monostate value{};\n  return std::hash<std::alternate_monostate>{}(value) != 66740831;\n}\n",
+      "source_sha256": "4276647f787243300fda75250cab27468314174cb7e1037def5a2e4e08bba65a"
+    },
+    {
+      "name": "variant-monostate-hash-standalone-member-pointer",
+      "expected": "reject",
+      "public_header": "variant",
+      "kind": "source-body-guard",
+      "source": "#include <variant>\nint main() {\n  auto op = &std::hash<std::monostate>::operator();\n  return op == nullptr;\n}\n",
+      "source_sha256": "10c13e6f493976e92ca875b8a1d9e867f65ec531d61c6812d160b1bc71ee4016"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2VariantMonostateHashTemporaryRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateHashReceiverAndOperandOnceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantMonostateHashAlternateSdkSpellingRejected",
+    "TranslateTest.CoreV2VariantMonostateHashStandaloneMemberPointerRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "531796afa63bd5b199baacccad91f1fb86b4a0c16a7e182437a6d779b75b5dbc",
+  "maintained_original_sha256": "044375f31196b86b6225261c611c6f8100a8ec7ab0219709cfffe35e44d6daed",
+  "previous_registered_source_sha256": "a3158aff714f9c7210acd778f40955583603c761d9a34cd95890a2cf28b231e4",
+  "previous_maintained_original_sha256": "079938a41465897ea07a93d6707738c9173278fee37980e4ee3757da699028eb",
+  "restorer_sha256": "0405a237de2b927a72ba590defb197f8def385f679217d4b6cd4966dac81f431",
+  "extractor_sha256": "0729f19bcccc48761ea5538e9ef27f7bafd55ae610a4a983d2da543f791b58d9",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8248,
+  "current_python_registry_tests": 148,
+  "native_reference_selected_executions": 4,
+  "planned_generated_c23_executions": 4,
+  "native_reference_proofs": {
+    "variant-monostate-hash": "8782255c22bbad79844c799d52a1bf3f134f2574c7cd8b9805ac0bc62dda3138"
+  },
+  "native_reference_authentication_sha256": "854a4222fcd0fe9c71d46047718f0f85a58cfe8bf3a0890e5e1ca311e7f124a2",
+  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+}

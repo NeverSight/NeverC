@@ -1,0 +1,239 @@
+{
+  "positive_cases": [
+    {
+      "name": "monostate-comparison-all-six",
+      "formal_test_name": "TranslateTest.CoreV2MonostateComparisonAllSixRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3cfb2f5234f5a297c03957241896bc84b1355deea1ead81221d4281278f39cb2",
+      "original_case_source_sha256": "3cfb2f5234f5a297c03957241896bc84b1355deea1ead81221d4281278f39cb2",
+      "gtest_body_sha256": "8aab6d2a25d7e3008c223c5fd7961461106bb91a31f834a49f1b54276b2838b3"
+    },
+    {
+      "name": "monostate-comparison-operand-effects",
+      "formal_test_name": "TranslateTest.CoreV2MonostateComparisonOperandEffectsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8790f93ccbb8476d16c27cf9391bcfe90eda43a8c2d81b6b5d1987152d860bc0",
+      "original_case_source_sha256": "8790f93ccbb8476d16c27cf9391bcfe90eda43a8c2d81b6b5d1987152d860bc0",
+      "gtest_body_sha256": "40f805e73185b8b1814d6d1edd1fd3873c4130b3ebcd447099892882821fa0df"
+    },
+    {
+      "name": "monostate-comparison-explicit-function",
+      "formal_test_name": "TranslateTest.CoreV2MonostateComparisonExplicitFunctionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dcd1b534a5a6052c3124ec746bce753ab256746cd096ed81d05ff0a0b5788f45",
+      "original_case_source_sha256": "dcd1b534a5a6052c3124ec746bce753ab256746cd096ed81d05ff0a0b5788f45",
+      "gtest_body_sha256": "a5a0c59514e8beab045f9a2579bb810c869ca2e1b52fd50d3635d3c25aeb6888"
+    },
+    {
+      "name": "variant-emplace-index-and-reference",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceIndexAndReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6a318398478c220cf1e68ce636bab5cd3d0f696996f90bc328eae5c53f40b0d9",
+      "original_case_source_sha256": "6a318398478c220cf1e68ce636bab5cd3d0f696996f90bc328eae5c53f40b0d9",
+      "gtest_body_sha256": "c6ad87c5a1ad11fe672e21c8c8772ca9e875c121903512cbc74311e4d5d83aa8"
+    },
+    {
+      "name": "variant-emplace-type-and-repeated-value",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceTypeAndRepeatedValueRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e8fe5df45180a5ead0513da21aa5ab6cdb7835da5b70076a3ccc625f2ad2c468",
+      "original_case_source_sha256": "e8fe5df45180a5ead0513da21aa5ab6cdb7835da5b70076a3ccc625f2ad2c468",
+      "gtest_body_sha256": "d2e17dc77e296655b84020458fbe265562bd6f3e206ee3e7f3279a2663a39fdc"
+    },
+    {
+      "name": "variant-emplace-pointer-zero",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplacePointerZeroRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "67c9e995cdcdeef8090a1787ab348a833b8e0eca7f05199bdd1f3d8e841fadc1",
+      "original_case_source_sha256": "67c9e995cdcdeef8090a1787ab348a833b8e0eca7f05199bdd1f3d8e841fadc1",
+      "gtest_body_sha256": "de5c0012b4ba62106a440cc6c84e71b0f4a1f2b0752322c5961ac0c863fec5cf"
+    },
+    {
+      "name": "variant-emplace-empty-alternative",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceEmptyAlternativeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c2c7827398eb664d05385be6b9f07787a44a1e7ec75786ee02229a6e08e89d87",
+      "original_case_source_sha256": "c2c7827398eb664d05385be6b9f07787a44a1e7ec75786ee02229a6e08e89d87",
+      "gtest_body_sha256": "c9cbbed8259e6307a6da901eaf62be543d954fa9d1ee4516384c5ae16b8705c1"
+    },
+    {
+      "name": "variant-emplace-receiver-before-input",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceReceiverBeforeInputRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "05fa05e4845281edf3b73ac858b9da0d60cc1992055bd01567fd194f729755c0",
+      "original_case_source_sha256": "05fa05e4845281edf3b73ac858b9da0d60cc1992055bd01567fd194f729755c0",
+      "gtest_body_sha256": "54545ec44a129740460acc5ba0021ede4f13e3bc194a797fcaf63547eaf83374"
+    },
+    {
+      "name": "variant-emplace-source-owned-record",
+      "formal_test_name": "TranslateTest.CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody",
+      "expected": "accept",
+      "source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
+      "original_case_source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
+      "gtest_body_sha256": "e5a5c5b976a6fda90a5d2127b5aa3c1f1e8b5935c789ecc2120e7a85314e7a57",
+      "source_only": true
+    },
+    {
+      "name": "variant-emplace-widening-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceAcceptsIntegerWidening",
+      "expected": "accept",
+      "source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
+      "original_case_source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
+      "gtest_body_sha256": "d29c0972e467928727459c65ed57f3d26ff5fb10d59f02787579fed988387c61",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "monostate-comparison-sdk-address",
+      "formal_test_name": "TranslateTest.CoreV2MonostateComparisonSdkAddressRejected",
+      "expected": "reject",
+      "source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
+      "original_case_source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
+      "gtest_body_sha256": "b28ea595171225fa65d3b19d22b2f0e56df01c2892389e9e6782b447d1159753"
+    },
+    {
+      "name": "variant-emplace-volatile-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantEmplaceVolatileOperandRejected",
+      "expected": "reject",
+      "source_sha256": "4fcc28e497fdde13e49cdfa7e18ca3d969a561db3a714859fd6c5c665cc09f58",
+      "original_case_source_sha256": "4fcc28e497fdde13e49cdfa7e18ca3d969a561db3a714859fd6c5c665cc09f58",
+      "gtest_body_sha256": "76b0cc717e75e40cd6ab2a5d603ab6a33a39af71411eb24fb50382e83a4db55c"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2MonostateComparisonAllSixRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateComparisonOperandEffectsRunAtBothOptimizations",
+    "TranslateTest.CoreV2MonostateComparisonExplicitFunctionRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEmplaceIndexAndReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEmplaceTypeAndRepeatedValueRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEmplacePointerZeroRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEmplaceEmptyAlternativeRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantEmplaceReceiverBeforeInputRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantAggregateEmplaceAcceptsOriginalFunctionBody",
+    "TranslateTest.CoreV2VariantEmplaceAcceptsIntegerWidening",
+    "TranslateTest.CoreV2MonostateComparisonSdkAddressRejected",
+    "TranslateTest.CoreV2VariantEmplaceVolatileOperandRejected"
+  ],
+  "source_cases": [
+    {
+      "name": "monostate-comparison-all-six",
+      "public_header": "variant",
+      "source": "#include <variant>\nint main() {\n  std::monostate a{};\n  std::monostate b;\n  return !(a == b) || a != b || a < b || a > b || !(a <= b) || !(a >= b);\n}\n",
+      "source_sha256": "3cfb2f5234f5a297c03957241896bc84b1355deea1ead81221d4281278f39cb2",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "monostate-comparison-operand-effects",
+      "public_header": "variant",
+      "source": "#include <variant>\nstd::monostate touch(int& count) { ++count; return {}; }\nint main() {\n  int left = 0, right = 0;\n  bool equal = touch(left) == touch(right);\n  bool unequal = touch(left) != touch(right);\n  return !equal || unequal || left != 2 || right != 2;\n}\n",
+      "source_sha256": "8790f93ccbb8476d16c27cf9391bcfe90eda43a8c2d81b6b5d1987152d860bc0",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "monostate-comparison-explicit-function",
+      "public_header": "variant",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, std::monostate> value(std::in_place_index<1>);\n  const std::monostate* mono = std::get_if<1>(&value);\n  if (!mono)\n    return 1;\n  std::monostate second(*mono);\n  return !std::operator==(*mono, second) || std::operator<(*mono, second);\n}\n",
+      "source_sha256": "dcd1b534a5a6052c3124ec746bce753ab256746cd096ed81d05ff0a0b5788f45",
+      "expected": "accept",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-emplace-index-and-reference",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, long> value(std::in_place_index<1>, 29L);\n  int& slot = value.emplace<0>(12);\n  slot += 9;\n  auto* item = std::get_if<0>(&value);\n  return value.index() != 0 || std::holds_alternative<long>(value) ||\n         item != &slot || *item != 21;\n}\n",
+      "expected": "accept",
+      "source_sha256": "6a318398478c220cf1e68ce636bab5cd3d0f696996f90bc328eae5c53f40b0d9",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-emplace-type-and-repeated-value",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, long> value;\n  const long source = 37;\n  value.emplace<long>(source) += 5;\n  auto* item = std::get_if<long>(&value);\n  if (!item || *item != 42)\n    return 1;\n  long& slot = value.emplace<long>(9L);\n  return value.index() != 1 || std::get_if<long>(&value) != &slot || slot != 9L;\n}\n",
+      "expected": "accept",
+      "source_sha256": "e8fe5df45180a5ead0513da21aa5ab6cdb7835da5b70076a3ccc625f2ad2c468",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-emplace-pointer-zero",
+      "source": "#include <variant>\nint main() {\n  int number = 1;\n  std::variant<int*, long> value(std::in_place_index<0>, &number);\n  auto& slot = value.emplace<int*>();\n  return slot != nullptr || value.index() != 0 || std::get_if<int*>(&value) != &slot;\n}\n",
+      "expected": "accept",
+      "source_sha256": "67c9e995cdcdeef8090a1787ab348a833b8e0eca7f05199bdd1f3d8e841fadc1",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-emplace-empty-alternative",
+      "source": "#include <variant>\nint main() {\n  std::variant<int, std::monostate> value(13);\n  std::monostate& slot = value.emplace<std::monostate>();\n  return value.valueless_by_exception() || value.index() != 1 ||\n         std::get_if<std::monostate>(&value) != &slot || std::get_if<int>(&value) != nullptr;\n}\n",
+      "expected": "accept",
+      "source_sha256": "c2c7827398eb664d05385be6b9f07787a44a1e7ec75786ee02229a6e08e89d87",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-emplace-receiver-before-input",
+      "source": "#include <variant>\nusing Value = std::variant<int, long>;\nint order;\nValue* receiver(Value& v) { order = order * 10 + 1; return &v; }\nlong input() { order = order * 10 + 2; return 43L; }\nint main() {\n  Value value(7);\n  long* slot = &receiver(value)->emplace<1>(input());\n  return order != 12 || value.index() != 1 || std::get_if<1>(&value) != slot || *slot != 43L;\n}\n",
+      "expected": "accept",
+      "source_sha256": "05fa05e4845281edf3b73ac858b9da0d60cc1992055bd01567fd194f729755c0",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-emplace-source-owned-record",
+      "source": "#include <variant>\nstruct Payload {\n  int data;\n};\nint f() {\n  std::variant<int, Payload> value;\n  return value.emplace<1>().data;\n}\n",
+      "expected": "accept",
+      "source_sha256": "5e17c562b1ea57211fe5fc3194a277335de108ba5c82dbd6f29fa9d3f95c52e6",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-emplace-widening-operand",
+      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value;\n  return value.emplace<1>(11);\n}\n",
+      "expected": "accept",
+      "source_sha256": "d7a4e54a910fc97e25cb064ed00605ffd2efb9d18999058abf21752a87f675a1",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "monostate-comparison-sdk-address",
+      "public_header": "variant",
+      "source": "#include <variant>\nint f() {\n  using Compare = bool (*)(std::monostate, std::monostate) noexcept;\n  auto call = static_cast<Compare>(&std::operator==);\n  return call({}, {});\n}\n",
+      "source_sha256": "cf706f72fd130f9dc22b4be366546fbdb5b480f1ee5857c2f86f12fc77f5a584",
+      "expected": "reject",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-emplace-volatile-operand",
+      "source": "#include <variant>\nint f() {\n  std::variant<int, long> value;\n  volatile long source = 11;\n  return value.emplace<long>(source);\n}\n",
+      "expected": "reject",
+      "source_sha256": "4fcc28e497fdde13e49cdfa7e18ca3d969a561db3a714859fd6c5c665cc09f58",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "independent_manifest_sha256": {
+    "monostate": "35cc2a2baae539d454b9e69a82943e347022b13b7b7e8711de606e4ba71f6349",
+    "emplace": "045b6a1d0e909b660887eb3a4468d17fde699f85044ca376953e1b3d91e4057b"
+  },
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "1bcc99ed140d9088d8457efa5df774a84d4ef7c58dc4032b7d3a555e187f2c8d",
+  "maintained_original_sha256": "8cb9ba423920483c71e8c728341a619b5661dfe1bf808c84d11b68f378ec7d66",
+  "previous_registered_source_sha256": "f92c06c48a9fad4a28afc4a157985a18624fd4ddfb17d0869e3e925d8dfa908a",
+  "previous_maintained_original_sha256": "20c9f075f5b6d3a2f1394438f689368c7f2da1a75286dce1704b219e87e6d5df",
+  "restorer_sha256": "7f81132c6305bc1aba9c031767a7068cb111aa42858e12bcf465d666a78fe1f2",
+  "extractor_sha256": "345c6d8e1dba5368609fa0fa0e590fbf68b42cb01a4247aac462d638164b42ba",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8131,
+  "current_python_registry_tests": 124,
+  "native_reference_selected_executions": 16,
+  "planned_generated_c23_executions": 16,
+  "native_reference_proofs": {
+    "variant-emplace": "bddc20233aa23c63eb2b1118c8c8cb0cd0e84e2143022de934cd26e9da7c7d06",
+    "variant-monostate": "8667d3acb39d6c128cfef45c419d722b98a60057a681a1601dc544aa41c18161"
+  },
+  "native_reference_authentication_sha256": "274314d32fb7d7f9eadd6f44b8392b311919b0579d697e04747256f3e9c1f49f",
+  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+}
