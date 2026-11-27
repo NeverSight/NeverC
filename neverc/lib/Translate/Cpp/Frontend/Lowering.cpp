@@ -5650,7 +5650,7 @@ class FunctionLowering {
             address(std::move(LeftValue), SourceElement.withConst(), L), L);
         auto RightAddress = snapshot(
             address(std::move(RightValue), SourceElement.withConst(), L), L);
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress), Comparison->Member,
             Comparison->Friend ? Comparison->Friend : Comparison->Namespace, L);
       }
@@ -5799,7 +5799,7 @@ class FunctionLowering {
             address(std::move(LeftValue), SourceElement.withConst(), L), L);
         auto RightAddress = snapshot(
             address(std::move(RightValue), SourceElement.withConst(), L), L);
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress),
             SourceComparison->Member,
             SourceComparison->Friend ? SourceComparison->Friend
@@ -9337,7 +9337,7 @@ class FunctionLowering {
       label(Compare, L);
       auto Equal =
           SourceComparison
-              ? compareVectorSourceElements(
+              ? compareSourceRecordElements(
                     json::Object(Current), json::Object(ValueAddress),
                     SourceComparison->Member,
                     SourceComparison->Friend ? SourceComparison->Friend
@@ -9434,7 +9434,7 @@ class FunctionLowering {
       label(Compare, L);
       auto Equal =
           SourceComparison
-              ? compareVectorSourceElements(
+              ? compareSourceRecordElements(
                     json::Object(Current), json::Object(ValueAddress),
                     SourceComparison->Member,
                     SourceComparison->Friend ? SourceComparison->Friend
@@ -9576,7 +9576,7 @@ class FunctionLowering {
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(First), json::Object(Second),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10331,7 +10331,7 @@ class FunctionLowering {
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Current), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(First), json::Object(Current),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10424,7 +10424,7 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
       branch(SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(Current), json::Object(ValueAddress),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10525,7 +10525,7 @@ class FunctionLowering {
       branch(binary("!=", Current, Last, "bool", L), Compare, End, L);
       label(Compare, L);
       branch(SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(Current), json::Object(OldAddress),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10634,7 +10634,7 @@ class FunctionLowering {
                                        dereference(json::Object(Output), L),
                                        dereference(json::Object(Current), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(Output), json::Object(Current),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -10751,7 +10751,7 @@ class FunctionLowering {
                                        dereference(json::Object(Previous), L),
                                        dereference(json::Object(Current), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(Previous), json::Object(Current),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -11175,7 +11175,7 @@ class FunctionLowering {
                           dereference(json::Object(Current), L),
                           dereference(json::Object(ValueAddress), L), L)
           : SourceComparison
-              ? compareVectorSourceElements(
+              ? compareSourceRecordElements(
                     json::Object(Current), json::Object(ValueAddress),
                     SourceComparison->Member,
                     SourceComparison->Friend ? SourceComparison->Friend
@@ -11319,7 +11319,7 @@ class FunctionLowering {
                                        dereference(json::Object(First), L),
                                        dereference(json::Object(Second), L), L)
              : SourceComparison
-                 ? compareVectorSourceElements(
+                 ? compareSourceRecordElements(
                        json::Object(First), json::Object(Second),
                        SourceComparison->Member,
                        SourceComparison->Friend ? SourceComparison->Friend
@@ -11942,7 +11942,7 @@ class FunctionLowering {
               address(std::move(Left), SourceElement.withConst(), L), L);
           auto RightAddress = snapshot(
               address(std::move(Right), SourceElement.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -12879,7 +12879,7 @@ class FunctionLowering {
               snapshot(address(std::move(Left), Element.withConst(), L), L);
           auto RightAddress =
               snapshot(address(std::move(Right), Element.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -13184,7 +13184,7 @@ class FunctionLowering {
               snapshot(address(std::move(Left), Element.withConst(), L), L);
           auto RightAddress =
               snapshot(address(std::move(Right), Element.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -13301,7 +13301,7 @@ class FunctionLowering {
               address(std::move(Left), InputElement.withConst(), L), L);
           auto RightAddress = snapshot(
               address(std::move(Right), InputElement.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -13417,7 +13417,7 @@ class FunctionLowering {
               address(std::move(LeftValue), Element.withConst(), L), L);
           auto RightAddress = snapshot(
               address(std::move(RightValue), Element.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -13559,7 +13559,7 @@ class FunctionLowering {
               snapshot(address(std::move(Left), Element.withConst(), L), L);
           auto RightAddress =
               snapshot(address(std::move(Right), Element.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -18866,7 +18866,7 @@ class FunctionLowering {
               address(std::move(Left), LeftValueType.withConst(), L), L);
           auto RightAddress = snapshot(
               address(std::move(Right), RightValueType.withConst(), L), L);
-          return compareVectorSourceElements(
+          return compareSourceRecordElements(
               std::move(LeftAddress), std::move(RightAddress),
               SourceComparison->Member,
               SourceComparison->Friend ? SourceComparison->Friend
@@ -23375,7 +23375,7 @@ class FunctionLowering {
                       : snapshot(std::move(Value), L);
       };
       auto CompareSource = [&](Expression Left, Expression Right) {
-        return compareVectorSourceElements(std::move(Left), std::move(Right),
+        return compareSourceRecordElements(std::move(Left), std::move(Right),
                                            MemberComparison, FreeComparison, L);
       };
       auto CompareStrings = [&]() {
@@ -27373,6 +27373,12 @@ class FunctionLowering {
 
   Expression compareLinkedListElements(StringRef Operator, Expression Left, Expression Right,
       const FunctionDecl *Comparison, SourceLocation L) {
+    if (const auto *Member = dyn_cast_or_null<CXXMethodDecl>(Comparison)) {
+      const auto Receiver = Member->getThisType()->getPointeeType();
+      const auto Argument = Member->getParamDecl(0)->getType().getNonReferenceType();
+      return compareSourceRecordElements(address(std::move(Left), Receiver, L),
+                                         address(std::move(Right), Argument, L), Member, nullptr, L);
+    }
     if (Comparison)
       return emitBinaryPredicate(A.functionAddress(Comparison, L), A.Context.getPointerType(Comparison->getType()),
                                  std::move(Left), std::move(Right), L);
@@ -34449,7 +34455,7 @@ class FunctionLowering {
             snapshot(address(std::move(Left), LeftType.withConst(), L), L);
         auto RightAddress =
             snapshot(address(std::move(Right), RightType.withConst(), L), L);
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress),
             SourceComparison->Member,
             SourceComparison->Friend ? SourceComparison->Friend
@@ -34481,7 +34487,7 @@ class FunctionLowering {
       const auto SourceComparison = approvedUtilityTrivialSourceComparison(
           A.S, A.Sources, Call->getArg(0)->getType(), OO_Less, A.Context);
       if (SourceComparison)
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress),
             SourceComparison->Member,
             SourceComparison->Friend ? SourceComparison->Friend
@@ -34502,7 +34508,7 @@ class FunctionLowering {
             snapshot(address(std::move(Left), LeftType.withConst(), L), L);
         auto RightAddress =
             snapshot(address(std::move(Right), RightType.withConst(), L), L);
-        return compareVectorSourceElements(
+        return compareSourceRecordElements(
             std::move(LeftAddress), std::move(RightAddress),
             SourceComparison->Member,
             SourceComparison->Friend ? SourceComparison->Friend
@@ -38959,7 +38965,7 @@ class FunctionLowering {
     assign(std::move(Member), std::move(Pointer), L);
   }
 
-  Expression compareVectorSourceElements(Expression Left, Expression Right,
+  Expression compareSourceRecordElements(Expression Left, Expression Right,
                                          const CXXMethodDecl *MemberComparison,
                                          const FunctionDecl *FreeComparison,
                                          SourceLocation L) {
@@ -39456,7 +39462,7 @@ class FunctionLowering {
       const auto *FreeComparison =
           Comparison->Friend ? Comparison->Friend : Comparison->Namespace;
       auto Compare = [&](Expression First, Expression Second) {
-        return compareVectorSourceElements(std::move(First), std::move(Second),
+        return compareSourceRecordElements(std::move(First), std::move(Second),
                                            Comparison->Member, FreeComparison,
                                            L);
       };
@@ -39698,7 +39704,7 @@ class FunctionLowering {
         const auto *FreeComparison =
             FriendComparison ? FriendComparison : NamespaceComparison;
         auto CompareSource = [&](Expression Left, Expression Right) {
-          return compareVectorSourceElements(std::move(Left), std::move(Right),
+          return compareSourceRecordElements(std::move(Left), std::move(Right),
                                              MemberComparison, FreeComparison,
                                              L);
         };
