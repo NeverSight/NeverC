@@ -416652,6 +416652,145 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
+TEST_F(TranslateTest, CoreV2ListRecordLiteralDefaultInsertionRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-literal-default-insertion.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { int key = 7; float weight = 0.5f; int count; };
+int main() {
+  std::list<Entry> values(2);
+  values.front().count = 9;
+  values.resize(4);
+  values.emplace_front().key = 5;
+  auto i = values.begin();
+  if (i->key != 5 || i->weight != 0.5f || i->count != 0 || (++i)->count != 9) return 1;
+  return values.size() != 5 || values.back().key != 7 ||
+         values.back().weight != 0.5f || values.back().count != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-literal-default-insertion.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-literal-default-insertion" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordLiteralDefaultInsertionRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-literal-default-insertion.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+enum class Tag : unsigned char { Default = 7 };
+struct Entry { Tag tag = Tag::Default; bool state = true; const int* key = nullptr; };
+int main() {
+  std::forward_list<Entry> values(2);
+  values.resize(3);
+  auto p = values.emplace_after(values.before_begin());
+  p->state = false;
+  values.emplace_front();
+  auto i = values.begin();
+  if (i->tag != Tag::Default || !i->state || i->key || ++i != p || i->state) return 1;
+  for (; i != values.end(); ++i)
+    if (i->tag != Tag::Default || i->key) return 2;
+  return 0;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-literal-default-insertion.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-literal-default-insertion" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordLiteralDefaultCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-literal-default-copy.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { int key = 7; char tag = 'r'; };
+int main() {
+  Entry selected{9};
+  std::list<Entry> values(2, selected);
+  values.emplace_back(Entry{});
+  values.emplace(values.begin(), Entry{5, 'x'});
+  return values.size() != 4 || values.front().tag != 'x' ||
+         (++values.begin())->key != 9 || values.back().key != 7 || values.back().tag != 'r';
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-literal-default-copy.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-literal-default-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordLiteralDefaultCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-literal-default-copy.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { int key = 7; double value = 0.5; };
+int main() {
+  Entry source[]{{3}, {2, 0.25}, {}};
+  std::forward_list<Entry> values(source, source + 3);
+  auto copy = values;
+  values.clear();
+  auto i = copy.begin();
+  if (i->key != 3 || i->value != 0.5) return 1;
+  if ((++i)->key != 2 || i->value != 0.25) return 2;
+  return (++i)->key != 7 || i->value != 0.5 || ++i != copy.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-literal-default-copy.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-literal-default-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordEffectfulDefaultGuardRejected) {
+  const auto Source = tmpFile("list-record-effectful-default-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int counter = 0;
+int next() { return ++counter; }
+struct Entry { int value = next(); };
+int main() { std::list<Entry> values(2); return values.back().value != 2; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordMemberDependentDefaultGuardRejected) {
+  const auto Source = tmpFile("forward-list-record-member-dependent-default-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry { int key; int count = key + 1; };
+int main() { std::forward_list<Entry> values(1); return values.front().count != 1; }
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
 
 TEST_F(TranslateTest, CoreV2NotFnFunctionPointerRunsAtBothOptimizations) {
   const auto Source = tmpFile("not-fn-function-pointer.cpp");

@@ -27361,6 +27361,16 @@ class FunctionLowering {
     assign(Link, Following, L);
     return Following;
   }
+  void initializeLinkedListValue(Expression Place, QualType Element, SourceLocation L) {
+    initializeZero(Place, Element, L);
+    const auto *Record = Element->getAsCXXRecordDecl();
+    Record = Record ? Record->getDefinition() : nullptr;
+    if (!Record || Record->isTrivial()) return;
+    for (const auto *Field : Record->fields())
+      if (const auto *Init = Field->getInClassInitializer())
+        initialize(fieldStorage(Place, Field, L), Init, L);
+  }
+
   Expression compareLinkedListElements(StringRef Operator, Expression Left, Expression Right,
       const FunctionDecl *Comparison, SourceLocation L) {
     if (Comparison)
@@ -27770,7 +27780,7 @@ class FunctionLowering {
         ValueReference = Operands[1];
       } else {
         auto Value = temporary(type(Element, L), L);
-        initializeZero(Value, Element, L);
+        initializeLinkedListValue(Value, Element, L);
         ValueReference = address(Value, Element, L);
       }
       resizeForwardListStorage(Place, Operands[0], std::move(ValueReference), Owner->Node, L);
@@ -27895,7 +27905,7 @@ class FunctionLowering {
       QualType InputElement;
       if (Operands.size() == PositionArgs) {
         auto Value = temporary(type(Element, L), L);
-        initializeZero(Value, Element, L);
+        initializeLinkedListValue(Value, Element, L);
         ValueReference = address(Value, Element, L);
       } else {
         ValueReference = Operands[PositionArgs];
@@ -29216,7 +29226,7 @@ class FunctionLowering {
     if (!Fill) {
       const auto Element = Info.Value->getType();
       auto Zero = temporary(type(Element, L), L);
-      initializeZero(Zero, Element, L);
+      initializeLinkedListValue(Zero, Element, L);
       Fill = address(Zero, Element, L);
     }
     auto Added = snapshot(binary("-", SizeRequested, CurrentSize, Size, L), L);
@@ -30002,7 +30012,7 @@ class FunctionLowering {
       QualType InputElement;
       if (Operands.size() == Offset) {
         auto Zero = temporary(type(Element, L), L);
-        initializeZero(Zero, Element, L);
+        initializeLinkedListValue(Zero, Element, L);
         Argument = address(Zero, Element, L);
       } else {
         Argument = Operands[Offset];
@@ -42494,7 +42504,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
       if (*Kind == UtilityForwardListConstruction::Count) {
         auto Zero = temporary(type(Element, L), L);
-        initializeZero(Zero, Element, L);
+        initializeLinkedListValue(Zero, Element, L);
         resizeForwardListStorage(Place, Operands[0], address(Zero, Element, L), Owner->Node, L);
         return;
       }
@@ -42646,7 +42656,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
           listConstructCountStorage(Place, Operands[0], Operands[1], Owner->Node, L);
         } else {
           auto Zero = temporary(type(Element, L), L);
-          initializeZero(Zero, Element, L);
+          initializeLinkedListValue(Zero, Element, L);
           listConstructCountStorage(Place, Operands[0], address(Zero, Element, L), Owner->Node, L);
         }
         return;

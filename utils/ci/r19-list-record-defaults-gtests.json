@@ -1,0 +1,130 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-record-literal-default-insertion",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordLiteralDefaultInsertionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "40de4f8155ac59b68d5637053f5e3b924d5a9d2933e0469a3696bdf0bb65ba81",
+      "original_case_source_sha256": "40de4f8155ac59b68d5637053f5e3b924d5a9d2933e0469a3696bdf0bb65ba81",
+      "gtest_body_sha256": "96f3d55bd408970897c0ea5d68d3c8b1cdf7fda2a96cda3ce0ef422a430c8f53"
+    },
+    {
+      "name": "forward-list-record-literal-default-insertion",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordLiteralDefaultInsertionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bf482d406e82f880a7e22ab74cea7f822c901c37fd503a238013d854448255c4",
+      "original_case_source_sha256": "bf482d406e82f880a7e22ab74cea7f822c901c37fd503a238013d854448255c4",
+      "gtest_body_sha256": "206c1e629fc1a1550633394e63d851739d71656b7d2fa9cb21dad9374303d54d"
+    },
+    {
+      "name": "list-record-literal-default-copy",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordLiteralDefaultCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "55e117479f9142965b145a9fc9a00b8591c2b488df32e0666640277de2273ff9",
+      "original_case_source_sha256": "55e117479f9142965b145a9fc9a00b8591c2b488df32e0666640277de2273ff9",
+      "gtest_body_sha256": "b74af22f7d158d09e747616100ab1bc63f7c8128ffe04cd9c6b97dab969f835c"
+    },
+    {
+      "name": "forward-list-record-literal-default-copy",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordLiteralDefaultCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "38e974d642139629ee2723dba7fbc3ee81bbc03285337ea2fc7a8bba32df4017",
+      "original_case_source_sha256": "38e974d642139629ee2723dba7fbc3ee81bbc03285337ea2fc7a8bba32df4017",
+      "gtest_body_sha256": "e4b551408d59517720f10b137ddea8bc83ca40b2015850d476e3a3adad56bbd3"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-record-effectful-default-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordEffectfulDefaultGuardRejected",
+      "expected": "reject",
+      "source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded",
+      "original_case_source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded",
+      "gtest_body_sha256": "15cd0270bf0c7de6decf70258bd46da4bb96343983c18291b89182bd2d0265be"
+    },
+    {
+      "name": "forward-list-record-member-dependent-default-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordMemberDependentDefaultGuardRejected",
+      "expected": "reject",
+      "source_sha256": "169b0a200429488bfd09b541fc6ff972431bb7fe9350fbb7b956393286330b34",
+      "original_case_source_sha256": "169b0a200429488bfd09b541fc6ff972431bb7fe9350fbb7b956393286330b34",
+      "gtest_body_sha256": "f2b49724bf02b46a3aace1cea40269db0bd21e2ba243483a761fd4c1fbc43a96"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-record-literal-default-insertion",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry { int key = 7; float weight = 0.5f; int count; };\nint main() {\n  std::list<Entry> values(2);\n  values.front().count = 9;\n  values.resize(4);\n  values.emplace_front().key = 5;\n  auto i = values.begin();\n  if (i->key != 5 || i->weight != 0.5f || i->count != 0 || (++i)->count != 9) return 1;\n  return values.size() != 5 || values.back().key != 7 ||\n         values.back().weight != 0.5f || values.back().count != 0;\n}\n",
+      "source_sha256": "40de4f8155ac59b68d5637053f5e3b924d5a9d2933e0469a3696bdf0bb65ba81"
+    },
+    {
+      "name": "forward-list-record-literal-default-insertion",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nenum class Tag : unsigned char { Default = 7 };\nstruct Entry { Tag tag = Tag::Default; bool state = true; const int* key = nullptr; };\nint main() {\n  std::forward_list<Entry> values(2);\n  values.resize(3);\n  auto p = values.emplace_after(values.before_begin());\n  p->state = false;\n  values.emplace_front();\n  auto i = values.begin();\n  if (i->tag != Tag::Default || !i->state || i->key || ++i != p || i->state) return 1;\n  for (; i != values.end(); ++i)\n    if (i->tag != Tag::Default || i->key) return 2;\n  return 0;\n}\n",
+      "source_sha256": "bf482d406e82f880a7e22ab74cea7f822c901c37fd503a238013d854448255c4"
+    },
+    {
+      "name": "list-record-literal-default-copy",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry { int key = 7; char tag = 'r'; };\nint main() {\n  Entry selected{9};\n  std::list<Entry> values(2, selected);\n  values.emplace_back(Entry{});\n  values.emplace(values.begin(), Entry{5, 'x'});\n  return values.size() != 4 || values.front().tag != 'x' ||\n         (++values.begin())->key != 9 || values.back().key != 7 || values.back().tag != 'r';\n}\n",
+      "source_sha256": "55e117479f9142965b145a9fc9a00b8591c2b488df32e0666640277de2273ff9"
+    },
+    {
+      "name": "forward-list-record-literal-default-copy",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nstruct Entry { int key = 7; double value = 0.5; };\nint main() {\n  Entry source[]{{3}, {2, 0.25}, {}};\n  std::forward_list<Entry> values(source, source + 3);\n  auto copy = values;\n  values.clear();\n  auto i = copy.begin();\n  if (i->key != 3 || i->value != 0.5) return 1;\n  if ((++i)->key != 2 || i->value != 0.25) return 2;\n  return (++i)->key != 7 || i->value != 0.5 || ++i != copy.end();\n}\n",
+      "source_sha256": "38e974d642139629ee2723dba7fbc3ee81bbc03285337ea2fc7a8bba32df4017"
+    },
+    {
+      "name": "list-record-effectful-default-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nint counter = 0;\nint next() { return ++counter; }\nstruct Entry { int value = next(); };\nint main() { std::list<Entry> values(2); return values.back().value != 2; }\n",
+      "source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded"
+    },
+    {
+      "name": "forward-list-record-member-dependent-default-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <forward_list>\nstruct Entry { int key; int count = key + 1; };\nint main() { std::forward_list<Entry> values(1); return values.front().count != 1; }\n",
+      "source_sha256": "169b0a200429488bfd09b541fc6ff972431bb7fe9350fbb7b956393286330b34"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListRecordLiteralDefaultInsertionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordLiteralDefaultInsertionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordLiteralDefaultCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordLiteralDefaultCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordEffectfulDefaultGuardRejected",
+    "TranslateTest.CoreV2ForwardListRecordMemberDependentDefaultGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f7b7f5ab62471e512933c9e16611f41dd392b9b40d48089d6a3d04d462eefd86",
+  "maintained_original_sha256": "6113ad475f7eea8829001f379d43115a0f07e2b456ccbb99c07ff525c46dea32",
+  "previous_registered_source_sha256": "6cc21b1afa38446f775ee3ba245c008af9d71bdb66620d0a952b720f43d57db6",
+  "previous_maintained_original_sha256": "57b5c0574c47033955209ee518320d35a828ee2a59454f4fa4250488651134c0",
+  "restorer_sha256": "07129ec1deba51e8b3c92739d778da09c19d53aef04dc07839ae5f3ceabee1f7",
+  "extractor_sha256": "63d83bec1e398ddf539a30683ad4e0284831ac993f50c2a07d8d7e125f3c281d",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9480,
+  "current_python_registry_tests": 350,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "linked-list-record-literal-defaults": "a1e99eedd4c2a78ea9b22f9ce1826e2f9ee666f8cdbe41ddc283c87819cfc8ae"
+  },
+  "native_reference_authentication_sha256": "0c0b52cc5b01a63c98348e750314f9768cfd5661456ffdf533d8c5a18bc3f46a",
+  "source_proof_sha256": "780d5a5a5cddd2fcb92208e81b43dcaa0a7e1602a40547f538033a718e2b82cd"
+}

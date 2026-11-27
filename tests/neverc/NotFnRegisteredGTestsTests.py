@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_record_defaults_registered = cls.registered
+        cls.list_record_defaults_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_defaults_original = cls.adapter.restore_original_gtests(cls.list_record_defaults_registered,
+                                                                        cls.list_record_defaults_suffix)
+        cls.registered = cls.adapter.restore_list_record_defaults_history(cls.list_record_defaults_registered)
         cls.list_record_comparisons_registered = cls.registered
         cls.list_record_comparisons_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_record_comparisons_original = cls.adapter.restore_original_gtests(cls.list_record_comparisons_registered,
@@ -4441,6 +4446,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_record_comparisons_history(self.list_record_comparisons_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_record_comparisons_registered, self.list_record_comparisons_suffix + b' ')
+
+
+    def test_list_record_defaults_retains_published_bodies(self):
+        self.assertEqual(self.list_record_defaults_original + self.list_record_defaults_suffix, self.list_record_defaults_registered)
+        self.assertEqual(self.adapter.restore_list_record_defaults_history(self.list_record_defaults_original),
+                         self.list_record_comparisons_original)
+        output, evidence = self.extractor.extract(self.list_record_defaults_original, ['TranslateTest.CoreV2ListRecordLiteralDefaultInsertionRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordLiteralDefaultInsertionRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordLiteralDefaultCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordLiteralDefaultCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordEffectfulDefaultGuardRejected', 'TranslateTest.CoreV2ForwardListRecordMemberDependentDefaultGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9480)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-literal-default-insertion', output)
+        self.assertIn(b'forward-list-record-member-dependent-default-guard', output)
+
+    def test_list_record_defaults_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_defaults_history(self.list_record_defaults_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_defaults_registered, self.list_record_defaults_suffix + b' ')
 
 
 if __name__ == '__main__':

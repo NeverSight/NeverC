@@ -18764,3 +18764,9 @@ The checked list and forward_list support default record equality in remove and 
 Linked-list owner comparisons use the selected element operators in lexicographic order.
 The checked source-owned record operators accept floating-point fields, fixed enums and
 pointer equality within the supported scalar operations.
+
+## Linked-list record value initialization
+
+Count construction, resize and emplacement of the checked linked-list records apply
+literal member initializers after zero initialization. The checked copy paths preserve
+the stored field values.
