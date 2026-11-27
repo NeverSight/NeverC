@@ -1,0 +1,319 @@
+{
+  "positive_cases": [
+    {
+      "name": "ordered-set-reverse-endpoints-and-postfix-step",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetReverseEndpointsAndPostfixStepRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0a3aca3511d5220165c9c5834ee94eb766e2549f9f263b2400fa17a34eddf7f4",
+      "original_case_source_sha256": "0a3aca3511d5220165c9c5834ee94eb766e2549f9f263b2400fa17a34eddf7f4",
+      "gtest_body_sha256": "8b35cb148f782cf450d265de6a99782af40f5ea31da88d7536c98ec3e710bbfc"
+    },
+    {
+      "name": "ordered-multiset-const-reverse-traversal-counts-equivalents",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetConstReverseTraversalCountsEquivalentsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e791e51057ea25ecd80c283d9326ae8486a363252c7dd6520e7a13c27207ec7e",
+      "original_case_source_sha256": "e791e51057ea25ecd80c283d9326ae8486a363252c7dd6520e7a13c27207ec7e",
+      "gtest_body_sha256": "a7ce806492a5e96f4e79d5dc5616eb60719bb7b803e7ad04d339b29633295f19"
+    },
+    {
+      "name": "ordered-map-reverse-arrow-mutates-selected-node",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapReverseArrowMutatesSelectedNodeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c68927b3962db93d67f80e95053b221008c551c4255ca43938d25505476806f5",
+      "original_case_source_sha256": "c68927b3962db93d67f80e95053b221008c551c4255ca43938d25505476806f5",
+      "gtest_body_sha256": "529568241c417034f9b7b511c2d670feb3731022a708b8ff39fa649f7414c863"
+    },
+    {
+      "name": "ordered-multimap-reverse-factory-and-const-endpoint",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapReverseFactoryAndConstEndpointRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "69618a0671d2755fa14b177a2514d1ff25ecce59cc5bd411199e58bded58c566",
+      "original_case_source_sha256": "69618a0671d2755fa14b177a2514d1ff25ecce59cc5bd411199e58bded58c566",
+      "gtest_body_sha256": "ea14ae932efa52920376b9fbdba8bb964b2d6bd2a2d64aac97cc5aec07d31645"
+    },
+    {
+      "name": "ordered-set-reverse-range-uses-half-open-endpoints",
+      "formal_test_name": "TranslateTest.CoreV2OrderedSetReverseRangeUsesHalfOpenEndpointsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "278767bf11680b276dafcc8ce5b20011658fdceff31b623f6ba897cae75b93d7",
+      "original_case_source_sha256": "278767bf11680b276dafcc8ce5b20011658fdceff31b623f6ba897cae75b93d7",
+      "gtest_body_sha256": "4016c64ce11f7e0a7ecd93c15653d158a0a45ee201042c79317e3e203f89f067"
+    },
+    {
+      "name": "ordered-multiset-reverse-range-insertion-keeps-equivalent-entries",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultisetReverseRangeInsertionKeepsEquivalentEntriesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "db36261da2c11443dcc0b229492af0049aa04054020c9ecec430fa355fe3b3ef",
+      "original_case_source_sha256": "db36261da2c11443dcc0b229492af0049aa04054020c9ecec430fa355fe3b3ef",
+      "gtest_body_sha256": "74bd044f66113c088ca835410aa7ca6efe3186cfdb0f3de2403af922a7134e0f"
+    },
+    {
+      "name": "ordered-map-reverse-range-retains-existing-mapped-values",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapReverseRangeRetainsExistingMappedValuesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e24a294378ce91680a86af8abf773fb5fe603cfe1329f13a15a2d0665fefad75",
+      "original_case_source_sha256": "e24a294378ce91680a86af8abf773fb5fe603cfe1329f13a15a2d0665fefad75",
+      "gtest_body_sha256": "54cc7662963aed7b599745bf2988dd6da4627cfc918be71aee7dc83d2f053d8b"
+    },
+    {
+      "name": "ordered-multimap-reverse-range-presents-equivalents-in-reverse-order",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapReverseRangePresentsEquivalentsInReverseOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c23ad0a353320a4272af4703f38329bda140ec32a6d75b841eb5e221fcd61c62",
+      "original_case_source_sha256": "c23ad0a353320a4272af4703f38329bda140ec32a6d75b841eb5e221fcd61c62",
+      "gtest_body_sha256": "580b1cd4bfc42a3fb9dd0ee0ac5aba4ffdea84761b0934d72a25b9eb6cf76b45"
+    },
+    {
+      "name": "ordered-map-reverse-cursor-converts-to-const",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapReverseCursorConvertsToConstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ba7aa1153a92ce7ae599f3a6360a553cd2ceb76b618cb0f20cdc8d061cb1f9ba",
+      "original_case_source_sha256": "ba7aa1153a92ce7ae599f3a6360a553cd2ceb76b618cb0f20cdc8d061cb1f9ba",
+      "gtest_body_sha256": "1e69c54103f3d777c7d70b08cb948de92b8a4ff6651bb272400b7ad4c78978f3"
+    },
+    {
+      "name": "ordered-map-mixed-reverse-cursors-compare-positions",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapMixedReverseCursorsComparePositionsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4460dbba92123953b8e287f8ef34ae21206011d04063bc32799e7bb095f49c7b",
+      "original_case_source_sha256": "4460dbba92123953b8e287f8ef34ae21206011d04063bc32799e7bb095f49c7b",
+      "gtest_body_sha256": "ff68bbc53be74dbe23a58f62f57a8920df3c4fd4523acde633917554c7e49d58"
+    },
+    {
+      "name": "ordered-multimap-assigns-mutable-reverse-position-to-const",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMultimapAssignsMutableReversePositionToConstRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "abc3a7bc43cf0c705168484777321001ce1f5858fae02feaf9cb8a9e41478cf5",
+      "original_case_source_sha256": "abc3a7bc43cf0c705168484777321001ce1f5858fae02feaf9cb8a9e41478cf5",
+      "gtest_body_sha256": "7234e602dec459aec585bf544a2b69fd6edaa03a9003ebd6aeb0fa89d0bddf1e"
+    },
+    {
+      "name": "ordered-map-copies-const-reverse-end-from-mutable",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapCopiesConstReverseEndFromMutableRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0e444f007bca1efaeb7ecc224d36d338630a381f3dd8e81a96db9b061c8ef110",
+      "original_case_source_sha256": "0e444f007bca1efaeb7ecc224d36d338630a381f3dd8e81a96db9b061c8ef110",
+      "gtest_body_sha256": "ae4141d7bb65d583b6841409b5ccaa9fd5aa5f4fc51ceda6b3533c93096aabce"
+    },
+    {
+      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapTraversesInReverseWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
+      "original_case_source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
+      "gtest_body_sha256": "36cf9e1a622a3a554c252c60cc4de5ef58a1fe7403a7add1c48519ea110da95c"
+    },
+    {
+      "name": "ordered-mapped-reverse-conversion-other-mapped-storage-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMapConvertsReverseIteratorWithLongMappedValues",
+      "expected": "accept",
+      "source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
+      "original_case_source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
+      "gtest_body_sha256": "b07311261da7ae43fedb14e4c4d49f536c95bde3ca46427414191b7b260044a9"
+    },
+    {
+      "name": "ordered-reverse-cursor-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedReverseCursorCustomPolicyGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
+      "original_case_source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
+      "gtest_body_sha256": "cf59463fa3e35042a287904699c574f2273f0f3fb32bec0370193b56e36e76a5"
+    },
+    {
+      "name": "ordered-mapped-reverse-conversion-custom-order-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
+      "original_case_source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
+      "gtest_body_sha256": "b8f8cd86f3313078eb53b117397783bb93599f5b195111e67e6f009af7229999"
+    },
+    {
+      "name": "ordered-reverse-range-custom-policy-guard",
+      "formal_test_name": "TranslateTest.CoreV2OrderedReverseRangeAcrossStandardComparators",
+      "expected": "accept",
+      "source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
+      "original_case_source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
+      "gtest_body_sha256": "06ffeccb5cb6f9bf80ab4fba2596c3433ca53644c11b0322b3d80028f67e26c1"
+    }
+  ],
+  "negative_cases": [],
+  "source_cases": [
+    {
+      "name": "ordered-set-reverse-endpoints-and-postfix-step",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  std::set<int> values{1, 3, 7};\n  auto it = values.rbegin();\n  auto end = values.rend();\n  if (it.base() != values.end() || end.base() != values.begin() || *it != 7)\n    return 1;\n  auto top = it++;\n  if (*top != 7 || *it != 3 || top == it)\n    return 2;\n  --it;\n  return it == top && *it == 7 ? 0 : 3;\n}\n",
+      "source_sha256": "0a3aca3511d5220165c9c5834ee94eb766e2549f9f263b2400fa17a34eddf7f4",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multiset-const-reverse-traversal-counts-equivalents",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::multiset<int> values{1, 3, 3, 7};\n  auto it = values.crbegin();\n  auto end = values.crend();\n  int sum = 0;\n  while (it != end) {\n    sum = sum * 10 + *it;\n    ++it;\n  }\n  const std::multiset<int> empty;\n  return sum == 7331 && empty.rbegin() == empty.rend() ? 0 : 1;\n}\n",
+      "source_sha256": "e791e51057ea25ecd80c283d9326ae8486a363252c7dd6520e7a13c27207ec7e",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-reverse-arrow-mutates-selected-node",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{2, 20}, {5, 50}, {7, 70}};\n  auto top = values.rbegin();\n  auto second = top;\n  ++second;\n  second->second = 51;\n  if (top->first != 7 || (*second).first != 5)\n    return 1;\n  auto old = second--;\n  return old->second == 51 && second == top && values.find(5)->second == 51 ? 0 : 2;\n}\n",
+      "source_sha256": "c68927b3962db93d67f80e95053b221008c551c4255ca43938d25505476806f5",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-reverse-factory-and-const-endpoint",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <iterator>\n#include <map>\nint main() {\n  const std::multimap<int, int> values{{2, 20}, {2, 21}, {4, 40}};\n  auto it = std::make_reverse_iterator(values.end());\n  if (it != values.crbegin() || it->second != 40)\n    return 1;\n  ++it;\n  if (it->second != 21)\n    return 2;\n  ++it;\n  return it != values.crend() && it->second == 20 && it.base() != values.end() ? 0 : 3;\n}\n",
+      "source_sha256": "69618a0671d2755fa14b177a2514d1ff25ecce59cc5bd411199e58bded58c566",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-set-reverse-range-uses-half-open-endpoints",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::set<int> source{1, 2, 3, 4};\n  auto first = source.rbegin();\n  ++first;\n  auto last = first;\n  ++last;\n  ++last;\n  std::set<int> values(first, last);\n  return values.size() == 2 && *values.begin() == 2 && values.count(3) == 1 &&\n         values.count(1) == 0 && values.count(4) == 0 ? 0 : 1;\n}\n",
+      "source_sha256": "278767bf11680b276dafcc8ce5b20011658fdceff31b623f6ba897cae75b93d7",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multiset-reverse-range-insertion-keeps-equivalent-entries",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <set>\nint main() {\n  const std::multiset<int> source{1, 2, 2, 3};\n  std::multiset<int> values{2, 4};\n  values.insert(source.crbegin(), source.crend());\n  values.insert(source.crend(), source.crend());\n  return values.size() == 6 && values.count(2) == 3 && values.count(3) == 1 &&\n         *values.begin() == 1 && source.size() == 4 ? 0 : 1;\n}\n",
+      "source_sha256": "db36261da2c11443dcc0b229492af0049aa04054020c9ecec430fa355fe3b3ef",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-reverse-range-retains-existing-mapped-values",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> source{{1, 10}, {3, 30}, {5, 50}};\n  std::map<int, int> copy(source.rbegin(), source.rend());\n  std::map<int, int> values{{3, 99}};\n  values.insert(copy.crbegin(), copy.crend());\n  return values.size() == 3 && values.find(1)->second == 10 && values.find(3)->second == 99 &&\n         values.find(5)->second == 50 && copy.find(3)->second == 30 ? 0 : 1;\n}\n",
+      "source_sha256": "e24a294378ce91680a86af8abf773fb5fe603cfe1329f13a15a2d0665fefad75",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-reverse-range-presents-equivalents-in-reverse-order",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::multimap<int, int> source{{2, 20}, {2, 21}, {4, 40}};\n  std::multimap<int, int> values{{2, 19}};\n  values.insert(source.crbegin(), source.crend());\n  auto cursor = values.lower_bound(2);\n  if (cursor->second != 19 || (++cursor)->second != 21 || (++cursor)->second != 20)\n    return 1;\n  return values.size() == 4 && values.count(2) == 3 && (++cursor)->second == 40 ? 0 : 2;\n}\n",
+      "source_sha256": "c23ad0a353320a4272af4703f38329bda140ec32a6d75b841eb5e221fcd61c62",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-reverse-cursor-converts-to-const",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map values{{1, 10}, {5, 50}};\n  auto mutable_cursor = values.rbegin();\n  Map::const_reverse_iterator read = mutable_cursor;\n  mutable_cursor->second = 51;\n  return read->second == 51 && read == values.crbegin() &&\n         read.base() == values.cend() ? 0 : 1;\n}\n",
+      "source_sha256": "ba7aa1153a92ce7ae599f3a6360a553cd2ceb76b618cb0f20cdc8d061cb1f9ba",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-mixed-reverse-cursors-compare-positions",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  std::map<int, int> values{{1, 10}, {2, 20}, {3, 30}};\n  auto write = values.rbegin();\n  auto read = values.crbegin();\n  if (write != read || read != write)\n    return 1;\n  ++write;\n  if (read == write || write == read)\n    return 2;\n  ++read;\n  return read == write && read->second == 20 ? 0 : 3;\n}\n",
+      "source_sha256": "4460dbba92123953b8e287f8ef34ae21206011d04063bc32799e7bb095f49c7b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-multimap-assigns-mutable-reverse-position-to-const",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::multimap<int, int>;\n  Map values{{2, 20}, {2, 21}, {5, 50}};\n  auto from = values.rbegin();\n  ++from;\n  Map::const_reverse_iterator to = values.crend();\n  to = from;\n  if (to != from || to->second != 21)\n    return 1;\n  ++from;\n  return to != from && from->second == 20 && to->second == 21 ? 0 : 2;\n}\n",
+      "source_sha256": "abc3a7bc43cf0c705168484777321001ce1f5858fae02feaf9cb8a9e41478cf5",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-copies-const-reverse-end-from-mutable",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, int>;\n  Map values;\n  auto mutable_end = values.rend();\n  const Map::const_reverse_iterator end(mutable_end);\n  return end == values.crend() && end == values.rbegin() &&\n         end.base() == values.cbegin() ? 0 : 1;\n}\n",
+      "source_sha256": "0e444f007bca1efaeb7ecc224d36d338630a381f3dd8e81a96db9b061c8ef110",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-map-reverse-cursor-different-mapped-storage-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  const std::map<int, long> values{{2, 20}};\n  auto it = values.crbegin();\n  return it->second == 20 ? 0 : 1;\n}\n",
+      "source_sha256": "5c0d86b6530a8ee422078987ca31d7ab131017e3f1fc7172703712518d6a4263",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-mapped-reverse-conversion-other-mapped-storage-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <map>\nint main() {\n  using Map = std::map<int, long>;\n  Map values{{1, 10}, {5, 50}};\n  auto it = values.rbegin();\n  Map::const_reverse_iterator read = it;\n  return read == it && read->second == 50 ? 0 : 1;\n}\n",
+      "source_sha256": "23ab093185cb5125cb9847fb440bf60077fe800a5cb74e4dc91760e8ae1ccf65",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-reverse-cursor-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> values{2, 5};\n  auto it = values.rbegin();\n  return *it == 2 ? 0 : 1;\n}\n",
+      "source_sha256": "2863f304fe64cb0935df22bd440cae13dab9f3ef0af7f3f7ddd9725faf135f51",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-mapped-reverse-conversion-custom-order-guard",
+      "expected": "accept",
+      "public_header": "map",
+      "source": "#include <functional>\n#include <map>\nint main() {\n  using Map = std::map<int, int, std::greater<int>>;\n  Map values{{1, 10}, {5, 50}};\n  Map::const_reverse_iterator it = values.rbegin();\n  return it->first == 1 ? 0 : 1;\n}\n",
+      "source_sha256": "cca9918fa9afb8ce6c5947b95183010c346bd3b9382fcc2978f94f119e53712a",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "ordered-reverse-range-custom-policy-guard",
+      "expected": "accept",
+      "public_header": "set",
+      "source": "#include <functional>\n#include <set>\nint main() {\n  const std::set<int, std::greater<int>> source{1, 2, 3};\n  std::set<int> values(source.rbegin(), source.rend());\n  return values.size() == 3 ? 0 : 1;\n}\n",
+      "source_sha256": "d04ad8c5dc2d65e895e82a7bb53337cf141d6d48426958290bc444449ccffdeb",
+      "kind": "cpp17-operation"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2OrderedSetReverseEndpointsAndPostfixStepRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetConstReverseTraversalCountsEquivalentsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapReverseArrowMutatesSelectedNodeRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapReverseFactoryAndConstEndpointRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedSetReverseRangeUsesHalfOpenEndpointsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultisetReverseRangeInsertionKeepsEquivalentEntriesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapReverseRangeRetainsExistingMappedValuesRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapReverseRangePresentsEquivalentsInReverseOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapReverseCursorConvertsToConstRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapMixedReverseCursorsComparePositionsRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMultimapAssignsMutableReversePositionToConstRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapCopiesConstReverseEndFromMutableRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMapTraversesInReverseWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedMapConvertsReverseIteratorWithLongMappedValues",
+    "TranslateTest.CoreV2OrderedReverseCursorCustomPolicyGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedMappedReverseConversionCustomOrderGuardRunAtBothOptimizations",
+    "TranslateTest.CoreV2OrderedReverseRangeAcrossStandardComparators"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "88d1667c3c35a1a79ea0af997d34035ba7434b3f6fc53fd0b36ab02cd847edd1",
+  "maintained_original_sha256": "71f05eab5c997e801174b09b261db0752041dcd4a7a19e10b805af00a9568b0f",
+  "previous_registered_source_sha256": "a2e809fc19bef83ca9c2c6534bacccc64ec0ecba8d0349098f54e78129ece6af",
+  "previous_maintained_original_sha256": "b18ee73fa062befcb4f029a8c1e076be476d306a8567dc8f01e56b7386944094",
+  "restorer_sha256": "1d38c31cc215d4c6ccf81b44d863f7fac757b16bcd148a24cbfd9311160d6fb2",
+  "extractor_sha256": "90edddafcfcd02a1f5ab6a6ee4be2b6cdf8db119f6580b2fa687a4007889df3f",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8837,
+  "current_python_registry_tests": 266,
+  "native_reference_selected_executions": 34,
+  "planned_generated_c23_executions": 34,
+  "native_reference_proofs": {
+    "descending-historical": "ba4e5003a9ec531d4d97067fbf17dd3f37c570ec85cba156041bef41e29706b1",
+    "ordered-map-long-and-unsigned": "e48f314ebd59a1ac9b678cca9d54f73a3c68294cd5f7bade0010b83afca9dbec",
+    "ordered-reverse": "b8976d0c505072b747de7ef5201db9e8c95676fd0c9e27697549ee1310f7f0bd",
+    "ordered-shared-cursor": "109121d160959c31c4b776897084dbde4c3a7a2312db9721fbff0b2cbee95a36"
+  },
+  "native_reference_authentication_sha256": "d522ab2ad8c6c7cccd05d0c0c50302ec79096f22d2d0d9585be2f885dad076a3",
+  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+}
