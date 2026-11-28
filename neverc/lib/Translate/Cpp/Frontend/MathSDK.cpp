@@ -54280,8 +54280,31 @@ bool linkedListDefaultCall(const CallExpr *Call, const LinkedListRecordSource *S
   });
 }
 
+enum class LinkedListDefaultUse { Member, ConstructorInitializer, ConstructorBody };
+
+const FieldDecl *linkedListThisField(const Expr *Value, const TagDecl *Owner) {
+  const auto *Member = dyn_cast<MemberExpr>(Value->IgnoreParenImpCasts());
+  const auto *Field = Member ? dyn_cast<FieldDecl>(Member->getMemberDecl()) : nullptr;
+  if (!Field || Field->getParent()->getCanonicalDecl() != Owner ||
+      !isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()))
+    return nullptr;
+  return Field;
+}
+
+bool linkedListConstantReturn(const FunctionDecl *Function) {
+  const auto *Definition = Function->getDefinition();
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition ? Definition->getBody() : nullptr);
+  const auto *Return = Body && Body->size() == 1
+      ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+  const auto *Value = Return ? Return->getRetValue() : nullptr;
+  Expr::EvalResult Result;
+  return Value && Value->EvaluateAsRValue(Result, Function->getASTContext()) &&
+         !Result.HasSideEffects && !Result.HasUndefinedBehavior;
+}
+
 bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
-                                 const LinkedListRecordSource *Source, bool AllowCalls = true) {
+                                 const LinkedListRecordSource *Source,
+                                 LinkedListDefaultUse Use = LinkedListDefaultUse::Member) {
   llvm::SmallVector<const Expr *, 8> Pending{Init};
   // Separate calls can select the same parameter initializer.
   llvm::DenseSet<const Expr *> Checked;
@@ -54295,16 +54318,18 @@ bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
     if (const auto *Reference = dyn_cast<DeclRefExpr>(Value);
         Reference && isa<EnumConstantDecl>(Reference->getDecl()))
       continue;
-    if (const auto *Member = dyn_cast<MemberExpr>(Value)) {
-      const auto *Earlier = dyn_cast<FieldDecl>(Member->getMemberDecl());
-      if (!Earlier || Earlier->getParent()->getCanonicalDecl() != Owner ||
-          Earlier->getFieldIndex() >= Field->getFieldIndex() ||
-          !isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()))
+    if (isa<MemberExpr>(Value)) {
+      const auto *Read = linkedListThisField(Value, Owner);
+      if (!Read || (Use != LinkedListDefaultUse::ConstructorBody &&
+                    Read->getFieldIndex() >= Field->getFieldIndex()))
         return false;
       continue;
     }
     if (const auto *Call = dyn_cast<CallExpr>(Value)) {
-      if (!AllowCalls || !linkedListDefaultCall(Call, Source)) return false;
+      if (Use == LinkedListDefaultUse::ConstructorBody || !linkedListDefaultCall(Call, Source) ||
+          (Use == LinkedListDefaultUse::ConstructorInitializer &&
+           !linkedListConstantReturn(Call->getDirectCallee())))
+        return false;
       for (const auto *Argument : Call->arguments()) {
         const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument);
         if (!Default) {
@@ -54362,12 +54387,39 @@ bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
   return HasDefault;
 }
 
-bool linkedListScalarConstructorInitializers(const CXXConstructorDecl *Constructor,
+bool linkedListScalarConstructorBody(const CompoundStmt *Body,
+    const CXXRecordDecl *Record, const LinkedListRecordSource *Source) {
+  const auto *Owner = Record->getCanonicalDecl();
+  for (const auto *Statement : Body->body()) {
+    const auto *Expression = dyn_cast<Expr>(Statement);
+    if (!Expression) return false;
+    Expression = Expression->IgnoreParenImpCasts();
+    if (const auto *Unary = dyn_cast<UnaryOperator>(Expression)) {
+      const auto *Field = linkedListThisField(Unary->getSubExpr(), Owner);
+      if (!Unary->isIncrementDecrementOp() || !Field ||
+          !Field->getType()->isArithmeticType() || Field->getType().hasLocalQualifiers())
+        return false;
+      continue;
+    }
+    const auto *Assignment = dyn_cast<BinaryOperator>(Expression);
+    if (!Assignment || (Assignment->getOpcode() != BO_Assign &&
+        Assignment->getOpcode() != BO_AddAssign && Assignment->getOpcode() != BO_SubAssign &&
+        Assignment->getOpcode() != BO_MulAssign))
+      return false;
+    const auto *Field = linkedListThisField(Assignment->getLHS(), Owner);
+    if (!Field || !Field->getType()->isArithmeticType() || Field->getType().hasLocalQualifiers() ||
+        !linkedListDefaultExpression(Assignment->getRHS(), Field, Source,
+                                     LinkedListDefaultUse::ConstructorBody))
+      return false;
+  }
+  return true;
+}
+
+bool linkedListScalarDefaultConstructor(const CXXConstructorDecl *Constructor,
     const LinkedListRecordSource *Source) {
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
   const auto *Record = Constructor->getParent();
-  if (!Body || !Body->body_empty() ||
-      Constructor->getNumCtorInitializers() !=
+  if (!Body || Constructor->getNumCtorInitializers() !=
           static_cast<unsigned>(std::distance(Record->field_begin(), Record->field_end())))
     return false;
   for (const auto *Init : Constructor->inits()) {
@@ -54379,10 +54431,10 @@ bool linkedListScalarConstructorInitializers(const CXXConstructorDecl *Construct
       Value = Default->getExpr();
     }
     if (!Value || (Source && !Source->Program.owns(Source->Sources, Value->getExprLoc())) ||
-        !linkedListDefaultExpression(Value, Field, Source, /*AllowCalls=*/false))
+        !linkedListDefaultExpression(Value, Field, Source, LinkedListDefaultUse::ConstructorInitializer))
       return false;
   }
-  return true;
+  return linkedListScalarConstructorBody(Body, Record, Source);
 }
 
 const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
@@ -54400,7 +54452,7 @@ const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
     return nullptr;
   const auto *Default = cast<CXXConstructorDecl>(Definition);
   if (!Constructor->getType()->getAs<FunctionProtoType>()->isNothrow() &&
-      !linkedListScalarConstructorInitializers(Default, Source))
+      !linkedListScalarDefaultConstructor(Default, Source))
     return nullptr;
   return Default;
 }
