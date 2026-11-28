@@ -109,7 +109,7 @@
     "TranslateTest.CoreV2ListDefaultConstructionUsesSelectedConstantArgument",
     "TranslateTest.CoreV2ForwardListUserDefaultConstructorMoveGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "2e9247fdd6af526c7ccf9565f768717b1f1a269bd5a6b17d872709d7cadd9b09",
   "maintained_original_sha256": "12c5b7d34894b9eb4f3c67b19601a989bc4bacd83dfa6b3d5750d4b52b65da75",
@@ -129,5 +129,7 @@
   "native_reference_authentication_sha256": "d2f0bab265e299f50be1b104ce7a3746099592c623aa71fb52116e328869ebd9",
   "rebased_compiler_source": "3cb98b323b73a1dbdec5a8ed9891b7ee6896662e",
   "rebased_source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
-  "rebased_original750_proof_sha256": "22185fccf70be53a0bb78dec889baa0317f76ccdb5c309e66341a74b85114788"
+  "rebased_original750_proof_sha256": "22185fccf70be53a0bb78dec889baa0317f76ccdb5c309e66341a74b85114788",
+  "constructor_argument_promotion_source_proof_sha256": "3574a04bbd2c2fd189db7b26403aa4b6a85bc284937b563f2a8a317db3a1081d",
+  "constructor_argument_promotion_native_proof_sha256": "efff33ac4a112636ce53890df2da079a7679a23aa6fde935efd24e13bca0c1c5"
 }

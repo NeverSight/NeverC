@@ -92,12 +92,24 @@
     "TranslateTest.CoreV2ListDefaultConstructorReferenceParameterGuardRejected",
     "TranslateTest.CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "current_registry_count": 9577,
   "current_python_registry_tests": 382,
   "registered_source_sha256": "bf4b6ad9510a3d056b5e37a79568ea863da4d5591a9665322d3e765467304f93",
   "maintained_original_sha256": "19a9deb5a34722dd92c51d3226f50107fb1c0aae78de5ce855074c0a46bc4aca",
   "previous_registered_source_sha256": "3b4728113e5b5ccccbe3733dcf76051e428628b3e5eb8c09649f30d467194990",
   "restorer_sha256": "a2efc724b75b4c9f3009da0bfbcd583f5b6a247051381d330dc74a4120c1a8c0",
-  "extractor_sha256": "3b9b9d329ba69c75bb1980244cd46d7c6870c457012844274eeb3fe924f37a3d"
+  "extractor_sha256": "3b9b9d329ba69c75bb1980244cd46d7c6870c457012844274eeb3fe924f37a3d",
+  "source_proof_sha256": "3574a04bbd2c2fd189db7b26403aa4b6a85bc284937b563f2a8a317db3a1081d",
+  "original750_proof_sha256": "66907854375c5bb6e3e53f6dfd81fc4ea9e2bb6c08d9f0ad66373625de1a3f02",
+  "native_reference_proofs": {
+    "linked-list-default-constructor-arguments": "efff33ac4a112636ce53890df2da079a7679a23aa6fde935efd24e13bca0c1c5"
+  },
+  "native_reference_sources": {
+    "list-user-default-constructor-parameter-guard": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f",
+    "list-two-default-constructor-parameters-resize": "4376477020729824246624ff05db9189f61f883d4ea4ee3ef194ac5759e2d4c9",
+    "forward-list-default-constructor-parameter-emplace": "1d3eba1657c8601a9cdc115236e72fc6221a9268adfb3f88965f1f9dee00e221",
+    "forward-list-nested-default-constructor-parameters": "599d1dbf965c025e1d7db91f30948727cb6c377a8365d99ea04988b5eae36e11"
+  },
+  "native_reference_authentication_sha256": "59357e7ccbef778b3d6cc94b7b9ad7fcf12d4056eef8402032443a7fca00bb85"
 }
