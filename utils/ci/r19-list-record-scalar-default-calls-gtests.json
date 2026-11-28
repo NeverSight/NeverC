@@ -23,6 +23,14 @@
       "source_sha256": "6de9e79108d5dd71c4f655015decab55cf94af15e1b17d6f57160356948d63e0",
       "original_case_source_sha256": "6de9e79108d5dd71c4f655015decab55cf94af15e1b17d6f57160356948d63e0",
       "gtest_body_sha256": "9e7e1932a3882b181f813633d44503d2cd4aff81c7d00bf8d65d7a53fd9e5bcd"
+    },
+    {
+      "name": "forward-list-record-default-call-nonliteral-default-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEvaluatesSelectedDefaultArgumentAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0663bdd2b8cbeac0900d34bf62adefbf3366971bfc21ca859343b53c3dfc96d5",
+      "original_case_source_sha256": "0663bdd2b8cbeac0900d34bf62adefbf3366971bfc21ca859343b53c3dfc96d5",
+      "gtest_body_sha256": "081c60b6219dacc9aa5f561fcda508c41e3f7d9ffacc3586f821e97b1d751693"
     }
   ],
   "negative_cases": [
@@ -33,14 +41,6 @@
       "source_sha256": "ddc72e475277fe06d450dc83a9cfebd5363ea930bb4b9398644e70ae19885cf7",
       "original_case_source_sha256": "ddc72e475277fe06d450dc83a9cfebd5363ea930bb4b9398644e70ae19885cf7",
       "gtest_body_sha256": "fa745a5fb2aabb6429bd03b44293c438dfcf0f6c103394fb80db872145ef8f87"
-    },
-    {
-      "name": "forward-list-record-default-call-nonliteral-default-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordDefaultCallNonliteralDefaultGuardRejected",
-      "expected": "reject",
-      "source_sha256": "0663bdd2b8cbeac0900d34bf62adefbf3366971bfc21ca859343b53c3dfc96d5",
-      "original_case_source_sha256": "0663bdd2b8cbeac0900d34bf62adefbf3366971bfc21ca859343b53c3dfc96d5",
-      "gtest_body_sha256": "2f5c427687c55d73c946fa16748ad2940e4ef8fe5c673b240843bca1d866c82d"
     }
   ],
   "source_cases": [
@@ -79,8 +79,8 @@
     {
       "name": "forward-list-record-default-call-nonliteral-default-guard",
       "section": "forward_list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source": "#include <forward_list>\nint calls;\nint seed() { return ++calls; }\nint tag(int value = seed()) { return value; }\nstruct Entry { int checksum = tag(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().checksum != 1 || calls != 1;\n}\n",
       "source_sha256": "0663bdd2b8cbeac0900d34bf62adefbf3366971bfc21ca859343b53c3dfc96d5"
     }
@@ -89,8 +89,8 @@
     "TranslateTest.CoreV2ListRecordDefaultCallScalarEarlierFieldRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListRecordDefaultCallNestedScalarRunAtBothOptimizations",
     "TranslateTest.CoreV2ListRecordDefaultCallFloatingScalarRunAtBothOptimizations",
-    "TranslateTest.CoreV2ListRecordDefaultCallReferenceArgumentGuardRejected",
-    "TranslateTest.CoreV2ForwardListRecordDefaultCallNonliteralDefaultGuardRejected"
+    "TranslateTest.CoreV2ForwardListEvaluatesSelectedDefaultArgumentAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordDefaultCallReferenceArgumentGuardRejected"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -103,11 +103,12 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9537,
   "current_python_registry_tests": 366,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "native_reference_proofs": {
-    "linked-list-record-scalar-default-calls": "07bcfc5e4cb38bfbe0b9f2164e82ab3fd239e4b8b75c12f55eed8e66691859c1"
+    "linked-list-record-scalar-default-calls": "07bcfc5e4cb38bfbe0b9f2164e82ab3fd239e4b8b75c12f55eed8e66691859c1",
+    "linked-list-record-default-arguments": "8829ebf01a74562a4d95d58e69c510661b057742c4c0e0bd55c9dea4102e0b4f"
   },
-  "native_reference_authentication_sha256": "d0b4ae3329a6d0c0e1714775a0fde8f2ed60d5558c5e473cb5afea28fd881353",
-  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+  "native_reference_authentication_sha256": "0181b024b69f13ff4c65920ef301fbf87cf3007c7a51343a4e67cb0bedb3bedf",
+  "source_proof_sha256": "eef1723761b08a502ea5e151f2bd8c96b517ef207a7e5f8d2e3fd93660b0ce09"
 }

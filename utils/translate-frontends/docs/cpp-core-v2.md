@@ -18793,3 +18793,9 @@ an earlier field and call a source-owned function with scalar value parameters.
 Explicit fill copies the supplied value. Node removal and container cleanup run
 the checked record destructor. Checked comparison results convert to bool where
 required by the selected linked-list operation.
+
+## Checked scalar default arguments in linked-list node initialization
+
+A source-owned call in a checked linked-list record initializer can use a
+selected arithmetic default argument. The default is evaluated for each
+new node using the callee's checked expression and scalar value parameter.

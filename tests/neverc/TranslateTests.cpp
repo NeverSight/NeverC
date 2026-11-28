@@ -418341,7 +418341,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListRecordDefaultCallNonliteralDefaultGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListEvaluatesSelectedDefaultArgumentAtBothOptimizations) {
   const auto Source = tmpFile("forward-list-record-default-call-nonliteral-default-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int calls;
@@ -418351,6 +418351,141 @@ struct Entry { int checksum = tag(); };
 int main() {
   std::forward_list<Entry> rows(1);
   return rows.front().checksum != 1 || calls != 1;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-default-call-nonliteral-default-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-default-call-nonliteral-default-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordSelectedDefaultCallPerNodeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-selected-default-call-per-node.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int calls;
+int seed() { return ++calls; }
+int tag(int value = seed()) { return value; }
+struct Entry { int id = tag(); int checksum = id + 10; };
+int main() {
+  std::list<Entry> rows(2);
+  auto first = rows.begin();
+  if (calls != 2 || first->checksum != 11 || rows.back().checksum != 12) return 1;
+  rows.resize(2);
+  rows.resize(1);
+  if (calls != 2 || first != rows.begin()) return 1;
+  auto& last = rows.emplace_back();
+  return calls != 3 || last.checksum != 13;
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-selected-default-call-per-node.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-selected-default-call-per-node" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordSelectedDefaultCallExpressionRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-record-selected-default-call-expression.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int calls;
+int seed() { return ++calls; }
+int code(int value = seed() * 2 + 3) { return value; }
+struct Entry { int checksum = code(); };
+int main() {
+  std::forward_list<Entry> rows(0);
+  if (calls || !rows.empty()) return 1;
+  rows.resize(2);
+  auto first = rows.begin();
+  auto second = first;
+  ++second;
+  if (calls != 2 || first->checksum != 5 || second->checksum != 7) return 1;
+  rows.emplace_after(second, Entry{21});
+  return calls != 2 || first != rows.begin() || rows.emplace_front().checksum != 9;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-record-selected-default-call-expression.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-record-selected-default-call-expression" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordNestedSelectedDefaultArgumentsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-record-nested-selected-default-arguments.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int calls;
+int seed() { return ++calls; }
+int code(int base = seed()) { return base * 10; }
+int stamp(int value = code(), int suffix = code()) { return value + suffix; }
+struct Entry { int checksum = stamp(); };
+int main() {
+  std::list<Entry> rows;
+  rows.emplace_back();
+  rows.emplace_front();
+  if (calls != 4 || rows.front().checksum != 70 || rows.back().checksum != 30) return 1;
+  return rows.emplace_back().checksum != 110 || calls != 6;
+}
+)r19containers");
+  const auto Output = tmpFile("list-record-nested-selected-default-arguments.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-record-nested-selected-default-arguments" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListRecordSelectedDefaultIndirectCallGuardRejected) {
+  const auto Source = tmpFile("list-record-selected-default-indirect-call-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int calls;
+int seed() { return ++calls; }
+int (*initial)() = seed;
+int tag(int value = initial()) { return value; }
+struct Entry { int checksum = tag(); };
+int main() {
+  std::list<Entry> rows(1);
+  return calls != 1 || rows.front().checksum != 1;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListRecordSelectedDefaultReferenceGuardRejected) {
+  const auto Source = tmpFile("forward-list-record-selected-default-reference-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int seed = 3;
+int tag(const int& value = seed) { return value; }
+struct Entry { int checksum = tag(); };
+int main() {
+  std::forward_list<Entry> rows(1);
+  return rows.front().checksum != 3;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

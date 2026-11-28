@@ -4029,6 +4029,34 @@ def restore_list_record_scalar_default_calls_history(source):
     return restored
 
 
+R19_LIST_RECORD_DEFAULT_ARGUMENTS_REGISTERED_SHA256 = '0a48e12346459374987a92ec402da0a2fb5b03f5fbeb8c867fac760043f69039'
+R19_LIST_RECORD_DEFAULT_ARGUMENTS_MAINTAINED_SHA256 = '89cbae87c4d5617ad77ebf50a8303ed35265aa5f3f927dc17a0c1d671ac43ddc'
+R19_LIST_RECORD_DEFAULT_ARGUMENTS_PREVIOUS_REGISTERED_SHA256 = '231fae82892f478ce48574a1dbe1e2ad97f7255f0bbb902b702e39fa350fba6d'
+R19_LIST_RECORD_DEFAULT_ARGUMENTS_PREVIOUS_MAINTAINED_SHA256 = 'd67d1a9ebfc8b388a6c0c838d767e1fa0fb5a668ebc02659407d1058b5f50b9b'
+R19_LIST_RECORD_DEFAULT_ARGUMENTS_ADDITIONS_SHA256 = '65ed6a64fd1c47341422fa2f7534a4266877c267da8faeea30af598850cb088e'
+R19_LIST_RECORD_DEFAULT_ARGUMENTS_MAINTAINED_SIZE = 21386052
+R19_LIST_RECORD_DEFAULT_ARGUMENTS_ADDITIONS_SIZE = 5700
+_R19_LIST_RECORD_DEFAULT_ARGUMENTS_HISTORICAL_ANY = b'TEST_F(TranslateTest, CoreV2ForwardListRecordDefaultCallNonliteralDefaultGuardRejected) {\n  const auto Source = tmpFile("forward-list-record-default-call-nonliteral-default-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint calls;\nint seed() { return ++calls; }\nint tag(int value = seed()) { return value; }\nstruct Entry { int checksum = tag(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().checksum != 1 || calls != 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_LIST_RECORD_DEFAULT_ARGUMENTS_ACTIVE_ANY = b'TEST_F(TranslateTest, CoreV2ForwardListEvaluatesSelectedDefaultArgumentAtBothOptimizations) {\n  const auto Source = tmpFile("forward-list-record-default-call-nonliteral-default-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint calls;\nint seed() { return ++calls; }\nint tag(int value = seed()) { return value; }\nstruct Entry { int checksum = tag(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().checksum != 1 || calls != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-record-default-call-nonliteral-default-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-record-default-call-nonliteral-default-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_list_record_default_arguments_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_RECORD_DEFAULT_ARGUMENTS_REGISTERED_SHA256, R19_LIST_RECORD_DEFAULT_ARGUMENTS_MAINTAINED_SHA256}
+    stop = R19_LIST_RECORD_DEFAULT_ARGUMENTS_MAINTAINED_SIZE
+    start = stop - R19_LIST_RECORD_DEFAULT_ARGUMENTS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_RECORD_DEFAULT_ARGUMENTS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(_R19_LIST_RECORD_DEFAULT_ARGUMENTS_ACTIVE_ANY) == 1
+    restored = restored.replace(_R19_LIST_RECORD_DEFAULT_ARGUMENTS_ACTIVE_ANY, _R19_LIST_RECORD_DEFAULT_ARGUMENTS_HISTORICAL_ANY, 1)
+    prior = (R19_LIST_RECORD_DEFAULT_ARGUMENTS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_RECORD_DEFAULT_ARGUMENTS_REGISTERED_SHA256
+             else R19_LIST_RECORD_DEFAULT_ARGUMENTS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -4952,6 +4980,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_RECORD_DEFAULT_ARGUMENTS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_RECORD_DEFAULT_ARGUMENTS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_RECORD_DEFAULT_ARGUMENTS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

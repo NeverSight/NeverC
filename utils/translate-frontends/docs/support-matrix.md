@@ -1256,3 +1256,10 @@ The cumulative suite covers 9,870 source requests across six 64-bit targets.
 The original 750-request regression also passes. On Linux x86-64, all
 1,749 formal tests pass and 1,236 generated C23 programs match native C++ at
 both O0 and O2.
+
+## R19 Checked scalar default arguments in linked-list node initialization
+
+The cumulative source suite covers 9,900 requests across six 64-bit targets.
+The original 750-request regression passes. On Linux x86-64, both execution
+partitions pass all 1,754 formal tests, and 1,240 generated C23 programs
+match native C++ at both O0 and O2.

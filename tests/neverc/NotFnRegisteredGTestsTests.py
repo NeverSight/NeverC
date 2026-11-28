@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_record_default_arguments_registered = cls.registered
+        cls.list_record_default_arguments_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_default_arguments_original = cls.adapter.restore_original_gtests(cls.list_record_default_arguments_registered,
+                                                                        cls.list_record_default_arguments_suffix)
+        cls.registered = cls.adapter.restore_list_record_default_arguments_history(cls.list_record_default_arguments_registered)
         cls.list_record_scalar_default_calls_registered = cls.registered
         cls.list_record_scalar_default_calls_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_record_scalar_default_calls_original = cls.adapter.restore_original_gtests(cls.list_record_scalar_default_calls_registered,
@@ -4648,6 +4653,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_record_scalar_default_calls_history(self.list_record_scalar_default_calls_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_record_scalar_default_calls_registered, self.list_record_scalar_default_calls_suffix + b' ')
+
+
+    def test_list_record_default_arguments_retains_published_bodies(self):
+        self.assertEqual(self.list_record_default_arguments_original + self.list_record_default_arguments_suffix, self.list_record_default_arguments_registered)
+        self.assertEqual(self.adapter.restore_list_record_default_arguments_history(self.list_record_default_arguments_original),
+                         self.list_record_scalar_default_calls_original)
+        output, evidence = self.extractor.extract(self.list_record_default_arguments_original, ['TranslateTest.CoreV2ListRecordSelectedDefaultCallPerNodeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordSelectedDefaultCallExpressionRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordNestedSelectedDefaultArgumentsRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordSelectedDefaultIndirectCallGuardRejected', 'TranslateTest.CoreV2ForwardListRecordSelectedDefaultReferenceGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9542)
+        self.assertEqual(evidence['selected_count'], 5)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-selected-default-call-per-node', output)
+        self.assertIn(b'forward-list-record-selected-default-reference-guard', output)
+
+    def test_list_record_default_arguments_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_default_arguments_history(self.list_record_default_arguments_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_default_arguments_registered, self.list_record_default_arguments_suffix + b' ')
 
 
 if __name__ == '__main__':
