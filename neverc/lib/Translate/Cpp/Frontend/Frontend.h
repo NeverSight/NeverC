@@ -4005,6 +4005,8 @@ struct UtilityForwardListIteratorRecord {
   UtilityForwardListNodeRecord Node;
   bool Const = false;
 };
+const clang::CXXConstructorDecl *approvedUtilityLinkedListDefaultConstructor(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record);
 std::optional<UtilityForwardListRecord> approvedUtilityForwardListRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);

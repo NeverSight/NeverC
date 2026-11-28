@@ -49001,7 +49001,7 @@ selectUtilityMemoryDefaultConstructor(const CXXRecordDecl *Record) {
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isDeleted() || Constructor->getNumParams() ||
       !supportedConstructor(Constructor) || !Prototype ||
-      isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()) || !Prototype->isNothrow())
+      isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()))
     return nullptr;
   return Constructor;
 }
@@ -49015,7 +49015,9 @@ approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
       !S.owns(SM, Record->getLocation()))
     return nullptr;
   const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record);
-  if (!Constructor || !S.owns(SM, Constructor->getLocation())) return nullptr;
+  if (!Constructor || !Constructor->getType()->getAs<FunctionProtoType>()->isNothrow() ||
+      !S.owns(SM, Constructor->getLocation()))
+    return nullptr;
   if (Constructor->isTrivial())
     return Constructor;
   const FunctionDecl *Definition = nullptr;
@@ -54269,7 +54271,7 @@ bool linkedListDefaultCall(const CallExpr *Call, const LinkedListRecordSource *S
 }
 
 bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
-                                 const LinkedListRecordSource *Source) {
+                                 const LinkedListRecordSource *Source, bool AllowCalls = true) {
   llvm::SmallVector<const Expr *, 8> Pending{Init};
   // Separate calls can select the same parameter initializer.
   llvm::DenseSet<const Expr *> Checked;
@@ -54292,7 +54294,7 @@ bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
       continue;
     }
     if (const auto *Call = dyn_cast<CallExpr>(Value)) {
-      if (!linkedListDefaultCall(Call, Source)) return false;
+      if (!AllowCalls || !linkedListDefaultCall(Call, Source)) return false;
       for (const auto *Argument : Call->arguments()) {
         const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument);
         if (!Default) {
@@ -54350,17 +54352,47 @@ bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
   return HasDefault;
 }
 
-bool linkedListCheckedUserDefaultConstructor(const CXXRecordDecl *Record,
+bool linkedListScalarConstructorInitializers(const CXXConstructorDecl *Constructor,
     const LinkedListRecordSource *Source) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
+  const auto *Record = Constructor->getParent();
+  if (!Body || !Body->body_empty() ||
+      Constructor->getNumCtorInitializers() !=
+          static_cast<unsigned>(std::distance(Record->field_begin(), Record->field_end())))
+    return false;
+  for (const auto *Init : Constructor->inits()) {
+    const auto *Field = Init->isMemberInitializer() ? Init->getMember() : nullptr;
+    if (!Field || !Field->getType()->isScalarType()) return false;
+    const auto *Value = Init->getInit();
+    if (const auto *Default = dyn_cast_or_null<CXXDefaultInitExpr>(Value)) {
+      if (Default->getField() != Field) return false;
+      Value = Default->getExpr();
+    }
+    if (!Value || (Source && !Source->Program.owns(Source->Sources, Value->getExprLoc())) ||
+        !linkedListDefaultExpression(Value, Field, Source, /*AllowCalls=*/false))
+      return false;
+  }
+  return true;
+}
+
+const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
+    const CXXRecordDecl *Record, const LinkedListRecordSource *Source) {
   const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record);
-  if (!Constructor || !Constructor->isUserProvided() ||
-      Constructor->getAccess() != AS_public || !Constructor->hasBody() ||
+  if (!Constructor || !Constructor->isUserProvided() || Constructor->getAccess() != AS_public ||
       !Record->hasTrivialCopyConstructor() || !Record->hasTrivialCopyAssignment() ||
       Record->hasNonTrivialMoveConstructor() || Record->hasNonTrivialMoveAssignment())
-    return false;
-  return !Source || llvm::all_of(Constructor->redecls(), [&](const FunctionDecl *D) {
-    return Source->Program.owns(Source->Sources, D->getLocation());
-  });
+    return nullptr;
+  const FunctionDecl *Definition = nullptr;
+  if (!Constructor->hasBody(Definition) || !Definition ||
+      (Source && !llvm::all_of(Constructor->redecls(), [&](const FunctionDecl *D) {
+        return Source->Program.owns(Source->Sources, D->getLocation());
+      })))
+    return nullptr;
+  const auto *Default = cast<CXXConstructorDecl>(Definition);
+  if (!Constructor->getType()->getAs<FunctionProtoType>()->isNothrow() &&
+      !linkedListScalarConstructorInitializers(Default, Source))
+    return nullptr;
+  return Default;
 }
 
 bool linkedListCheckedRecordDestructor(const CXXRecordDecl *Record,
@@ -54610,6 +54642,14 @@ std::optional<UtilityForwardListNodeRecord> forwardListNode(
     return std::nullopt;
   return UtilityForwardListNodeRecord{R, Begin, Leaves[0].Field, Leaves[1].Field};
 }
+}
+
+const CXXConstructorDecl *approvedUtilityLinkedListDefaultConstructor(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record) {
+  if (!Record || Record->isAggregate() || !S.owns(SM, Record->getLocation()))
+    return nullptr;
+  const LinkedListRecordSource Source{S, SM};
+  return linkedListCheckedUserDefaultConstructor(Record, &Source);
 }
 
 std::optional<UtilityForwardListRecord> approvedUtilityForwardListRecord(

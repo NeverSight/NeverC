@@ -27397,7 +27397,7 @@ class FunctionLowering {
     }
     if (!Record->isAggregate()) {
       const auto *Constructor =
-          approvedUtilityMemoryDefaultConstructor(A.S, A.Sources, T, A.Context);
+          approvedUtilityLinkedListDefaultConstructor(A.S, A.Sources, Record);
       constructMemoryDefault(std::move(Place), T, Constructor, false, L);
       return;
     }
