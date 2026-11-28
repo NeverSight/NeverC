@@ -27887,7 +27887,11 @@ class FunctionLowering {
           : snapshot(cast(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), "ptr:void", L), L);
       if (Insert || Operation == UtilityForwardListOperation::PushFront) {
         auto Next = snapshot(forwardListNext(Parent, L), L);
-        auto Node = forwardListCreateNode(Operands[Insert ? 1 : 0], Next, Owner->Node, L);
+        const unsigned PositionArgs = Insert ? 1 : 0;
+        const auto *Construction = Proof->EmplacedRecordConstruction;
+        const auto Inputs = llvm::ArrayRef<Expression>(Operands).drop_front(PositionArgs);
+        auto Node = forwardListCreateNode(Construction ? std::nullopt : std::optional{Operands[PositionArgs]},
+            Next, Owner->Node, L, {}, Construction, Inputs);
         assign(forwardListNext(Parent, L), Node, L);
         return Insert ? forwardListIterator(Method->getReturnType(),
             snapshot(forwardListNext(Parent, L), L), L) : Expression{};
@@ -29987,7 +29991,11 @@ class FunctionLowering {
     if (Insert || Operation == UtilityListOperation::PushFront || Operation == UtilityListOperation::PushBack) {
       std::optional<Expression> Position;
       if (Insert) Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
-      auto Node = listCreateNode(Operands[Insert ? 1 : 0], Owner->Node, L);
+      const unsigned PositionArgs = Insert ? 1 : 0;
+      const auto *Construction = Proof->EmplacedRecordConstruction;
+      const auto Inputs = llvm::ArrayRef<Expression>(Operands).drop_front(PositionArgs);
+      auto Node = listCreateNode(Construction ? std::nullopt : std::optional{Operands[PositionArgs]},
+          Owner->Node, L, {}, Construction, Inputs);
       // push_front/back read current owner links after allocation callbacks.
       // insert keeps its by-value position, but reloads that position's prev.
       if (!Position) Position = Operation == UtilityListOperation::PushFront

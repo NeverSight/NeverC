@@ -56865,14 +56865,21 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       (*Operation == UtilityForwardListOperation::RemoveValue || *Operation == UtilityForwardListOperation::Unique);
   const FunctionDecl *DefaultRecordComparison = nullptr;
   const auto DefaultOperator = RecordEquality ? OO_EqualEqual : OO_Less;
-  LinkedListEmplacement Emplacement{*Operation == UtilityForwardListOperation::EmplaceAfter ? 1u : 0u};
-  const bool EmplaceRecord = (*Operation == UtilityForwardListOperation::EmplaceAfter ||
-       *Operation == UtilityForwardListOperation::EmplaceFront) &&
-      Node->Value->getType()->isRecordType() && Method->getNumParams() > Emplacement.Offset &&
-      (linkedListMovesElement(Method, Emplacement.Offset, Node->Value->getType(), Context) ||
-       llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
-         return linkedListScalarEmplaceInput(P->getType(), Context);
-       }));
+  const bool Emplace = *Operation == UtilityForwardListOperation::EmplaceAfter ||
+      *Operation == UtilityForwardListOperation::EmplaceFront;
+  const bool Insert = *Operation == UtilityForwardListOperation::InsertAfter ||
+      *Operation == UtilityForwardListOperation::PushFront;
+  LinkedListEmplacement Emplacement{
+      *Operation == UtilityForwardListOperation::EmplaceAfter ||
+      *Operation == UtilityForwardListOperation::InsertAfter ? 1u : 0u};
+  const auto Element = Node->Value->getType();
+  const bool MovesRecord = (Emplace || Insert) &&
+      linkedListMovesElement(Method, Emplacement.Offset, Element, Context);
+  const bool EmplaceRecord = MovesRecord || (Emplace && Element->isRecordType() &&
+      Method->getNumParams() > Emplacement.Offset &&
+      llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
+        return linkedListScalarEmplaceInput(P->getType(), Context);
+      }));
   if (!forwardListSourceGraph(S, SM, Method, Context, *Node, SourceOrder, DirectFilter,
                               ObjectOrder ? ObjectOrder->Method : nullptr,
                               (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
@@ -58260,15 +58267,23 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       (*Operation == UtilityListOperation::Remove || *Operation == UtilityListOperation::Unique);
   const FunctionDecl *DefaultRecordComparison = nullptr;
   const auto DefaultOperator = RecordEquality ? OO_EqualEqual : OO_Less;
-  LinkedListEmplacement Emplacement{*Operation == UtilityListOperation::Emplace ? 1u : 0u};
-  const bool EmplaceRecord = (*Operation == UtilityListOperation::Emplace ||
-       *Operation == UtilityListOperation::EmplaceFront ||
-       *Operation == UtilityListOperation::EmplaceBack) &&
-      Node->Value->getType()->isRecordType() && Method->getNumParams() > Emplacement.Offset &&
-      (linkedListMovesElement(Method, Emplacement.Offset, Node->Value->getType(), Context) ||
-       llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
-         return linkedListScalarEmplaceInput(P->getType(), Context);
-       }));
+  const bool Emplace = *Operation == UtilityListOperation::Emplace ||
+      *Operation == UtilityListOperation::EmplaceFront ||
+      *Operation == UtilityListOperation::EmplaceBack;
+  const bool Insert = *Operation == UtilityListOperation::Insert ||
+      *Operation == UtilityListOperation::PushFront ||
+      *Operation == UtilityListOperation::PushBack;
+  LinkedListEmplacement Emplacement{
+      *Operation == UtilityListOperation::Emplace ||
+      *Operation == UtilityListOperation::Insert ? 1u : 0u};
+  const auto Element = Node->Value->getType();
+  const bool MovesRecord = (Emplace || Insert) &&
+      linkedListMovesElement(Method, Emplacement.Offset, Element, Context);
+  const bool EmplaceRecord = MovesRecord || (Emplace && Element->isRecordType() &&
+      Method->getNumParams() > Emplacement.Offset &&
+      llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
+        return linkedListScalarEmplaceInput(P->getType(), Context);
+      }));
   if ((Predicates && !listPredicateBody(Method)) ||
       !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare, OrderMethod,
                         (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
