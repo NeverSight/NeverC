@@ -48984,14 +48984,8 @@ static bool utilityMemoryTrivialValue(const State &S, const SourceManager &SM,
          Record->isTrivial() && Record->hasTrivialDestructor();
 }
 
-const CXXConstructorDecl *
-approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
-                                        QualType Element,
-                                        const ASTContext &Context) {
-  const auto *Record = definedRecord(Element.getUnqualifiedType());
-  if (!Record || Record->isUnion() || Record->isDependentContext() ||
-      !S.owns(SM, Record->getLocation()))
-    return nullptr;
+static const CXXConstructorDecl *
+selectUtilityMemoryDefaultConstructor(const CXXRecordDecl *Record) {
   const CXXConstructorDecl *Constructor = nullptr;
   for (const auto *Candidate : Record->ctors()) {
     if (!Candidate->isDefaultConstructor())
@@ -49007,8 +49001,21 @@ approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isDeleted() || Constructor->getNumParams() ||
       !supportedConstructor(Constructor) || !Prototype ||
-      !Prototype->isNothrow() || !S.owns(SM, Constructor->getLocation()))
+      isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()) || !Prototype->isNothrow())
     return nullptr;
+  return Constructor;
+}
+
+const CXXConstructorDecl *
+approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
+                                        QualType Element,
+                                        const ASTContext &Context) {
+  const auto *Record = definedRecord(Element.getUnqualifiedType());
+  if (!Record || Record->isUnion() || Record->isDependentContext() ||
+      !S.owns(SM, Record->getLocation()))
+    return nullptr;
+  const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record);
+  if (!Constructor || !S.owns(SM, Constructor->getLocation())) return nullptr;
   if (Constructor->isTrivial())
     return Constructor;
   const FunctionDecl *Definition = nullptr;
@@ -54343,11 +54350,25 @@ bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
   return HasDefault;
 }
 
-bool linkedListCheckedRecordDestructor(const CXXRecordDecl *Record,
+bool linkedListCheckedUserDefaultConstructor(const CXXRecordDecl *Record,
     const LinkedListRecordSource *Source) {
+  const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record);
+  if (!Constructor || !Constructor->isUserProvided() ||
+      Constructor->getAccess() != AS_public || !Constructor->hasBody() ||
+      !Record->hasTrivialCopyConstructor() || !Record->hasTrivialCopyAssignment() ||
+      Record->hasNonTrivialMoveConstructor() || Record->hasNonTrivialMoveAssignment())
+    return false;
+  return !Source || llvm::all_of(Constructor->redecls(), [&](const FunctionDecl *D) {
+    return Source->Program.owns(Source->Sources, D->getLocation());
+  });
+}
+
+bool linkedListCheckedRecordDestructor(const CXXRecordDecl *Record,
+    const LinkedListRecordSource *Source, bool CheckedUserDefault) {
   if (Record->hasTrivialDestructor() || !Record->hasTrivialCopyConstructor() ||
       !Record->hasTrivialCopyAssignment()) return false;
-  if (!Record->hasTrivialDefaultConstructor() && !linkedListCheckedMemberDefaults(Record, Source))
+  if (!CheckedUserDefault && !Record->hasTrivialDefaultConstructor() &&
+      !linkedListCheckedMemberDefaults(Record, Source))
     return false;
   const auto *Destructor = Record->getDestructor();
   if (!Destructor || Destructor->isDeleted() || Destructor->isInvalidDecl() ||
@@ -54372,12 +54393,15 @@ const CXXRecordDecl *linkedListRecordLayout(
   Record = Record ? Record->getDefinition() : nullptr;
   if (!Record || Record->isInvalidDecl() || Record->isDependentContext() ||
       Record->isUnion() || Record->getNumBases() || !Record->isStandardLayout() ||
-      !Record->isAggregate() || Record->field_empty())
+      Record->field_empty())
+    return nullptr;
+  const bool CheckedUserDefault = !Record->isAggregate();
+  if (CheckedUserDefault && !linkedListCheckedUserDefaultConstructor(Record, Source))
     return nullptr;
   if (!Record->isTrivial()) {
     const bool Checked = Record->hasTrivialDestructor()
-        ? linkedListCheckedMemberDefaults(Record, Source)
-        : linkedListCheckedRecordDestructor(Record, Source);
+        ? (CheckedUserDefault || linkedListCheckedMemberDefaults(Record, Source))
+        : linkedListCheckedRecordDestructor(Record, Source, CheckedUserDefault);
     if (!Checked) return nullptr;
   }
   if (Source && !Source->Program.owns(Source->Sources, Record->getLocation()))
