@@ -1263,3 +1263,10 @@ The cumulative source suite covers 9,900 requests across six 64-bit targets.
 The original 750-request regression passes. On Linux x86-64, both execution
 partitions pass all 1,754 formal tests, and 1,240 generated C23 programs
 match native C++ at both O0 and O2.
+
+## R19 Nested aggregate defaults in linked-list nodes
+
+The cumulative source suite covers 9,930 requests across six 64-bit targets.
+The original 750-request regression passes. On Linux x86-64, the two execution
+partitions pass all 1,759 formal tests, and 1,244 generated C23 programs
+match native C++ at both O0 and O2.

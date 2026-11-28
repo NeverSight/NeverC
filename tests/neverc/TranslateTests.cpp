@@ -417921,7 +417921,7 @@ int main() {
               Result.err.find("TR0203") != std::string::npos) << Result.err;
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListNestedRecordDefaultAndDestructionGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListConstructsAndDestroysNestedRecordsAtBothOptimizations) {
   const auto Source = tmpFile("forward-list-nested-record-default-and-destruction-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int released;
@@ -417933,10 +417933,17 @@ int main() {
   return released != 4;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-nested-record-default-and-destruction-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-nested-record-default-and-destruction-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ListRecordFloatDefaultSortRunAtBothOptimizations) {
@@ -418486,6 +418493,137 @@ struct Entry { int checksum = tag(); };
 int main() {
   std::forward_list<Entry> rows(1);
   return rows.front().checksum != 3;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListNestedRecordDefaultAndDestroyOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-nested-record-default-and-destroy-order.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int sequence, released;
+int next() { return ++sequence; }
+struct Leaf {
+  int value = next();
+  int mirrored = value + 10;
+  ~Leaf() noexcept { released = released * 10 + value; }
+};
+struct Entry { int prefix = next(); Leaf leaf; int suffix = next(); };
+int main() {
+  std::list<Entry> rows(1);
+  if (sequence != 3 || rows.front().prefix != 1 || rows.front().leaf.mirrored != 12 ||
+      rows.front().suffix != 3) return 1;
+  rows.resize(2);
+  if (sequence != 6 || rows.back().prefix != 4 || rows.back().leaf.mirrored != 15 ||
+      rows.back().suffix != 6) return 1;
+  rows.pop_back();
+  if (released != 5) return 1;
+  rows.clear();
+  return released != 52;
+}
+)r19containers");
+  const auto Output = tmpFile("list-nested-record-default-and-destroy-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-nested-record-default-and-destroy-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListNestedArrayDefaultAndDestroyOrderRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-nested-array-default-and-destroy-order.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int sequence, released;
+int next() { return ++sequence; }
+struct Leaf {
+  int ticket = next();
+  ~Leaf() noexcept { released = released * 10 + ticket; }
+};
+struct Entry { Leaf fields[2]; int marker = next(); };
+int main() {
+  std::forward_list<Entry> rows;
+  auto& item = rows.emplace_front();
+  if (sequence != 3 || item.fields[0].ticket != 1 || item.fields[1].ticket != 2 ||
+      item.marker != 3 || released) return 1;
+  rows.clear();
+  return released != 21;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-nested-array-default-and-destroy-order.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-nested-array-default-and-destroy-order" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListDeepRecordOnlyNestedDefaultsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-deep-record-only-nested-defaults.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int sequence;
+int next() { return ++sequence; }
+struct Leaf { int key = next(); int mirror = key + 3; };
+struct Middle { Leaf leaf; };
+struct Entry { Middle inner; };
+int main() {
+  std::list<Entry> rows(1);
+  if (sequence != 1 || rows.front().inner.leaf.mirror != 4) return 1;
+  rows.emplace_back();
+  return sequence != 2 || rows.back().inner.leaf.mirror != 5;
+}
+)r19containers");
+  const auto Output = tmpFile("list-deep-record-only-nested-defaults.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-deep-record-only-nested-defaults" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected) {
+  const auto Source = tmpFile("list-nested-user-provided-default-constructor-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Leaf { int value; Leaf() : value(7) {} };
+struct Entry { Leaf field; };
+int main() {
+  std::list<Entry> rows(1);
+  return rows.front().field.value != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListNestedIndirectDefaultCallGuardRejected) {
+  const auto Source = tmpFile("forward-list-nested-indirect-default-call-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int next() { return 7; }
+int (*getValue)() = next;
+struct Leaf { int value = getValue(); };
+struct Entry { Leaf field; };
+int main() {
+  std::forward_list<Entry> rows(1);
+  return rows.front().field.value != 7;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

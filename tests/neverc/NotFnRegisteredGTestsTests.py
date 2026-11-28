@@ -43,6 +43,11 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_record_nested_defaults_registered = cls.registered
+        cls.list_record_nested_defaults_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_nested_defaults_original = cls.adapter.restore_original_gtests(cls.list_record_nested_defaults_registered,
+                                                                        cls.list_record_nested_defaults_suffix)
+        cls.registered = cls.adapter.restore_list_record_nested_defaults_history(cls.list_record_nested_defaults_registered)
         cls.list_record_default_arguments_registered = cls.registered
         cls.list_record_default_arguments_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_record_default_arguments_original = cls.adapter.restore_original_gtests(cls.list_record_default_arguments_registered,
@@ -4671,6 +4676,24 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_record_default_arguments_history(self.list_record_default_arguments_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_record_default_arguments_registered, self.list_record_default_arguments_suffix + b' ')
+
+
+    def test_list_record_nested_defaults_retains_published_bodies(self):
+        self.assertEqual(self.list_record_nested_defaults_original + self.list_record_nested_defaults_suffix, self.list_record_nested_defaults_registered)
+        self.assertEqual(self.adapter.restore_list_record_nested_defaults_history(self.list_record_nested_defaults_original),
+                         self.list_record_default_arguments_original)
+        output, evidence = self.extractor.extract(self.list_record_nested_defaults_original, ['TranslateTest.CoreV2ListNestedRecordDefaultAndDestroyOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListNestedArrayDefaultAndDestroyOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ListDeepRecordOnlyNestedDefaultsRunAtBothOptimizations', 'TranslateTest.CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected', 'TranslateTest.CoreV2ForwardListNestedIndirectDefaultCallGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9547)
+        self.assertEqual(evidence['selected_count'], 5)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-nested-record-default-and-destroy-order', output)
+        self.assertIn(b'forward-list-nested-indirect-default-call-guard', output)
+
+    def test_list_record_nested_defaults_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_nested_defaults_history(self.list_record_nested_defaults_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_nested_defaults_registered, self.list_record_nested_defaults_suffix + b' ')
 
 
 if __name__ == '__main__':

@@ -18799,3 +18799,11 @@ required by the selected linked-list operation.
 A source-owned call in a checked linked-list record initializer can use a
 selected arithmetic default argument. The default is evaluated for each
 new node using the callee's checked expression and scalar value parameter.
+
+## Nested aggregate defaults in linked-list nodes
+
+Checked nested source records and fixed-size member arrays participate in
+default node construction for `std::list` and `std::forward_list`. Members are
+initialized in declaration order and array elements in increasing index
+order. The node owns the member lifetimes and destroys them in reverse
+order when the node is removed.

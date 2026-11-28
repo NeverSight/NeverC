@@ -54326,7 +54326,14 @@ bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
   if (!CopiesTrivially) return false;
   bool HasDefault = false;
   for (const auto *Field : Record->fields()) {
-    if (!Field->hasInClassInitializer()) continue;
+    if (!Field->hasInClassInitializer()) {
+      const auto Element = Field->getASTContext().getBaseElementType(Field->getType());
+      const auto *Member = Element->getAsCXXRecordDecl();
+      const auto *Definition = Member ? Member->getDefinition() : nullptr;
+      // The bounded layout traversal checks the nested record separately.
+      HasDefault |= Definition && !Definition->hasTrivialDefaultConstructor();
+      continue;
+    }
     const auto *Init = Field->getInClassInitializer();
     if (!Init || (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())))
       return false;
@@ -54368,10 +54375,8 @@ const CXXRecordDecl *linkedListRecordLayout(
       !Record->isAggregate() || Record->field_empty())
     return nullptr;
   if (!Record->isTrivial()) {
-    // The node initializer evaluates defaults of the stored record itself.
-    if (Depth && !Record->hasTrivialDefaultConstructor()) return nullptr;
     const bool Checked = Record->hasTrivialDestructor()
-        ? !Depth && linkedListCheckedMemberDefaults(Record, Source)
+        ? linkedListCheckedMemberDefaults(Record, Source)
         : linkedListCheckedRecordDestructor(Record, Source);
     if (!Checked) return nullptr;
   }

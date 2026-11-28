@@ -55,6 +55,14 @@
       "source_sha256": "d8bc75d0abc1de1177fe67614208a45b1955f63b9b8d6725133e4c6c627fdb6a",
       "original_case_source_sha256": "d8bc75d0abc1de1177fe67614208a45b1955f63b9b8d6725133e4c6c627fdb6a",
       "gtest_body_sha256": "a9799e82061919aeed1c01e9cd1486da73004e7343caa2ce5ff08a658be60266"
+    },
+    {
+      "name": "forward-list-nested-record-default-and-destruction-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListConstructsAndDestroysNestedRecordsAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fd430cd2968a825ba206b63373a78834ae31967ec930d7b79c4bd60a90d68672",
+      "original_case_source_sha256": "fd430cd2968a825ba206b63373a78834ae31967ec930d7b79c4bd60a90d68672",
+      "gtest_body_sha256": "e0279425238827a9bd0b5cf2795a206db497cc81d60c1801ffd65bd36c68504f"
     }
   ],
   "negative_cases": [
@@ -65,14 +73,6 @@
       "source_sha256": "055875ae083fc234ef6b068a1ad9d9b4d52646b5fa67821f933d10c8abbf7659",
       "original_case_source_sha256": "055875ae083fc234ef6b068a1ad9d9b4d52646b5fa67821f933d10c8abbf7659",
       "gtest_body_sha256": "2ee8ac48c4a28b1fee5b3dc25067e83377c0e12ea97846de93ab30fb7a4b764b"
-    },
-    {
-      "name": "forward-list-nested-record-default-and-destruction-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListNestedRecordDefaultAndDestructionGuardRejected",
-      "expected": "reject",
-      "source_sha256": "fd430cd2968a825ba206b63373a78834ae31967ec930d7b79c4bd60a90d68672",
-      "original_case_source_sha256": "fd430cd2968a825ba206b63373a78834ae31967ec930d7b79c4bd60a90d68672",
-      "gtest_body_sha256": "1cd0b59419813f131ce591c49a93df2f4c17232ccb56315fc65c430f772c7b92"
     },
     {
       "name": "list-record-long-double-comparison-result-guard",
@@ -159,9 +159,9 @@
     {
       "name": "forward-list-nested-record-default-and-destruction-guard",
       "section": "forward_list",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <forward_list>\nint released;\nstruct Child { int value = 4; ~Child() noexcept { released += value; } };\nstruct Entry { int key = 2; Child child; };\nint main() {\n  std::forward_list<Entry> rows(1);\n  rows.clear();\n  return released != 4;\n}\n",
-      "kind": "cpp17-negative",
+      "kind": "cpp17-operation",
       "source_sha256": "fd430cd2968a825ba206b63373a78834ae31967ec930d7b79c4bd60a90d68672"
     },
     {
@@ -189,8 +189,8 @@
     "TranslateTest.CoreV2ListRecordFloatDefaultSortRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListRecordDoubleDefaultUniqueRunAtBothOptimizations",
     "TranslateTest.CoreV2ListRecordDoubleRemovalResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListConstructsAndDestroysNestedRecordsAtBothOptimizations",
     "TranslateTest.CoreV2ListRecordDefaultWithThrowingDestructorGuardRejected",
-    "TranslateTest.CoreV2ForwardListNestedRecordDefaultAndDestructionGuardRejected",
     "TranslateTest.CoreV2ListRecordLongDoubleComparisonResultGuardRejected",
     "TranslateTest.CoreV2ListRecordEffectfulFloatComparisonResultGuardRejected"
   ],
@@ -205,12 +205,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9526,
   "current_python_registry_tests": 362,
-  "native_reference_selected_executions": 16,
-  "planned_generated_c23_executions": 16,
+  "native_reference_selected_executions": 18,
+  "planned_generated_c23_executions": 18,
   "native_reference_proofs": {
     "linked-list-record-default-and-destruction": "db7b61eb803b294c148535380243bcdfed8862d6302e60633cde12821655e610",
-    "linked-list-record-floating-comparison-results": "5918ecb84256970ae76bac27f576d6c834cf54535b7381ae05868a39350e2169"
+    "linked-list-record-floating-comparison-results": "5918ecb84256970ae76bac27f576d6c834cf54535b7381ae05868a39350e2169",
+    "linked-list-nested-record-defaults": "ac919bd6ddf1d396c98cadbf0df452189e88573cfd9fb59dd9f73a5791bb3dbd"
   },
-  "native_reference_authentication_sha256": "f9a648d5cd33a24c5c2f8d808a5e9c47077bfa37726e7ff393909c042d2256fc",
-  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+  "native_reference_authentication_sha256": "10b88debafb52c3bef00b53c91243d07e4753bb63611feb6185c2525ee39dec7",
+  "source_proof_sha256": "a7a213c6044093891f4b5b1897afdef6d56f812db93fc9d58bf3fca3a47f8e1f"
 }
