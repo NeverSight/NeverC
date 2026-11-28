@@ -27156,8 +27156,20 @@ class FunctionLowering {
     return quantity(A.Context.getTypeSizeInChars(A.Context.getRecordType(Node)).getQuantity(),
                     type(A.Context.getSizeType(), L), L);
   }
+  void constructLinkedListEmplacedRecord(Expression Place, QualType T, const CXXConstructorDecl *Constructor,
+      llvm::ArrayRef<Expression> Operands, SourceLocation L) {
+    json::Array Args;
+    Args.push_back(snapshot(address(std::move(Place), T, L), L));
+    // Forwarded scalar lvalues are loaded after allocation in the selected SDK call.
+    for (const auto &Operand : Operands)
+      Args.push_back(snapshot(dereference(Operand, L), L));
+    chargeCall(Args, L);
+    Body.push_back(json::Object{{"op", "call"}, {"callee", A.name(Constructor)},
+                                {"args", std::move(Args)}, {"loc", A.loc(L)}});
+  }
   Expression forwardListCreateNode(std::optional<Expression> ValueReference, Expression Next,
-      const UtilityForwardListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
+      const UtilityForwardListNodeRecord &Info, SourceLocation L, QualType InputElement = {},
+      const CXXConstructorDecl *Constructor = nullptr, llvm::ArrayRef<Expression> Inputs = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
         linkedListNodeSize(Info.Record, L), L), "ptr:void", L), L);
     assign(forwardListNext(Node, L), std::move(Next), L);
@@ -27165,7 +27177,9 @@ class FunctionLowering {
     // observes any source-defined allocation callback before this load.
     const auto Element = Info.Value->getType();
     auto Target = forwardListValue(Node, Element, L);
-    if (ValueReference)
+    if (Constructor)
+      constructLinkedListEmplacedRecord(std::move(Target), Element, Constructor, Inputs, L);
+    else if (ValueReference)
       assign(std::move(Target),
              forwardListInputValue(std::move(*ValueReference), InputElement, Element, L), L);
     else
@@ -27953,13 +27967,15 @@ class FunctionLowering {
       const unsigned PositionArgs = EmplaceAfter ? 1 : 0;
       std::optional<Expression> ValueReference;
       QualType InputElement;
-      if (Operands.size() != PositionArgs) {
+      if (!Proof->EmplacedRecordConstructor && Operands.size() != PositionArgs) {
         ValueReference = Operands[PositionArgs];
         InputElement = Method->getParamDecl(PositionArgs)->getType()
                            ->getPointeeType().getUnqualifiedType();
       }
       auto Next = snapshot(Link, L);
-      auto Node = forwardListCreateNode(std::move(ValueReference), std::move(Next), Owner->Node, L, InputElement);
+      const auto Inputs = llvm::ArrayRef<Expression>(Operands).drop_front(PositionArgs);
+      auto Node = forwardListCreateNode(std::move(ValueReference), std::move(Next), Owner->Node, L, InputElement,
+          Proof->EmplacedRecordConstructor, Inputs);
       assign(Link, Node, L);
       auto Inserted = snapshot(Link, L);
       if (EmplaceAfter) return forwardListIterator(Method->getReturnType(), std::move(Inserted), L);
@@ -29186,13 +29202,18 @@ class FunctionLowering {
     return Result;
   }
   Expression listCreateNode(std::optional<Expression> ValueReference,
-      const UtilityListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
+      const UtilityListNodeRecord &Info, SourceLocation L, QualType InputElement = {},
+      const CXXConstructorDecl *Constructor = nullptr, llvm::ArrayRef<Expression> Inputs = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
         linkedListNodeSize(Info.Record, L), L), "ptr:void", L), L);
     initializeZero(listLink(Node, true, L), A.Context.VoidPtrTy, L);
     initializeZero(listLink(Node, false, L), A.Context.VoidPtrTy, L);
     const auto Element = Info.Value->getType();
     auto Target = listValue(Node, Element, false, L);
+    if (Constructor) {
+      constructLinkedListEmplacedRecord(std::move(Target), Element, Constructor, Inputs, L);
+      return Node;
+    }
     if (!ValueReference) {
       initializeLinkedListValue(std::move(Target), Element, L);
       return Node;
@@ -30066,11 +30087,13 @@ class FunctionLowering {
       const unsigned Offset = Emplace ? 1 : 0;
       std::optional<Expression> Argument;
       QualType InputElement;
-      if (Operands.size() != Offset) {
+      if (!Proof->EmplacedRecordConstructor && Operands.size() != Offset) {
         Argument = Operands[Offset];
         InputElement = Method->getParamDecl(Offset)->getType()->getPointeeType().getUnqualifiedType();
       }
-      auto Node = listCreateNode(std::move(Argument), Owner->Node, L, InputElement);
+      const auto Inputs = llvm::ArrayRef<Expression>(Operands).drop_front(Offset);
+      auto Node = listCreateNode(std::move(Argument), Owner->Node, L, InputElement,
+          Proof->EmplacedRecordConstructor, Inputs);
       if (!Position) Position = Operation == UtilityListOperation::EmplaceFront
           ? snapshot(listMember(Place, "nct_list_next", L), L) : snapshot(listSentinel(Place, L), L);
       listInsertNode(Place, *Position, Node, L);

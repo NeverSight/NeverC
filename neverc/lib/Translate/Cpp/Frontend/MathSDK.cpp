@@ -54240,6 +54240,50 @@ bool linkedListObjectPointerElement(QualType Type, const ASTContext &Context) {
          Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
 }
 
+bool linkedListScalarEmplaceInput(QualType T, const ASTContext &Context) {
+  const auto Input = T.getNonReferenceType();
+  return !Input.isVolatileQualified() && Input->isArithmeticType() &&
+         utilityScalar(Context, Input.getUnqualifiedType());
+}
+
+struct LinkedListEmplacement {
+  unsigned Offset;
+  const CXXConstructExpr *Expression = nullptr;
+  const CXXConstructorDecl *Constructor = nullptr;
+};
+
+bool bindLinkedListEmplacement(const State &S, const SourceManager &SM, const FunctionDecl *Root,
+    const CXXNewExpr *Allocation, QualType Element, const ASTContext &Context, LinkedListEmplacement &Selection) {
+  if (Selection.Expression || !Context.hasSameType(Allocation->getAllocatedType(), Element)) return false;
+  const auto *Expression = Allocation->getConstructExpr();
+  const auto *Constructor = Expression ? Expression->getConstructor() : nullptr;
+  const auto *Prototype = Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Constructor || !Constructor->isUserProvided() || Constructor->isCopyOrMoveConstructor() ||
+      Constructor->isDeleted() || Constructor->isInvalidDecl() || Constructor->getAccess() != AS_public ||
+      Constructor->getNumParams() != 2 || !ordinaryConstructor(Constructor) || !Prototype ||
+      isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()) || !Prototype->isNothrow() ||
+      Expression->getNumArgs() != 2 || Expression->getConstructionKind() != CXXConstructionKind::Complete ||
+      Constructor->getParent()->getCanonicalDecl() != Element->getAsCXXRecordDecl()->getCanonicalDecl())
+    return false;
+  const FunctionDecl *Definition = nullptr;
+  if (!Constructor->hasBody(Definition) || !Definition ||
+      !llvm::all_of(Constructor->redecls(), [&](const FunctionDecl *D) { return S.owns(SM, D->getLocation()); }))
+    return false;
+  for (unsigned I = 0; I < 2; ++I) {
+    const auto Forwarded = Root->getParamDecl(Selection.Offset + I)->getType();
+    const auto T = Constructor->getParamDecl(I)->getType();
+    const auto *Arg = Expression->getArg(I)->IgnoreParenImpCasts();
+    if (!Forwarded->isReferenceType() || !linkedListScalarEmplaceInput(Forwarded, Context) ||
+        !T->isArithmeticType() || T.hasLocalQualifiers() ||
+        !Context.hasSameUnqualifiedType(T, Forwarded->getPointeeType()) ||
+        !Context.hasSameUnqualifiedType(T, Arg->getType()) || isa<CXXDefaultArgExpr>(Arg))
+      return false;
+  }
+  Selection.Expression = Expression;
+  Selection.Constructor = cast<CXXConstructorDecl>(Definition);
+  return true;
+}
+
 struct LinkedListRecordSource {
   const State &Program;
   const SourceManager &Sources;
@@ -54892,7 +54936,7 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
     return std::nullopt;
   const auto Pack = Arguments->get(0).pack_elements();
   const unsigned Offset = After ? 1 : 0;
-  if (Pack.size() > 1 || Method->getNumParams() != Offset + Pack.size())
+  if (Pack.size() > (Element->isRecordType() ? 2u : 1u) || Method->getNumParams() != Offset + Pack.size())
     return std::nullopt;
   if (After) {
     if (!forwardListIteratorType(S, SM, Method->getReturnType(), Owner.Node, false, Context) ||
@@ -54901,7 +54945,16 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
   } else if (!Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Element))) {
     return std::nullopt;
   }
-  if (!Pack.empty()) {
+  if (Pack.size() == 2) {
+    for (unsigned I = 0; I < 2; ++I) {
+      if (Pack[I].getKind() != TemplateArgument::Type) return std::nullopt;
+      const auto T = Pack[I].getAsType();
+      if (!linkedListScalarEmplaceInput(T, Context) || Method->getParamDecl(Offset + I)->hasDefaultArg())
+        return std::nullopt;
+      const auto Forwarded = T->isLValueReferenceType() ? T : Context.getRValueReferenceType(T.getNonReferenceType());
+      if (!Context.hasSameType(Method->getParamDecl(Offset + I)->getType(), Forwarded)) return std::nullopt;
+    }
+  } else if (!Pack.empty()) {
     if (Pack[0].getKind() != TemplateArgument::Type) return std::nullopt;
     const auto Type = Pack[0].getAsType();
     const auto Input = Type.getNonReferenceType().getUnqualifiedType();
@@ -55740,7 +55793,8 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
                          bool DirectOrder = false, bool DirectFilter = false,
                          const CXXMethodDecl *OrderMethod = nullptr,
                          const FunctionDecl **DefaultRecordComparison = nullptr,
-                         OverloadedOperatorKind DefaultOperator = OO_Less) {
+                         OverloadedOperatorKind DefaultOperator = OO_Less,
+                         LinkedListEmplacement *Emplacement = nullptr) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -55841,7 +55895,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
           !(DirectFilter && forwardListSDKFilterCall(Call, Root, Owner.Value->getType(), Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if (!forwardListOrderForwardingMove(S, SM, C, Root, OrderMethod, Context) &&
+      if ((!Emplacement || C != Emplacement->Expression) && !forwardListOrderForwardingMove(S, SM, C, Root, OrderMethod, Context) &&
           !Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
@@ -55849,6 +55903,9 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
           N->getNumPlacementArgs() != 1 ||
           !Function(N->getOperatorNew(), Depth + 1)) return false;
       if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+      if (Emplacement && Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
+          !bindLinkedListEmplacement(S, SM, Root, N, Owner.Value->getType(), Context, *Emplacement))
+        return false;
     }
     for (const auto *Child : Node->children())
       if (!Statement(Child, Depth + 1)) return false;
@@ -56668,10 +56725,15 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       (*Operation == UtilityForwardListOperation::RemoveValue || *Operation == UtilityForwardListOperation::Unique);
   const FunctionDecl *DefaultRecordComparison = nullptr;
   const auto DefaultOperator = RecordEquality ? OO_EqualEqual : OO_Less;
+  LinkedListEmplacement Emplacement{*Operation == UtilityForwardListOperation::EmplaceAfter ? 1u : 0u};
+  const bool EmplaceRecord = (*Operation == UtilityForwardListOperation::EmplaceAfter ||
+       *Operation == UtilityForwardListOperation::EmplaceFront) &&
+      Method->getNumParams() == Emplacement.Offset + 2;
   if (!forwardListSourceGraph(S, SM, Method, Context, *Node, SourceOrder, DirectFilter,
                               ObjectOrder ? ObjectOrder->Method : nullptr,
                               (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
-                              DefaultOperator) ||
+                              DefaultOperator, EmplaceRecord ? &Emplacement : nullptr) ||
+      (EmplaceRecord && !Emplacement.Constructor) ||
       ((RecordOrder || RecordEquality) && !DefaultRecordComparison)) return std::nullopt;
   if (*Operation == UtilityForwardListOperation::GetAllocator && !forwardListGetAllocatorBody(S, SM, Method, *Node, Context))
     return std::nullopt;
@@ -56729,7 +56791,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
-  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum, OrderDirection, DefaultRecordComparison};
+  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum, OrderDirection, DefaultRecordComparison,
+                             Emplacement.Constructor};
 }
 
 
@@ -57253,7 +57316,7 @@ std::optional<UtilityListOperation> listEmplacementSignature(
       Arguments->get(0).getKind() != TemplateArgument::Pack) return std::nullopt;
   const auto Pack = Arguments->get(0).pack_elements();
   const unsigned Offset = AtPosition ? 1 : 0;
-  if (Pack.size() > 1 || M->getNumParams() != Offset + Pack.size()) return std::nullopt;
+  if (Pack.size() > (Element->isRecordType() ? 2u : 1u) || M->getNumParams() != Offset + Pack.size()) return std::nullopt;
   if (AtPosition) {
     if (M->getParamDecl(0)->hasDefaultArg() ||
         !listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner.Node, true, Context) ||
@@ -57261,7 +57324,16 @@ std::optional<UtilityListOperation> listEmplacementSignature(
   } else if (!Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element))) {
     return std::nullopt;
   }
-  if (!Pack.empty()) {
+  if (Pack.size() == 2) {
+    for (unsigned I = 0; I < 2; ++I) {
+      if (Pack[I].getKind() != TemplateArgument::Type) return std::nullopt;
+      const auto T = Pack[I].getAsType();
+      if (!linkedListScalarEmplaceInput(T, Context) || M->getParamDecl(Offset + I)->hasDefaultArg())
+        return std::nullopt;
+      const auto Forwarded = T->isLValueReferenceType() ? T : Context.getRValueReferenceType(T.getNonReferenceType());
+      if (!Context.hasSameType(M->getParamDecl(Offset + I)->getType(), Forwarded)) return std::nullopt;
+    }
+  } else if (!Pack.empty()) {
     if (Pack[0].getKind() != TemplateArgument::Type || M->getParamDecl(Offset)->hasDefaultArg())
       return std::nullopt;
     const auto Type = Pack[0].getAsType();
@@ -57789,7 +57861,8 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
                          const UtilityListNodeRecord &Owner, unsigned PredicateCount = 0, QualType Compare = {},
                          const CXXMethodDecl *OrderMethod = nullptr,
                          const FunctionDecl **DefaultRecordComparison = nullptr,
-                         OverloadedOperatorKind DefaultOperator = OO_Less) {
+                         OverloadedOperatorKind DefaultOperator = OO_Less,
+                         LinkedListEmplacement *Emplacement = nullptr) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -57891,7 +57964,7 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
                                                       Compare, Owner.Value->getType(), Context, OrderMethod)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if (!listForwardedOrderCopy(C, Root, OrderMethod, Context) &&
+      if ((!Emplacement || C != Emplacement->Expression) && !listForwardedOrderCopy(C, Root, OrderMethod, Context) &&
           !Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
@@ -57899,6 +57972,9 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
           N->getNumPlacementArgs() != 1 ||
           !Function(N->getOperatorNew(), Depth + 1)) return false;
       if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+      if (Emplacement && Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
+          !bindLinkedListEmplacement(S, SM, Root, N, Owner.Value->getType(), Context, *Emplacement))
+        return false;
     }
     for (const auto *Child : Node->children())
       if (!Statement(Child, Depth + 1)) return false;
@@ -58033,10 +58109,16 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       (*Operation == UtilityListOperation::Remove || *Operation == UtilityListOperation::Unique);
   const FunctionDecl *DefaultRecordComparison = nullptr;
   const auto DefaultOperator = RecordEquality ? OO_EqualEqual : OO_Less;
+  LinkedListEmplacement Emplacement{*Operation == UtilityListOperation::Emplace ? 1u : 0u};
+  const bool EmplaceRecord = (*Operation == UtilityListOperation::Emplace ||
+       *Operation == UtilityListOperation::EmplaceFront ||
+       *Operation == UtilityListOperation::EmplaceBack) &&
+      Method->getNumParams() == Emplacement.Offset + 2;
   if ((Predicates && !listPredicateBody(Method)) ||
       !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare, OrderMethod,
                         (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
-                        DefaultOperator) ||
+                        DefaultOperator, EmplaceRecord ? &Emplacement : nullptr) ||
+      (EmplaceRecord && !Emplacement.Constructor) ||
       ((RecordOrder || RecordEquality) && !DefaultRecordComparison)) return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
@@ -58060,7 +58142,8 @@ std::optional<UtilityListCall> approvedUtilityListCall(
     Maximum = containerNodeMaximum(S, SM, Method, Context, "list", "__list_node");
     if (!Maximum) return std::nullopt;
   }
-  return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum, Descending, DefaultRecordComparison};
+  return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum, Descending, DefaultRecordComparison,
+                             Emplacement.Constructor};
 }
 
 
