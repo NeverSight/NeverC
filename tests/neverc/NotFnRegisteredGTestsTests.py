@@ -5,6 +5,7 @@ import importlib.util
 import json
 import re
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -35,6 +36,19 @@ def restore_previous_maintenance(source, manifest, extractor):
         source = source[:match.start()] + body + source[end:]
     assert hashlib.sha256(source).hexdigest() == manifest['previous_maintained_original_sha256']
     return source
+
+
+class RegistryArchiveTests(unittest.TestCase):
+    def test_checks_the_current_and_archived_sources_before_replaying_history(self):
+        adapter = module('registry_archive', 'utils/ci/not_fn_registered_gtests.py')
+        current = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        with mock.patch.object(adapter, '_read_stl_registry_base', return_value=b'wrong archive') as read:
+            with self.assertRaises(AssertionError):
+                adapter.restore_rebased_stl_registry_history(current + b' ')
+            read.assert_not_called()
+            with self.assertRaises(AssertionError):
+                adapter.restore_rebased_stl_registry_history(current)
+            read.assert_called_once_with()
 
 
 class RegisteredNotFnGTestsTests(unittest.TestCase):
