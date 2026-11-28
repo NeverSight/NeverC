@@ -4085,6 +4085,341 @@ def restore_list_record_nested_defaults_history(source):
     return restored
 
 
+R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_REGISTERED_SHA256 = '2e9247fdd6af526c7ccf9565f768717b1f1a269bd5a6b17d872709d7cadd9b09'
+R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_MAINTAINED_SHA256 = '12c5b7d34894b9eb4f3c67b19601a989bc4bacd83dfa6b3d5750d4b52b65da75'
+R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_PREVIOUS_REGISTERED_SHA256 = '0cf9d546482dedf4ea996741712e4b281de5bb60f2b3edc2eaca4a1cf9edce09'
+R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_PREVIOUS_MAINTAINED_SHA256 = '921fa4368be08c4827af7cb471823e006b9fcd35dae4c00ba541966f5591a739'
+R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_ADDITIONS_SHA256 = '1d7616d184e3b2938233431229fdf8cb2aecf919f136d53ea92ee43e99974c6e'
+R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_MAINTAINED_SIZE = 21398839
+R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_ADDITIONS_SIZE = 6711
+
+
+def restore_list_explicit_default_constructors_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_REGISTERED_SHA256, R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_MAINTAINED_SHA256}
+    stop = R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_MAINTAINED_SIZE
+    start = stop - R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_REGISTERED_SHA256
+             else R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_REGISTERED_SHA256 = '1500f4d271744cfdc5b9e3e94c1e6bfaf9ee248a70abe478b56c250e35157d5f'
+R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_MAINTAINED_SHA256 = '6befca72e2c45ed3cbef0c71c97ed30010da073297f46aa9202d3befdf129ad4'
+R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_PREVIOUS_REGISTERED_SHA256 = '2e9247fdd6af526c7ccf9565f768717b1f1a269bd5a6b17d872709d7cadd9b09'
+R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_PREVIOUS_MAINTAINED_SHA256 = '12c5b7d34894b9eb4f3c67b19601a989bc4bacd83dfa6b3d5750d4b52b65da75'
+R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_ADDITIONS_SHA256 = '732fe4a73c382fa755c49483db00fffdcf54a1f89fae748d52652950a7607348'
+R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_MAINTAINED_SIZE = 21404312
+R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_ADDITIONS_SIZE = 5065
+_R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_HISTORICAL_ANY = b'TEST_F(TranslateTest, CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected) {\n  const auto Source = tmpFile("list-nested-user-provided-default-constructor-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Leaf { int value; Leaf() : value(7) {} };\nstruct Entry { Leaf field; };\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().field.value != 7;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_ACTIVE_ANY = b'TEST_F(TranslateTest, CoreV2ListConstructsNestedScalarOnlyDefaultRecordAtBothOptimizations) {\n  const auto Source = tmpFile("list-nested-user-provided-default-constructor-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Leaf { int value; Leaf() : value(7) {} };\nstruct Entry { Leaf field; };\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().field.value != 7;\n}\n)r19containers");\n  const auto Output = tmpFile("list-nested-user-provided-default-constructor-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-nested-user-provided-default-constructor-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_list_scalar_constructor_defaults_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_REGISTERED_SHA256, R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_MAINTAINED_SHA256}
+    stop = R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_MAINTAINED_SIZE
+    start = stop - R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(_R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_ACTIVE_ANY) == 1
+    restored = restored.replace(_R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_ACTIVE_ANY, _R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_HISTORICAL_ANY, 1)
+    prior = (R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_REGISTERED_SHA256
+             else R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_TWO_ARGUMENT_EMPLACEMENT_REGISTERED_SHA256 = 'c118bcd96239aae0ab28cca41b7b698d2741239b85675d577393e139d2005bcb'
+R19_LIST_TWO_ARGUMENT_EMPLACEMENT_MAINTAINED_SHA256 = 'c4603f34bd0672a10daac684ff792169c722b0b9416ab2b8b9b8de6146afaf57'
+R19_LIST_TWO_ARGUMENT_EMPLACEMENT_PREVIOUS_REGISTERED_SHA256 = '1500f4d271744cfdc5b9e3e94c1e6bfaf9ee248a70abe478b56c250e35157d5f'
+R19_LIST_TWO_ARGUMENT_EMPLACEMENT_PREVIOUS_MAINTAINED_SHA256 = '6befca72e2c45ed3cbef0c71c97ed30010da073297f46aa9202d3befdf129ad4'
+R19_LIST_TWO_ARGUMENT_EMPLACEMENT_ADDITIONS_SHA256 = '8a1eac3449fae7c9dc640fe33b5e4966934eb6fb2dd2bd77d741158c0470448f'
+R19_LIST_TWO_ARGUMENT_EMPLACEMENT_MAINTAINED_SIZE = 21410806
+R19_LIST_TWO_ARGUMENT_EMPLACEMENT_ADDITIONS_SIZE = 6494
+
+
+def restore_list_two_argument_emplacement_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_TWO_ARGUMENT_EMPLACEMENT_REGISTERED_SHA256, R19_LIST_TWO_ARGUMENT_EMPLACEMENT_MAINTAINED_SHA256}
+    stop = R19_LIST_TWO_ARGUMENT_EMPLACEMENT_MAINTAINED_SIZE
+    start = stop - R19_LIST_TWO_ARGUMENT_EMPLACEMENT_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_TWO_ARGUMENT_EMPLACEMENT_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LIST_TWO_ARGUMENT_EMPLACEMENT_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_TWO_ARGUMENT_EMPLACEMENT_REGISTERED_SHA256
+             else R19_LIST_TWO_ARGUMENT_EMPLACEMENT_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_REBASED_REGISTERED_SHA256 = '59d31235809f5175edfdd53f5de3d3c1bfaf14d76a0d5b1dd91d944c761c4138'
+R19_REBASED_ARCHIVED_SHA256 = 'c118bcd96239aae0ab28cca41b7b698d2741239b85675d577393e139d2005bcb'
+_R19_APPROVED_TARGET_TEST_EDITS = (
+    (
+        (
+            b'}\n'
+            b'\n'
+            b'TEST_F(TranslateTest, RejectsTargetsWith32BitPointersBeforeSourceAnalysis) {\n'
+            b'  const auto Source = source();\n'
+            b'  const auto Output = tmpFile("unsupported.nc");\n'
+            b'  for (const auto *Target : {"i686-unknown-linux-gnu", "i686-pc-windows-msvc",\n'
+            b'                             "x86_64-linux-muslx32", "aarch64-linux-gnu_ilp32",\n'
+            b'                             "arm64_32-apple-watchos"}) {\n'
+            b'    for (const auto *Profile : {"cpp-core-v1", "cpp-core-v2"}) {\n'
+            b'      SCOPED_TRACE(Target);\n'
+            b'      SCOPED_TRACE(Profile);\n'
+            b'      const auto Result = translate(Source, {"--profile", Profile, "--target",\n'
+            b'                                             Target, "-o", Output.string()});\n'
+            b'      EXPECT_NE(Result.exitCode, 0);\n'
+            b'      EXPECT_TRUE(Result.contains("TR0204")) << Result.err;\n'
+            b'      EXPECT_FALSE(fs::exists(Output));\n'
+            b'    }\n'
+            b'  }\n'
+            b'}\n'
+            b'\n'
+            b'TEST_F(TranslateTest, CoreV2PinnedSdkDoesNotDetectHostMsvcVersion) {\n'
+            b'  const auto Source = tmpFile("sdk-host-msvc-version.cpp");\n'
+        ),
+        (
+            b'}\n'
+            b'\n'
+            b'TEST_F(TranslateTest, CoreV2PinnedSdkDoesNotDetectHostMsvcVersion) {\n'
+            b'  const auto Source = tmpFile("sdk-host-msvc-version.cpp");\n'
+        ),
+    ),
+    (
+        (
+            b')cpp");\n'
+            b'  for (const std::string &Target : {\n'
+            b'           "x86_64-pc-windows-msvc",\n'
+            b'           "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu",\n'
+            b'           "aarch64-unknown-linux-gnu", "arm64-apple-macosx15.0.0",\n'
+            b'           "x86_64-apple-macosx15.0.0"}) {\n'
+            b'    SCOPED_TRACE(Target);\n'
+            b'    const auto Request = tmpFile("sdk-host-msvc-version-" + Target + "-request.json");\n'
+        ),
+        (
+            b')cpp");\n'
+            b'  for (const std::string &Target : {\n'
+            b'           "i686-pc-windows-msvc", "x86_64-pc-windows-msvc",\n'
+            b'           "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu",\n'
+            b'           "aarch64-unknown-linux-gnu", "arm64-apple-macosx15.0.0",\n'
+            b'           "x86_64-apple-macosx15.0.0", "i686-unknown-linux-gnu"}) {\n'
+            b'    SCOPED_TRACE(Target);\n'
+            b'    const auto Request = tmpFile("sdk-host-msvc-version-" + Target + "-request.json");\n'
+        ),
+    ),
+    (
+        (
+            b'    int64_t PointerBits = 0;\n'
+            b'    ASSERT_TRUE(Layout->getInteger("pointer_bits", PointerBits));\n'
+            b'    EXPECT_EQ(PointerBits, 64);\n'
+            b'    const auto Output = tmpFile("sdk-host-msvc-version-" + Target + ".nc");\n'
+            b'    const auto Result = translate(Source, {"--profile", "cpp-core-v2",\n'
+        ),
+        (
+            b'    int64_t PointerBits = 0;\n'
+            b'    ASSERT_TRUE(Layout->getInteger("pointer_bits", PointerBits));\n'
+            b'    EXPECT_EQ(PointerBits, Target.rfind("i686-", 0) == 0 ? 32 : 64);\n'
+            b"    // Both i686 ABIs retain their full private frontend checks. NeverC's\n"
+            b'    // independent C23 target model admits only the six 64-bit backends.\n'
+            b'    if (Target.rfind("i686-", 0) == 0)\n'
+            b'      continue;\n'
+            b'    const auto Output = tmpFile("sdk-host-msvc-version-" + Target + ".nc");\n'
+            b'    const auto Result = translate(Source, {"--profile", "cpp-core-v2",\n'
+        ),
+    ),
+    (
+        (
+            b'}\n'
+            b'\n'
+            b'TEST_F(TranslateTest, CoreV2StringHashAdaptersValuesAndEffects) {\n'
+            b'  const auto Output = tmpFile("string-hash-adapters-values.nc");\n'
+        ),
+        (
+            b'}\n'
+            b'\n'
+            b'TEST_F(TranslateTest, CoreV2ScalarHashClosureRejectsSelected32BitByteSources) {\n'
+            b'  struct Case { const char *Name; const char *Source; };\n'
+            b'  const Case Cases[] = {\n'
+            b'    {"double-direct", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(h(value)!=0);}\n'
+            b')cpp"},\n'
+            b'    {"double-invoke", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(h,value)!=0);}\n'
+            b')cpp"},\n'
+            b'    {"double-apply", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(h,std::tie(value))!=0);}\n'
+            b')cpp"},\n'
+            b'    {"double-wrapper", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(w(value)!=0);}\n'
+            b')cpp"},\n'
+            b'    {"double-invoke-wrapper", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(w,value)!=0);}\n'
+            b')cpp"},\n'
+            b'    {"double-apply-wrapper", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(w,std::tie(value))!=0);}\n'
+            b')cpp"},\n'
+            b'    {"double-ignored", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);h(value);return 0;}\n'
+            b')cpp"},\n'
+            b'    {"long-long-direct", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(h(value)!=0);}\n'
+            b')cpp"},\n'
+            b'    {"long-long-invoke", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(h,value)!=0);}\n'
+            b')cpp"},\n'
+            b'    {"long-long-apply", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(h,std::tie(value))!=0);}\n'
+            b')cpp"},\n'
+            b'    {"long-long-wrapper", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(w(value)!=0);}\n'
+            b')cpp"},\n'
+            b'    {"long-long-invoke-wrapper", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(w,value)!=0);}\n'
+            b')cpp"},\n'
+            b'    {"long-long-apply-wrapper", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(w,std::tie(value))!=0);}\n'
+            b')cpp"},\n'
+            b'    {"long-long-ignored", R"cpp(#define memcpy user_word_copy\n'
+            b'#include <functional>\n'
+            b'#include <tuple>\n'
+            b'#include <utility>\n'
+            b'#include <cstddef>\n'
+            b'extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}\n'
+            b'int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);h(value);return 0;}\n'
+            b')cpp"},\n'
+            b'  };\n'
+            b'  for (const auto &Case : Cases) {\n'
+            b'    SCOPED_TRACE(Case.Name);\n'
+            b'    const auto Source = tmpFile(std::string("scalar-byte-source-") + Case.Name + ".cpp");\n'
+            b'    writeFile(Source, Case.Source);\n'
+            b'    for (const std::string &Target : {"i686-unknown-linux-gnu", "i686-pc-windows-msvc"}) {\n'
+            b'      SCOPED_TRACE(Target);\n'
+            b'      const auto Request = tmpFile(std::string(Case.Name) + Target + "-request.json");\n'
+            b'      const auto Response = tmpFile(std::string(Case.Name) + Target + "-response.json");\n'
+            b'      const auto CatalogHash = neverc::translate::approvedCppSdkCatalogSHA256();\n'
+            b'      const auto RootPath = Source.parent_path().string();\n'
+            b'      const auto SourcePath = Source.string();\n'
+            b'      llvm::json::Object SDK{{"distribution_id", neverc::translate::CppMathSDKID},\n'
+            b'                            {"catalog_sha256", CatalogHash}};\n'
+            b'      llvm::json::Object Input{{"protocol", 1}, {"profile", "cpp-core-v2"},\n'
+            b'          {"root", RootPath}, {"source", SourcePath},\n'
+            b'          {"target", Target}, {"arguments", llvm::json::Array{"-std=c++17"}},\n'
+            b'          {"sdk", std::move(SDK)}};\n'
+            b'      std::string Text;\n'
+            b'      llvm::raw_string_ostream Stream(Text);\n'
+            b'      Stream << llvm::json::Value(std::move(Input));\n'
+            b'      writeFile(Request, Text);\n'
+            b'      const auto Result = ncc({"__neverc_cpp_frontend", "--request", Request.string(),\n'
+            b'                               "--output", Response.string()});\n'
+            b'      ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n'
+            b'      ASSERT_TRUE(fs::is_regular_file(Response));\n'
+            b'      auto Parsed = llvm::json::parse(readFile(Response));\n'
+            b'      ASSERT_TRUE(static_cast<bool>(Parsed)) << llvm::toString(Parsed.takeError()).str().str();\n'
+            b'      const auto *Module = Parsed->getAsObject();\n'
+            b'      ASSERT_NE(Module, nullptr);\n'
+            b'      const auto *Diagnostics = Module->getArray("diagnostics");\n'
+            b'      ASSERT_NE(Diagnostics, nullptr);\n'
+            b'      EXPECT_FALSE(Diagnostics->empty());\n'
+            b'      EXPECT_NE(readFile(Response).find("TR0203"), std::string::npos);\n'
+            b'      EXPECT_EQ(readFile(Response).find("TR0101"), std::string::npos);\n'
+            b'    }\n'
+            b'  }\n'
+            b'}\n'
+            b'\n'
+            b'\n'
+            b'TEST_F(TranslateTest, CoreV2StringHashAdaptersValuesAndEffects) {\n'
+            b'  const auto Output = tmpFile("string-hash-adapters-values.nc");\n'
+        ),
+    ),
+)
+
+
+def restore_rebased_stl_registry_history(source):
+    """Recover the pinned historical registry for the Python fixture audit."""
+    assert hashlib.sha256(source).hexdigest() == R19_REBASED_REGISTERED_SHA256
+    for current, archived in _R19_APPROVED_TARGET_TEST_EDITS:
+        assert source.count(current) == 1
+        source = source.replace(current, archived, 1)
+    assert hashlib.sha256(source).hexdigest() == R19_REBASED_ARCHIVED_SHA256
+    return source
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -4127,6 +4462,13 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == '8e853c05697faec8f0b357f9d2ac23d57a4d09872dab52b4bdc26d55c8db9b03':
+        return source
+    if source_digest == R19_REBASED_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        current = source[:-len(additions)]
+        assert digest(current) == '8e853c05697faec8f0b357f9d2ac23d57a4d09872dab52b4bdc26d55c8db9b03'
+        return current
     if source_digest == 'd67d1a9ebfc8b388a6c0c838d767e1fa0fb5a668ebc02659407d1058b5f50b9b':
         return source
     if source_digest == '231fae82892f478ce48574a1dbe1e2ad97f7255f0bbb902b702e39fa350fba6d':
@@ -5022,6 +5364,27 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LIST_RECORD_NESTED_DEFAULTS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_EXPLICIT_DEFAULT_CONSTRUCTORS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_SCALAR_CONSTRUCTOR_DEFAULTS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_TWO_ARGUMENT_EMPLACEMENT_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_TWO_ARGUMENT_EMPLACEMENT_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_TWO_ARGUMENT_EMPLACEMENT_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

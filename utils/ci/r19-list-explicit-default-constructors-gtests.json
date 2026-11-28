@@ -1,0 +1,133 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-direct-record-default-constructor",
+      "formal_test_name": "TranslateTest.CoreV2ListDirectRecordDefaultConstructorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e32e42394b6fb3a0539c603f4be68586943c78484f6e6ae360a75521176bcd96",
+      "original_case_source_sha256": "e32e42394b6fb3a0539c603f4be68586943c78484f6e6ae360a75521176bcd96",
+      "gtest_body_sha256": "644d53dd54a833b670f770a1eb982a39100b7b62340c8a928bf255575e645f0d"
+    },
+    {
+      "name": "forward-list-nested-user-default-constructor",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListNestedUserDefaultConstructorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cd144fd7d2fd5dea0386a09c35353838988aaa484ec9e97b560f8044d33e7463",
+      "original_case_source_sha256": "cd144fd7d2fd5dea0386a09c35353838988aaa484ec9e97b560f8044d33e7463",
+      "gtest_body_sha256": "ba1530deeb8d56cc759a9e14d0c56b5c80a519332ddd013b0b7ef5abbac159a8"
+    },
+    {
+      "name": "forward-list-user-default-constructor-fill-copy",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUserDefaultConstructorFillCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "3d29a9a8958f813e3c88dbcd7a4a8ee5b4c05ace2c5db4195396b6bece6dc206",
+      "original_case_source_sha256": "3d29a9a8958f813e3c88dbcd7a4a8ee5b4c05ace2c5db4195396b6bece6dc206",
+      "gtest_body_sha256": "c2ade7f986f2821912ba91a4500224c1203fcda14f62bd0e5d419388828f6341"
+    },
+    {
+      "name": "list-user-default-constructor-destruction",
+      "formal_test_name": "TranslateTest.CoreV2ListUserDefaultConstructorDestructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a1061deecb3acdd1ebf18fbd6b6c9f187f4911abd8d5db529c515c3e0aa07859",
+      "original_case_source_sha256": "a1061deecb3acdd1ebf18fbd6b6c9f187f4911abd8d5db529c515c3e0aa07859",
+      "gtest_body_sha256": "3e374a5f399cb1c26d37379dbd8b4714dca4c08965c4cf1b0d7d3cc6d7db6522"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-user-default-constructor-parameter-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListUserDefaultConstructorParameterGuardRejected",
+      "expected": "reject",
+      "source_sha256": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f",
+      "original_case_source_sha256": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f",
+      "gtest_body_sha256": "9ff27e0c833bb6f16706c693ed433ea5fda60a045d29f6b937c287cd445afb72"
+    },
+    {
+      "name": "forward-list-user-default-constructor-move-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListUserDefaultConstructorMoveGuardRejected",
+      "expected": "reject",
+      "source_sha256": "e138a867a42cb31044730e96e09e6f3e28f84bc3ebfd5db5ad910fde3e2a3339",
+      "original_case_source_sha256": "e138a867a42cb31044730e96e09e6f3e28f84bc3ebfd5db5ad910fde3e2a3339",
+      "gtest_body_sha256": "7d49a5e59e1b9247ecd5e67ed3b4a54513aa2df7e7a6731dfc7d6b77631986dc"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-direct-record-default-constructor",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint sequence;\nstruct Entry {\n  int first, second;\n  explicit Entry() noexcept : first(++sequence), second(first + 10) { second += 2; }\n};\nint main() {\n  std::list<Entry> rows(2);\n  if (sequence != 2 || rows.front().first != 1 || rows.back().second != 14) return 1;\n  rows.resize(3);\n  return sequence != 3 || rows.back().first != 3 || rows.back().second != 15;\n}\n",
+      "source_sha256": "e32e42394b6fb3a0539c603f4be68586943c78484f6e6ae360a75521176bcd96"
+    },
+    {
+      "name": "forward-list-nested-user-default-constructor",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nint sequence, released;\nint next() { return ++sequence; }\nstruct Leaf {\n  int ticket;\n  Leaf() noexcept : ticket(++sequence) {}\n  ~Leaf() noexcept { released = released * 10 + ticket; }\n};\nstruct Entry { int before = next(); Leaf fields[2]; int after = next(); };\nint main() {\n  std::forward_list<Entry> rows;\n  auto& row = rows.emplace_front();\n  if (sequence != 4 || row.before != 1 || row.fields[0].ticket != 2 ||\n      row.fields[1].ticket != 3 || row.after != 4) return 1;\n  rows.clear();\n  return released != 32;\n}\n",
+      "source_sha256": "cd144fd7d2fd5dea0386a09c35353838988aaa484ec9e97b560f8044d33e7463"
+    },
+    {
+      "name": "forward-list-user-default-constructor-fill-copy",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nint sequence;\nstruct Entry {\n  int value;\n  Entry() noexcept;\n};\nEntry::Entry() noexcept : value(++sequence) {}\nint main() {\n  Entry seed;\n  std::forward_list<Entry> rows(2, seed);\n  if (sequence != 1 || rows.front().value != 1) return 1;\n  rows.emplace_front();\n  return sequence != 2 || rows.front().value != 2;\n}\n",
+      "source_sha256": "3d29a9a8958f813e3c88dbcd7a4a8ee5b4c05ace2c5db4195396b6bece6dc206"
+    },
+    {
+      "name": "list-user-default-constructor-destruction",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint sequence, released;\nstruct Entry {\n  int value;\n  Entry() noexcept : value(++sequence) {}\n  ~Entry() noexcept { released = released * 10 + value; }\n};\nint main() {\n  std::list<Entry> rows;\n  auto& first = rows.emplace_back();\n  auto& second = rows.emplace_front();\n  if (first.value != 1 || second.value != 2 || released) return 1;\n  rows.pop_front();\n  if (released != 2) return 1;\n  rows.clear();\n  return released != 21;\n}\n",
+      "source_sha256": "a1061deecb3acdd1ebf18fbd6b6c9f187f4911abd8d5db529c515c3e0aa07859"
+    },
+    {
+      "name": "list-user-default-constructor-parameter-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nstruct Entry { int value; explicit Entry(int n = 7) noexcept : value(n) {} };\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 7;\n}\n",
+      "source_sha256": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f"
+    },
+    {
+      "name": "forward-list-user-default-constructor-move-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <forward_list>\nstruct Entry {\n  int value;\n  Entry() noexcept : value(7) {}\n  Entry(const Entry&) = default;\n  Entry(Entry&& other) noexcept : value(other.value + 1) {}\n};\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().value != 7;\n}\n",
+      "source_sha256": "e138a867a42cb31044730e96e09e6f3e28f84bc3ebfd5db5ad910fde3e2a3339"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListDirectRecordDefaultConstructorRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListNestedUserDefaultConstructorRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListUserDefaultConstructorFillCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUserDefaultConstructorDestructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListUserDefaultConstructorParameterGuardRejected",
+    "TranslateTest.CoreV2ForwardListUserDefaultConstructorMoveGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "2e9247fdd6af526c7ccf9565f768717b1f1a269bd5a6b17d872709d7cadd9b09",
+  "maintained_original_sha256": "12c5b7d34894b9eb4f3c67b19601a989bc4bacd83dfa6b3d5750d4b52b65da75",
+  "previous_registered_source_sha256": "0cf9d546482dedf4ea996741712e4b281de5bb60f2b3edc2eaca4a1cf9edce09",
+  "previous_maintained_original_sha256": "921fa4368be08c4827af7cb471823e006b9fcd35dae4c00ba541966f5591a739",
+  "restorer_sha256": "cb0039587cfac282ec433407cf460ecad1435ea40b1853c4442baad549247ce9",
+  "extractor_sha256": "b07d072bace75e4763e835084a3903628b66d6387e4fb358b2da56aadbc5a4b8",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9553,
+  "current_python_registry_tests": 372,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "source_proof_sha256": "a214583e112764166d929c3ae15e254ca2853e94bc2675dccecc633713c0695a",
+  "native_reference_proofs": {
+    "linked-list-explicit-default-constructors": "33a8ef3d8b2435eb65f145234d0d16285846cd45cb49e76e4ffd261db6ec874d"
+  },
+  "native_reference_authentication_sha256": "d2f0bab265e299f50be1b104ce7a3746099592c623aa71fb52116e328869ebd9",
+  "rebased_compiler_source": "3cb98b323b73a1dbdec5a8ed9891b7ee6896662e",
+  "rebased_source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
+  "rebased_original750_proof_sha256": "22185fccf70be53a0bb78dec889baa0317f76ccdb5c309e66341a74b85114788"
+}

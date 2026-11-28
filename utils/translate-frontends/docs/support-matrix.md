@@ -1270,3 +1270,10 @@ The cumulative source suite covers 9,930 requests across six 64-bit targets.
 The original 750-request regression passes. On Linux x86-64, the two execution
 partitions pass all 1,759 formal tests, and 1,244 generated C23 programs
 match native C++ at both O0 and O2.
+
+## R19 Linked-list constructors and two-argument emplacement
+
+The current compiler passes all 10,032 cumulative source requests and
+750 original requests across six 64-bit targets. On Linux x86-64 the
+full selected suite passes 1,776 tests and 1,256 generated C23 programs
+match the native C++ results at each of O0 and O2.

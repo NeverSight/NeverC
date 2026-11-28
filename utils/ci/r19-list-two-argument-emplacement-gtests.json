@@ -1,0 +1,133 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-two-scalar-emplace-back",
+      "formal_test_name": "TranslateTest.CoreV2ListTwoScalarEmplaceBackRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "815785d91f9318aed374fce0f2a3070e7cc008f8d0955b747414ca1a940fdc20",
+      "original_case_source_sha256": "815785d91f9318aed374fce0f2a3070e7cc008f8d0955b747414ca1a940fdc20",
+      "gtest_body_sha256": "85700567a02f02f443db5506407e09c0f0a279ade9c156b960a5dfcd79fc2ff9"
+    },
+    {
+      "name": "forward-list-two-scalar-emplace-after",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListTwoScalarEmplaceAfterRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c46dc6763beb3d8a6ed73c59b374dadf8e88e2b12fe0a5c2687068005ca0f290",
+      "original_case_source_sha256": "c46dc6763beb3d8a6ed73c59b374dadf8e88e2b12fe0a5c2687068005ca0f290",
+      "gtest_body_sha256": "c84c7a5759bc15c7f13d763e035d05adc5a805820fc1255a3855b16d6c053821"
+    },
+    {
+      "name": "list-two-scalar-emplace-position-overload",
+      "formal_test_name": "TranslateTest.CoreV2ListTwoScalarEmplacePositionOverloadRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "dc2a453ee52b51b88e92f6140bd87bd5a39d6a04dc573ab8fc5bd4f92690a001",
+      "original_case_source_sha256": "dc2a453ee52b51b88e92f6140bd87bd5a39d6a04dc573ab8fc5bd4f92690a001",
+      "gtest_body_sha256": "c96dc9c387bb0637c95debb23b1f7c4b3606745d17a81bc38dfe57e08729d37b"
+    },
+    {
+      "name": "forward-list-two-scalar-emplace-with-destruction",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListTwoScalarEmplaceWithDestructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "75a32c3de42a26a4af96d9d17a327561995844be6726b2df7155d325d960a7ec",
+      "original_case_source_sha256": "75a32c3de42a26a4af96d9d17a327561995844be6726b2df7155d325d960a7ec",
+      "gtest_body_sha256": "3508f4cb7631675ae8dec4046e731effe91c31fb376fbddc09457b01a66d851a"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-two-scalar-emplace-reference-parameter-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListTwoScalarEmplaceReferenceParameterGuardRejected",
+      "expected": "reject",
+      "source_sha256": "da50274ae1c37cccca6d4270b856ba37cafe4c6bff4c846aab6bd82b0214cd07",
+      "original_case_source_sha256": "da50274ae1c37cccca6d4270b856ba37cafe4c6bff4c846aab6bd82b0214cd07",
+      "gtest_body_sha256": "4b62e8a209cb198ff0103153e36eea4c8f801224a8009fb91ac03abb8ad78f93"
+    },
+    {
+      "name": "forward-list-two-emplace-conversion-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListTwoEmplaceConversionGuardRejected",
+      "expected": "reject",
+      "source_sha256": "99b8af1bd7e837b87b826f7c5ddd421b243a16b3e747bfeff92cda5bdbf92cea",
+      "original_case_source_sha256": "99b8af1bd7e837b87b826f7c5ddd421b243a16b3e747bfeff92cda5bdbf92cea",
+      "gtest_body_sha256": "7c778eb8b83e01f80e87057c93870dd4657d79833c29f69416314ca94afffb61"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-two-scalar-emplace-back",
+      "section": "list",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Entry {\n  int key, value;\n  Entry() noexcept : key(0), value(0) {}\n  Entry(short k, int v) noexcept : key(k), value(v) {}\n};\nint main() {\n  std::list<Entry> rows;\n  short k = 3;\n  auto& out = rows.emplace_back(k, 11);\n  return &out != &rows.front() || out.key != 3 || out.value != 11;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "815785d91f9318aed374fce0f2a3070e7cc008f8d0955b747414ca1a940fdc20"
+    },
+    {
+      "name": "forward-list-two-scalar-emplace-after",
+      "section": "forward_list",
+      "expected": "accept",
+      "source": "#include <forward_list>\nstruct Entry {\n  int first, second;\n  Entry() noexcept : first(0), second(0) {}\n  Entry(int a, int b) noexcept : first(a), second(b) {}\n};\nint main() {\n  std::forward_list<Entry> rows;\n  const int b = 8;\n  auto out = rows.emplace_after(rows.before_begin(), 3, b);\n  auto next = out;\n  ++next;\n  return out != rows.begin() || out->first != 3 || out->second != 8 || next != rows.end();\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "c46dc6763beb3d8a6ed73c59b374dadf8e88e2b12fe0a5c2687068005ca0f290"
+    },
+    {
+      "name": "list-two-scalar-emplace-position-overload",
+      "section": "list",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Entry {\n  int value;\n  Entry() noexcept : value(0) {}\n  Entry(int a, int b) noexcept : value(a * 10 + b) {}\n  Entry(double, double) noexcept : value(99) {}\n};\nint main() {\n  std::list<Entry> rows(1);\n  auto it = rows.emplace(rows.cbegin(), 3, 7);\n  return it != rows.begin() || it->value != 37 || rows.back().value != 0;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "dc2a453ee52b51b88e92f6140bd87bd5a39d6a04dc573ab8fc5bd4f92690a001"
+    },
+    {
+      "name": "forward-list-two-scalar-emplace-with-destruction",
+      "section": "forward_list",
+      "expected": "accept",
+      "source": "#include <forward_list>\nint calls, removed;\nint next() { return ++calls; }\nstruct Entry {\n  int value;\n  Entry() noexcept : value(0) {}\n  Entry(int a, int b) noexcept : value(a + b) {}\n  ~Entry() noexcept { removed += value; }\n};\nint main() {\n  std::forward_list<Entry> rows;\n  auto& value = rows.emplace_front(next(), 5);\n  if (calls != 1 || value.value != 6 || removed) return 1;\n  rows.pop_front();\n  return calls != 1 || removed != 6;\n}\n",
+      "kind": "cpp17-operation",
+      "source_sha256": "75a32c3de42a26a4af96d9d17a327561995844be6726b2df7155d325d960a7ec"
+    },
+    {
+      "name": "list-two-scalar-emplace-reference-parameter-guard",
+      "section": "list",
+      "expected": "reject",
+      "source": "#include <list>\nstruct Entry {\n  int value;\n  Entry() noexcept : value(0) {}\n  Entry(int& a, int b) noexcept : value(a + b) { ++a; }\n};\nint main() {\n  std::list<Entry> rows;\n  int a = 3;\n  return rows.emplace_back(a, 4).value != 7 || a != 4;\n}\n",
+      "kind": "cpp17-negative",
+      "source_sha256": "da50274ae1c37cccca6d4270b856ba37cafe4c6bff4c846aab6bd82b0214cd07"
+    },
+    {
+      "name": "forward-list-two-emplace-conversion-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "source": "#include <forward_list>\nstruct Entry {\n  int value;\n  Entry() noexcept : value(0) {}\n  Entry(long a, int b) noexcept : value(static_cast<int>(a) + b) {}\n};\nint main() {\n  std::forward_list<Entry> rows;\n  return rows.emplace_front(4, 3).value != 7;\n}\n",
+      "kind": "cpp17-negative",
+      "source_sha256": "99b8af1bd7e837b87b826f7c5ddd421b243a16b3e747bfeff92cda5bdbf92cea"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListTwoScalarEmplaceBackRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListTwoScalarEmplaceAfterRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListTwoScalarEmplacePositionOverloadRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListTwoScalarEmplaceWithDestructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListTwoScalarEmplaceReferenceParameterGuardRejected",
+    "TranslateTest.CoreV2ForwardListTwoEmplaceConversionGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "c118bcd96239aae0ab28cca41b7b698d2741239b85675d577393e139d2005bcb",
+  "maintained_original_sha256": "c4603f34bd0672a10daac684ff792169c722b0b9416ab2b8b9b8de6146afaf57",
+  "previous_registered_source_sha256": "1500f4d271744cfdc5b9e3e94c1e6bfaf9ee248a70abe478b56c250e35157d5f",
+  "previous_maintained_original_sha256": "6befca72e2c45ed3cbef0c71c97ed30010da073297f46aa9202d3befdf129ad4",
+  "restorer_sha256": "093bea568a3ec98a8c53df4dd66fa663479db9e291fdea87044d9a2c4a232520",
+  "extractor_sha256": "1b30e52ed380668f926a40d99cd39e6756c206491a2de7f907dc6e7df847c7c3",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9564,
+  "current_python_registry_tests": 376,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "rebased_compiler_source": "3cb98b323b73a1dbdec5a8ed9891b7ee6896662e",
+  "rebased_source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
+  "rebased_original750_proof_sha256": "22185fccf70be53a0bb78dec889baa0317f76ccdb5c309e66341a74b85114788",
+  "source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
+  "native_reference_proofs": {
+    "linked-list-two-argument-emplacement": "23ac398cce42cc7c1ce1ec7b804551be0d05b3beb472c5e500a41a5822abe55f"
+  },
+  "native_reference_authentication_sha256": "f73949238f36311f9253a68423dd72eccd43920f2a170dfb0435deb355c10cf8"
+}

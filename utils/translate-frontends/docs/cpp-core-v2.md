@@ -18801,3 +18801,13 @@ default node construction for `std::list` and `std::forward_list`. Members are
 initialized in declaration order and array elements in increasing index
 order. The node owns the member lifetimes and destroys them in reverse
 order when the node is removed.
+
+## Checked linked-list record constructors and emplacement
+
+The C++17 adapter can call a selected source-owned zero-parameter
+constructor directly on a list or forward_list node, including supported
+nested elements. A constructor without an exception specification is
+admitted when its body is empty and its checked scalar initializers
+contain no calls. The emplacement overloads can forward two arithmetic
+arguments of the constructor's exact parameter types into a checked
+noexcept constructor on the allocated node.

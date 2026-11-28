@@ -418457,7 +418457,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListConstructsNestedScalarOnlyDefaultRecordAtBothOptimizations) {
   const auto Source = tmpFile("list-nested-user-provided-default-constructor-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 struct Leaf { int value; Leaf() : value(7) {} };
@@ -418467,10 +418467,17 @@ int main() {
   return rows.front().field.value != 7;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-nested-user-provided-default-constructor-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-nested-user-provided-default-constructor-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListNestedIndirectDefaultCallGuardRejected) {
@@ -418483,6 +418490,449 @@ struct Entry { Leaf field; };
 int main() {
   std::forward_list<Entry> rows(1);
   return rows.front().field.value != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListDirectRecordDefaultConstructorRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-direct-record-default-constructor.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int sequence;
+struct Entry {
+  int first, second;
+  explicit Entry() noexcept : first(++sequence), second(first + 10) { second += 2; }
+};
+int main() {
+  std::list<Entry> rows(2);
+  if (sequence != 2 || rows.front().first != 1 || rows.back().second != 14) return 1;
+  rows.resize(3);
+  return sequence != 3 || rows.back().first != 3 || rows.back().second != 15;
+}
+)r19containers");
+  const auto Output = tmpFile("list-direct-record-default-constructor.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-direct-record-default-constructor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListNestedUserDefaultConstructorRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-nested-user-default-constructor.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int sequence, released;
+int next() { return ++sequence; }
+struct Leaf {
+  int ticket;
+  Leaf() noexcept : ticket(++sequence) {}
+  ~Leaf() noexcept { released = released * 10 + ticket; }
+};
+struct Entry { int before = next(); Leaf fields[2]; int after = next(); };
+int main() {
+  std::forward_list<Entry> rows;
+  auto& row = rows.emplace_front();
+  if (sequence != 4 || row.before != 1 || row.fields[0].ticket != 2 ||
+      row.fields[1].ticket != 3 || row.after != 4) return 1;
+  rows.clear();
+  return released != 32;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-nested-user-default-constructor.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-nested-user-default-constructor" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUserDefaultConstructorFillCopyRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-user-default-constructor-fill-copy.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int sequence;
+struct Entry {
+  int value;
+  Entry() noexcept;
+};
+Entry::Entry() noexcept : value(++sequence) {}
+int main() {
+  Entry seed;
+  std::forward_list<Entry> rows(2, seed);
+  if (sequence != 1 || rows.front().value != 1) return 1;
+  rows.emplace_front();
+  return sequence != 2 || rows.front().value != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-user-default-constructor-fill-copy.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-user-default-constructor-fill-copy" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUserDefaultConstructorDestructionRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-user-default-constructor-destruction.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int sequence, released;
+struct Entry {
+  int value;
+  Entry() noexcept : value(++sequence) {}
+  ~Entry() noexcept { released = released * 10 + value; }
+};
+int main() {
+  std::list<Entry> rows;
+  auto& first = rows.emplace_back();
+  auto& second = rows.emplace_front();
+  if (first.value != 1 || second.value != 2 || released) return 1;
+  rows.pop_front();
+  if (released != 2) return 1;
+  rows.clear();
+  return released != 21;
+}
+)r19containers");
+  const auto Output = tmpFile("list-user-default-constructor-destruction.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-user-default-constructor-destruction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListUserDefaultConstructorParameterGuardRejected) {
+  const auto Source = tmpFile("list-user-default-constructor-parameter-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry { int value; explicit Entry(int n = 7) noexcept : value(n) {} };
+int main() {
+  std::list<Entry> rows(1);
+  return rows.front().value != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListUserDefaultConstructorMoveGuardRejected) {
+  const auto Source = tmpFile("forward-list-user-default-constructor-move-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry {
+  int value;
+  Entry() noexcept : value(7) {}
+  Entry(const Entry&) = default;
+  Entry(Entry&& other) noexcept : value(other.value + 1) {}
+};
+int main() {
+  std::forward_list<Entry> rows(1);
+  return rows.front().value != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListPlainDefaultCtorEarlierScalarMemberRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-plain-default-ctor-earlier-scalar-member.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int key, derived;
+  Entry() : key(4), derived(key * 3 + 1) {}
+};
+int main() {
+  std::list<Entry> rows(2);
+  auto& first = rows.emplace_front();
+  if (rows.size() != 3 || first.key != 4 || first.derived != 13) return 1;
+  rows.resize(4);
+  return rows.back().derived != 13;
+}
+)r19containers");
+  const auto Output = tmpFile("list-plain-default-ctor-earlier-scalar-member.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-plain-default-ctor-earlier-scalar-member" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultCtorNestedFieldDefaultsRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-plain-default-ctor-nested-field-defaults.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Leaf {
+  int key = 7;
+  int mirror = key + 3;
+  Leaf() {}
+};
+struct Entry { Leaf values[2]; };
+int main() {
+  std::forward_list<Entry> rows;
+  auto& current = rows.emplace_front();
+  if (current.values[0].key != 7 || current.values[1].mirror != 10) return 1;
+  rows.resize(2);
+  auto after = rows.begin();
+  ++after;
+  return after->values[1].mirror != 10;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-plain-default-ctor-nested-field-defaults.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-plain-default-ctor-nested-field-defaults" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultCtorOutOfLineFillRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-plain-default-ctor-out-of-line-fill.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry {
+  int value;
+  Entry();
+};
+Entry::Entry() : value(7) {}
+int main() {
+  Entry seed;
+  seed.value = 9;
+  std::forward_list<Entry> rows(2, seed);
+  if (rows.front().value != 9) return 1;
+  rows.emplace_front();
+  return rows.front().value != 7;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-plain-default-ctor-out-of-line-fill.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-plain-default-ctor-out-of-line-fill" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListPlainDefaultCtorBodyGuardRejected) {
+  const auto Source = tmpFile("list-plain-default-ctor-body-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int value;
+  Entry() : value(7) { ++value; }
+};
+int main() {
+  std::list<Entry> rows(1);
+  return rows.front().value != 8;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultCtorInitializerCallGuardRejected) {
+  const auto Source = tmpFile("forward-list-plain-default-ctor-initializer-call-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int value() { return 7; }
+struct Entry {
+  int field;
+  Entry() : field(value()) {}
+};
+int main() {
+  std::forward_list<Entry> rows(1);
+  return rows.front().field != 7;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListTwoScalarEmplaceBackRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-two-scalar-emplace-back.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int key, value;
+  Entry() noexcept : key(0), value(0) {}
+  Entry(short k, int v) noexcept : key(k), value(v) {}
+};
+int main() {
+  std::list<Entry> rows;
+  short k = 3;
+  auto& out = rows.emplace_back(k, 11);
+  return &out != &rows.front() || out.key != 3 || out.value != 11;
+}
+)r19containers");
+  const auto Output = tmpFile("list-two-scalar-emplace-back.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-two-scalar-emplace-back" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListTwoScalarEmplaceAfterRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-two-scalar-emplace-after.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry {
+  int first, second;
+  Entry() noexcept : first(0), second(0) {}
+  Entry(int a, int b) noexcept : first(a), second(b) {}
+};
+int main() {
+  std::forward_list<Entry> rows;
+  const int b = 8;
+  auto out = rows.emplace_after(rows.before_begin(), 3, b);
+  auto next = out;
+  ++next;
+  return out != rows.begin() || out->first != 3 || out->second != 8 || next != rows.end();
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-two-scalar-emplace-after.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-two-scalar-emplace-after" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListTwoScalarEmplacePositionOverloadRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-two-scalar-emplace-position-overload.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int value;
+  Entry() noexcept : value(0) {}
+  Entry(int a, int b) noexcept : value(a * 10 + b) {}
+  Entry(double, double) noexcept : value(99) {}
+};
+int main() {
+  std::list<Entry> rows(1);
+  auto it = rows.emplace(rows.cbegin(), 3, 7);
+  return it != rows.begin() || it->value != 37 || rows.back().value != 0;
+}
+)r19containers");
+  const auto Output = tmpFile("list-two-scalar-emplace-position-overload.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-two-scalar-emplace-position-overload" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListTwoScalarEmplaceWithDestructionRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-two-scalar-emplace-with-destruction.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int calls, removed;
+int next() { return ++calls; }
+struct Entry {
+  int value;
+  Entry() noexcept : value(0) {}
+  Entry(int a, int b) noexcept : value(a + b) {}
+  ~Entry() noexcept { removed += value; }
+};
+int main() {
+  std::forward_list<Entry> rows;
+  auto& value = rows.emplace_front(next(), 5);
+  if (calls != 1 || value.value != 6 || removed) return 1;
+  rows.pop_front();
+  return calls != 1 || removed != 6;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-two-scalar-emplace-with-destruction.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-two-scalar-emplace-with-destruction" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListTwoScalarEmplaceReferenceParameterGuardRejected) {
+  const auto Source = tmpFile("list-two-scalar-emplace-reference-parameter-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int value;
+  Entry() noexcept : value(0) {}
+  Entry(int& a, int b) noexcept : value(a + b) { ++a; }
+};
+int main() {
+  std::list<Entry> rows;
+  int a = 3;
+  return rows.emplace_back(a, 4).value != 7 || a != 4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListTwoEmplaceConversionGuardRejected) {
+  const auto Source = tmpFile("forward-list-two-emplace-conversion-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry {
+  int value;
+  Entry() noexcept : value(0) {}
+  Entry(long a, int b) noexcept : value(static_cast<int>(a) + b) {}
+};
+int main() {
+  std::forward_list<Entry> rows;
+  return rows.emplace_front(4, 3).value != 7;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

@@ -4005,6 +4005,8 @@ struct UtilityForwardListIteratorRecord {
   UtilityForwardListNodeRecord Node;
   bool Const = false;
 };
+const clang::CXXConstructorDecl *approvedUtilityLinkedListDefaultConstructor(
+    const State &S, const clang::SourceManager &SM, const clang::CXXRecordDecl *Record);
 std::optional<UtilityForwardListRecord> approvedUtilityForwardListRecord(
     const State &S, const clang::SourceManager &SM,
     const clang::CXXRecordDecl *Record, const clang::ASTContext &Context);
@@ -4033,6 +4035,7 @@ struct UtilityForwardListCall {
   std::optional<uint64_t> Maximum = std::nullopt;
   std::optional<bool> ObjectOrderDescending = std::nullopt;
   const clang::FunctionDecl *DefaultRecordComparison = nullptr;
+  const clang::CXXConstructorDecl *EmplacedRecordConstructor = nullptr;
 };
 std::optional<UtilityForwardListConstruction> approvedUtilityForwardListConstruction(
     const State &S, const clang::SourceManager &SM,
@@ -4086,6 +4089,7 @@ struct UtilityListCall {
   std::optional<uint64_t> Maximum = std::nullopt;
   std::optional<bool> Descending = std::nullopt;
   const clang::FunctionDecl *DefaultRecordComparison = nullptr;
+  const clang::CXXConstructorDecl *EmplacedRecordConstructor = nullptr;
 };
 std::optional<UtilityListConstruction> approvedUtilityListConstruction(
     const State &S, const clang::SourceManager &SM,

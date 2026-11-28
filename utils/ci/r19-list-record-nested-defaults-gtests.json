@@ -23,17 +23,17 @@
       "source_sha256": "0c1dedb365eb8cda92b6e3d1f0eb4e46589e69fa61cce6672866c243b83928f5",
       "original_case_source_sha256": "0c1dedb365eb8cda92b6e3d1f0eb4e46589e69fa61cce6672866c243b83928f5",
       "gtest_body_sha256": "2df61b36c26669cfb1c48715e3209410e228504f6120f263b3f90044202c892a"
+    },
+    {
+      "name": "list-nested-user-provided-default-constructor-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListConstructsNestedScalarOnlyDefaultRecordAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e5d5230afd70ad53f357047ecd9565f7334c9d41825fe08651b60bc37909242c",
+      "original_case_source_sha256": "e5d5230afd70ad53f357047ecd9565f7334c9d41825fe08651b60bc37909242c",
+      "gtest_body_sha256": "0b849b93a46982b8c2d2ff8408dea3a1b09a5b649ef78e9ce2c7a5aa0b1a9319"
     }
   ],
   "negative_cases": [
-    {
-      "name": "list-nested-user-provided-default-constructor-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected",
-      "expected": "reject",
-      "source_sha256": "e5d5230afd70ad53f357047ecd9565f7334c9d41825fe08651b60bc37909242c",
-      "original_case_source_sha256": "e5d5230afd70ad53f357047ecd9565f7334c9d41825fe08651b60bc37909242c",
-      "gtest_body_sha256": "10384664d8975ff289d1da57ef60ac4b15490e602a44bf221cd05c5f2e0ed93f"
-    },
     {
       "name": "forward-list-nested-indirect-default-call-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListNestedIndirectDefaultCallGuardRejected",
@@ -71,8 +71,8 @@
     {
       "name": "list-nested-user-provided-default-constructor-guard",
       "section": "list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source": "#include <list>\nstruct Leaf { int value; Leaf() : value(7) {} };\nstruct Entry { Leaf field; };\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().field.value != 7;\n}\n",
       "source_sha256": "e5d5230afd70ad53f357047ecd9565f7334c9d41825fe08651b60bc37909242c"
     },
@@ -89,7 +89,7 @@
     "TranslateTest.CoreV2ListNestedRecordDefaultAndDestroyOrderRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListNestedArrayDefaultAndDestroyOrderRunAtBothOptimizations",
     "TranslateTest.CoreV2ListDeepRecordOnlyNestedDefaultsRunAtBothOptimizations",
-    "TranslateTest.CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected",
+    "TranslateTest.CoreV2ListConstructsNestedScalarOnlyDefaultRecordAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListNestedIndirectDefaultCallGuardRejected"
   ],
   "source_proof_gate_pending": false,
@@ -103,11 +103,15 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9547,
   "current_python_registry_tests": 370,
-  "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6,
-  "source_proof_sha256": "a7a213c6044093891f4b5b1897afdef6d56f812db93fc9d58bf3fca3a47f8e1f",
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "source_proof_sha256": "e6a25fc13f63f1e80c5781c43c6576745ca9375375261f42c3e0610732ecf4c1",
   "native_reference_proofs": {
-    "linked-list-nested-record-defaults": "ac919bd6ddf1d396c98cadbf0df452189e88573cfd9fb59dd9f73a5791bb3dbd"
+    "linked-list-nested-record-defaults": "ac919bd6ddf1d396c98cadbf0df452189e88573cfd9fb59dd9f73a5791bb3dbd",
+    "linked-list-scalar-constructor-defaults": "c1e1340a3b56df170e1b5ca83c75be1674b821010851a10e6fce2222fda973ad"
   },
-  "native_reference_authentication_sha256": "0688b56eb757ff1cabe1165b90bc8eb46fc31d491d0d1129c573e3ba421cec42"
+  "native_reference_authentication_sha256": "c260b93fae66a7abe30d71ad1a4d398cec8ea761174f26d9dbf6c83d5c58be97",
+  "rebased_compiler_source": "3cb98b323b73a1dbdec5a8ed9891b7ee6896662e",
+  "rebased_source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
+  "rebased_original750_proof_sha256": "22185fccf70be53a0bb78dec889baa0317f76ccdb5c309e66341a74b85114788"
 }
