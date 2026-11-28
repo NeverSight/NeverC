@@ -126,5 +126,8 @@
   "native_reference_proofs": {
     "linked-list-explicit-default-constructors": "33a8ef3d8b2435eb65f145234d0d16285846cd45cb49e76e4ffd261db6ec874d"
   },
-  "native_reference_authentication_sha256": "d2f0bab265e299f50be1b104ce7a3746099592c623aa71fb52116e328869ebd9"
+  "native_reference_authentication_sha256": "d2f0bab265e299f50be1b104ce7a3746099592c623aa71fb52116e328869ebd9",
+  "rebased_compiler_source": "3cb98b323b73a1dbdec5a8ed9891b7ee6896662e",
+  "rebased_source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
+  "rebased_original750_proof_sha256": "22185fccf70be53a0bb78dec889baa0317f76ccdb5c309e66341a74b85114788"
 }

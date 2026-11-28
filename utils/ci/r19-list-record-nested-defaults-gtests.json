@@ -110,5 +110,8 @@
     "linked-list-nested-record-defaults": "ac919bd6ddf1d396c98cadbf0df452189e88573cfd9fb59dd9f73a5791bb3dbd",
     "linked-list-scalar-constructor-defaults": "c1e1340a3b56df170e1b5ca83c75be1674b821010851a10e6fce2222fda973ad"
   },
-  "native_reference_authentication_sha256": "c260b93fae66a7abe30d71ad1a4d398cec8ea761174f26d9dbf6c83d5c58be97"
+  "native_reference_authentication_sha256": "c260b93fae66a7abe30d71ad1a4d398cec8ea761174f26d9dbf6c83d5c58be97",
+  "rebased_compiler_source": "3cb98b323b73a1dbdec5a8ed9891b7ee6896662e",
+  "rebased_source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
+  "rebased_original750_proof_sha256": "22185fccf70be53a0bb78dec889baa0317f76ccdb5c309e66341a74b85114788"
 }

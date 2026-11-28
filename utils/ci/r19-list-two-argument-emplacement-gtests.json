@@ -109,7 +109,7 @@
     "TranslateTest.CoreV2ListTwoScalarEmplaceReferenceParameterGuardRejected",
     "TranslateTest.CoreV2ForwardListTwoEmplaceConversionGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "c118bcd96239aae0ab28cca41b7b698d2741239b85675d577393e139d2005bcb",
   "maintained_original_sha256": "c4603f34bd0672a10daac684ff792169c722b0b9416ab2b8b9b8de6146afaf57",
@@ -121,5 +121,13 @@
   "current_registry_count": 9564,
   "current_python_registry_tests": 376,
   "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8
+  "planned_generated_c23_executions": 8,
+  "rebased_compiler_source": "3cb98b323b73a1dbdec5a8ed9891b7ee6896662e",
+  "rebased_source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
+  "rebased_original750_proof_sha256": "22185fccf70be53a0bb78dec889baa0317f76ccdb5c309e66341a74b85114788",
+  "source_proof_sha256": "ddde3647e6f8293689b1244f78144f7804892f699baf482451a5f86a26e37421",
+  "native_reference_proofs": {
+    "linked-list-two-argument-emplacement": "23ac398cce42cc7c1ce1ec7b804551be0d05b3beb472c5e500a41a5822abe55f"
+  },
+  "native_reference_authentication_sha256": "f73949238f36311f9253a68423dd72eccd43920f2a170dfb0435deb355c10cf8"
 }
