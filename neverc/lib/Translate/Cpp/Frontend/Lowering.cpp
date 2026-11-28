@@ -27008,9 +27008,8 @@ class FunctionLowering {
     return quantity(A.Context.getTypeSizeInChars(A.Context.getRecordType(Node)).getQuantity(),
                     type(A.Context.getSizeType(), L), L);
   }
-  void constructLinkedListEmplacedRecord(Expression Place, QualType T, const CXXConstructExpr *Construction,
-      llvm::ArrayRef<Expression> Operands, SourceLocation L) {
-    const auto *Constructor = Construction->getConstructor();
+  void constructLinkedListRecord(Expression Place, QualType T, const CXXConstructorDecl *Constructor,
+      const CXXConstructExpr *Construction, llvm::ArrayRef<Expression> Operands, SourceLocation L) {
     beginFullExpression();
     json::Array Args;
     Args.push_back(snapshot(address(std::move(Place), T, L), L));
@@ -27021,7 +27020,11 @@ class FunctionLowering {
         Args.push_back(utilityInvocationArgument(json::Object(Operands[I]),
             Forward->getDirectCallee()->getReturnType(), Parameter, nullptr, L));
       } else {
-        Args.push_back(snapshot(argument(Construction->getArg(I), Parameter), L));
+        const auto *Default = Construction ? Construction->getArg(I) :
+            defaultArgumentInitializer(Constructor->getParamDecl(I), A.Context);
+        if (!Default)
+          reject(L, "linked-list constructor", "A checked default argument is required.");
+        Args.push_back(snapshot(argument(Default, Parameter), L));
       }
     }
     chargeCall(Args, L);
@@ -27040,7 +27043,8 @@ class FunctionLowering {
     const auto Element = Info.Value->getType();
     auto Target = forwardListValue(Node, Element, L);
     if (Construction)
-      constructLinkedListEmplacedRecord(std::move(Target), Element, Construction, Inputs, L);
+      constructLinkedListRecord(std::move(Target), Element, Construction->getConstructor(),
+                                Construction, Inputs, L);
     else if (ValueReference)
       assign(std::move(Target),
              forwardListInputValue(std::move(*ValueReference), InputElement, Element, L), L);
@@ -27274,7 +27278,10 @@ class FunctionLowering {
     if (!Record->isAggregate()) {
       const auto *Constructor =
           approvedUtilityLinkedListDefaultConstructor(A.S, A.Sources, Record);
-      constructMemoryDefault(std::move(Place), T, Constructor, false, L);
+      if (Constructor && Constructor->getNumParams())
+        constructLinkedListRecord(std::move(Place), T, Constructor, nullptr, {}, L);
+      else
+        constructMemoryDefault(std::move(Place), T, Constructor, false, L);
       return;
     }
     auto SavedThis = ThisPointer;
@@ -29073,7 +29080,8 @@ class FunctionLowering {
     const auto Element = Info.Value->getType();
     auto Target = listValue(Node, Element, false, L);
     if (Construction) {
-      constructLinkedListEmplacedRecord(std::move(Target), Element, Construction, Inputs, L);
+      constructLinkedListRecord(std::move(Target), Element, Construction->getConstructor(),
+                                Construction, Inputs, L);
       return Node;
     }
     if (!ValueReference) {
