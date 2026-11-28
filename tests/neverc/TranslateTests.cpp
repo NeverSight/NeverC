@@ -418902,7 +418902,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListTwoScalarEmplaceReferenceParameterGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListEmplacePreservesSelectedReferenceParameters) {
   const auto Source = tmpFile("list-two-scalar-emplace-reference-parameter-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 struct Entry {
@@ -418916,13 +418916,20 @@ int main() {
   return rows.emplace_back(a, 4).value != 7 || a != 4;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-two-scalar-emplace-reference-parameter-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-two-scalar-emplace-reference-parameter-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListTwoEmplaceConversionGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListEmplaceConvertsSelectedScalarParameters) {
   const auto Source = tmpFile("forward-list-two-emplace-conversion-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 struct Entry {
@@ -418933,6 +418940,124 @@ struct Entry {
 int main() {
   std::forward_list<Entry> rows;
   return rows.emplace_front(4, 3).value != 7;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-two-emplace-conversion-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-two-emplace-conversion-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListOneScalarEmplaceExplicitRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-one-scalar-emplace-explicit.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int value;
+  Entry() noexcept : value(0) {}
+  explicit Entry(int v) noexcept : value(v) {}
+};
+int main() {
+  std::list<Entry> rows;
+  auto& out = rows.emplace_front(11);
+  return &out != &rows.front() || out.value != 11;
+}
+)r19containers");
+  const auto Output = tmpFile("list-one-scalar-emplace-explicit.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-one-scalar-emplace-explicit" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListScalarEmplaceThreeValuesAndDefaultRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-scalar-emplace-three-values-and-default.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int defaults;
+int next_default() noexcept { return ++defaults; }
+struct Entry {
+  int value;
+  Entry() noexcept : value(0) {}
+  Entry(short a, int b, unsigned c, int d = next_default()) noexcept
+    : value(a + b + static_cast<int>(c) + d) {}
+};
+int main() {
+  std::forward_list<Entry> rows;
+  auto first = rows.emplace_after(rows.before_begin(), 2, 3, 4u);
+  auto second = rows.emplace_after(first, 3, 4, 5u);
+  return defaults != 2 || first->value != 10 || second->value != 14;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-scalar-emplace-three-values-and-default.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-scalar-emplace-three-values-and-default" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListScalarEmplaceReferenceAliasRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-scalar-emplace-reference-alias.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int arguments;
+int amount() noexcept { ++arguments; return 4; }
+struct Entry {
+  int* target;
+  int seen;
+  Entry() noexcept : target(nullptr), seen(0) {}
+  Entry(int& out, const int& old, int&& add) noexcept : target(&out), seen(old) { out += add; }
+};
+int main() {
+  std::list<Entry> rows;
+  int value = 3;
+  auto& entry = rows.emplace_back(value, value, amount());
+  return arguments != 1 || value != 7 || entry.target != &value || entry.seen != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("list-scalar-emplace-reference-alias.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-scalar-emplace-reference-alias" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListEmplaceUserScalarConversionGuardRejected) {
+  const auto Source = tmpFile("list-emplace-user-scalar-conversion-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Input {
+  operator int() const noexcept { return 7; }
+};
+struct Entry {
+  int value;
+  Entry() noexcept : value(0) {}
+  Entry(int a, int b) noexcept : value(a + b) {}
+};
+int main() {
+  std::list<Entry> rows;
+  return rows.emplace_back(Input{}, 3).value != 10;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

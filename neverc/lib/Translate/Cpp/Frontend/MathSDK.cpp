@@ -54175,10 +54175,41 @@ bool linkedListScalarEmplaceInput(QualType T, const ASTContext &Context) {
          utilityScalar(Context, Input.getUnqualifiedType());
 }
 
+bool linkedListScalarEmplacePack(llvm::ArrayRef<TemplateArgument> Pack,
+    const FunctionDecl *Method, unsigned Offset, const ASTContext &Context) {
+  for (unsigned I = 0; I < Pack.size(); ++I) {
+    const auto *Parameter = Method->getParamDecl(Offset + I);
+    if (Pack[I].getKind() != TemplateArgument::Type || Parameter->hasDefaultArg())
+      return false;
+    const auto Input = Pack[I].getAsType();
+    if (!linkedListScalarEmplaceInput(Input, Context)) return false;
+    const auto Forwarded = Input->isLValueReferenceType()
+        ? Input : Context.getRValueReferenceType(Input.getNonReferenceType());
+    if (!Context.hasSameType(Parameter->getType(), Forwarded)) return false;
+  }
+  return true;
+}
+
+bool linkedListEmplaceForwardedArgument(const State &S, const SourceManager &SM,
+    const Expr *Argument, QualType Input, unsigned Index, unsigned Count, const ASTContext &Context) {
+  const auto *Forward = dyn_cast<CallExpr>(Argument->IgnoreParenImpCasts());
+  const auto *Function = Forward ? Forward->getDirectCallee() : nullptr;
+  if (!Function || Function->getBuiltinID() != Builtin::BIforward ||
+      Forward->getNumArgs() != 1 || !Context.hasSameType(Function->getReturnType(), Input))
+    return false;
+  const auto *Use = dyn_cast<DeclRefExpr>(Forward->getArg(0)->IgnoreParenImpCasts());
+  const auto *Parameter = Use ? dyn_cast<ParmVarDecl>(Use->getDecl()) : nullptr;
+  const auto *Leaf = Parameter ? dyn_cast<FunctionDecl>(Parameter->getDeclContext()) : nullptr;
+  return Leaf && Leaf->getNumParams() == Count + 1 &&
+      (cstddefOrigin(S, SM, Leaf->getLocation(), "libcxx", "__memory/allocator.h") ||
+       cstddefOrigin(S, SM, Leaf->getLocation(), "libcxx", "__memory/construct_at.h")) &&
+      Leaf->getParamDecl(Index + 1) == Parameter &&
+      Context.hasSameType(Parameter->getType(), Input);
+}
+
 struct LinkedListEmplacement {
   unsigned Offset;
   const CXXConstructExpr *Expression = nullptr;
-  const CXXConstructorDecl *Constructor = nullptr;
 };
 
 bool bindLinkedListEmplacement(const State &S, const SourceManager &SM, const FunctionDecl *Root,
@@ -54187,29 +54218,35 @@ bool bindLinkedListEmplacement(const State &S, const SourceManager &SM, const Fu
   const auto *Expression = Allocation->getConstructExpr();
   const auto *Constructor = Expression ? Expression->getConstructor() : nullptr;
   const auto *Prototype = Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  const unsigned Count = Root->getNumParams() - Selection.Offset;
   if (!Constructor || !Constructor->isUserProvided() || Constructor->isCopyOrMoveConstructor() ||
       Constructor->isDeleted() || Constructor->isInvalidDecl() || Constructor->getAccess() != AS_public ||
-      Constructor->getNumParams() != 2 || !ordinaryConstructor(Constructor) || !Prototype ||
+      !ordinaryConstructor(Constructor) || !Prototype ||
       isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()) || !Prototype->isNothrow() ||
-      Expression->getNumArgs() != 2 || Expression->getConstructionKind() != CXXConstructionKind::Complete ||
-      Constructor->getParent()->getCanonicalDecl() != Element->getAsCXXRecordDecl()->getCanonicalDecl())
+      Expression->getConstructionKind() != CXXConstructionKind::Complete ||
+      Constructor->getParent()->getCanonicalDecl() != Element->getAsCXXRecordDecl()->getCanonicalDecl() ||
+      !utilityConstructorTrailingDefaults(S, SM, Expression, Constructor, Count, Context))
     return false;
   const FunctionDecl *Definition = nullptr;
   if (!Constructor->hasBody(Definition) || !Definition ||
       !llvm::all_of(Constructor->redecls(), [&](const FunctionDecl *D) { return S.owns(SM, D->getLocation()); }))
     return false;
-  for (unsigned I = 0; I < 2; ++I) {
-    const auto Forwarded = Root->getParamDecl(Selection.Offset + I)->getType();
-    const auto T = Constructor->getParamDecl(I)->getType();
-    const auto *Arg = Expression->getArg(I)->IgnoreParenImpCasts();
-    if (!Forwarded->isReferenceType() || !linkedListScalarEmplaceInput(Forwarded, Context) ||
-        !T->isArithmeticType() || T.hasLocalQualifiers() ||
-        !Context.hasSameUnqualifiedType(T, Forwarded->getPointeeType()) ||
-        !Context.hasSameUnqualifiedType(T, Arg->getType()) || isa<CXXDefaultArgExpr>(Arg))
+  for (unsigned I = 0; I < Constructor->getNumParams(); ++I) {
+    const auto Parameter = Constructor->getParamDecl(I)->getType();
+    if (!linkedListScalarEmplaceInput(Parameter, Context)) return false;
+    if (I >= Count) continue;
+    const auto Input = Root->getParamDecl(Selection.Offset + I)->getType();
+    if (!Input->isReferenceType() || !linkedListScalarEmplaceInput(Input, Context) ||
+        !linkedListEmplaceForwardedArgument(S, SM, Expression->getArg(I), Input, I, Count, Context))
+      return false;
+    if (Parameter->isReferenceType()) {
+      if (!Context.hasSameUnqualifiedType(Parameter->getPointeeType(), Input->getPointeeType()))
+        return false;
+    } else if (!utilityScalarDirectConversion(Context, Input->getPointeeType().getUnqualifiedType(),
+                                               Parameter.getUnqualifiedType()))
       return false;
   }
   Selection.Expression = Expression;
-  Selection.Constructor = cast<CXXConstructorDecl>(Definition);
   return true;
 }
 
@@ -54865,7 +54902,7 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
     return std::nullopt;
   const auto Pack = Arguments->get(0).pack_elements();
   const unsigned Offset = After ? 1 : 0;
-  if (Pack.size() > (Element->isRecordType() ? 2u : 1u) || Method->getNumParams() != Offset + Pack.size())
+  if (Method->getNumParams() != Offset + Pack.size())
     return std::nullopt;
   if (After) {
     if (!forwardListIteratorType(S, SM, Method->getReturnType(), Owner.Node, false, Context) ||
@@ -54874,16 +54911,9 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
   } else if (!Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Element))) {
     return std::nullopt;
   }
-  if (Pack.size() == 2) {
-    for (unsigned I = 0; I < 2; ++I) {
-      if (Pack[I].getKind() != TemplateArgument::Type) return std::nullopt;
-      const auto T = Pack[I].getAsType();
-      if (!linkedListScalarEmplaceInput(T, Context) || Method->getParamDecl(Offset + I)->hasDefaultArg())
-        return std::nullopt;
-      const auto Forwarded = T->isLValueReferenceType() ? T : Context.getRValueReferenceType(T.getNonReferenceType());
-      if (!Context.hasSameType(Method->getParamDecl(Offset + I)->getType(), Forwarded)) return std::nullopt;
-    }
-  } else if (!Pack.empty()) {
+  if (!Pack.empty() && !(Element->isRecordType() &&
+      linkedListScalarEmplacePack(Pack, Method, Offset, Context))) {
+    if (Pack.size() != 1) return std::nullopt;
     if (Pack[0].getKind() != TemplateArgument::Type) return std::nullopt;
     const auto Type = Pack[0].getAsType();
     const auto Input = Type.getNonReferenceType().getUnqualifiedType();
@@ -55823,9 +55853,18 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
           !(DirectOrder && forwardListSDKOrderCall(S, SM, Call, Owner.Value->getType(), Context, OrderMethod)) &&
           !(DirectFilter && forwardListSDKFilterCall(Call, Root, Owner.Value->getType(), Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
-    if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if ((!Emplacement || C != Emplacement->Expression) && !forwardListOrderForwardingMove(S, SM, C, Root, OrderMethod, Context) &&
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
+      if (Emplacement && C == Emplacement->Expression) {
+        // Trailing defaults were checked as source-owned expressions. Walk the
+        // explicit arguments here to validate the pinned forwarding calls.
+        const unsigned Count = Root->getNumParams() - Emplacement->Offset;
+        for (unsigned I = 0; I < Count; ++I)
+          if (!Statement(C->getArg(I), Depth + 1)) return false;
+        return true;
+      }
+      if (!forwardListOrderForwardingMove(S, SM, C, Root, OrderMethod, Context) &&
           !Function(C->getConstructor(), Depth + 1)) return false;
+    }
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
            !Context.hasSameType(N->getAllocatedType(), Context.getRecordType(Owner.Record))) ||
@@ -56657,12 +56696,15 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   LinkedListEmplacement Emplacement{*Operation == UtilityForwardListOperation::EmplaceAfter ? 1u : 0u};
   const bool EmplaceRecord = (*Operation == UtilityForwardListOperation::EmplaceAfter ||
        *Operation == UtilityForwardListOperation::EmplaceFront) &&
-      Method->getNumParams() == Emplacement.Offset + 2;
+      Node->Value->getType()->isRecordType() && Method->getNumParams() > Emplacement.Offset &&
+      llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
+        return linkedListScalarEmplaceInput(P->getType(), Context);
+      });
   if (!forwardListSourceGraph(S, SM, Method, Context, *Node, SourceOrder, DirectFilter,
                               ObjectOrder ? ObjectOrder->Method : nullptr,
                               (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
                               DefaultOperator, EmplaceRecord ? &Emplacement : nullptr) ||
-      (EmplaceRecord && !Emplacement.Constructor) ||
+      (EmplaceRecord && !Emplacement.Expression) ||
       ((RecordOrder || RecordEquality) && !DefaultRecordComparison)) return std::nullopt;
   if (*Operation == UtilityForwardListOperation::GetAllocator && !forwardListGetAllocatorBody(S, SM, Method, *Node, Context))
     return std::nullopt;
@@ -56721,7 +56763,7 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
   return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum, OrderDirection, DefaultRecordComparison,
-                             Emplacement.Constructor};
+                             Emplacement.Expression};
 }
 
 
@@ -57245,7 +57287,7 @@ std::optional<UtilityListOperation> listEmplacementSignature(
       Arguments->get(0).getKind() != TemplateArgument::Pack) return std::nullopt;
   const auto Pack = Arguments->get(0).pack_elements();
   const unsigned Offset = AtPosition ? 1 : 0;
-  if (Pack.size() > (Element->isRecordType() ? 2u : 1u) || M->getNumParams() != Offset + Pack.size()) return std::nullopt;
+  if (M->getNumParams() != Offset + Pack.size()) return std::nullopt;
   if (AtPosition) {
     if (M->getParamDecl(0)->hasDefaultArg() ||
         !listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner.Node, true, Context) ||
@@ -57253,16 +57295,9 @@ std::optional<UtilityListOperation> listEmplacementSignature(
   } else if (!Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element))) {
     return std::nullopt;
   }
-  if (Pack.size() == 2) {
-    for (unsigned I = 0; I < 2; ++I) {
-      if (Pack[I].getKind() != TemplateArgument::Type) return std::nullopt;
-      const auto T = Pack[I].getAsType();
-      if (!linkedListScalarEmplaceInput(T, Context) || M->getParamDecl(Offset + I)->hasDefaultArg())
-        return std::nullopt;
-      const auto Forwarded = T->isLValueReferenceType() ? T : Context.getRValueReferenceType(T.getNonReferenceType());
-      if (!Context.hasSameType(M->getParamDecl(Offset + I)->getType(), Forwarded)) return std::nullopt;
-    }
-  } else if (!Pack.empty()) {
+  if (!Pack.empty() && !(Element->isRecordType() &&
+      linkedListScalarEmplacePack(Pack, M, Offset, Context))) {
+    if (Pack.size() != 1) return std::nullopt;
     if (Pack[0].getKind() != TemplateArgument::Type || M->getParamDecl(Offset)->hasDefaultArg())
       return std::nullopt;
     const auto Type = Pack[0].getAsType();
@@ -57892,9 +57927,18 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
           !(!Compare.isNull() && listSDKOrderCall(S, SM, Call, cast<CXXMethodDecl>(Root)->getParent(),
                                                       Compare, Owner.Value->getType(), Context, OrderMethod)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
-    if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if ((!Emplacement || C != Emplacement->Expression) && !listForwardedOrderCopy(C, Root, OrderMethod, Context) &&
+    if (const auto *C = dyn_cast<CXXConstructExpr>(Node)) {
+      if (Emplacement && C == Emplacement->Expression) {
+        // Trailing defaults were checked as source-owned expressions. Walk the
+        // explicit arguments here to validate the pinned forwarding calls.
+        const unsigned Count = Root->getNumParams() - Emplacement->Offset;
+        for (unsigned I = 0; I < Count; ++I)
+          if (!Statement(C->getArg(I), Depth + 1)) return false;
+        return true;
+      }
+      if (!listForwardedOrderCopy(C, Root, OrderMethod, Context) &&
           !Function(C->getConstructor(), Depth + 1)) return false;
+    }
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
            !Context.hasSameType(N->getAllocatedType(), Context.getRecordType(Owner.Record))) ||
@@ -58042,12 +58086,15 @@ std::optional<UtilityListCall> approvedUtilityListCall(
   const bool EmplaceRecord = (*Operation == UtilityListOperation::Emplace ||
        *Operation == UtilityListOperation::EmplaceFront ||
        *Operation == UtilityListOperation::EmplaceBack) &&
-      Method->getNumParams() == Emplacement.Offset + 2;
+      Node->Value->getType()->isRecordType() && Method->getNumParams() > Emplacement.Offset &&
+      llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
+        return linkedListScalarEmplaceInput(P->getType(), Context);
+      });
   if ((Predicates && !listPredicateBody(Method)) ||
       !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare, OrderMethod,
                         (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
                         DefaultOperator, EmplaceRecord ? &Emplacement : nullptr) ||
-      (EmplaceRecord && !Emplacement.Constructor) ||
+      (EmplaceRecord && !Emplacement.Expression) ||
       ((RecordOrder || RecordEquality) && !DefaultRecordComparison)) return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
@@ -58072,7 +58119,7 @@ std::optional<UtilityListCall> approvedUtilityListCall(
     if (!Maximum) return std::nullopt;
   }
   return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum, Descending, DefaultRecordComparison,
-                             Emplacement.Constructor};
+                             Emplacement.Expression};
 }
 
 

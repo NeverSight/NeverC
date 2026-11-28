@@ -4420,6 +4420,26 @@ def restore_rebased_stl_registry_history(source):
     return source
 
 
+R19_SCALAR_PACK_REGISTERED_SHA256 = 'ec321586a69914a722a3033b6a4d043fcff5a2b35a48360deb62027b5b03eaf4'
+R19_SCALAR_PACK_MAINTAINED_SHA256 = '3cb49f8bbcc75c5b87e9ad0813a37ac7f291cde384d0131e7f7003f7f7cc169c'
+
+
+def restore_scalar_emplacement_pack_history(source, additions):
+    """Recover the previous linked-list registry for its historical audit."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    assert sha(source) == R19_SCALAR_PACK_REGISTERED_SHA256 and source.endswith(additions)
+    assert sha(additions) == 'b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb'
+    stop = len(source) - len(additions)
+    start = stop - 4644
+    assert sha(source[start:stop]) == 'f6487d1b88ee5229523ec5a384e3801263b600a655ff313e1117899d0e470641'
+    restored = source[:start] + source[stop:]
+    for active, archived in [(b'TEST_F(TranslateTest, CoreV2ListEmplacePreservesSelectedReferenceParameters) {\n  const auto Source = tmpFile("list-two-scalar-emplace-reference-parameter-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int value;\n  Entry() noexcept : value(0) {}\n  Entry(int& a, int b) noexcept : value(a + b) { ++a; }\n};\nint main() {\n  std::list<Entry> rows;\n  int a = 3;\n  return rows.emplace_back(a, 4).value != 7 || a != 4;\n}\n)r19containers");\n  const auto Output = tmpFile("list-two-scalar-emplace-reference-parameter-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-two-scalar-emplace-reference-parameter-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListTwoScalarEmplaceReferenceParameterGuardRejected) {\n  const auto Source = tmpFile("list-two-scalar-emplace-reference-parameter-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int value;\n  Entry() noexcept : value(0) {}\n  Entry(int& a, int b) noexcept : value(a + b) { ++a; }\n};\nint main() {\n  std::list<Entry> rows;\n  int a = 3;\n  return rows.emplace_back(a, 4).value != 7 || a != 4;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'), (b'TEST_F(TranslateTest, CoreV2ForwardListEmplaceConvertsSelectedScalarParameters) {\n  const auto Source = tmpFile("forward-list-two-emplace-conversion-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nstruct Entry {\n  int value;\n  Entry() noexcept : value(0) {}\n  Entry(long a, int b) noexcept : value(static_cast<int>(a) + b) {}\n};\nint main() {\n  std::forward_list<Entry> rows;\n  return rows.emplace_front(4, 3).value != 7;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-two-emplace-conversion-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-two-emplace-conversion-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ForwardListTwoEmplaceConversionGuardRejected) {\n  const auto Source = tmpFile("forward-list-two-emplace-conversion-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nstruct Entry {\n  int value;\n  Entry() noexcept : value(0) {}\n  Entry(long a, int b) noexcept : value(static_cast<int>(a) + b) {}\n};\nint main() {\n  std::forward_list<Entry> rows;\n  return rows.emplace_front(4, 3).value != 7;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}')]:
+        assert restored.count(active) == 1
+        restored = restored.replace(active, archived, 1)
+    assert sha(restored) == '59d31235809f5175edfdd53f5de3d3c1bfaf14d76a0d5b1dd91d944c761c4138'
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -4462,6 +4482,13 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == R19_SCALAR_PACK_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_SCALAR_PACK_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        maintained = source[:-len(additions)]
+        assert digest(maintained) == R19_SCALAR_PACK_MAINTAINED_SHA256
+        return maintained
     if source_digest == '8e853c05697faec8f0b357f9d2ac23d57a4d09872dab52b4bdc26d55c8db9b03':
         return source
     if source_digest == R19_REBASED_REGISTERED_SHA256:

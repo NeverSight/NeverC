@@ -43,6 +43,12 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.scalar_pack_registered = cls.registered
+        cls.scalar_pack_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.scalar_pack_active = cls.adapter.restore_original_gtests(cls.registered, cls.scalar_pack_suffix)
+        cls.scalar_pack_predecessor = cls.adapter.restore_scalar_emplacement_pack_history(
+            cls.registered, cls.scalar_pack_suffix)
+        cls.registered = cls.scalar_pack_predecessor
         suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         current = cls.adapter.restore_original_gtests(cls.registered, suffix)
         assert current + suffix == cls.registered
@@ -4768,6 +4774,20 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_two_argument_emplacement_history(self.list_two_argument_emplacement_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_two_argument_emplacement_registered, self.list_two_argument_emplacement_suffix + b' ')
+
+
+    def test_scalar_pack_registry_preserves_previous_fixture_source(self):
+        self.assertEqual(self.scalar_pack_active + self.scalar_pack_suffix, self.scalar_pack_registered)
+        self.assertEqual(self.adapter.restore_scalar_emplacement_pack_history(
+            self.scalar_pack_registered, self.scalar_pack_suffix),
+            self.scalar_pack_predecessor)
+
+    def test_scalar_pack_registry_selects_six_checked_programs(self):
+        selected = ['TranslateTest.CoreV2ListOneScalarEmplaceExplicitRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListScalarEmplaceThreeValuesAndDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2ListScalarEmplaceReferenceAliasRunAtBothOptimizations', 'TranslateTest.CoreV2ListEmplaceUserScalarConversionGuardRejected', 'TranslateTest.CoreV2ListEmplacePreservesSelectedReferenceParameters', 'TranslateTest.CoreV2ForwardListEmplaceConvertsSelectedScalarParameters']
+        extractor = module('extract_scalar_pack_tests', 'utils/ci/extract_cpp_gtests.py')
+        _, report = extractor.extract(self.scalar_pack_active, selected)
+        self.assertEqual(report['selected_count'], 6)
+        self.assertEqual(report['original_test_names'], 9568)
 
 
 if __name__ == '__main__':
