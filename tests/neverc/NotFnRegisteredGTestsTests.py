@@ -43,6 +43,12 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.default_constructor_references_registered = cls.registered
+        cls.default_constructor_references_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.default_constructor_references_active = cls.adapter.restore_original_gtests(cls.registered, cls.default_constructor_references_suffix)
+        cls.default_constructor_references_predecessor = cls.adapter.restore_default_constructor_references_history(
+            cls.registered, cls.default_constructor_references_suffix)
+        cls.registered = cls.default_constructor_references_predecessor
         cls.default_constructor_arguments_registered = cls.registered
         cls.default_constructor_arguments_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.default_constructor_arguments_active = cls.adapter.restore_original_gtests(cls.registered, cls.default_constructor_arguments_suffix)
@@ -4828,6 +4834,20 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         _, report = extractor.extract(self.default_constructor_arguments_active, selected)
         self.assertEqual(report['selected_count'], 6)
         self.assertEqual(report['original_test_names'], 9577)
+
+
+    def test_default_constructor_references_registry_preserves_previous_fixture_source(self):
+        self.assertEqual(self.default_constructor_references_active + self.default_constructor_references_suffix, self.default_constructor_references_registered)
+        self.assertEqual(self.adapter.restore_default_constructor_references_history(
+            self.default_constructor_references_registered, self.default_constructor_references_suffix),
+            self.default_constructor_references_predecessor)
+
+    def test_default_constructor_references_registry_selects_six_checked_programs(self):
+        selected = ['TranslateTest.CoreV2ForwardListDefaultConstructorSharesGlobalReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2ListDefaultConstructorReferenceAndValueRunAtBothOptimizations', 'TranslateTest.CoreV2ListNestedDefaultConstructorGlobalReferenceRunAtBothOptimizations', 'TranslateTest.CoreV2ListDefaultConstructorReferenceTemporaryGuardRejected', 'TranslateTest.CoreV2ForwardListDefaultConstructorReferenceDereferenceGuardRejected', 'TranslateTest.CoreV2ListDefaultConstructionKeepsGlobalReference']
+        extractor = module('extract_default_constructor_references_tests', 'utils/ci/extract_cpp_gtests.py')
+        _, report = extractor.extract(self.default_constructor_references_active, selected)
+        self.assertEqual(report['selected_count'], 6)
+        self.assertEqual(report['original_test_names'], 9582)
 
 
 if __name__ == '__main__':

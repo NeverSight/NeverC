@@ -419285,7 +419285,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListDefaultConstructorReferenceParameterGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListDefaultConstructionKeepsGlobalReference) {
   const auto Source = tmpFile("list-default-constructor-reference-parameter-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 int initial = 4;
@@ -419298,10 +419298,17 @@ int main() {
   return rows.front().value != 4;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-default-constructor-reference-parameter-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-default-constructor-reference-parameter-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected) {
@@ -419316,6 +419323,137 @@ struct Entry {
 int main() {
   std::forward_list<Entry> rows(2);
   return rows.front().value != 1 || calls != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDefaultConstructorSharesGlobalReferenceRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-default-constructor-shares-global-reference.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int state = 2;
+struct Entry {
+  int* source;
+  int before;
+  Entry(int& initial = state) noexcept : source(&initial), before(initial++) {}
+};
+int main() {
+  std::forward_list<Entry> rows(1);
+  auto first = rows.begin();
+  rows.resize(2);
+  auto second = first;
+  ++second;
+  auto after = rows.emplace_after(second);
+  return first->source != &state || second->before != 3 || after->before != 4 || state != 5;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-default-constructor-shares-global-reference.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-default-constructor-shares-global-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListDefaultConstructorReferenceAndValueRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-default-constructor-reference-and-value.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+static int source = 7;
+struct Entry {
+  const int* reference;
+  int value;
+  Entry(short bias = 5, const int& initial = source) noexcept
+    : reference(&initial), value(initial + bias) {}
+};
+int main() {
+  std::list<Entry> rows(1);
+  source = 9;
+  auto& appended = rows.emplace_back();
+  return rows.front().value != 12 || appended.value != 14 ||
+         appended.reference != &source || *rows.front().reference != 9;
+}
+)r19containers");
+  const auto Output = tmpFile("list-default-constructor-reference-and-value.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-default-constructor-reference-and-value" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListNestedDefaultConstructorGlobalReferenceRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-nested-default-constructor-global-reference.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int initial = 5;
+struct Value {
+  int* reference;
+  int previous;
+  Value(int& input = initial) noexcept : reference(&input), previous(input++) {}
+};
+struct Entry { Value values[2]; };
+int main() {
+  std::list<Entry> rows(1);
+  rows.resize(2);
+  return initial != 9 || rows.front().values[0].previous != 5 ||
+         rows.back().values[1].previous != 8 || rows.back().values[1].reference != &initial;
+}
+)r19containers");
+  const auto Output = tmpFile("list-nested-default-constructor-global-reference.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-nested-default-constructor-global-reference" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListDefaultConstructorReferenceTemporaryGuardRejected) {
+  const auto Source = tmpFile("list-default-constructor-reference-temporary-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int value;
+  Entry(const int& input = 5) noexcept : value(input) {}
+};
+int main() {
+  std::list<Entry> rows(1);
+  return rows.front().value != 5;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDefaultConstructorReferenceDereferenceGuardRejected) {
+  const auto Source = tmpFile("forward-list-default-constructor-reference-dereference-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int cell = 8;
+int* source = &cell;
+struct Entry {
+  int value;
+  Entry(int& input = *source) noexcept : value(input) {}
+};
+int main() {
+  std::forward_list<Entry> rows(1);
+  return rows.front().value != 8;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

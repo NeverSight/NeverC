@@ -23,17 +23,17 @@
       "source_sha256": "599d1dbf965c025e1d7db91f30948727cb6c377a8365d99ea04988b5eae36e11",
       "original_case_source_sha256": "599d1dbf965c025e1d7db91f30948727cb6c377a8365d99ea04988b5eae36e11",
       "gtest_body_sha256": "434d39f666a6af47d7b41967ca6c61205dcd61e437e0706c9b239f0a7e2bc812"
+    },
+    {
+      "name": "list-default-constructor-reference-parameter-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListDefaultConstructionKeepsGlobalReference",
+      "expected": "accept",
+      "source_sha256": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3",
+      "original_case_source_sha256": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3",
+      "gtest_body_sha256": "734668ad96b4986af5a6c18845d9c1545346d27cfe48cd0ec890afb9253a50ae"
     }
   ],
   "negative_cases": [
-    {
-      "name": "list-default-constructor-reference-parameter-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListDefaultConstructorReferenceParameterGuardRejected",
-      "expected": "reject",
-      "source_sha256": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3",
-      "original_case_source_sha256": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3",
-      "gtest_body_sha256": "7d04e28a3903db4b911f3dfcdc2f2c03882463a556d7d4a1c58f105c6b7465c6"
-    },
     {
       "name": "forward-list-default-constructor-side-effect-parameter-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected",
@@ -72,8 +72,8 @@
       "name": "list-default-constructor-reference-parameter-guard",
       "section": "list",
       "source": "#include <list>\nint initial = 4;\nstruct Entry {\n  int value;\n  Entry(const int& number = initial) noexcept : value(number) {}\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 4;\n}\n",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source_sha256": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3"
     },
     {
@@ -89,10 +89,10 @@
     "TranslateTest.CoreV2ListTwoDefaultConstructorParametersResizeRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListDefaultConstructorParameterEmplaceRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListNestedDefaultConstructorParametersRunAtBothOptimizations",
-    "TranslateTest.CoreV2ListDefaultConstructorReferenceParameterGuardRejected",
+    "TranslateTest.CoreV2ListDefaultConstructionKeepsGlobalReference",
     "TranslateTest.CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected"
   ],
-  "source_proof_gate_pending": false,
+  "source_proof_gate_pending": true,
   "current_registry_count": 9577,
   "current_python_registry_tests": 382,
   "registered_source_sha256": "bf4b6ad9510a3d056b5e37a79568ea863da4d5591a9665322d3e765467304f93",
@@ -111,5 +111,7 @@
     "forward-list-default-constructor-parameter-emplace": "1d3eba1657c8601a9cdc115236e72fc6221a9268adfb3f88965f1f9dee00e221",
     "forward-list-nested-default-constructor-parameters": "599d1dbf965c025e1d7db91f30948727cb6c377a8365d99ea04988b5eae36e11"
   },
-  "native_reference_authentication_sha256": "59357e7ccbef778b3d6cc94b7b9ad7fcf12d4056eef8402032443a7fca00bb85"
+  "native_reference_authentication_sha256": "59357e7ccbef778b3d6cc94b7b9ad7fcf12d4056eef8402032443a7fca00bb85",
+  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 8
 }

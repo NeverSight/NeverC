@@ -4480,6 +4480,26 @@ def restore_default_constructor_arguments_history(source, additions):
     return restored
 
 
+R19_DEFAULT_CTOR_REFERENCES_REGISTERED_SHA256 = 'accc3f1210f839bcc897ab212cc747d649fcd21e63c5f6755b5b166b4e1de095'
+R19_DEFAULT_CTOR_REFERENCES_MAINTAINED_SHA256 = 'c1eb28f7ae453af846f1f53fa1cb64cd4b8b392705d9cfe9cd2ef9ef55a0ea32'
+
+
+def restore_default_constructor_references_history(source, additions):
+    """Recover the previous linked-list registry for its historical audit."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    assert sha(source) == R19_DEFAULT_CTOR_REFERENCES_REGISTERED_SHA256 and source.endswith(additions)
+    assert sha(additions) == 'b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb'
+    stop = len(source) - len(additions)
+    start = stop - 5494
+    assert sha(source[start:stop]) == 'f73743cda10011892d6d4e9431cec670e0dbbcbcd744193e887d65861f8be51d'
+    restored = source[:start] + source[stop:]
+    for active, archived in [(b'TEST_F(TranslateTest, CoreV2ListDefaultConstructionKeepsGlobalReference) {\n  const auto Source = tmpFile("list-default-constructor-reference-parameter-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nint initial = 4;\nstruct Entry {\n  int value;\n  Entry(const int& number = initial) noexcept : value(number) {}\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 4;\n}\n)r19containers");\n  const auto Output = tmpFile("list-default-constructor-reference-parameter-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-default-constructor-reference-parameter-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListDefaultConstructorReferenceParameterGuardRejected) {\n  const auto Source = tmpFile("list-default-constructor-reference-parameter-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nint initial = 4;\nstruct Entry {\n  int value;\n  Entry(const int& number = initial) noexcept : value(number) {}\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 4;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}')]:
+        assert restored.count(active) == 1
+        restored = restored.replace(active, archived, 1)
+    assert sha(restored) == 'bf4b6ad9510a3d056b5e37a79568ea863da4d5591a9665322d3e765467304f93'
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -4522,6 +4542,13 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == R19_DEFAULT_CTOR_REFERENCES_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_DEFAULT_CTOR_REFERENCES_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        maintained = source[:-len(additions)]
+        assert digest(maintained) == R19_DEFAULT_CTOR_REFERENCES_MAINTAINED_SHA256
+        return maintained
     if source_digest == R19_DEFAULT_CTOR_ARGUMENTS_MAINTAINED_SHA256:
         return source
     if source_digest == R19_DEFAULT_CTOR_ARGUMENTS_REGISTERED_SHA256:
