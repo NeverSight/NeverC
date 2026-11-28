@@ -54442,14 +54442,7 @@ bool linkedListScalarDefaultConstructor(const CXXConstructorDecl *Constructor,
   return linkedListScalarConstructorBody(Body, Record, Source);
 }
 
-bool linkedListDefaultConstructorArgument(const ParmVarDecl *Parameter, const Expr *Init,
-    const ASTContext &Context, const LinkedListRecordSource *Source) {
-  const auto Type = Parameter->getType();
-  if (Type->isArithmeticType())
-    return !Type.isVolatileQualified() && linkedListConstantExpression(Init, Context);
-  if (!Type->isLValueReferenceType() || !Type->getPointeeType()->isArithmeticType() ||
-      Type->getPointeeType().isVolatileQualified() || !Init->isLValue())
-    return false;
+bool linkedListDefaultGlobal(const Expr *Init, const LinkedListRecordSource *Source) {
   const auto *Ref = dyn_cast<DeclRefExpr>(Init->IgnoreParenImpCasts());
   const auto *Variable = Ref ? dyn_cast<VarDecl>(Ref->getDecl()) : nullptr;
   if (!Variable || !Variable->hasGlobalStorage() || Variable->isStaticLocal() ||
@@ -54460,6 +54453,48 @@ bool linkedListDefaultConstructorArgument(const ParmVarDecl *Parameter, const Ex
   return !Source || llvm::all_of(Variable->redecls(), [&](const auto *D) {
     return Source->Program.owns(Source->Sources, D->getLocation());
   });
+}
+
+bool linkedListDefaultScalarCall(const Expr *Init, const ASTContext &Context,
+    const LinkedListRecordSource *Source) {
+  const auto *Call = dyn_cast<CallExpr>(Init->IgnoreParenImpCasts());
+  if (!Call || !linkedListDefaultCall(Call, Source))
+    return false;
+  for (const auto *Operand : Call->arguments()) {
+    const auto *Default = dyn_cast<CXXDefaultArgExpr>(Operand);
+    const auto *Value = Default ? selectedDefaultArgument(Default, Context) : Operand;
+    if (!linkedListConstantExpression(Value, Context))
+      return false;
+  }
+  const auto *Function = Call->getDirectCallee();
+  const auto *Prototype = Function->getType()->getAs<FunctionProtoType>();
+  if (!Prototype || isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()))
+    return false;
+  if (Prototype->isNothrow())
+    return true;
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Function->getDefinition()->getBody());
+  const auto *Return = Body && Body->size() == 1
+      ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
+  const auto *Value = Return ? Return->getRetValue() : nullptr;
+  const auto *Update = Value ? dyn_cast<UnaryOperator>(Value->IgnoreParenImpCasts()) : nullptr;
+  return Update && Update->isIncrementDecrementOp() && linkedListDefaultGlobal(Update->getSubExpr(), Source);
+}
+
+enum class LinkedListDefaultArgument { Invalid, Stable, ScalarCall };
+
+LinkedListDefaultArgument linkedListDefaultConstructorArgument(const ParmVarDecl *Parameter, const Expr *Init,
+    const ASTContext &Context, const LinkedListRecordSource *Source) {
+  const auto Type = Parameter->getType();
+  if (Type->isArithmeticType() && !Type.isVolatileQualified()) {
+    if (linkedListConstantExpression(Init, Context))
+      return LinkedListDefaultArgument::Stable;
+    if (linkedListDefaultScalarCall(Init, Context, Source))
+      return LinkedListDefaultArgument::ScalarCall;
+  }
+  if (Type->isLValueReferenceType() && Type->getPointeeType()->isArithmeticType() &&
+      !Type->getPointeeType().isVolatileQualified() && Init->isLValue() && linkedListDefaultGlobal(Init, Source))
+    return LinkedListDefaultArgument::Stable;
+  return LinkedListDefaultArgument::Invalid;
 }
 
 const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
@@ -54477,12 +54512,17 @@ const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
     return nullptr;
   const auto *Default = cast<CXXConstructorDecl>(Definition);
   const auto &Context = Record->getASTContext();
+  unsigned Calls = 0;
   for (unsigned I = 0; I < Default->getNumParams(); ++I) {
     const auto *Parameter = Default->getParamDecl(I);
     const auto *Init = defaultArgumentInitializer(Parameter, Context);
     if (!Init || Init != defaultArgumentInitializer(Constructor->getParamDecl(I), Context) ||
-        (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())) ||
-        !linkedListDefaultConstructorArgument(Parameter, Init, Context, Source))
+        (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())))
+      return nullptr;
+    const auto Kind = linkedListDefaultConstructorArgument(Parameter, Init, Context, Source);
+    // More than one effectful argument would need a separate evaluation-order proof.
+    if (Kind == LinkedListDefaultArgument::Invalid ||
+        (Kind == LinkedListDefaultArgument::ScalarCall && ++Calls > 1))
       return nullptr;
   }
   if (!Constructor->getType()->getAs<FunctionProtoType>()->isNothrow() &&
