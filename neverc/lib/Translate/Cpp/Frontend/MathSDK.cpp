@@ -54191,6 +54191,13 @@ bool linkedListScalarEmplacePack(llvm::ArrayRef<TemplateArgument> Pack,
   return true;
 }
 
+bool linkedListMovesElement(const FunctionDecl *Root, unsigned Offset,
+    QualType Element, const ASTContext &Context) {
+  const auto *Record = Element->getAsCXXRecordDecl();
+  return Record && Record->hasNonTrivialMoveConstructor() && Root->getNumParams() == Offset + 1 &&
+         Context.hasSameType(Root->getParamDecl(Offset)->getType(), Context.getRValueReferenceType(Element));
+}
+
 bool linkedListEmplaceForwardedArgument(const State &S, const SourceManager &SM,
     const Expr *Argument, QualType Input, unsigned Index, unsigned Count, const ASTContext &Context) {
   const auto *Forward = dyn_cast<CallExpr>(Argument->IgnoreParenImpCasts());
@@ -54220,7 +54227,7 @@ bool bindLinkedListEmplacement(const State &S, const SourceManager &SM, const Fu
   const auto *Constructor = Expression ? Expression->getConstructor() : nullptr;
   const auto *Prototype = Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
   const unsigned Count = Root->getNumParams() - Selection.Offset;
-  if (!Constructor || !Constructor->isUserProvided() || Constructor->isCopyOrMoveConstructor() ||
+  if (!Constructor || !Constructor->isUserProvided() || Constructor->isCopyConstructor() ||
       Constructor->isDeleted() || Constructor->isInvalidDecl() || Constructor->getAccess() != AS_public ||
       !ordinaryConstructor(Constructor) || !Prototype ||
       isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()) || !Prototype->isNothrow() ||
@@ -54232,6 +54239,16 @@ bool bindLinkedListEmplacement(const State &S, const SourceManager &SM, const Fu
   if (!Constructor->hasBody(Definition) || !Definition ||
       !llvm::all_of(Constructor->redecls(), [&](const FunctionDecl *D) { return S.owns(SM, D->getLocation()); }))
     return false;
+  if (Constructor->isMoveConstructor()) {
+    const auto Reference = Context.getRValueReferenceType(Element);
+    if (!linkedListMovesElement(Root, Selection.Offset, Element, Context) ||
+        Constructor->getNumParams() != 1 ||
+        !Context.hasSameType(Constructor->getParamDecl(0)->getType(), Reference) ||
+        !linkedListEmplaceForwardedArgument(S, SM, Expression->getArg(0), Reference, 0, 1, Context))
+      return false;
+    Selection.Expression = Expression;
+    return true;
+  }
   for (unsigned I = 0; I < Constructor->getNumParams(); ++I) {
     const auto Parameter = Constructor->getParamDecl(I)->getType();
     if (!linkedListScalarEmplaceInput(Parameter, Context)) return false;
@@ -54502,7 +54519,7 @@ const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
   const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record, /*AllowDefaultArguments=*/true);
   if (!Constructor || !Constructor->isUserProvided() || Constructor->getAccess() != AS_public ||
       !Record->hasTrivialCopyConstructor() || !Record->hasTrivialCopyAssignment() ||
-      Record->hasNonTrivialMoveConstructor() || Record->hasNonTrivialMoveAssignment())
+      Record->hasNonTrivialMoveAssignment())
     return nullptr;
   const FunctionDecl *Definition = nullptr;
   if (!Constructor->hasBody(Definition) || !Definition ||
@@ -54648,8 +54665,10 @@ bool linkedListRecordElementMember(const State &S, const SourceManager &SM,
   const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
   const bool UserDefault = Constructor && Constructor->isUserProvided() &&
                            Constructor->isDefaultConstructor();
+  const bool DefaultedCopy = Constructor && Constructor->isCopyConstructor() && Constructor->isDefaulted() &&
+                            !Constructor->isUserProvided() && Constructor->isTrivial();
   if (!(Constructor || Destructor || Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) ||
-      (!Method->isImplicit() && !Destructor && !UserDefault))
+      (!Method->isImplicit() && !Destructor && !UserDefault && !DefaultedCopy))
     return false;
   if (!Method->isTrivial() && !Destructor && !(Constructor && Constructor->isDefaultConstructor()))
     return false;
@@ -54662,6 +54681,10 @@ bool linkedListRecordElementMember(const State &S, const SourceManager &SM,
     return !Record->isAggregate() && Selected &&
            Selected->getCanonicalDecl() == Constructor->getCanonicalDecl();
   }
+  if (DefaultedCopy && !llvm::all_of(Method->redecls(), [&](const FunctionDecl *D) {
+        return S.owns(SM, D->getLocation());
+      }))
+    return false;
   if (Method->isTrivial()) return true;
   return Destructor ? linkedListCheckedRecordDestructor(Record, &Source, !Record->isAggregate())
                     : linkedListCheckedMemberDefaults(Record, &Source);
@@ -56846,9 +56869,10 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
   const bool EmplaceRecord = (*Operation == UtilityForwardListOperation::EmplaceAfter ||
        *Operation == UtilityForwardListOperation::EmplaceFront) &&
       Node->Value->getType()->isRecordType() && Method->getNumParams() > Emplacement.Offset &&
-      llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
-        return linkedListScalarEmplaceInput(P->getType(), Context);
-      });
+      (linkedListMovesElement(Method, Emplacement.Offset, Node->Value->getType(), Context) ||
+       llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
+         return linkedListScalarEmplaceInput(P->getType(), Context);
+       }));
   if (!forwardListSourceGraph(S, SM, Method, Context, *Node, SourceOrder, DirectFilter,
                               ObjectOrder ? ObjectOrder->Method : nullptr,
                               (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
@@ -58241,9 +58265,10 @@ std::optional<UtilityListCall> approvedUtilityListCall(
        *Operation == UtilityListOperation::EmplaceFront ||
        *Operation == UtilityListOperation::EmplaceBack) &&
       Node->Value->getType()->isRecordType() && Method->getNumParams() > Emplacement.Offset &&
-      llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
-        return linkedListScalarEmplaceInput(P->getType(), Context);
-      });
+      (linkedListMovesElement(Method, Emplacement.Offset, Node->Value->getType(), Context) ||
+       llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
+         return linkedListScalarEmplaceInput(P->getType(), Context);
+       }));
   if ((Predicates && !listPredicateBody(Method)) ||
       !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare, OrderMethod,
                         (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
