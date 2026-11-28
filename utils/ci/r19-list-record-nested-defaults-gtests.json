@@ -92,7 +92,7 @@
     "TranslateTest.CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected",
     "TranslateTest.CoreV2ForwardListNestedIndirectDefaultCallGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "0cf9d546482dedf4ea996741712e4b281de5bb60f2b3edc2eaca4a1cf9edce09",
   "maintained_original_sha256": "921fa4368be08c4827af7cb471823e006b9fcd35dae4c00ba541966f5591a739",
@@ -104,5 +104,10 @@
   "current_registry_count": 9547,
   "current_python_registry_tests": 370,
   "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6
+  "planned_generated_c23_executions": 6,
+  "source_proof_sha256": "a7a213c6044093891f4b5b1897afdef6d56f812db93fc9d58bf3fca3a47f8e1f",
+  "native_reference_proofs": {
+    "linked-list-nested-record-defaults": "ac919bd6ddf1d396c98cadbf0df452189e88573cfd9fb59dd9f73a5791bb3dbd"
+  },
+  "native_reference_authentication_sha256": "0688b56eb757ff1cabe1165b90bc8eb46fc31d491d0d1129c573e3ba421cec42"
 }

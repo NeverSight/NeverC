@@ -209,8 +209,9 @@
   "planned_generated_c23_executions": 18,
   "native_reference_proofs": {
     "linked-list-record-default-and-destruction": "db7b61eb803b294c148535380243bcdfed8862d6302e60633cde12821655e610",
-    "linked-list-record-floating-comparison-results": "5918ecb84256970ae76bac27f576d6c834cf54535b7381ae05868a39350e2169"
+    "linked-list-record-floating-comparison-results": "5918ecb84256970ae76bac27f576d6c834cf54535b7381ae05868a39350e2169",
+    "linked-list-nested-record-defaults": "ac919bd6ddf1d396c98cadbf0df452189e88573cfd9fb59dd9f73a5791bb3dbd"
   },
-  "native_reference_authentication_sha256": "f9a648d5cd33a24c5c2f8d808a5e9c47077bfa37726e7ff393909c042d2256fc",
-  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+  "native_reference_authentication_sha256": "10b88debafb52c3bef00b53c91243d07e4753bb63611feb6185c2525ee39dec7",
+  "source_proof_sha256": "a7a213c6044093891f4b5b1897afdef6d56f812db93fc9d58bf3fca3a47f8e1f"
 }
