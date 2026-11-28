@@ -1,0 +1,108 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-nested-record-default-and-destroy-order",
+      "formal_test_name": "TranslateTest.CoreV2ListNestedRecordDefaultAndDestroyOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "df2b15638291ccefd7bb9773812251e267467a54bb022726cdf1a245f3fa93ef",
+      "original_case_source_sha256": "df2b15638291ccefd7bb9773812251e267467a54bb022726cdf1a245f3fa93ef",
+      "gtest_body_sha256": "1b4d9e6b5a8bd20cb5c8971be3c834fa12b3e4f5209dcc279b1d8e1424c40808"
+    },
+    {
+      "name": "forward-list-nested-array-default-and-destroy-order",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListNestedArrayDefaultAndDestroyOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "be967c65b82570c75a30f77d2f5a2794ceda12dda01f22b2cfdc9263089cd4f4",
+      "original_case_source_sha256": "be967c65b82570c75a30f77d2f5a2794ceda12dda01f22b2cfdc9263089cd4f4",
+      "gtest_body_sha256": "23e1f753e6d4b62c9cdf35607fed3c002b7215b5dd5ebe7749a69dffe75f218d"
+    },
+    {
+      "name": "list-deep-record-only-nested-defaults",
+      "formal_test_name": "TranslateTest.CoreV2ListDeepRecordOnlyNestedDefaultsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0c1dedb365eb8cda92b6e3d1f0eb4e46589e69fa61cce6672866c243b83928f5",
+      "original_case_source_sha256": "0c1dedb365eb8cda92b6e3d1f0eb4e46589e69fa61cce6672866c243b83928f5",
+      "gtest_body_sha256": "2df61b36c26669cfb1c48715e3209410e228504f6120f263b3f90044202c892a"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-nested-user-provided-default-constructor-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected",
+      "expected": "reject",
+      "source_sha256": "e5d5230afd70ad53f357047ecd9565f7334c9d41825fe08651b60bc37909242c",
+      "original_case_source_sha256": "e5d5230afd70ad53f357047ecd9565f7334c9d41825fe08651b60bc37909242c",
+      "gtest_body_sha256": "10384664d8975ff289d1da57ef60ac4b15490e602a44bf221cd05c5f2e0ed93f"
+    },
+    {
+      "name": "forward-list-nested-indirect-default-call-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListNestedIndirectDefaultCallGuardRejected",
+      "expected": "reject",
+      "source_sha256": "2c67394c53c2c7a792c63879c8b8f4a43d1769afdddb3f938f0de727b485daa5",
+      "original_case_source_sha256": "2c67394c53c2c7a792c63879c8b8f4a43d1769afdddb3f938f0de727b485daa5",
+      "gtest_body_sha256": "a289b71c19a86eb71569218b722df8775c4bf551209685d0afc629f31ef8df6f"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-nested-record-default-and-destroy-order",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint sequence, released;\nint next() { return ++sequence; }\nstruct Leaf {\n  int value = next();\n  int mirrored = value + 10;\n  ~Leaf() noexcept { released = released * 10 + value; }\n};\nstruct Entry { int prefix = next(); Leaf leaf; int suffix = next(); };\nint main() {\n  std::list<Entry> rows(1);\n  if (sequence != 3 || rows.front().prefix != 1 || rows.front().leaf.mirrored != 12 ||\n      rows.front().suffix != 3) return 1;\n  rows.resize(2);\n  if (sequence != 6 || rows.back().prefix != 4 || rows.back().leaf.mirrored != 15 ||\n      rows.back().suffix != 6) return 1;\n  rows.pop_back();\n  if (released != 5) return 1;\n  rows.clear();\n  return released != 52;\n}\n",
+      "source_sha256": "df2b15638291ccefd7bb9773812251e267467a54bb022726cdf1a245f3fa93ef"
+    },
+    {
+      "name": "forward-list-nested-array-default-and-destroy-order",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nint sequence, released;\nint next() { return ++sequence; }\nstruct Leaf {\n  int ticket = next();\n  ~Leaf() noexcept { released = released * 10 + ticket; }\n};\nstruct Entry { Leaf fields[2]; int marker = next(); };\nint main() {\n  std::forward_list<Entry> rows;\n  auto& item = rows.emplace_front();\n  if (sequence != 3 || item.fields[0].ticket != 1 || item.fields[1].ticket != 2 ||\n      item.marker != 3 || released) return 1;\n  rows.clear();\n  return released != 21;\n}\n",
+      "source_sha256": "be967c65b82570c75a30f77d2f5a2794ceda12dda01f22b2cfdc9263089cd4f4"
+    },
+    {
+      "name": "list-deep-record-only-nested-defaults",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint sequence;\nint next() { return ++sequence; }\nstruct Leaf { int key = next(); int mirror = key + 3; };\nstruct Middle { Leaf leaf; };\nstruct Entry { Middle inner; };\nint main() {\n  std::list<Entry> rows(1);\n  if (sequence != 1 || rows.front().inner.leaf.mirror != 4) return 1;\n  rows.emplace_back();\n  return sequence != 2 || rows.back().inner.leaf.mirror != 5;\n}\n",
+      "source_sha256": "0c1dedb365eb8cda92b6e3d1f0eb4e46589e69fa61cce6672866c243b83928f5"
+    },
+    {
+      "name": "list-nested-user-provided-default-constructor-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nstruct Leaf { int value; Leaf() : value(7) {} };\nstruct Entry { Leaf field; };\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().field.value != 7;\n}\n",
+      "source_sha256": "e5d5230afd70ad53f357047ecd9565f7334c9d41825fe08651b60bc37909242c"
+    },
+    {
+      "name": "forward-list-nested-indirect-default-call-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <forward_list>\nint next() { return 7; }\nint (*getValue)() = next;\nstruct Leaf { int value = getValue(); };\nstruct Entry { Leaf field; };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().field.value != 7;\n}\n",
+      "source_sha256": "2c67394c53c2c7a792c63879c8b8f4a43d1769afdddb3f938f0de727b485daa5"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListNestedRecordDefaultAndDestroyOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListNestedArrayDefaultAndDestroyOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListDeepRecordOnlyNestedDefaultsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListNestedUserProvidedDefaultConstructorGuardRejected",
+    "TranslateTest.CoreV2ForwardListNestedIndirectDefaultCallGuardRejected"
+  ],
+  "source_proof_gate_pending": true,
+  "full_stl_complete": false,
+  "registered_source_sha256": "0cf9d546482dedf4ea996741712e4b281de5bb60f2b3edc2eaca4a1cf9edce09",
+  "maintained_original_sha256": "921fa4368be08c4827af7cb471823e006b9fcd35dae4c00ba541966f5591a739",
+  "previous_registered_source_sha256": "0a48e12346459374987a92ec402da0a2fb5b03f5fbeb8c867fac760043f69039",
+  "previous_maintained_original_sha256": "89cbae87c4d5617ad77ebf50a8303ed35265aa5f3f927dc17a0c1d671ac43ddc",
+  "restorer_sha256": "c18c92d58fbd9b88fcf70c72fc4a8a2df801b38d88a5f5f5003896d4a61fc51d",
+  "extractor_sha256": "697b60761a3f5eec17b89f263f11d47ef78a68decf804515aee59603eb25e8ae",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9547,
+  "current_python_registry_tests": 370,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6
+}

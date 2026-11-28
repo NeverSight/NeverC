@@ -27381,18 +27381,36 @@ class FunctionLowering {
     assign(Link, Following, L);
     return Following;
   }
-  void initializeLinkedListValue(Expression Place, QualType Element, SourceLocation L) {
-    // SDK value-initializes each element in allocated storage, in field order.
-    initializeZero(Place, Element, L);
+  void initializeLinkedListDefaults(Expression Place, QualType T, SourceLocation L) {
+    const auto Element = A.Context.getBaseElementType(T);
     const auto *Record = Element->getAsCXXRecordDecl();
     Record = Record ? Record->getDefinition() : nullptr;
-    if (!Record || Record->isTrivial()) return;
+    if (!Record || Record->hasTrivialDefaultConstructor()) return;
+    if (const auto *Array = A.Context.getAsConstantArrayType(T)) {
+      const auto Inner = Array->getElementType();
+      const auto Count = Array->getSize().getZExtValue(); // Bounded by the node layout proof.
+      for (unsigned I = 0; I < Count; ++I) {
+        A.chargeExpansion(1, L);
+        initializeLinkedListDefaults(initialElement(Place, Inner, I, L), Inner, L);
+      }
+      return;
+    }
     auto SavedThis = ThisPointer;
     ThisPointer = address(Place, Element, L);
     auto RestoreThis = llvm::make_scope_exit([&] { ThisPointer = std::move(SavedThis); });
-    for (const auto *Field : Record->fields())
+    for (const auto *Field : Record->fields()) {
+      auto Member = fieldStorage(Place, Field, L);
       if (const auto *Init = Field->getInClassInitializer())
-        initialize(fieldStorage(Place, Field, L), Init, L);
+        initialize(std::move(Member), Init, L);
+      else
+        initializeLinkedListDefaults(std::move(Member), Field->getType(), L);
+    }
+  }
+
+  void initializeLinkedListValue(Expression Place, QualType Element, SourceLocation L) {
+    // SDK value-initializes each element in allocated storage, in field order.
+    initializeZero(Place, Element, L);
+    initializeLinkedListDefaults(std::move(Place), Element, L);
   }
 
   Expression compareLinkedListElements(StringRef Operator, Expression Left, Expression Right,

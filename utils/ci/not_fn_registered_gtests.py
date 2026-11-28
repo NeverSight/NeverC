@@ -4057,6 +4057,34 @@ def restore_list_record_default_arguments_history(source):
     return restored
 
 
+R19_LIST_RECORD_NESTED_DEFAULTS_REGISTERED_SHA256 = '0cf9d546482dedf4ea996741712e4b281de5bb60f2b3edc2eaca4a1cf9edce09'
+R19_LIST_RECORD_NESTED_DEFAULTS_MAINTAINED_SHA256 = '921fa4368be08c4827af7cb471823e006b9fcd35dae4c00ba541966f5591a739'
+R19_LIST_RECORD_NESTED_DEFAULTS_PREVIOUS_REGISTERED_SHA256 = '0a48e12346459374987a92ec402da0a2fb5b03f5fbeb8c867fac760043f69039'
+R19_LIST_RECORD_NESTED_DEFAULTS_PREVIOUS_MAINTAINED_SHA256 = '89cbae87c4d5617ad77ebf50a8303ed35265aa5f3f927dc17a0c1d671ac43ddc'
+R19_LIST_RECORD_NESTED_DEFAULTS_ADDITIONS_SHA256 = '8160fa88663ac64b6464abaf476cf1916752de20363af477f2ae16e83df55a1b'
+R19_LIST_RECORD_NESTED_DEFAULTS_MAINTAINED_SIZE = 21392128
+R19_LIST_RECORD_NESTED_DEFAULTS_ADDITIONS_SIZE = 5660
+_R19_LIST_RECORD_NESTED_DEFAULTS_HISTORICAL_ANY = b'TEST_F(TranslateTest, CoreV2ForwardListNestedRecordDefaultAndDestructionGuardRejected) {\n  const auto Source = tmpFile("forward-list-nested-record-default-and-destruction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint released;\nstruct Child { int value = 4; ~Child() noexcept { released += value; } };\nstruct Entry { int key = 2; Child child; };\nint main() {\n  std::forward_list<Entry> rows(1);\n  rows.clear();\n  return released != 4;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'
+_R19_LIST_RECORD_NESTED_DEFAULTS_ACTIVE_ANY = b'TEST_F(TranslateTest, CoreV2ForwardListConstructsAndDestroysNestedRecordsAtBothOptimizations) {\n  const auto Source = tmpFile("forward-list-nested-record-default-and-destruction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint released;\nstruct Child { int value = 4; ~Child() noexcept { released += value; } };\nstruct Entry { int key = 2; Child child; };\nint main() {\n  std::forward_list<Entry> rows(1);\n  rows.clear();\n  return released != 4;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-nested-record-default-and-destruction-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-nested-record-default-and-destruction-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}'
+
+
+def restore_list_record_nested_defaults_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_RECORD_NESTED_DEFAULTS_REGISTERED_SHA256, R19_LIST_RECORD_NESTED_DEFAULTS_MAINTAINED_SHA256}
+    stop = R19_LIST_RECORD_NESTED_DEFAULTS_MAINTAINED_SIZE
+    start = stop - R19_LIST_RECORD_NESTED_DEFAULTS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_RECORD_NESTED_DEFAULTS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(_R19_LIST_RECORD_NESTED_DEFAULTS_ACTIVE_ANY) == 1
+    restored = restored.replace(_R19_LIST_RECORD_NESTED_DEFAULTS_ACTIVE_ANY, _R19_LIST_RECORD_NESTED_DEFAULTS_HISTORICAL_ANY, 1)
+    prior = (R19_LIST_RECORD_NESTED_DEFAULTS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_RECORD_NESTED_DEFAULTS_REGISTERED_SHA256
+             else R19_LIST_RECORD_NESTED_DEFAULTS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -4987,6 +5015,13 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LIST_RECORD_DEFAULT_ARGUMENTS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_RECORD_NESTED_DEFAULTS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_RECORD_NESTED_DEFAULTS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_RECORD_NESTED_DEFAULTS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source
