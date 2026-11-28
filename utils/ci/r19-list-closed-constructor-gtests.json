@@ -75,12 +75,24 @@
     "TranslateTest.CoreV2ListPlainDefaultCtorIndirectBodyCallRejected",
     "TranslateTest.CoreV2ForwardListPlainDefaultCtorNonconstantInitializerCallRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "current_registry_count": 9572,
   "current_python_registry_tests": 380,
   "registered_source_sha256": "3b4728113e5b5ccccbe3733dcf76051e428628b3e5eb8c09649f30d467194990",
   "maintained_original_sha256": "0b265e59344d365432f9d2c2774360f97d0e93b7919d78b1e7031b06d116c9d0",
   "previous_registered_source_sha256": "ec321586a69914a722a3033b6a4d043fcff5a2b35a48360deb62027b5b03eaf4",
   "restorer_sha256": "89aca51b9d0ac33a31236cc8c7e982b1fb941e818b2b160eb6a6336826bc063d",
-  "extractor_sha256": "c89ff1360bf21c6c88ef9712d90eb44e1b4f515e7fce7bc79558e0e15fd09a9c"
+  "extractor_sha256": "c89ff1360bf21c6c88ef9712d90eb44e1b4f515e7fce7bc79558e0e15fd09a9c",
+  "source_proof_sha256": "a1170f5fcf5dca58661e0892904273c52e6b8347c32f9777d68da9eff4f3d303",
+  "original750_proof_sha256": "b1f137491377f49785275d279f6b248db66bb42268bc650fed9eec98f076735e",
+  "native_reference_proofs": {
+    "linked-list-closed-constructors": "a3545233cc04d79111c4fed6b1a8f978fb8bdac37d80981e89fe45fbbc7e630f"
+  },
+  "native_reference_sources": {
+    "list-plain-default-ctor-body-guard": "8439095f93eaef42592d95104098789110b6dc72eaaff903fc2bd0d92bb4aea9",
+    "forward-list-plain-default-ctor-initializer-call-guard": "63f4e1ca3fd40c2fa233d85f49282d8b40f8ee59b448e39663ae9cc794e6e2e6",
+    "forward-list-plain-default-ctor-field-writes": "cb000df0020b627a7d78760d1bcc217567a10d346ac048275fdabc55a068114f",
+    "list-plain-default-ctor-constant-calls": "54cb728748b565f8034312026c0c9318394f102293e67185d9ebd002365180fb"
+  },
+  "native_reference_authentication_sha256": "6fdfff6f26abae1dd7e400197da6b838a3f7f686d4c3906d412944718526bfa5"
 }
