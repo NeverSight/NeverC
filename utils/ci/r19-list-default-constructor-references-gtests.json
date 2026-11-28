@@ -92,12 +92,24 @@
     "TranslateTest.CoreV2ListDefaultConstructorReferenceTemporaryGuardRejected",
     "TranslateTest.CoreV2ForwardListDefaultConstructorReferenceDereferenceGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "current_registry_count": 9582,
   "current_python_registry_tests": 384,
   "registered_source_sha256": "accc3f1210f839bcc897ab212cc747d649fcd21e63c5f6755b5b166b4e1de095",
   "maintained_original_sha256": "c1eb28f7ae453af846f1f53fa1cb64cd4b8b392705d9cfe9cd2ef9ef55a0ea32",
   "previous_registered_source_sha256": "bf4b6ad9510a3d056b5e37a79568ea863da4d5591a9665322d3e765467304f93",
   "restorer_sha256": "2c7f4fd7c91a35c9c83b4bc3bc83bd24c4590bafc0d999a8eef44c2f25fcf94a",
-  "extractor_sha256": "033cfef9daf18e7d08b3c42b787204c4c8833e890349418ad63c76a000c8c8ff"
+  "extractor_sha256": "033cfef9daf18e7d08b3c42b787204c4c8833e890349418ad63c76a000c8c8ff",
+  "source_proof_sha256": "85f4c37fe7a1cc92f5b3a3ce0f89ca71503de04c4517bb6ecb7da9b09b66826b",
+  "original750_proof_sha256": "6fbb225ca5232ea94c75c4bb47f04fd8ce5d49733d884ff7750ab238de23fcdd",
+  "native_reference_proofs": {
+    "linked-list-default-constructor-references": "db0310c31b91527f10cddfc43644221fe21664c849b27e0472c89095229c4b6b"
+  },
+  "native_reference_sources": {
+    "list-default-constructor-reference-parameter-guard": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3",
+    "forward-list-default-constructor-shares-global-reference": "172f642ba6b729326e54d2543da7eca18719876f9bdd91754172be1e85915d9a",
+    "list-default-constructor-reference-and-value": "3ebdc2252919eab2159054d085e2ecff403de7921650e5ce218734e314ad43f0",
+    "list-nested-default-constructor-global-reference": "5ee55ec6ae73fdf2fbec5b2bc127dc1eb2a505f14c4079f0fe2fb78478403202"
+  },
+  "native_reference_authentication_sha256": "290dc2745b69ca089726feea9f8ea6a575601acc9140af68da8bc18efee09380"
 }

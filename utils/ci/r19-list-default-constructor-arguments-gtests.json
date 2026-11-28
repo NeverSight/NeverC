@@ -92,7 +92,7 @@
     "TranslateTest.CoreV2ListDefaultConstructionKeepsGlobalReference",
     "TranslateTest.CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "current_registry_count": 9577,
   "current_python_registry_tests": 382,
   "registered_source_sha256": "bf4b6ad9510a3d056b5e37a79568ea863da4d5591a9665322d3e765467304f93",
@@ -113,5 +113,7 @@
   },
   "native_reference_authentication_sha256": "59357e7ccbef778b3d6cc94b7b9ad7fcf12d4056eef8402032443a7fca00bb85",
   "planned_generated_c23_executions": 8,
-  "native_reference_selected_executions": 8
+  "native_reference_selected_executions": 8,
+  "constructor_reference_promotion_source_proof_sha256": "85f4c37fe7a1cc92f5b3a3ce0f89ca71503de04c4517bb6ecb7da9b09b66826b",
+  "constructor_reference_promotion_native_proof_sha256": "db0310c31b91527f10cddfc43644221fe21664c849b27e0472c89095229c4b6b"
 }
