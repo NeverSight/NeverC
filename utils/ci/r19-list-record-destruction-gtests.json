@@ -1,0 +1,96 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-record-destructor-after-splice-and-erase",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordDestructorAfterSpliceAndEraseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ee0d3aef4d418a4676dc728ea46d8ba84c3edf620f67d53e780776adb68e1add",
+      "original_case_source_sha256": "ee0d3aef4d418a4676dc728ea46d8ba84c3edf620f67d53e780776adb68e1add",
+      "gtest_body_sha256": "1b03b8f17a43096a9888733af481b5d362c9e0b524c427daface34dde194bb84"
+    },
+    {
+      "name": "forward-list-record-nested-destruction-order",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordNestedDestructionOrderRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e6b651bd856316261e27a0227323edbe89dabd7ef2d8c8b7123512fd309f695f",
+      "original_case_source_sha256": "e6b651bd856316261e27a0227323edbe89dabd7ef2d8c8b7123512fd309f695f",
+      "gtest_body_sha256": "26d6153937e9a4625cdc127eaba25a2229e1a3a41457a6979d3055d61c0bff05"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-record-potentially-throwing-destructor-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordPotentiallyThrowingDestructorGuardRejected",
+      "expected": "reject",
+      "source_sha256": "7d37949263db01638fa31a982816dc2964a8fdd16f88f292eb9131a31fa8aed1",
+      "original_case_source_sha256": "7d37949263db01638fa31a982816dc2964a8fdd16f88f292eb9131a31fa8aed1",
+      "gtest_body_sha256": "ced105308583bbb100e5f6959c41874ea1cdcee92540ba37c0e36524a31b460b"
+    },
+    {
+      "name": "forward-list-record-destructor-with-custom-copy-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordDestructorWithCustomCopyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "aa8de6a6c0bb1e17fef8fc137c3079e52440930411dee076f75fd4396c26f21f",
+      "original_case_source_sha256": "aa8de6a6c0bb1e17fef8fc137c3079e52440930411dee076f75fd4396c26f21f",
+      "gtest_body_sha256": "00bd41d20a3baa0036182706cf352b07f0e9f3455566be0dc2bc6f1c132b4c48"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-record-destructor-after-splice-and-erase",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint trace;\nstruct Entry {\n  int value;\n  ~Entry() { trace = trace * 10 + value; }\n};\nint main() {\n  {\n    std::list<Entry> from;\n    std::list<Entry> to;\n    from.emplace_back().value = 2;\n    from.emplace_back().value = 3;\n    auto saved = from.begin();\n    to.splice(to.begin(), from, saved);\n    if (trace || saved != to.begin()) return 1;\n    to.erase(saved);\n    if (trace != 2 || !to.empty()) return 2;\n  }\n  return trace != 23;\n}\n",
+      "source_sha256": "ee0d3aef4d418a4676dc728ea46d8ba84c3edf620f67d53e780776adb68e1add"
+    },
+    {
+      "name": "forward-list-record-nested-destruction-order",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nint trace;\nstruct Leaf {\n  int value;\n  ~Leaf() { trace = trace * 10 + value; }\n};\nstruct Row { Leaf first; Leaf second; };\nint main() {\n  std::forward_list<Row> rows;\n  auto& later = rows.emplace_front();\n  later.first.value = 3;\n  later.second.value = 4;\n  auto& earlier = rows.emplace_front();\n  earlier.first.value = 1;\n  earlier.second.value = 2;\n  rows.pop_front();\n  if (trace != 21) return 1;\n  rows.clear();\n  return trace != 2143 || !rows.empty();\n}\n",
+      "source_sha256": "e6b651bd856316261e27a0227323edbe89dabd7ef2d8c8b7123512fd309f695f"
+    },
+    {
+      "name": "list-record-potentially-throwing-destructor-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nstruct Entry {\n  int value;\n  ~Entry() noexcept(false) { value = 0; }\n};\nint main() {\n  std::list<Entry> rows;\n  rows.emplace_back().value = 9;\n  return rows.back().value != 9;\n}\n",
+      "source_sha256": "7d37949263db01638fa31a982816dc2964a8fdd16f88f292eb9131a31fa8aed1"
+    },
+    {
+      "name": "forward-list-record-destructor-with-custom-copy-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <forward_list>\nint copied;\nstruct Entry {\n  int value;\n  Entry() = default;\n  Entry(const Entry& other) : value(other.value) { ++copied; }\n  ~Entry() { value = 0; }\n};\nint main() {\n  std::forward_list<Entry> rows;\n  rows.emplace_front().value = 2;\n  auto copy = rows;\n  return copy.front().value != 2 || copied != 1;\n}\n",
+      "source_sha256": "aa8de6a6c0bb1e17fef8fc137c3079e52440930411dee076f75fd4396c26f21f"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListRecordDestructorAfterSpliceAndEraseRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordNestedDestructionOrderRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordPotentiallyThrowingDestructorGuardRejected",
+    "TranslateTest.CoreV2ForwardListRecordDestructorWithCustomCopyGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "aa479d2506b9de87ce7acc05ea2d5efad3e2787a5f53b22e2f3fd7b16264f51b",
+  "maintained_original_sha256": "3f9ab6d7f9d3cdd3db426fd301f83c0e62db1eacb20f9fcf368c380175d3f666",
+  "previous_registered_source_sha256": "38ae70fc059a80239e6ee4ba5acc2b995ada276f21511388369e353548b63b47",
+  "previous_maintained_original_sha256": "41e9dcd5aaacc8b11a432a6650633dfdeed44eb62a27bdb952db2cbf22478646",
+  "restorer_sha256": "b4e478f000a044022c5c758fd6aeee85665f98656cfd58f1c4afd8346e13da5d",
+  "extractor_sha256": "0f035096040fc1f7249f8eff940cc6eec870f8f3791818985e8a9f2ea1867df1",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9501,
+  "current_python_registry_tests": 356,
+  "native_reference_selected_executions": 8,
+  "planned_generated_c23_executions": 8,
+  "native_reference_proofs": {
+    "linked-list-record-destruction-repaired": "5c1a6a797b170b83832352153cd945cdf11470a94969f28f1904fd9a15b4dd95"
+  },
+  "native_reference_authentication_sha256": "a7744a2a95e33c5854a490841a32c7fc73dcb6903859b238ce8d6550ab5fd9ac",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}

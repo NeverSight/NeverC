@@ -1,0 +1,407 @@
+{
+  "positive_cases": [
+    {
+      "name": "any-int-assign-and-return-receiver",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntAssignAndReturnReceiverRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "2802b3f30c31627bfe0d8378b5cf7ced89c8dcc4f8eb4a2cf431d0ca8a9b8819",
+      "original_case_source_sha256": "2802b3f30c31627bfe0d8378b5cf7ced89c8dcc4f8eb4a2cf431d0ca8a9b8819",
+      "gtest_body_sha256": "8e8a8b6a9bfd28f18acff129936797e623361880aa136335313a454a7e8924da"
+    },
+    {
+      "name": "any-int-assign-reads-reference-after-receiver",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntAssignReadsReferenceAfterReceiverRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "33db66b862e98d49c64a7a5c343ec801c791db91f3f0cc269d7e714faf95c5d1",
+      "original_case_source_sha256": "33db66b862e98d49c64a7a5c343ec801c791db91f3f0cc269d7e714faf95c5d1",
+      "gtest_body_sha256": "c4689a9b0cbc33d81ca84bd4a15f116b4ad2680e6fee6ad062b819bde3c88c44"
+    },
+    {
+      "name": "any-int-make-zero-in-destination",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntMakeZeroInDestinationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9f51b5b5172aa477db79f50e15976d690c6ed2a107e1b07a3af5436456b402ef",
+      "original_case_source_sha256": "9f51b5b5172aa477db79f50e15976d690c6ed2a107e1b07a3af5436456b402ef",
+      "gtest_body_sha256": "d236ed0483dc7e521f4ba1133c93f036a81fe98ebdeff15aafd30a96f63c52d9"
+    },
+    {
+      "name": "any-int-make-at-return-boundary",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntMakeAtReturnBoundaryRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "0d56d7354662a56003ac4e133a8b729eebafa00e406b88bc64e1da8626aad8de",
+      "original_case_source_sha256": "0d56d7354662a56003ac4e133a8b729eebafa00e406b88bc64e1da8626aad8de",
+      "gtest_body_sha256": "b279cc46770d5f5cca0236f93c7572c5a7a26ebe88fc13dccb10104279cbe0d9"
+    },
+    {
+      "name": "any-int-const-value-and-borrowed-reference",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntConstValueAndBorrowedReferenceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d5b9f68d761b66290f974af468d83a9022ee93c3b6af42501ba004a1d16710a4",
+      "original_case_source_sha256": "d5b9f68d761b66290f974af468d83a9022ee93c3b6af42501ba004a1d16710a4",
+      "gtest_body_sha256": "b452731975bce5739557c264dc968f99a2063bb085c9a616baaeb947ef4d80e6"
+    },
+    {
+      "name": "any-int-const-value-from-in-place-construction",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntConstValueFromInPlaceConstructionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8fab47f52a0303c41705a27cd521c5f3371560b660e747c48de1e0235192082e",
+      "original_case_source_sha256": "8fab47f52a0303c41705a27cd521c5f3371560b660e747c48de1e0235192082e",
+      "gtest_body_sha256": "1bfaba83bb4fded8a791a2ef68230e4721b107de781707c0faec5ad106ccecaf"
+    },
+    {
+      "name": "any-int-make-and-assign-with-copy",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntMakeAndAssignWithCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e5a279d72a5bd9aeaf700a9a3492a3331dda93011f81e81daddc84e7500818ec",
+      "original_case_source_sha256": "e5a279d72a5bd9aeaf700a9a3492a3331dda93011f81e81daddc84e7500818ec",
+      "gtest_body_sha256": "8da47b6623e876f44a21e4b491dcf86301486b393263da2debd8acbe6f07e0f1"
+    },
+    {
+      "name": "scoped-allocator-same-type-copy",
+      "formal_test_name": "TranslateTest.CoreV2ScopedAllocatorSameTypeCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "f6fe100364a0249c32eb95bb1ec74d36490227dbc82355b66d82d3c7242513b0",
+      "original_case_source_sha256": "f6fe100364a0249c32eb95bb1ec74d36490227dbc82355b66d82d3c7242513b0",
+      "gtest_body_sha256": "0e7217ff64266c3e5298ba83e6e21065ce37aeac9c088832d389eebb7ff4ce39"
+    },
+    {
+      "name": "scoped-allocator-same-type-move",
+      "formal_test_name": "TranslateTest.CoreV2ScopedAllocatorSameTypeMoveRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "fe8cc302ca67936dac6ad7fd1e9f2d6c9cf9f60e1a8beac9470f54bcfc9dfaa2",
+      "original_case_source_sha256": "fe8cc302ca67936dac6ad7fd1e9f2d6c9cf9f60e1a8beac9470f54bcfc9dfaa2",
+      "gtest_body_sha256": "3d7ce7935844fd250d3223a455c6a13254e0c4c45661bed751473dc9c7a1f078"
+    },
+    {
+      "name": "scoped-allocator-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ScopedAllocatorCopyAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "9c9ec66856359d014a5f3c47b62c4df77d7ab1980e1cb5196849e9d9363ea733",
+      "original_case_source_sha256": "9c9ec66856359d014a5f3c47b62c4df77d7ab1980e1cb5196849e9d9363ea733",
+      "gtest_body_sha256": "5d747fdb3372c962af76982637de255e8dfbca155ae4cad8f2605c85f3e15f4a"
+    },
+    {
+      "name": "variant-three-visit-function-and-pointer",
+      "formal_test_name": "TranslateTest.CoreV2VariantThreeVisitFunctionAndPointerRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "69318a99e23917c70d6e1039745c7ca07fc49561f51645f6376bf53582a77f78",
+      "original_case_source_sha256": "69318a99e23917c70d6e1039745c7ca07fc49561f51645f6376bf53582a77f78",
+      "gtest_body_sha256": "9ebeabc245b7a978d39a5a853abf44797a3d0f3603c2f13a2e5a6dcb06792dd3"
+    },
+    {
+      "name": "variant-three-visit-const-overloaded-visitor",
+      "formal_test_name": "TranslateTest.CoreV2VariantThreeVisitConstOverloadedVisitorRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ba067bdd292b0239621b93c0c0abfbaa97dd89fd06b788464cd3847eb918f0a3",
+      "original_case_source_sha256": "ba067bdd292b0239621b93c0c0abfbaa97dd89fd06b788464cd3847eb918f0a3",
+      "gtest_body_sha256": "8327580c696c8e22bfb0927c63577da5d3732a5fbdf1c1ff43af853a580da20e"
+    },
+    {
+      "name": "variant-three-visit-aliased-operands-and-void",
+      "formal_test_name": "TranslateTest.CoreV2VariantThreeVisitAliasedOperandsAndVoidRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "04233e3af574732b54ef813d95d62a3920bce343d2d904f68cc700a353da0195",
+      "original_case_source_sha256": "04233e3af574732b54ef813d95d62a3920bce343d2d904f68cc700a353da0195",
+      "gtest_body_sha256": "de05149ee2329270d316610098745636d2d93b99dec9643fde98a4d9de154be1"
+    },
+    {
+      "name": "any-int-assign-other-payload-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyAssignLongAcceptsFunctionBody",
+      "expected": "accept",
+      "source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3",
+      "original_case_source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3",
+      "gtest_body_sha256": "b13f14ea490590ab79048517b747cab73d879d1e50b7eb6a9c68735b49edb02f",
+      "source_only": true
+    },
+    {
+      "name": "variant-three-visit-four-operands",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAcceptsFourOperands",
+      "expected": "accept",
+      "source_sha256": "e0892fc38a02517da549dfb6589038c3c0a4f2c29b11099974eae84edb84cae5",
+      "original_case_source_sha256": "e0892fc38a02517da549dfb6589038c3c0a4f2c29b11099974eae84edb84cae5",
+      "gtest_body_sha256": "b737de32e762cebd9a1e7881a556cb2b4f1100b85c75d91ea4882635e99bc492",
+      "source_only": true
+    },
+    {
+      "name": "variant-three-visit-temporary-operand",
+      "formal_test_name": "TranslateTest.CoreV2VariantVisitAcceptsOwnedTemporaryOperand",
+      "expected": "accept",
+      "source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
+      "original_case_source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
+      "gtest_body_sha256": "e719beb8bea565fc1f7f14c856b5f9328e1546212d4c872ebd65b7a3931a2536",
+      "source_only": true
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "any-int-make-renamed-installation-guard",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntMakeRenamedInstallationGuardRejected",
+      "expected": "reject",
+      "source_sha256": "68d4593f49b5b8e52f575420e4a0cc50c3738ee97d69ed0ff15dbde175bf7f7a",
+      "original_case_source_sha256": "68d4593f49b5b8e52f575420e4a0cc50c3738ee97d69ed0ff15dbde175bf7f7a",
+      "gtest_body_sha256": "b7b81497f3ff1f51ec4c5c0046f500cec9e2707507ed36a5ee9c5887f88a10f1"
+    },
+    {
+      "name": "any-int-cast-without-active-state-evidence",
+      "formal_test_name": "TranslateTest.CoreV2AnyIntCastWithoutActiveStateEvidenceRejected",
+      "expected": "reject",
+      "source_sha256": "b26ddc84c5231622e4c25d7f7c17e64d6f40d9dd02523b1f93bf29b1fa8c280f",
+      "original_case_source_sha256": "b26ddc84c5231622e4c25d7f7c17e64d6f40d9dd02523b1f93bf29b1fa8c280f",
+      "gtest_body_sha256": "d413c0f9830278899f4d2fa3b77fbd72f456e76e85940bb6642685f2272b543f"
+    },
+    {
+      "name": "scoped-allocator-renamed-storage-copy-guard",
+      "formal_test_name": "TranslateTest.CoreV2ScopedAllocatorRenamedStorageCopyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "8815bc41eb99bdcd12c4b78aa5da76172af4358c67bb1dc2c78701e7a9c33f24",
+      "original_case_source_sha256": "8815bc41eb99bdcd12c4b78aa5da76172af4358c67bb1dc2c78701e7a9c33f24",
+      "gtest_body_sha256": "780eba7ac1d7e7a9bd553bb40d2f391adb9e3453c81d98fcc412600214aec909"
+    },
+    {
+      "name": "scoped-allocator-inner-pack-copy-guard",
+      "formal_test_name": "TranslateTest.CoreV2ScopedAllocatorInnerPackCopyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "063d514faf39e6c377a519d5fc88b39f3dc9c8efdedf6c9a48c0813480cd2713",
+      "original_case_source_sha256": "063d514faf39e6c377a519d5fc88b39f3dc9c8efdedf6c9a48c0813480cd2713",
+      "gtest_body_sha256": "ccaccb802ea47b3ad314323a96a8aa4a0fe6fa0bf6c9107adf7075f98f828b66"
+    },
+    {
+      "name": "variant-three-visit-renamed-valueless-guard",
+      "formal_test_name": "TranslateTest.CoreV2VariantThreeVisitRenamedValuelessGuardRejected",
+      "expected": "reject",
+      "source_sha256": "08702b481cd5eb7f2d8b2c5ecca5f353ee92b61ac88177e0c77540254ea93715",
+      "original_case_source_sha256": "08702b481cd5eb7f2d8b2c5ecca5f353ee92b61ac88177e0c77540254ea93715",
+      "gtest_body_sha256": "aed4030efd589927c25c7cad157254d0de2db934809adf83fe6651d0bf29af17"
+    },
+    {
+      "name": "variant-three-visit-matrix-capacity",
+      "formal_test_name": "TranslateTest.CoreV2VariantThreeVisitMatrixCapacityRejected",
+      "expected": "reject",
+      "source_sha256": "c7dfd051d1c11fbfb5ad3fde7eb674d130e2c27843e9f567f3efe68c2fd6ef54",
+      "original_case_source_sha256": "c7dfd051d1c11fbfb5ad3fde7eb674d130e2c27843e9f567f3efe68c2fd6ef54",
+      "gtest_body_sha256": "09429a2907addc45ef6af8d9af22cc609a1ca8703adf67f31f1e6791967d0ef1"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "any-int-assign-and-return-receiver",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  std::any a;\n  std::any& result = (a = 23);\n  auto* first = std::any_cast<int>(&a);\n  if (&result != &a || !first || *first != 23)\n    return 1;\n  const int value = -51;\n  return &a.operator=(value) != &a || *std::any_cast<int>(&a) != -51;\n}\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "2802b3f30c31627bfe0d8378b5cf7ced89c8dcc4f8eb4a2cf431d0ca8a9b8819"
+    },
+    {
+      "name": "any-int-assign-reads-reference-after-receiver",
+      "expected": "accept",
+      "source": "#include <any>\nint source = 3;\nint sequence, read_sequence, receiver_sequence;\nint& input() { read_sequence = ++sequence; return source; }\nstd::any& receiver(std::any& a) {\n  receiver_sequence = ++sequence;\n  source = 19;\n  return a;\n}\nint main() {\n  std::any a(65);\n  receiver(a) = input();\n  if (read_sequence != 1 || receiver_sequence != 2)\n    return 1;\n  return *std::any_cast<int>(&a) != 19;\n}\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "33db66b862e98d49c64a7a5c343ec801c791db91f3f0cc269d7e714faf95c5d1"
+    },
+    {
+      "name": "any-int-make-zero-in-destination",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  const std::any a = std::make_any<int>();\n  auto* value = std::any_cast<const int>(&a);\n  return !a.has_value() || !value || *value != 0;\n}\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "9f51b5b5172aa477db79f50e15976d690c6ed2a107e1b07a3af5436456b402ef"
+    },
+    {
+      "name": "any-int-make-at-return-boundary",
+      "expected": "accept",
+      "source": "#include <any>\nint calls;\nint next() { ++calls; return 47; }\nstd::any create() { return std::make_any<int>(next()); }\nint main() {\n  auto a = create();\n  auto* value = std::any_cast<int>(&a);\n  return calls != 1 || !value || *value != 47;\n}\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "0d56d7354662a56003ac4e133a8b729eebafa00e406b88bc64e1da8626aad8de"
+    },
+    {
+      "name": "any-int-const-value-and-borrowed-reference",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  const std::any a(17);\n  const int& reference = std::any_cast<const int&>(a);\n  if (&reference != std::any_cast<int>(&a))\n    return 1;\n  int result = std::any_cast<int>(a);\n  return result != 17 || reference != 17;\n}\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "d5b9f68d761b66290f974af468d83a9022ee93c3b6af42501ba004a1d16710a4"
+    },
+    {
+      "name": "any-int-const-value-from-in-place-construction",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  int input = -43;\n  const std::any a(std::in_place_type<int>, input);\n  input = 11;\n  return std::any_cast<int>(a) != -43;\n}\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "8fab47f52a0303c41705a27cd521c5f3371560b660e747c48de1e0235192082e"
+    },
+    {
+      "name": "any-int-make-and-assign-with-copy",
+      "expected": "accept",
+      "source": "#include <any>\nint main() {\n  auto a = std::make_any<int>(68);\n  auto b = a;\n  a = 9;\n  return *std::any_cast<int>(&a) != 9 || *std::any_cast<int>(&b) != 68;\n}\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "e5a279d72a5bd9aeaf700a9a3492a3331dda93011f81e81daddc84e7500818ec"
+    },
+    {
+      "name": "scoped-allocator-same-type-copy",
+      "expected": "accept",
+      "source": "#include <memory>\n#include <scoped_allocator>\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>>;\nint visits;\nconst Alloc& choose(const Alloc& allocation) { ++visits; return allocation; }\nint main() {\n  Alloc original;\n  Alloc copy(choose(original));\n  int* slot = copy.allocate(1);\n  copy.construct(slot, 29);\n  const int result = *slot;\n  copy.destroy(slot);\n  original.deallocate(slot, 1);\n  return visits != 1 || result != 29;\n}\n",
+      "source_sha256": "f6fe100364a0249c32eb95bb1ec74d36490227dbc82355b66d82d3c7242513b0",
+      "public_header": "scoped_allocator",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "scoped-allocator-same-type-move",
+      "expected": "accept",
+      "source": "#include <memory>\n#include <scoped_allocator>\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>>;\nint visits;\nAlloc&& choose(Alloc& allocation) { ++visits; return static_cast<Alloc&&>(allocation); }\nint main() {\n  Alloc original;\n  Alloc moved(choose(original));\n  int* slot = moved.allocate(1);\n  original.construct(slot, 37);\n  int value = *slot;\n  original.destroy(slot);\n  moved.deallocate(slot, 1);\n  return visits != 1 || value != 37;\n}\n",
+      "source_sha256": "fe8cc302ca67936dac6ad7fd1e9f2d6c9cf9f60e1a8beac9470f54bcfc9dfaa2",
+      "public_header": "scoped_allocator",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "scoped-allocator-copy-assignment",
+      "expected": "accept",
+      "source": "#include <memory>\n#include <scoped_allocator>\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>>;\nint visits;\nconst Alloc& choose(const Alloc& allocation) { ++visits; return allocation; }\nint main() {\n  Alloc first;\n  Alloc second;\n  Alloc& alias = (second = choose(first));\n  return visits != 1 || &second != &alias;\n}\n",
+      "source_sha256": "9c9ec66856359d014a5f3c47b62c4df77d7ab1980e1cb5196849e9d9363ea733",
+      "public_header": "scoped_allocator",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-three-visit-function-and-pointer",
+      "source": "#include <variant>\nlong combine(int a, long b, int c) { return a * 100L + b * 10L + c; }\nint main() {\n  std::variant<short, int> a(std::in_place_index<0>, short(7));\n  std::variant<long, int> b(std::in_place_index<1>, 4);\n  const std::variant<short, int> c(std::in_place_index<1>, 2);\n  if (std::visit(combine, a, b, c) != 742)\n    return 1;\n  a.emplace<1>(2);\n  b.emplace<0>(5L);\n  return std::visit(&combine, a, b, c) != 252;\n}\n",
+      "expected": "accept",
+      "source_sha256": "69318a99e23917c70d6e1039745c7ca07fc49561f51645f6376bf53582a77f78",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-three-visit-const-overloaded-visitor",
+      "source": "#include <variant>\nstruct Encode {\n  int offset;\n  int operator()(int x, int y, short z) const & { return offset + x + 2*y + 3*z; }\n  int operator()(int x, int y, int z) const & { return -offset + x + 2*y + 3*z; }\n};\nint main() {\n  using Value = std::variant<short, int>;\n  const Encode encode{50};\n  Value a(std::in_place_index<1>, 2);\n  const Value b(std::in_place_index<0>, short(3));\n  Value c(std::in_place_index<0>, short(5));\n  if (std::visit(encode, a, b, c) != 73)\n    return 1;\n  c.emplace<1>(7);\n  return std::visit(encode, a, b, c) != -21;\n}\n",
+      "expected": "accept",
+      "source_sha256": "ba067bdd292b0239621b93c0c0abfbaa97dd89fd06b788464cd3847eb918f0a3",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-three-visit-aliased-operands-and-void",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nusing Visitor = void (*)(int, int, int);\nint first_calls, second_calls, third_calls, visitor_calls, invoked, seen;\nvoid combine(int a, int b, int c) { ++invoked; seen = a * 100 + b * 10 + c; }\nVisitor visitor() { ++visitor_calls; return &combine; }\nValue& first(Value& v) { ++first_calls; return v; }\nValue& second(Value& v) { ++second_calls; return v; }\nconst Value& third(const Value& v) { ++third_calls; return v; }\nint main() {\n  Value v(std::in_place_index<1>, 4);\n  std::visit(visitor(), first(v), second(v), third(v));\n  return seen != 444 || first_calls != 1 || second_calls != 1 ||\n         third_calls != 1 || visitor_calls != 1 || invoked != 1;\n}\n",
+      "expected": "accept",
+      "source_sha256": "04233e3af574732b54ef813d95d62a3920bce343d2d904f68cc700a353da0195",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-int-assign-other-payload-guard",
+      "expected": "accept",
+      "source": "#include <any>\nvoid f(std::any& a, long n) { a = n; }\n",
+      "public_header": "any",
+      "kind": "cpp17-operation",
+      "source_sha256": "47bc8b203cea87ed05adb1c4fb738d0a662fc980458d2bef326b1c6b40c08cf3"
+    },
+    {
+      "name": "variant-three-visit-four-operands",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c, int d) { return a + b + c + d; }\nint f(Value& a, Value& b, Value& c, Value& d) { return std::visit(combine, a, b, c, d); }\n",
+      "expected": "accept",
+      "source_sha256": "e0892fc38a02517da549dfb6589038c3c0a4f2c29b11099974eae84edb84cae5",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "variant-three-visit-temporary-operand",
+      "source": "#include <variant>\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c) { return a + b + c; }\nint f(Value& a, Value& b) { return std::visit(combine, a, b, Value(2)); }\n",
+      "expected": "accept",
+      "source_sha256": "99b2a1c4a64226bfbfe4f7461443b30243787c407bbf4447eeff10e2099127aa",
+      "public_header": "variant",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "any-int-make-renamed-installation-guard",
+      "expected": "reject",
+      "source": "#define __create changed_int_installation\n#include <any>\n#undef __create\nbool f() {\n  auto a = std::make_any<int>(7);\n  return a.has_value();\n}\n",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source_sha256": "68d4593f49b5b8e52f575420e4a0cc50c3738ee97d69ed0ff15dbde175bf7f7a"
+    },
+    {
+      "name": "any-int-cast-without-active-state-evidence",
+      "expected": "reject",
+      "source": "#include <any>\nint f(const std::any& a) { return std::any_cast<int>(a); }\n",
+      "public_header": "any",
+      "kind": "source-body-guard",
+      "source_sha256": "b26ddc84c5231622e4c25d7f7c17e64d6f40d9dd02523b1f93bf29b1fa8c280f"
+    },
+    {
+      "name": "scoped-allocator-renamed-storage-copy-guard",
+      "expected": "reject",
+      "source": "#include <memory>\n#define __scoped_allocator_storage changed_scoped_storage\n#include <scoped_allocator>\n#undef __scoped_allocator_storage\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>>;\nint check(const Alloc& source) {\n  Alloc copy(source);\n  return sizeof(copy);\n}\n",
+      "source_sha256": "8815bc41eb99bdcd12c4b78aa5da76172af4358c67bb1dc2c78701e7a9c33f24",
+      "public_header": "scoped_allocator",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "scoped-allocator-inner-pack-copy-guard",
+      "expected": "reject",
+      "source": "#include <memory>\n#include <scoped_allocator>\nusing Alloc = std::scoped_allocator_adaptor<std::allocator<int>, std::allocator<int>>;\nint check(const Alloc& source) {\n  Alloc copy(source);\n  return sizeof(copy);\n}\n",
+      "source_sha256": "063d514faf39e6c377a519d5fc88b39f3dc9c8efdedf6c9a48c0813480cd2713",
+      "public_header": "scoped_allocator",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-three-visit-renamed-valueless-guard",
+      "source": "#define __throw_if_valueless renamed_valueless_guard\n#include <variant>\n#undef __throw_if_valueless\nusing Value = std::variant<short, int>;\nint combine(int a, int b, int c) { return a + b + c; }\nint f(Value& a, Value& b, Value& c) { return std::visit(combine, a, b, c); }\n",
+      "expected": "reject",
+      "source_sha256": "08702b481cd5eb7f2d8b2c5ecca5f353ee92b61ac88177e0c77540254ea93715",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "variant-three-visit-matrix-capacity",
+      "source": "#include <variant>\nusing Value = std::variant<signed char, short, int, long>;\nusing Wider = std::variant<signed char, short, int, long, bool>;\nlong combine(long a, long b, long c) { return a + b + c; }\nlong f(Value& a, Value& b, Wider& c) { return std::visit(combine, a, b, c); }\n",
+      "expected": "reject",
+      "source_sha256": "c7dfd051d1c11fbfb5ad3fde7eb674d130e2c27843e9f567f3efe68c2fd6ef54",
+      "public_header": "variant",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2AnyIntAssignAndReturnReceiverRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntAssignReadsReferenceAfterReceiverRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntMakeZeroInDestinationRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntMakeAtReturnBoundaryRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntConstValueAndBorrowedReferenceRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntConstValueFromInPlaceConstructionRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyIntMakeAndAssignWithCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ScopedAllocatorSameTypeCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ScopedAllocatorSameTypeMoveRunAtBothOptimizations",
+    "TranslateTest.CoreV2ScopedAllocatorCopyAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantThreeVisitFunctionAndPointerRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantThreeVisitConstOverloadedVisitorRunAtBothOptimizations",
+    "TranslateTest.CoreV2VariantThreeVisitAliasedOperandsAndVoidRunAtBothOptimizations",
+    "TranslateTest.CoreV2AnyAssignLongAcceptsFunctionBody",
+    "TranslateTest.CoreV2VariantVisitAcceptsFourOperands",
+    "TranslateTest.CoreV2VariantVisitAcceptsOwnedTemporaryOperand",
+    "TranslateTest.CoreV2AnyIntMakeRenamedInstallationGuardRejected",
+    "TranslateTest.CoreV2AnyIntCastWithoutActiveStateEvidenceRejected",
+    "TranslateTest.CoreV2ScopedAllocatorRenamedStorageCopyGuardRejected",
+    "TranslateTest.CoreV2ScopedAllocatorInnerPackCopyGuardRejected",
+    "TranslateTest.CoreV2VariantThreeVisitRenamedValuelessGuardRejected",
+    "TranslateTest.CoreV2VariantThreeVisitMatrixCapacityRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "561406c89101beb582fd1d4cc65016e90c9ce40fa582d1ca2380e9ce49526a29",
+  "maintained_original_sha256": "bb50602a198d000bfebf68c70354d6deac438fcee8db75a6e2c28e12703fc1d0",
+  "previous_registered_source_sha256": "deabe4c6550212f7d333e33ed273465783a9844e1e11013128dfea59982657cf",
+  "previous_maintained_original_sha256": "91d19f5afd022ffacdcb11a0d764e6bb0e308db2d969cc51cf1cd3156953bba3",
+  "restorer_sha256": "d09aab14b83a6a42faccc501fb0fd731648ff6fb01980bb7b3cf46bf949c386f",
+  "extractor_sha256": "681110d107e0b016e2fc8b3880f05acd980bdec85a2dd555c156a993be4dc2fa",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8228,
+  "current_python_registry_tests": 140,
+  "native_reference_selected_executions": 26,
+  "planned_generated_c23_executions": 26,
+  "native_reference_proofs": {
+    "any-integer-operations": "f7d9954b823bb2e9d0a09353248f24656892d562850c37b13a37f83dbddb539f",
+    "scoped-allocator": "542ac3bee249292d57c71942cada7a38db3e251f22d6c1d8d47c630d5e3d95b2",
+    "three-variant-visit": "cba2d9fe01d703b8356cdc0f0050500243cc6029bc27b87eeda3b636823d8f69"
+  },
+  "native_reference_authentication_sha256": "133196c0f84bf0621378163efef0ec281c8bac24cc52e9a78f4b401a38f10299",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}

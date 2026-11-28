@@ -1,0 +1,63 @@
+{
+  "positive_cases": [
+    {
+      "name": "tuple-budget-deep-15-execution",
+      "formal_test_name": "TranslateTest.CoreV2TupleBudgetDeep15ExecutionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "6f9e3af078576b4e942f9e5003c6f6fb196c13f82bafc48b18df63703e49752b",
+      "original_case_source_sha256": "6f9e3af078576b4e942f9e5003c6f6fb196c13f82bafc48b18df63703e49752b",
+      "gtest_body_sha256": "1f1d0144f04760e75cbabec0c6eb9782fc845a82b6dc086679768a1cd58d8bcc"
+    },
+    {
+      "name": "tuple-budget-deep-16-execution",
+      "formal_test_name": "TranslateTest.CoreV2TupleBudgetDeep16ExecutionRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "462a89cdd4eec1a91e10e1d4f73ea3a004e51acbd9cbc7fbda254d748ed7cc39",
+      "original_case_source_sha256": "462a89cdd4eec1a91e10e1d4f73ea3a004e51acbd9cbc7fbda254d748ed7cc39",
+      "gtest_body_sha256": "c650cb71c72637f2884fae62827177c60f835f17fb4f2489198c70c521972b43"
+    }
+  ],
+  "negative_cases": [],
+  "source_cases": [
+    {
+      "name": "tuple-budget-deep-15-execution",
+      "expected": "accept",
+      "public_header": "tuple",
+      "source": "#include <array>\n#include <tuple>\n#include <utility>\nusing T0 = int;\nusing T1 = std::tuple<T0>;\nusing T2 = std::tuple<T1>;\nusing T3 = std::tuple<T2>;\nusing T4 = std::tuple<T3>;\nusing T5 = std::tuple<T4>;\nusing T6 = std::tuple<T5>;\nusing T7 = std::tuple<T6>;\nusing T8 = std::tuple<T7>;\nusing T9 = std::tuple<T8>;\nusing T10 = std::tuple<T9>;\nusing T11 = std::tuple<T10>;\nusing T12 = std::tuple<T11>;\nusing T13 = std::tuple<T12>;\nusing T14 = std::tuple<T13>;\nusing T15 = std::tuple<T14>;\nusing Carrier = std::tuple<T1, T15>;\nint main() {\n  Carrier left{}, right{};\n  std::get<0>(std::get<0>(left)) = 7;\n  std::get<0>(std::get<0>(right)) = 19;\n  std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(left)))))))))))))))) = -23;\n  std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(right)))))))))))))))) = 31;\n  left.swap(right);\n  if (std::get<0>(std::get<0>(left)) != 19 ||\n      std::get<0>(std::get<0>(right)) != 7)\n    return 1;\n  if (std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(left)))))))))))))))) != 31 || std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(right)))))))))))))))) != -23)\n    return 2;\n  return 0;\n}\n",
+      "original_fixture_sha256": "aa91531b67bbe6fc516c70f7d16489f37901a902bb0b7c8e5219807db33208b5",
+      "source_sha256": "6f9e3af078576b4e942f9e5003c6f6fb196c13f82bafc48b18df63703e49752b",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "tuple-budget-deep-16-execution",
+      "expected": "accept",
+      "public_header": "tuple",
+      "source": "#include <array>\n#include <tuple>\n#include <utility>\nusing T0 = int;\nusing T1 = std::tuple<T0>;\nusing T2 = std::tuple<T1>;\nusing T3 = std::tuple<T2>;\nusing T4 = std::tuple<T3>;\nusing T5 = std::tuple<T4>;\nusing T6 = std::tuple<T5>;\nusing T7 = std::tuple<T6>;\nusing T8 = std::tuple<T7>;\nusing T9 = std::tuple<T8>;\nusing T10 = std::tuple<T9>;\nusing T11 = std::tuple<T10>;\nusing T12 = std::tuple<T11>;\nusing T13 = std::tuple<T12>;\nusing T14 = std::tuple<T13>;\nusing T15 = std::tuple<T14>;\nusing T16 = std::tuple<T15>;\nusing Carrier = std::tuple<T1, T16>;\nint main() {\n  Carrier left{}, right{};\n  std::get<0>(std::get<0>(left)) = 7;\n  std::get<0>(std::get<0>(right)) = 19;\n  std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(left))))))))))))))))) = -23;\n  std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(right))))))))))))))))) = 31;\n  std::swap(left, right);\n  if (std::get<0>(std::get<0>(left)) != 19 ||\n      std::get<0>(std::get<0>(right)) != 7)\n    return 1;\n  if (std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(left))))))))))))))))) != 31 || std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<0>(std::get<1>(right))))))))))))))))) != -23)\n    return 2;\n  return 0;\n}\n",
+      "original_fixture_sha256": "5f7a6404b2d2d06288264b4ff3418583ae42574a47338ebdde65870ecd455497",
+      "source_sha256": "462a89cdd4eec1a91e10e1d4f73ea3a004e51acbd9cbc7fbda254d748ed7cc39",
+      "kind": "cpp17-operation"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2TupleBudgetDeep15ExecutionRunAtBothOptimizations",
+    "TranslateTest.CoreV2TupleBudgetDeep16ExecutionRunAtBothOptimizations"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "6a2d17db32fb8ea7bfa8f228b1403969b32513e75ccc20158e3413f0026fad27",
+  "maintained_original_sha256": "b41ccc064da285dc98be686407bd95e978596261c5baf6b23b57afb6f9716dd4",
+  "previous_registered_source_sha256": "db4b815bb0310f32f1577df59ad0601008e7339bc4805d1c7b2cedf55bf554f0",
+  "previous_maintained_original_sha256": "5ea4dd16eb081c1ae850c9041998ca7c81b9520eb9e68cdfd75b76fe06c7c215",
+  "restorer_sha256": "8f44ed2e5c773f5812f6d2199777fdaea7904fef2b3fd0bc7e09642f0c408821",
+  "extractor_sha256": "8af405971c75aae2c51c812e2654684a6490923a5376bb899518b26b6854ebe0",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 8193,
+  "current_python_registry_tests": 136,
+  "native_reference_selected_executions": 4,
+  "planned_generated_c23_executions": 4,
+  "native_reference_proofs": {
+    "tuple-deep-runtime": "6df3ff5f32a6aefd59d674e4995f1ee301617c2c173aa9cd61844737a6f88398"
+  },
+  "native_reference_authentication_sha256": "1eeb1f4d65a4aa3f7e2610064b72b74219007fc05cee448dc6c4819d0c428202",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}

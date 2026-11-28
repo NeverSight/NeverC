@@ -1,0 +1,528 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-trivial-record-copy-and-value-init",
+      "formal_test_name": "TranslateTest.CoreV2ListTrivialRecordCopyAndValueInitRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cfbc5bfb26a3c5fbe7d2cb5cbd76c2d9568e01899d9da7827fe41e6249fec4ad",
+      "original_case_source_sha256": "cfbc5bfb26a3c5fbe7d2cb5cbd76c2d9568e01899d9da7827fe41e6249fec4ad",
+      "gtest_body_sha256": "35a3b6157926611235f62dfd1b19e7dbc995a407806de257bd9283c673411630"
+    },
+    {
+      "name": "forward-list-trivial-record-range-and-relink",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListTrivialRecordRangeAndRelinkRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "10e13313724f36573e041fd1829d8a1968225fe624e4f86f83a63531e148cc77",
+      "original_case_source_sha256": "10e13313724f36573e041fd1829d8a1968225fe624e4f86f83a63531e148cc77",
+      "gtest_body_sha256": "d9a4957c5c8125a97919f229ad8e87fed52bca7e1eeb3b2e894c13cf16fc524c"
+    },
+    {
+      "name": "forward-list-trivial-record-copy-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListTrivialRecordCopyAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b79b50612096115c4f35e84fd210c3c27f6160058e57018ded1d438ab97951f8",
+      "original_case_source_sha256": "b79b50612096115c4f35e84fd210c3c27f6160058e57018ded1d438ab97951f8",
+      "gtest_body_sha256": "9a0ea5e682f8dc6faf8953214ba403f1f6b865bba95f20eda60d5c3cf05fd9d0"
+    },
+    {
+      "name": "list-record-node-sizes-allocation-and-clear",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordNodeSizesAllocationAndClearRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "397076b6e2dc496f36db3c8ca3ae81620ebffd29fc85a4b067d271ba74d58c97",
+      "original_case_source_sha256": "397076b6e2dc496f36db3c8ca3ae81620ebffd29fc85a4b067d271ba74d58c97",
+      "gtest_body_sha256": "8a180d2e890739f0e1189c0708ee8936373adc90d2864f0389db47d64644ba3a"
+    },
+    {
+      "name": "forward-list-wider-record-range-and-assignment",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListWiderRecordRangeAndAssignmentRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c30fe42a512c772e9b0bbef0c3f9037428e969b0258db28b4fe7be4f5568c347",
+      "original_case_source_sha256": "c30fe42a512c772e9b0bbef0c3f9037428e969b0258db28b4fe7be4f5568c347",
+      "gtest_body_sha256": "4911aa1c271dc8b5a694e8f33454dd39ab7eae539423be4822fb998988ff7024"
+    },
+    {
+      "name": "list-wider-record-value-init-and-splice",
+      "formal_test_name": "TranslateTest.CoreV2ListWiderRecordValueInitAndSpliceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "68a3a025c4e4ca863ea130d702aaab84fa3d0ecba99a3ea5c704272de344fe25",
+      "original_case_source_sha256": "68a3a025c4e4ca863ea130d702aaab84fa3d0ecba99a3ea5c704272de344fe25",
+      "gtest_body_sha256": "73e36b038faab25b735ac5ca0114119d08b3e4e2267144a018a20015ef7c7355"
+    },
+    {
+      "name": "list-mixed-trivial-record-copy-and-splice",
+      "formal_test_name": "TranslateTest.CoreV2ListMixedTrivialRecordCopyAndSpliceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d83596dba96b6334c7d619ca72f662141e12d55f7ebde14ff3a2364e7a2a34a4",
+      "original_case_source_sha256": "d83596dba96b6334c7d619ca72f662141e12d55f7ebde14ff3a2364e7a2a34a4",
+      "gtest_body_sha256": "b1a4e8d0595ded1a715ae6eb644d5d79cae7025ce0b36f7e9dada383b171cfbd"
+    },
+    {
+      "name": "forward-list-mixed-trivial-record-range-and-resize",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListMixedTrivialRecordRangeAndResizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bcd28f30b1a4222c5e51e3c29828fe5f052496e888632d88de872d9c20a4a40a",
+      "original_case_source_sha256": "bcd28f30b1a4222c5e51e3c29828fe5f052496e888632d88de872d9c20a4a40a",
+      "gtest_body_sha256": "d4e92da40368cddc2c2eebbbe782748a1d2395cdcff876e850ee6cfb42460e4c"
+    },
+    {
+      "name": "list-mixed-trivial-record-reverse-and-erase",
+      "formal_test_name": "TranslateTest.CoreV2ListMixedTrivialRecordReverseAndEraseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "a7c77ad6322ade79956653d80edac851d4422c421daa4fb02ac84a6a7f842cfa",
+      "original_case_source_sha256": "a7c77ad6322ade79956653d80edac851d4422c421daa4fb02ac84a6a7f842cfa",
+      "gtest_body_sha256": "c2fd6cced83667f44fc6b9fe41950749f38bfd19a9919159c5c796ff38de3293"
+    },
+    {
+      "name": "list-nested-trivial-record-copy-and-erase",
+      "formal_test_name": "TranslateTest.CoreV2ListNestedTrivialRecordCopyAndEraseRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "e4b454edde4cf41122b6f40da05e99369cf8e60b6deec848b17b3275887126a0",
+      "original_case_source_sha256": "e4b454edde4cf41122b6f40da05e99369cf8e60b6deec848b17b3275887126a0",
+      "gtest_body_sha256": "d22915d220a93ab98f6cf387ebadee959870dbdf72f485e3d0dbc46dc62977fa"
+    },
+    {
+      "name": "forward-list-nested-trivial-record-value-initialization",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListNestedTrivialRecordValueInitializationRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "bef3fda635a112193337f4bd249b7bbbc35290e4514f55d5586f859c86c1d6f0",
+      "original_case_source_sha256": "bef3fda635a112193337f4bd249b7bbbc35290e4514f55d5586f859c86c1d6f0",
+      "gtest_body_sha256": "7b8bb3d089b5c49f8272c8791e0f571e29aeff15fbd2adbe9895c824c753694f"
+    },
+    {
+      "name": "list-nested-trivial-record-splice-stability",
+      "formal_test_name": "TranslateTest.CoreV2ListNestedTrivialRecordSpliceStabilityRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "34bea9ec6ed702c7285071db46cfdd2dd0f9284e4e181ee32ef0faabf2644c98",
+      "original_case_source_sha256": "34bea9ec6ed702c7285071db46cfdd2dd0f9284e4e181ee32ef0faabf2644c98",
+      "gtest_body_sha256": "cf60d20cdcfec3bc7a74378505ba615d6cbbb0ababd3bf8355754377189a7dfb"
+    },
+    {
+      "name": "list-record-fixed-array-value-copy",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordFixedArrayValueCopyRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8d9ce5590d5bc668d801e71fb8d0e5bced8d4d2784c8dc83848c1dcbe398408e",
+      "original_case_source_sha256": "8d9ce5590d5bc668d801e71fb8d0e5bced8d4d2784c8dc83848c1dcbe398408e",
+      "gtest_body_sha256": "870613258a108650f852f633bfd866f005a884a3ff6e6c7f43a7ab58096ad60b"
+    },
+    {
+      "name": "forward-list-record-nested-and-multidimensional-arrays",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordNestedAndMultidimensionalArraysRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "839882a3d1ccad052bf2d61cff8eb04c93f768b0a2f366252e68b74ec11c3ef2",
+      "original_case_source_sha256": "839882a3d1ccad052bf2d61cff8eb04c93f768b0a2f366252e68b74ec11c3ef2",
+      "gtest_body_sha256": "3341b7cbd601cd942e94d35a1a9ffb348ef5459907a824e0be6ee5e3be6fedb7"
+    },
+    {
+      "name": "list-record-array-range-and-splice",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordArrayRangeAndSpliceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "827ee90b2560dc14eab3aefbf6272de6d535348bcbf38c37b718940f7a605e56",
+      "original_case_source_sha256": "827ee90b2560dc14eab3aefbf6272de6d535348bcbf38c37b718940f7a605e56",
+      "gtest_body_sha256": "f8495cd94488556eca91ac78994f584c05384b40c9fbe9c563b99f80af3c9d6b"
+    },
+    {
+      "name": "list-trivial-record-custom-default-order-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListSortUsesSelectedRecordOperator",
+      "expected": "accept",
+      "source_sha256": "9ee98e971bee91db9e14428b5d13b578901fcc9d30a371e9dd757bca43ebecdf",
+      "original_case_source_sha256": "9ee98e971bee91db9e14428b5d13b578901fcc9d30a371e9dd757bca43ebecdf",
+      "gtest_body_sha256": "c8e3bb180370d3ab9486223bed759c8a8878705fa403a19b9de84da0fc9c07f1"
+    },
+    {
+      "name": "list-nontrivial-record-destruction-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRunsStoredRecordDestructors",
+      "expected": "accept",
+      "source_sha256": "a097628a699da3052973ae30c204073c5e892d64676dbd5a8fcdfd0628056179",
+      "original_case_source_sha256": "a097628a699da3052973ae30c204073c5e892d64676dbd5a8fcdfd0628056179",
+      "gtest_body_sha256": "8ff4497a2e9e4cb92b96f382d4450789b7192657b713bffe2cf973d37cff38cc"
+    },
+    {
+      "name": "list-nested-nontrivial-record-destruction-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRunsNestedStoredRecordDestructors",
+      "expected": "accept",
+      "source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
+      "original_case_source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
+      "gtest_body_sha256": "a0573a69033dfb5df9e30b80e98189d4683ba91874c5686b24d4e8da7133d641"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "forward-list-overaligned-record-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListOveralignedRecordGuardRejected",
+      "expected": "reject",
+      "source_sha256": "6ee91aa079572a2d857191bdffdfa4da03b5a143d6198d5973e0f8035f7f8730",
+      "original_case_source_sha256": "6ee91aa079572a2d857191bdffdfa4da03b5a143d6198d5973e0f8035f7f8730",
+      "gtest_body_sha256": "363e65b3d2bc60fef82120dc0d45091d40ea9e5b0f269f84458aa53bc38f603e"
+    },
+    {
+      "name": "forward-list-wider-record-bit-field-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListWiderRecordBitFieldGuardRejected",
+      "expected": "reject",
+      "source_sha256": "87078205375a0fcf33553eaf0b9e95520bcc98064b96e6334ca190c23fc8d3ae",
+      "original_case_source_sha256": "87078205375a0fcf33553eaf0b9e95520bcc98064b96e6334ca190c23fc8d3ae",
+      "gtest_body_sha256": "26d48e2bfe875a10c178235bcfa41ea4267608b996cc5fd3e2c400ca9688cced"
+    },
+    {
+      "name": "list-wider-record-alignment-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListWiderRecordAlignmentGuardRejected",
+      "expected": "reject",
+      "source_sha256": "5ed3b3132f91b94abe8ba7cc5ff10aa429d8df68d1324e16e8fe83979b17441b",
+      "original_case_source_sha256": "5ed3b3132f91b94abe8ba7cc5ff10aa429d8df68d1324e16e8fe83979b17441b",
+      "gtest_body_sha256": "c84b3f506f5e77bc62fac108fe3ffa960f3901833c6430e3a846f2bdad13bacf"
+    },
+    {
+      "name": "list-record-volatile-floating-field-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordVolatileFloatingFieldGuardRejected",
+      "expected": "reject",
+      "source_sha256": "6be4f18402f3267b52066093f10f29fe083edbea151493606aff18d5ce2e4642",
+      "original_case_source_sha256": "6be4f18402f3267b52066093f10f29fe083edbea151493606aff18d5ce2e4642",
+      "gtest_body_sha256": "0846c2782616ab0bad3b25e4dce5c72153a5accea70c8bb7dd38c28f68029004"
+    },
+    {
+      "name": "forward-list-record-function-pointer-field-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordFunctionPointerFieldGuardRejected",
+      "expected": "reject",
+      "source_sha256": "b8c6c31a843684e7698f37882369fa63a77403d518051b1c3d05de580e71facb",
+      "original_case_source_sha256": "b8c6c31a843684e7698f37882369fa63a77403d518051b1c3d05de580e71facb",
+      "gtest_body_sha256": "e01bc6f387911cf3fa2a3378b75262b94d0313e7243fd7f98394a49c500efb2f"
+    },
+    {
+      "name": "list-record-long-double-field-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordLongDoubleFieldGuardRejected",
+      "expected": "reject",
+      "source_sha256": "315368c9142826815e944d5f27a5586372416e3cd3c7055f7443f5be97d02ce3",
+      "original_case_source_sha256": "315368c9142826815e944d5f27a5586372416e3cd3c7055f7443f5be97d02ce3",
+      "gtest_body_sha256": "638ccd571ed7ec0a575cace56abbb8ea8e9e0ab9f7dd4b01b9af5fa3eb399ebd"
+    },
+    {
+      "name": "forward-list-nested-packed-record-layout-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListNestedPackedRecordLayoutGuardRejected",
+      "expected": "reject",
+      "source_sha256": "a20cb3a989a64dcbf4b9597724078b4c1c7f01f6d06a6096c53b667fd706952b",
+      "original_case_source_sha256": "a20cb3a989a64dcbf4b9597724078b4c1c7f01f6d06a6096c53b667fd706952b",
+      "gtest_body_sha256": "e3e0343e17db1919d0bea27d2de16d73163a3e6479f1489d4221fa9cfa4f790d"
+    },
+    {
+      "name": "list-nested-trivial-union-record-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListNestedTrivialUnionRecordGuardRejected",
+      "expected": "reject",
+      "source_sha256": "16260c29cae9bb3b248fa520831c3f5016ef72067161baca7f7b483164b679e4",
+      "original_case_source_sha256": "16260c29cae9bb3b248fa520831c3f5016ef72067161baca7f7b483164b679e4",
+      "gtest_body_sha256": "25365bd7825216e48f0b32049b55258b459fb54c3e3e965935c5d8fb993f0c83"
+    },
+    {
+      "name": "list-record-array-of-function-pointers-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordArrayOfFunctionPointersGuardRejected",
+      "expected": "reject",
+      "source_sha256": "c90b9ffafc892e76c2331c9c5f379ac6966fb4c64bd444e97dcf2867855ac5f0",
+      "original_case_source_sha256": "c90b9ffafc892e76c2331c9c5f379ac6966fb4c64bd444e97dcf2867855ac5f0",
+      "gtest_body_sha256": "3bfee30b573e764eaaaac93e2bb0d8da66c43966a40900994117b0170c2013e0"
+    },
+    {
+      "name": "forward-list-record-array-of-overaligned-values-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordArrayOfOveralignedValuesGuardRejected",
+      "expected": "reject",
+      "source_sha256": "8eb71c24a0a12808812e3cb3b89d71954124ab556bceea980e76fe74a03506b2",
+      "original_case_source_sha256": "8eb71c24a0a12808812e3cb3b89d71954124ab556bceea980e76fe74a03506b2",
+      "gtest_body_sha256": "129928ea58a2b13b58e12007be0e7a1d02d8a158c82b2360087ac7cdf3d4aaa3"
+    },
+    {
+      "name": "list-record-volatile-array-value-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordVolatileArrayValueGuardRejected",
+      "expected": "reject",
+      "source_sha256": "09bf8d7ed81b42cac299e242aaad134abcc6e5af41678823e0814ce4b79338e1",
+      "original_case_source_sha256": "09bf8d7ed81b42cac299e242aaad134abcc6e5af41678823e0814ce4b79338e1",
+      "gtest_body_sha256": "6f72bc0ce29949986fc87ebf11fc0be4dfdb9f58b36d7bd83d3e86d31590a0f2"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-trivial-record-copy-and-value-init",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Entry { int code; unsigned serial; };\nint main() {\n  Entry input{4, 7};\n  std::list<Entry> values;\n  values.push_back(input);\n  auto& saved = values.back();\n  auto& zero = values.emplace_front();\n  if (zero.code || zero.serial || &values.back() != &saved)\n    return 1;\n  input.serial = 9;\n  zero.code = 5;\n  const auto& read = values;\n  return read.begin()->code != 5 || read.back().serial != 7;\n}\n",
+      "source_sha256": "cfbc5bfb26a3c5fbe7d2cb5cbd76c2d9568e01899d9da7827fe41e6249fec4ad",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-trivial-record-range-and-relink",
+      "expected": "accept",
+      "source": "#include <forward_list>\nstruct Entry { unsigned short code; char group; };\nint main() {\n  Entry input[] = {{4, 'A'}, {7, 'B'}};\n  std::forward_list<Entry> values(input, input + 2);\n  auto cursor = values.begin();\n  Entry* saved = &*cursor;\n  values.reverse();\n  input[0].code = 3;\n  if (values.front().code != 7 || values.front().group != 'B')\n    return 1;\n  ++cursor;\n  auto tail = values.begin();\n  ++tail;\n  return cursor != values.end() || &*tail != saved || tail->code != 4 || tail->group != 'A';\n}\n",
+      "source_sha256": "10e13313724f36573e041fd1829d8a1968225fe624e4f86f83a63531e148cc77",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-trivial-record-copy-assignment",
+      "expected": "accept",
+      "source": "#include <forward_list>\nstruct Entry { int code; int serial; };\nint main() {\n  std::forward_list<Entry> source{Entry{21, 4}, Entry{22, 5}};\n  std::forward_list<Entry> destination{Entry{8, 9}};\n  destination = source;\n  source.front().serial = 14;\n  auto item = destination.cbegin();\n  if (item->code != 21 || item->serial != 4)\n    return 1;\n  ++item;\n  return item == destination.cend() || item->code != 22 || item->serial != 5;\n}\n",
+      "source_sha256": "b79b50612096115c4f35e84fd210c3c27f6160058e57018ded1d438ab97951f8",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-record-node-sizes-allocation-and-clear",
+      "expected": "accept",
+      "source": "using Size = decltype(sizeof(0));\nextern \"C\" void* malloc(Size);\nextern \"C\" void free(void*);\n#include <list>\nstruct Entry { long long first; long long second; int tag; };\nstatic bool checking;\nstatic Size node_bytes;\nstatic int allocations, releases;\nvoid* operator new(Size size) {\n  if (checking) {\n    node_bytes = size;\n    ++allocations;\n  }\n  return ::malloc(size);\n}\nvoid operator delete(void* p) noexcept {\n  if (checking) ++releases;\n  ::free(p);\n}\nint main() {\n  std::list<Entry> values;\n  Entry input{1, 2, 19};\n  checking = true;\n  values.push_back(input);\n  bool correct = values.back().first == 1 && values.back().second == 2 &&\n                 values.back().tag == 19 && node_bytes == 40 && allocations == 1;\n  values.clear();\n  checking = false;\n  return !correct || releases != 1;\n}\n",
+      "source_sha256": "397076b6e2dc496f36db3c8ca3ae81620ebffd29fc85a4b067d271ba74d58c97",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-wider-record-range-and-assignment",
+      "expected": "accept",
+      "source": "#include <forward_list>\nstruct Entry { int first; int second; int third; };\nint main() {\n  Entry input[] = {{2, 5, 8}, {3, 6, 9}, {7, 10, 13}};\n  std::forward_list<Entry> values(input, input + 2);\n  values.assign(input + 1, input + 3);\n  auto item = values.begin();\n  if (item == values.end() || item->first != 3 || item->second != 6 || item->third != 9)\n    return 1;\n  ++item;\n  if (item == values.end() || item->first != 7 || item->second != 10 || item->third != 13)\n    return 2;\n  ++item;\n  return item != values.end();\n}\n",
+      "source_sha256": "c30fe42a512c772e9b0bbef0c3f9037428e969b0258db28b4fe7be4f5568c347",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-wider-record-value-init-and-splice",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Entry { int first; int second; int third; int fourth; int fifth; };\nint main() {\n  std::list<Entry> left, right;\n  auto& value = right.emplace_back();\n  if (value.first || value.second || value.third || value.fourth || value.fifth)\n    return 1;\n  value.fifth = 23;\n  left.splice(left.begin(), right);\n  return !right.empty() || left.size() != 1 || &left.front() != &value || left.front().fifth != 23;\n}\n",
+      "source_sha256": "68a3a025c4e4ca863ea130d702aaab84fa3d0ecba99a3ea5c704272de344fe25",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-mixed-trivial-record-copy-and-splice",
+      "expected": "accept",
+      "source": "#include <list>\nenum class Kind : unsigned short { item = 3, saved = 29 };\nstruct Entry { Kind kind; double score; int* target; };\nint main() {\n  int value = 11;\n  Entry entry{Kind::item, 2.25, &value};\n  std::list<Entry> source;\n  source.push_back(entry);\n  std::list<Entry> copy(source);\n  auto saved = copy.begin();\n  Entry* address = &*saved;\n  std::list<Entry> destination;\n  destination.splice(destination.end(), copy);\n  source.front().kind = Kind::saved;\n  *saved->target = 41;\n  return !copy.empty() || destination.size() != 1 ||\n         &destination.front() != address || destination.front().kind != Kind::item ||\n         destination.front().score != 2.25 || destination.front().target != &value ||\n         source.front().kind != Kind::saved || value != 41;\n}\n",
+      "source_sha256": "d83596dba96b6334c7d619ca72f662141e12d55f7ebde14ff3a2364e7a2a34a4",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-mixed-trivial-record-range-and-resize",
+      "expected": "accept",
+      "source": "#include <forward_list>\nenum class Choice : unsigned char { selected = 7 };\nstruct Entry { float score; const int* target; Choice option; };\nint main() {\n  const int first = 6, second = 17;\n  Entry input[] = {{1.25f, &first, Choice::selected}, {2.5f, &second, Choice::selected}};\n  std::forward_list<Entry> values;\n  values.assign(input, input + 2);\n  input[1].score = 9.0f;\n  values.resize(3);\n  auto item = values.cbegin();\n  if (item == values.cend() || item->score != 1.25f || item->target != &first)\n    return 1;\n  ++item;\n  if (item == values.cend() || item->score != 2.5f || item->target != &second ||\n      item->option != Choice::selected)\n    return 2;\n  ++item;\n  if (item == values.cend() || item->score != 0.0f || item->target != nullptr ||\n      item->option != static_cast<Choice>(0))\n    return 3;\n  return ++item != values.cend();\n}\n",
+      "source_sha256": "bcd28f30b1a4222c5e51e3c29828fe5f052496e888632d88de872d9c20a4a40a",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-mixed-trivial-record-reverse-and-erase",
+      "expected": "accept",
+      "source": "#include <list>\nenum class Category : signed char { low = -9, high = 11 };\nstruct Entry { char key; Category category; float weight; double cost; };\nint main() {\n  std::list<Entry> values{{'a', Category::low, 1.5f, 4.25},\n                          {'b', Category::high, 2.0f, 8.5}};\n  Entry* address = &values.front();\n  values.reverse();\n  if (values.begin()->key != 'b' || &values.back() != address)\n    return 1;\n  auto remaining = values.erase(values.begin());\n  return remaining != values.begin() || &*remaining != address ||\n         remaining->category != Category::low || remaining->weight != 1.5f ||\n         remaining->cost != 4.25;\n}\n",
+      "source_sha256": "a7c77ad6322ade79956653d80edac851d4422c421daa4fb02ac84a6a7f842cfa",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-nested-trivial-record-copy-and-erase",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Coordinates { int x; short y; };\nstruct Element { long long id; Coordinates position; };\nint main() {\n  std::list<Element> source{{17, {23, 31}}, {61, {41, 47}}};\n  std::list<Element> copy(source);\n  auto first = copy.begin();\n  if (first->id != 17 || first->position.x != 23 || first->position.y != 31)\n    return 1;\n  ++first;\n  Element* keep = &*first;\n  copy.erase(copy.begin());\n  first->position.x = 103;\n  return copy.size() != 1 || &copy.front() != keep || source.back().position.x != 41 ||\n         copy.front().id != 61 || copy.front().position.x != 103 || copy.front().position.y != 47;\n}\n",
+      "source_sha256": "e4b454edde4cf41122b6f40da05e99369cf8e60b6deec848b17b3275887126a0",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-nested-trivial-record-value-initialization",
+      "expected": "accept",
+      "source": "#include <forward_list>\nstruct Point { int x; int y; };\nstruct Atom { Point position; unsigned tag; };\nstruct Element { Atom value; long long id; };\nint main() {\n  std::forward_list<Element> values;\n  auto& extra = values.emplace_front();\n  if (extra.value.position.x || extra.value.position.y || extra.value.tag || extra.id)\n    return 1;\n  Element value{{{3, 5}, 7}, 11};\n  values.push_front(value);\n  auto cursor = values.begin();\n  if (cursor->value.position.y != 5 || cursor->value.tag != 7 || cursor->id != 11)\n    return 2;\n  ++cursor;\n  return &*cursor != &extra || cursor->value.position.x != 0;\n}\n",
+      "source_sha256": "bef3fda635a112193337f4bd249b7bbbc35290e4514f55d5586f859c86c1d6f0",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-nested-trivial-record-splice-stability",
+      "expected": "accept",
+      "source": "#include <list>\nenum class Mode : unsigned char { selected = 3 };\nstruct Item { double cost; const int* marker; Mode mode; };\nstruct Element { int tag; Item value; };\nint main() {\n  const int marker = 13;\n  std::list<Element> from{{17, {3.5, &marker, Mode::selected}}}, into;\n  auto& value = from.front().value;\n  into.splice(into.end(), from);\n  return !from.empty() || into.size() != 1 || &into.front().value != &value ||\n         value.cost != 3.5 || value.marker != &marker || *value.marker != 13 ||\n         value.mode != Mode::selected || into.front().tag != 17;\n}\n",
+      "source_sha256": "34bea9ec6ed702c7285071db46cfdd2dd0f9284e4e181ee32ef0faabf2644c98",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-record-fixed-array-value-copy",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Entry { long long tag; short samples[3]; };\nint main() {\n  std::list<Entry> values{{17, {3, 5, 7}}};\n  auto saved = values.begin();\n  short* address = saved->samples;\n  std::list<Entry> copy(values);\n  copy.front().samples[1] = 41;\n  values.emplace_back();\n  return values.size() != 2 || saved->samples != address || saved->samples[1] != 5 ||\n         copy.front().samples[0] != 3 || copy.front().samples[1] != 41 ||\n         copy.front().samples[2] != 7 || copy.front().tag != 17 ||\n         values.back().tag != 0 || values.back().samples[2] != 0;\n}\n",
+      "source_sha256": "8d9ce5590d5bc668d801e71fb8d0e5bced8d4d2784c8dc83848c1dcbe398408e",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-record-nested-and-multidimensional-arrays",
+      "expected": "accept",
+      "source": "#include <forward_list>\nstruct Item { float score; const int* pointer; };\nstruct Entry { Item items[2]; int bias[2][2]; };\nint main() {\n  const int marker = 31;\n  Entry input{{{1.25f, &marker}, {2.5f, &marker}}, {{3, 5}, {7, 11}}};\n  std::forward_list<Entry> values;\n  values.push_front(input);\n  values.resize(2);\n  auto cursor = values.begin();\n  if (cursor->items[1].score != 2.5f || cursor->items[0].pointer != &marker ||\n      cursor->bias[1][0] != 7 || cursor->bias[1][1] != 11)\n    return 1;\n  ++cursor;\n  return cursor->items[1].score != 0.0f || cursor->items[0].pointer != nullptr ||\n         cursor->bias[1][1] != 0 || ++cursor != values.end();\n}\n",
+      "source_sha256": "839882a3d1ccad052bf2d61cff8eb04c93f768b0a2f366252e68b74ec11c3ef2",
+      "public_header": "forward_list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-record-array-range-and-splice",
+      "expected": "accept",
+      "source": "#include <list>\nenum class Code : unsigned short { first = 5, second = 12 };\nstruct Entry { Code options[2]; int id; };\nint main() {\n  Entry input[] = {{{Code::first, Code::second}, 17}, {{Code::second, Code::first}, 29}};\n  std::list<Entry> source(input, input + 2), destination;\n  auto moved = source.begin();\n  const Code* address = moved->options;\n  destination.splice(destination.end(), source, moved);\n  return source.size() != 1 || source.front().id != 29 ||\n         destination.size() != 1 || destination.front().id != 17 ||\n         destination.front().options != address || moved->options[1] != Code::second;\n}\n",
+      "source_sha256": "827ee90b2560dc14eab3aefbf6272de6d535348bcbf38c37b718940f7a605e56",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-trivial-record-custom-default-order-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Entry { int code; };\nbool operator<(const Entry& left, const Entry& right) {\n  return left.code > right.code;\n}\nint main() {\n  std::list<Entry> values{Entry{1}, Entry{3}};\n  values.sort();\n  return values.front().code != 3;\n}\n",
+      "source_sha256": "9ee98e971bee91db9e14428b5d13b578901fcc9d30a371e9dd757bca43ebecdf",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-nontrivial-record-destruction-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Entry {\n  int code;\n  ~Entry() { code = 0; }\n};\nint main() {\n  std::list<Entry> values;\n  values.emplace_back().code = 9;\n  return values.back().code != 9;\n}\n",
+      "source_sha256": "a097628a699da3052973ae30c204073c5e892d64676dbd5a8fcdfd0628056179",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-nested-nontrivial-record-destruction-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Inner { int value; ~Inner() { value = 0; } };\nstruct Element { int id; Inner value; };\nint main() {\n  std::list<Element> values;\n  values.emplace_back().value.value = 5;\n  return values.back().value.value != 5;\n}\n",
+      "source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
+      "public_header": "list",
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "forward-list-overaligned-record-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nstruct alignas(16) Entry { int code; };\nint main() {\n  std::forward_list<Entry> values;\n  values.emplace_front().code = 4;\n  return values.front().code != 4;\n}\n",
+      "source_sha256": "6ee91aa079572a2d857191bdffdfa4da03b5a143d6198d5973e0f8035f7f8730",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-wider-record-bit-field-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nstruct Entry { long long first; unsigned second : 5; int third; };\nint main() {\n  std::forward_list<Entry> values{Entry{2, 3, 5}};\n  return values.front().third != 5;\n}\n",
+      "source_sha256": "87078205375a0fcf33553eaf0b9e95520bcc98064b96e6334ca190c23fc8d3ae",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-wider-record-alignment-guard",
+      "expected": "reject",
+      "source": "#include <list>\nstruct alignas(16) Entry { long long first; long long second; int third; };\nint main() {\n  std::list<Entry> values;\n  values.emplace_back().third = 17;\n  return values.back().third != 17;\n}\n",
+      "source_sha256": "5ed3b3132f91b94abe8ba7cc5ff10aa429d8df68d1324e16e8fe83979b17441b",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-record-volatile-floating-field-guard",
+      "expected": "reject",
+      "source": "#include <list>\nstruct Entry { int key; volatile double score; };\nint main() {\n  std::list<Entry> values;\n  auto& item = values.emplace_back();\n  item.score = 1.25;\n  return item.score != 1.25;\n}\n",
+      "source_sha256": "6be4f18402f3267b52066093f10f29fe083edbea151493606aff18d5ce2e4642",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-record-function-pointer-field-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nint identity(int value) { return value; }\nstruct Entry { int key; int (*callback)(int); };\nint main() {\n  std::forward_list<Entry> values{{9, &identity}};\n  return values.front().callback(values.front().key) != 9;\n}\n",
+      "source_sha256": "b8c6c31a843684e7698f37882369fa63a77403d518051b1c3d05de580e71facb",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-record-long-double-field-guard",
+      "expected": "reject",
+      "source": "#include <list>\nstruct Entry { int key; long double value; };\nint main() {\n  std::list<Entry> values{{9, 1.25L}};\n  return values.front().value != 1.25L;\n}\n",
+      "source_sha256": "315368c9142826815e944d5f27a5586372416e3cd3c7055f7443f5be97d02ce3",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-nested-packed-record-layout-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\n#pragma pack(push, 1)\nstruct Inner { char first; int second; };\n#pragma pack(pop)\nstruct Element { int tag; Inner value; };\nint main() {\n  std::forward_list<Element> values{{7, {'x', 11}}};\n  return values.front().value.second != 11;\n}\n",
+      "source_sha256": "a20cb3a989a64dcbf4b9597724078b4c1c7f01f6d06a6096c53b667fd706952b",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-nested-trivial-union-record-guard",
+      "expected": "reject",
+      "source": "#include <list>\nunion Inner { int first; unsigned second; };\nstruct Element { int tag; Inner value; };\nint main() {\n  std::list<Element> values{{7, Inner{11}}};\n  return values.back().value.first != 11;\n}\n",
+      "source_sha256": "16260c29cae9bb3b248fa520831c3f5016ef72067161baca7f7b483164b679e4",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-record-array-of-function-pointers-guard",
+      "expected": "reject",
+      "source": "#include <list>\nint identity(int value) { return value; }\nstruct Entry { int (*methods[2])(int); };\nint main() {\n  std::list<Entry> values{{{&identity, &identity}}};\n  return values.front().methods[1](5) != 5;\n}\n",
+      "source_sha256": "c90b9ffafc892e76c2331c9c5f379ac6966fb4c64bd444e97dcf2867855ac5f0",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "forward-list-record-array-of-overaligned-values-guard",
+      "expected": "reject",
+      "source": "#include <forward_list>\nstruct alignas(16) Item { int value; };\nstruct Entry { Item items[2]; };\nint main() {\n  std::forward_list<Entry> values;\n  values.emplace_front().items[1].value = 11;\n  return values.front().items[1].value != 11;\n}\n",
+      "source_sha256": "8eb71c24a0a12808812e3cb3b89d71954124ab556bceea980e76fe74a03506b2",
+      "public_header": "forward_list",
+      "kind": "source-body-guard"
+    },
+    {
+      "name": "list-record-volatile-array-value-guard",
+      "expected": "reject",
+      "source": "#include <list>\nstruct Entry { volatile short signs[2]; int id; };\nint main() {\n  std::list<Entry> values;\n  auto& entry = values.emplace_back();\n  entry.signs[0] = 13;\n  return values.back().signs[0] != 13;\n}\n",
+      "source_sha256": "09bf8d7ed81b42cac299e242aaad134abcc6e5af41678823e0814ce4b79338e1",
+      "public_header": "list",
+      "kind": "source-body-guard"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListTrivialRecordCopyAndValueInitRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListTrivialRecordRangeAndRelinkRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListTrivialRecordCopyAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordNodeSizesAllocationAndClearRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListWiderRecordRangeAndAssignmentRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListWiderRecordValueInitAndSpliceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListMixedTrivialRecordCopyAndSpliceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListMixedTrivialRecordRangeAndResizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListMixedTrivialRecordReverseAndEraseRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListNestedTrivialRecordCopyAndEraseRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListNestedTrivialRecordValueInitializationRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListNestedTrivialRecordSpliceStabilityRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordFixedArrayValueCopyRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordNestedAndMultidimensionalArraysRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordArrayRangeAndSpliceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListSortUsesSelectedRecordOperator",
+    "TranslateTest.CoreV2ListRunsStoredRecordDestructors",
+    "TranslateTest.CoreV2ListRunsNestedStoredRecordDestructors",
+    "TranslateTest.CoreV2ForwardListOveralignedRecordGuardRejected",
+    "TranslateTest.CoreV2ForwardListWiderRecordBitFieldGuardRejected",
+    "TranslateTest.CoreV2ListWiderRecordAlignmentGuardRejected",
+    "TranslateTest.CoreV2ListRecordVolatileFloatingFieldGuardRejected",
+    "TranslateTest.CoreV2ForwardListRecordFunctionPointerFieldGuardRejected",
+    "TranslateTest.CoreV2ListRecordLongDoubleFieldGuardRejected",
+    "TranslateTest.CoreV2ForwardListNestedPackedRecordLayoutGuardRejected",
+    "TranslateTest.CoreV2ListNestedTrivialUnionRecordGuardRejected",
+    "TranslateTest.CoreV2ListRecordArrayOfFunctionPointersGuardRejected",
+    "TranslateTest.CoreV2ForwardListRecordArrayOfOveralignedValuesGuardRejected",
+    "TranslateTest.CoreV2ListRecordVolatileArrayValueGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "e09a3450508c00287eb5b90c79d823fd19db8be6b49896004ebce1faaff0a947",
+  "maintained_original_sha256": "3cd9104d05bd34907c63841d5b386b0395c7bcdd2c34bd02669aefd6587b95e0",
+  "previous_registered_source_sha256": "a85c839074da01d91fd0955bd1fc2010a1c90a9cf491aa2904ee501ec6c3f16b",
+  "previous_maintained_original_sha256": "82c3e8fd35854a8dfabd9dbea578d1002a66362ec90cca0468e4182f043e3b99",
+  "restorer_sha256": "46e42ab2d101cd2bc6fa9f5799b251194e9826688873adb0575205f787ee2931",
+  "extractor_sha256": "ef3969ddbfd9e4cb76855c4beb556f96e6082478f266e27bcd668b14adaa9890",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9439,
+  "current_python_registry_tests": 344,
+  "native_reference_selected_executions": 44,
+  "planned_generated_c23_executions": 44,
+  "native_reference_proofs": {
+    "linked-list-array-record-fields": "4fad62c844f43408f4203f782f21a3df1fafe34ae092f77a35911bc5180983f5",
+    "linked-list-default-record-order": "55f1f9f1e973e1ed7c4284c84bec462f5b4d31276b37ffcdd40669861c1ad079",
+    "linked-list-mixed-record-fields": "b67a71227382c6187070e3aae5c7f898d6bb7fdf647307470b500df4888fbf77",
+    "linked-list-nested-records": "88c546bdbd26c0ade796e4f8e8969803fa47e388b21af7f08a90d5d89cb07a35",
+    "linked-list-record-destruction-repaired": "5c1a6a797b170b83832352153cd945cdf11470a94969f28f1904fd9a15b4dd95",
+    "linked-list-record-node-sizes": "f637f8ef1c7fd7d51c9a0bee716a139f822fe7634ab83d48e6e4ead206b80b82",
+    "linked-list-record-promotions": "ad059a3c0892eda944459139f8e5bb5cb81a021742f52a4f8e41de6f437d2327",
+    "linked-list-trivial-records": "edf1f3c9008b2db90aa95a4a097a00441e0a19496801b86832f69ccf3ae136de"
+  },
+  "native_reference_authentication_sha256": "39d54c67f6809f654c05176bb11edee2f36ecd349a38523ddde406208a475889",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}
