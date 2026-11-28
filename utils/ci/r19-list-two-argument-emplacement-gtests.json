@@ -108,7 +108,7 @@
     "TranslateTest.CoreV2ListEmplacePreservesSelectedReferenceParameters",
     "TranslateTest.CoreV2ForwardListEmplaceConvertsSelectedScalarParameters"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "full_stl_complete": false,
   "registered_source_sha256": "c118bcd96239aae0ab28cca41b7b698d2741239b85675d577393e139d2005bcb",
   "maintained_original_sha256": "c4603f34bd0672a10daac684ff792169c722b0b9416ab2b8b9b8de6146afaf57",
@@ -128,5 +128,7 @@
   "native_reference_proofs": {
     "linked-list-two-argument-emplacement": "23ac398cce42cc7c1ce1ec7b804551be0d05b3beb472c5e500a41a5822abe55f"
   },
-  "native_reference_authentication_sha256": "f73949238f36311f9253a68423dd72eccd43920f2a170dfb0435deb355c10cf8"
+  "native_reference_authentication_sha256": "f73949238f36311f9253a68423dd72eccd43920f2a170dfb0435deb355c10cf8",
+  "scalar_forwarding_promotions_source_proof_sha256": "26af32f2a4d4ba28e24e4dfe47e06fd703b300faf5f73eea3f5b7f2d9811daf1",
+  "scalar_forwarding_promotions_native_proof_sha256": "f750c026b8bb6db2ef98a4bfefa068a6b1116df13de24cab9f83d49d936a462c"
 }

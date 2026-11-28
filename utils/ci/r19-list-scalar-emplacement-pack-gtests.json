@@ -75,12 +75,25 @@
     "TranslateTest.CoreV2ListScalarEmplaceReferenceAliasRunAtBothOptimizations",
     "TranslateTest.CoreV2ListEmplaceUserScalarConversionGuardRejected"
   ],
-  "source_proof_gate_pending": true,
+  "source_proof_gate_pending": false,
   "current_registry_count": 9568,
   "current_python_registry_tests": 378,
   "registered_source_sha256": "ec321586a69914a722a3033b6a4d043fcff5a2b35a48360deb62027b5b03eaf4",
   "maintained_original_sha256": "3cb49f8bbcc75c5b87e9ad0813a37ac7f291cde384d0131e7f7003f7f7cc169c",
   "previous_registered_source_sha256": "59d31235809f5175edfdd53f5de3d3c1bfaf14d76a0d5b1dd91d944c761c4138",
   "restorer_sha256": "93716ee3f2beb0a423615b52a9ee99bea2d52e638ed65661247841a4e3779674",
-  "extractor_sha256": "d08f47abc681cefff6ebc9f8c319d2325000ca82deb88738dd153e49414947aa"
+  "extractor_sha256": "d08f47abc681cefff6ebc9f8c319d2325000ca82deb88738dd153e49414947aa",
+  "source_proof_sha256": "26af32f2a4d4ba28e24e4dfe47e06fd703b300faf5f73eea3f5b7f2d9811daf1",
+  "original750_proof_sha256": "77f24555d2431b824c04940f08f2f9974c482dd24fb981c29f1b8e8afd073411",
+  "native_reference_proofs": {
+    "linked-list-scalar-emplacement-pack-rebased": "f750c026b8bb6db2ef98a4bfefa068a6b1116df13de24cab9f83d49d936a462c"
+  },
+  "native_reference_sources": {
+    "list-two-scalar-emplace-reference-parameter-guard": "da50274ae1c37cccca6d4270b856ba37cafe4c6bff4c846aab6bd82b0214cd07",
+    "forward-list-two-emplace-conversion-guard": "99b8af1bd7e837b87b826f7c5ddd421b243a16b3e747bfeff92cda5bdbf92cea",
+    "list-one-scalar-emplace-explicit": "b1f30d60b344c565b1894571f5e12f0b5e80c55479a6631e538eab6d9c7c827d",
+    "forward-list-scalar-emplace-three-values-and-default": "9201ca6965576652f68811526d70eb57d93ce6bb92e0bb3de281e81d818364a4",
+    "list-scalar-emplace-reference-alias": "c9b4e4abae5aea614e8103bd1cd4c197c0559945ad8969a5623f4da33fa85b15"
+  },
+  "native_reference_authentication_sha256": "f54707827db800f9e6f033bb07e67a2fbe2c4e024f4edd693ae09e2d85ed3bf4"
 }
