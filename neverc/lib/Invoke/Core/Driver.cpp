@@ -15,6 +15,7 @@
 #include "Plugin/ToolChainPluginBridge.h"
 #include "neverc/Config/config.h"
 #include "neverc/Foundation/Core/Version.h"
+#include "neverc/Foundation/Target/NativeTargetABI.h"
 #include "neverc/Invoke/Action.h"
 #include "neverc/Invoke/Compilation.h"
 #include "neverc/Invoke/DriverDiagnostic.h"
@@ -588,17 +589,8 @@ bool Driver::loadDefaultConfigFiles(llvm::cl::ExpansionContext &ExpCtx) {
 
 namespace {
 bool isTargetArchSupported(const llvm::Triple &T) {
-  switch (T.getArch()) {
-  case llvm::Triple::x86_64:
-    // X32 ABI is not supported.
-    if (T.isX32())
-      return false;
-    break;
-  case llvm::Triple::aarch64:
-    break;
-  default:
+  if (!hasNative64BitABI(T))
     return false;
-  }
   // Only macOS, iOS, Linux and Win32 are supported targets.
   switch (T.getOS()) {
   case llvm::Triple::Darwin:

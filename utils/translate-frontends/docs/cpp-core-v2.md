@@ -52,8 +52,8 @@ Function-pointer trait values and their checked empty objects follow the
 Other trait object construction or trait method calls, and taking the
 address/reference identity of a trait constant, remain rejected. Quoted `"type_traits"`, unapproved standard
 headers, platform headers and user shadow headers remain outside this boundary.
-The same closure is checked on the supported macOS, Linux and Windows x86-32,
-x86-64 and AArch64 targets. Broader standard-library and STL support remains in
+The same closure is checked on the supported macOS, Linux and Windows x86-64 and
+AArch64 targets. Broader standard-library and STL support remains in
 development.
 
 ## Fixed-width integers from `<cstdint>`
@@ -133,7 +133,7 @@ static_assert(std::ratio_less_v<A, B>);
 ```
 
 The authenticated 15-file libc++/resource closure is identical and
-platform-free on all eight supported targets. All results are compile-time
+platform-free on all six supported targets. All results are compile-time
 types or integral constants and add no runtime libc++ dependency. Runtime ratio
 objects, static-member addresses, quoted `"ratio"` and user shadow headers are
 rejected.
@@ -174,7 +174,7 @@ and compound-assignment operators, plus `std::to_integer<T>`, lower directly to
 checked integer operations. The selected function must be the exact pinned
 libc++ declaration and must be called directly; function addresses and forged
 lookalikes are rejected. The standalone authenticated closure contains 29
-libc++/resource files on all eight supported targets. Quoted `"cstddef"`, the C
+libc++/resource files on all six supported targets. Quoted `"cstddef"`, the C
 header `<stddef.h>`, raw GNU null expressions, platform headers and user shadow
 headers remain outside this boundary. Generated programs do not call or link
 libc++ for these operations.
@@ -2202,7 +2202,7 @@ platform header roots remain rejected.
 
 Core v2 accepts the exact top-level angled `<tuple>` entry from the pinned
 embedded VFS. Its authenticated 98-file libc++/resource closure is identical on
-all eight supported targets and contains no platform headers. A retained
+all six supported targets and contains no platform headers. A retained
 `std::tuple<T...>` may be empty or contain up to 64 admitted values. Elements
 may be admitted scalars, admitted fixed-arity ordinary function pointers,
 source-owned nonempty standard-layout records,
@@ -4161,7 +4161,7 @@ and nothrow-destruction query roots still require their separate operation
 proofs, and elements such as `std::byte` still need SDK enum-source evidence.
 
 The standalone authenticated closure contains 217 libc++/resource files on all
-eight supported targets and contains no platform headers. Generated programs do
+six supported targets and contains no platform headers. Generated programs do
 not call or link libc++ for these operations. Comparisons recursively preserve
 row-major lexicographic order when every leaf element is scalar. Nontrivial
 element copy/move operations, record comparisons, dynamic or out-of-range `at`,
@@ -4172,7 +4172,7 @@ outside this boundary.
 
 Core v2 accepts the exact angled `<initializer_list>` entry from the pinned
 embedded VFS. Its authenticated 10-file libc++/resource closure is identical on
-all eight supported targets and contains no platform headers. Each admitted
+all six supported targets and contains no platform headers. Each admitted
 `std::initializer_list<T>` specialization must retain libc++'s standard-layout
 two-field representation: a private `const T *` followed by the target
 `size_t`, with the checked pointer-size layout for that target.
@@ -4241,13 +4241,13 @@ preserves engagement and values.
 
 Core v2 accepts the exact angled `<optional>` entry from the pinned embedded
 VFS. Its authenticated 136-file libc++/resource closure is identical on all
-eight supported targets and contains no platform headers. Each admitted
+six supported targets and contains no platform headers. Each admitted
 `std::optional<T>` specialization must match libc++'s exact private base chain,
 anonymous value union, engagement flag and target layout. The translator exposes
 that representation as a synthetic `{remove_cv_t<T>, bool}` record while
 preserving the native size, alignment and field offsets. The composite fixture
 that also includes `<array>`, `<tuple>` and `<utility>` has an identical
-253-file platform-free union closure on all eight targets.
+253-file platform-free union closure on all six targets.
 
 The current element boundary includes at-most-64-bit integral and enumeration
 types, `float`, `double`, object pointers, checked ordinary function pointers
@@ -4324,7 +4324,7 @@ rejected.
 
 Core v2 admits the exact angled `<iterator>` entry and pointer
 `std::iterator_traits` metadata. Its authenticated 171-file libc++/resource
-closure is identical across all eight targets and contains no platform headers.
+closure is identical across all six targets and contains no platform headers.
 The upstream `iterator` header and directly included component headers retain
 their original bytes.
 
@@ -5633,7 +5633,7 @@ forms.
 
 Core v2 admits the exact angled `<functional>` entry from the pinned embedded
 VFS. The authenticated C++17 closure contains 346 libc++/resource files on every
-supported target, has the same dependency set on all eight targets, and
+supported target, has the same dependency set on all six targets, and
 contains no platform headers. The public header and every consumed component
 retain their original upstream bytes.
 
@@ -5729,9 +5729,7 @@ Exact integral `std::hash` specializations from `bool` through `unsigned long`,
 plus `long long` and `unsigned long long`, use the same authenticated one-byte
 carrier. The direct specializations use pinned `static_cast<size_t>` semantics.
 The wide specializations authenticate libc++'s exact `__scalar_hash` base and
-inherited call operator; they preserve the value bits on 64-bit targets and
-reproduce libc++'s Murmur2 hash of the eight little-endian value bytes on 32-bit
-targets. Temporary, local, global, copied and by-value objects are admitted.
+inherited call operator; they preserve the value bits on the supported 64-bit targets. Temporary, local, global, copied and by-value objects are admitted.
 They support same-type copy and move assignment and call directly or through
 `std::invoke`. The receiver is evaluated once before the argument. The exact
 C++17 `nullptr_t` specialization returns the pinned libc++ constant `662607004`
@@ -5739,8 +5737,7 @@ through the same object, assignment and invocation boundary. Exact `float` and
 `double` specializations authenticate the same `__scalar_hash` base and the
 outer call operator's zero special case. Positive and negative zero hash to
 zero; every other value hashes its IEEE representation. `float` uses its 32-bit
-representation. `double` preserves its 64-bit representation on 64-bit targets
-and reproduces the same eight-byte Murmur2 algorithm on 32-bit targets. These
+representation. `double` preserves its 64-bit representation. These
 objects support the same storage, assignment and direct or `std::invoke` call
 forms. The primary `std::hash<E>` specialization for a complete enum also uses
 the one-byte carrier and the same object forms. Its exact
@@ -5752,8 +5749,7 @@ fixed-arity ordinary function pointers with the target's object-pointer size
 and alignment authenticate the pinned partial specialization, its
 pointer/`size_t` union, the pointer
 store and the exact `__murmur2_or_cityhash<size_t>` call. The pointer bits use
-libc++'s four-byte Murmur2 algorithm on 32-bit targets and its ABI-v1 eight-byte
-CityHash algorithm on 64-bit targets. Pointer hashes support the same temporary,
+libc++'s ABI-v1 eight-byte CityHash algorithm. Pointer hashes support the same temporary,
 stored, copied, assigned, by-value and direct or `std::invoke` forms.
 Both direct calls and `std::invoke` convert `nullptr_t` to the exact function
 pointer parameter before hashing.
@@ -6539,7 +6535,7 @@ rejected by the normal source and semantic checks.
 
 Core v2 admits the exact angled `<algorithm>` entry from the pinned embedded
 VFS. The authenticated closure contains 369 libc++/resource files on every
-supported target, has the same dependency set on all eight targets, and contains
+supported target, has the same dependency set on all six targets, and contains
 no platform headers. The upstream public header and consumed components retain
 their LLVM 20.1.8 source bytes except for the documented r15 count-bound
 correction in `__algorithm/search_n.h`; the SDK catalog and provenance inventory
@@ -8705,7 +8701,7 @@ The caller supplies zero-terminated strings where a scan depends on NUL and
 readable character arrays through the bytes examined by `strncmp`. String
 object operations have their own contract below.
 
-Eight-target protocol checks and O0/O2 execution cover the direct lowering,
+Six-target protocol checks and O0/O2 execution cover the direct lowering,
 unsigned comparison order, embedded zero bytes, prefix and zero-count behavior,
 byte copying, overlapping moves and filling, and one-time argument evaluation.
 
@@ -8922,7 +8918,7 @@ overloads, positional erase,
 four positional `insert` and four positional `replace` overloads, member/free
 swap, comparison, forward/reverse and character-set search,
 short and long string iteration with mutable, const and reverse iterators,
-clearing, and lifetime release; all eight supported target triples pass
+clearing, and lifetime release; all six supported target triples pass
 frontend translation. Other modifiers, character or allocator types, and
 throwing length/allocation paths remain unsupported.
 Quoted and shadow headers remain rejected.
@@ -8966,7 +8962,7 @@ referents. Unsupported referent types and function targets remain rejected.
 
 Core v2 admits an exact angle include of the pinned C++17 `<vector>` header.
 With reduced transitive includes, its 300-file libc++/resource closure is
-identical and platform-free on all eight core targets. The public header and
+identical and platform-free on all six core targets. The public header and
 the `__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` files
 retain their LLVM 20.1.8 source bytes and catalog hashes. For the default
 allocator specialization, Clang can fold `std::vector<int>` size and alignment
@@ -10140,7 +10136,7 @@ has unique representations on admitted targets; a padded character/integer
 record and an empty class do not. The empty class's generated byte carrier does
 not change this C++ answer. These queries perform no hypothetical constructor,
 assignment or conversion call and instantiate no otherwise unused dependent body.
-Paired source checks, 33 saved-NC O0/O2 runtime checkpoints, eight-target property
+Paired source checks, 33 saved-NC O0/O2 runtime checkpoints, six-target property
 and layout assertions, and relocation cover the classification boundary; native
 validation requires the implementing revision's CI.
 
@@ -11905,7 +11901,7 @@ body and its locals before recursively destroying the direct base, including
 after an early return. Static objects and lifetime-extended base references retain
 complete-object cleanup. The fixtures include these lifecycle effects, inherited
 members, temporary references, static pointers, null/effectful conversions, arrays
-and heap elements. Paired source/protocol, eight-target layout, native exit order
+and heap elements. Paired source/protocol, six-target layout, native exit order
 and saved-NC O0/O2 checks require implementing-revision CI.
 Standard headers and complete C++/STL remain unfinished.
 
@@ -15225,7 +15221,7 @@ calls or additional interposer behavior. Standard headers and complete C++/STL
 remain unfinished.
 
 Paired accepted/rejected source cases, raw protocol relocation, malformed IR,
-eight-target width/calling-convention checks and an independent C client at O0/O2
+six-target width/calling-convention checks and an independent C client at O0/O2
 cover the boundary. The C client allocates, grows and releases translated
 allocations in both directions while checking the preserved prefix. Both the
 native CRT and the default program-entry-owned allocator are tested; a helper
@@ -15295,7 +15291,7 @@ selected size/alignment values. Destructors reseating the source pointer cannot
 change these saved values; reference-member temporaries already destroyed at the
 new-expression's end are not destroyed again by delete.
 
-Paired source/protocol cases, eight-target cookie/layout checks, forged metadata,
+Paired source/protocol cases, six-target cookie/layout checks, forged metadata,
 relocation and a separate C client at O0/O2 with strict aliasing cover these rules.
 The native and pinned-upstream runtime checks run only in CI. Throwing runtime
 new bounds, allocation-failure handlers, extended-alignment source types, exception
@@ -15314,8 +15310,7 @@ as constant allocation. Allocation-failure handlers and other standard-library f
 
 The bound is evaluated once. A negative signed result is detected before Sema's
 implicit conversion to size_t. Positive wide integers retain normal unsigned
-conversion semantics, including truncation on 32-bit targets; explicit source
-casts retain their own semantics. The converted count must fit
+conversion semantics. Explicit source casts retain their own semantics. The converted count must fit
 `(SIZE_MAX-cookieBytes)/sizeof(allocatedInnerType)` and be at least the number of
 explicit outer initializer clauses. Invalid lengths return a typed null pointer
 without calling the allocator or running any element initializer. Zero valid
@@ -15360,7 +15355,7 @@ runtime placement allocation needs a separately checked argument-evaluation
 contract. Runtime primitive and admitted record allocations also use the authenticated ordinary default heap; string storage follows its separate container contract. Constant-length cases retain their broader
 existing initialization and placement support.
 
-Paired source/protocol tests, eight-target 32/64-bit bound checks, relocation and
+Paired source/protocol tests, 64-bit allocation bound checks, relocation and
 an O0/O2 separate C client cover signed negative values, positive wide conversion,
 byte overflow, too-short prefixes, zero, null, receiver identity, escaped deletion,
 per-element cleanup and enclosing bound/prefix temporary cleanup. Native checks
@@ -16364,7 +16359,7 @@ outside this boundary. Independent native references cover float/double source,
 minstd and mt19937_64 engines, first samples, hot-state copy/move/assignment,
 parameter replacement, reset, explicit sample parameters and exact next-generator
 states. Deterministic rejection and cache fixtures execute at O0/O2; malformed exp
-protocol cases, source guards, eight-target checks and sanitizer execution of
+protocol cases, source guards, six-target checks and sanitizer execution of
 unchanged managed NC remain required verification.
 
 
@@ -16429,7 +16424,7 @@ next-generator states. Deterministic fixtures force zero-w and negative-x
 rejections, polynomial acceptance, logarithmic rejection/acceptance and both
 small-alpha power branches. A generator mutating an explicit parameter proves
 old-alpha/new-beta timing. Source replacements, math declarations, malformed
-existing math protocol cases, eight-target checks and unchanged managed-source
+existing math protocol cases, six-target checks and unchanged managed-source
 sanitizers remain required verification before publication.
 
 
@@ -16454,7 +16449,7 @@ shapes below/equal/above one, both precisions, source/minstd/mt19937_64 engines,
 288 first samples and exact next-generator states. Signed-zero/infinity edges,
 argument effects and generators mutating explicit or stored degrees retain the
 temporary-Gamma copy boundary. Managed execution, source-replacement guards,
-eight-target checks and unchanged managed-NC sanitizers remain publication gates.
+six-target checks and unchanged managed-NC sanitizers remain publication gates.
 
 
 ### Fisher F distributions and two temporary Gamma objects
@@ -16650,7 +16645,7 @@ Aliases, public `key_type`, `mapped_type`, `value_type`, `size_type`,
 `difference_type`, `hasher`, `key_equal`, `allocator_type`, pointer and reference
 members, and type identity queries require no runtime map record. `sizeof` and
 `alignof`, including array layout queries, use the selected target's SDK layout.
-The consumed header closure has 271 catalogued files on the eight core targets.
+The consumed header closure has 271 catalogued files on the six core targets.
 No SDK payload or catalog changes are required.
 
 Custom hash/equality/allocator policies and other key or mapped types are
@@ -16713,9 +16708,8 @@ cpp-math-v1 fingerprints and strict floating-point policy remain unchanged.
 Native O0/O2 fixtures and ASan/UBSan cover insertion, duplicates, signed keys,
 exact bucket/allocation traces on native64, stable references, shrink/grow,
 load clamping, clear/refill, self/empty swaps and source hook effects. Managed
-O0/O2, source-boundary guards, unchanged generated-NC sanitizers and eight-target
-object/frontend checks are publication requirements. i686 checks are frontend
-semantics only; all test widths retain value and lifetime assertions.
+O0/O2, source-boundary guards, unchanged generated-NC sanitizers and six-target
+object/frontend checks are publication requirements. Each target checks values and lifetimes.
 
 ## Unordered-map iterator values
 
@@ -17191,13 +17185,13 @@ Reference inputs are checked even for value results. A full-expression temporary
 
 ## String and string-view hashing
 
-Exact pinned direct `std::hash<std::string_view>` and `std::hash<std::string>` calls hash the logical bytes of admitted char carriers. The source is evaluated once; complete 32-bit Murmur2 and 64-bit CityHash paths preserve the SDK ABI1 arithmetic, including narrow intermediate truncation. Selected public, inherited and helper declaration chains are authenticated. Pure `decltype`/`noexcept` queries preserve argument exception sources without algorithm runtime helpers. Private helper calls, standalone method addresses, source replacements remain outside this contract.
+Exact pinned direct `std::hash<std::string_view>` and `std::hash<std::string>` calls hash the logical bytes of admitted char carriers. The source is evaluated once. The 64-bit CityHash path preserves the SDK ABI1 arithmetic, including narrow intermediate truncation. Selected public, inherited and helper declaration chains are authenticated. Pure `decltype`/`noexcept` queries preserve argument exception sources without algorithm runtime helpers. Private helper calls, standalone method addresses, source replacements remain outside this contract.
 
 The accepted types use char, the pinned standard char_traits and the existing default allocator. Hashing captures the converted view once, or binds the converted const string reference once, then reads data and logical length once. Empty/default carriers, embedded zero and high bytes, unaligned ranges, short/long strings and all byte-length algorithm branches retain their semantics. Hashing itself introduces no allocation or C++ library import. Retained runtime calls share one generated internal C23 byte function per translation unit to keep the bounded frontend response compact; signature-only queries and pruned calls add none. String construction and destruction keep their existing ownership contract. The main NeverC source language remains C23-only.
 
 The exact public specialization, inherited method/base layout, data/size selection, __do_string_hash, iterator_traits<const char*>, selected __murmur2_or_cityhash, __loadword/memcpy, CityHash helpers and pair/swap operations retain their declaration and template sources. Runtime proof consumes that complete selected body closure. Signature-only queries retain the const-value string_view versus const-reference string parameter distinction and caller conversion/copy/destruction exception sources without instantiating the byte algorithm. A query proof grants no runtime permission. A default char string_view temporary used as the exact lexical hash-query argument authenticates its constructor signature and selected declaration sources without requiring its unused concrete body.
 
-The implementation follows each SDK arithmetic width. In the ABI1 CityHash 4–8-byte branch, the uint32_t word is shifted before promotion to size_t; selecting the ABI2 macro branch is refused for runtime hashing. Safe byte assembly avoids alignment and aliasing assumptions and reads only complete in-range words. The long CityHash loop handles arbitrary admitted lengths, including repeated 64-byte chunks. Eight-target frontend/object validation is separate from native algorithm golden and runtime evidence.
+The implementation follows each SDK arithmetic width. In the ABI1 CityHash 4–8-byte branch, the uint32_t word is shifted before promotion to size_t; selecting the ABI2 macro branch is refused for runtime hashing. Safe byte assembly avoids alignment and aliasing assumptions and reads only complete in-range words. The long CityHash loop handles arbitrary admitted lengths, including repeated 64-byte chunks. Six-target frontend/object validation is separate from native algorithm golden and runtime evidence.
 
 
 ## Default-deleter unique owner exchange

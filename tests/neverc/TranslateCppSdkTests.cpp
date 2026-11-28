@@ -68,8 +68,8 @@ TEST_F(TranslateCppSdkTest,
   for (const std::string &Triple : {
            "x86_64-apple-macosx15.0.0", "arm64-apple-macosx15.0.0",
            "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
-           "i686-unknown-linux-gnu", "x86_64-pc-windows-msvc",
-           "aarch64-pc-windows-msvc", "i686-pc-windows-msvc"}) {
+           "x86_64-pc-windows-msvc",
+           "aarch64-pc-windows-msvc"}) {
     SCOPED_TRACE(Triple);
     ASSERT_TRUE(loadHeaders(Triple))
         << (Errors.empty() ? "" : Errors.front().Reason);
@@ -81,6 +81,18 @@ TEST_F(TranslateCppSdkTest,
     ASSERT_FALSE(Headers.empty());
     EXPECT_TRUE(verifyCppHeaderSdkDependencies(Context, Headers, Errors));
     EXPECT_TRUE(Errors.empty());
+  }
+}
+
+TEST_F(TranslateCppSdkTest, HeaderSdkRejectsUnsupportedPointerABIs) {
+  for (const auto *Triple : {"i686-pc-windows-msvc", "x86_64-linux-gnux32",
+                             "aarch64-linux-gnu_ilp32"}) {
+    ASSERT_TRUE(loadHeaders());
+    EXPECT_FALSE(loadHeaders(Triple)) << Triple;
+    ASSERT_FALSE(Errors.empty());
+    EXPECT_EQ(Errors.front().Code, "TR0204");
+    EXPECT_TRUE(Context.TargetTriple.empty());
+    EXPECT_TRUE(Context.ApprovedFiles.empty());
   }
 }
 

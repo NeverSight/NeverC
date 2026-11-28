@@ -85,7 +85,11 @@ void x86::getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
   // "ms_abi" as default function attributes.
   if (const Arg *A = Args.getLastArg(neverc::driver::options::OPT_mabi_EQ)) {
     llvm::StringRef DefaultAbi = Triple.isOSWindows() ? "ms" : "sysv";
-    if (A->getValue() != DefaultAbi)
+    llvm::StringRef ABI = A->getValue();
+    if (ABI == "ilp32" || ABI == "x32")
+      D.Diag(diag::err_drv_unsupported_option_argument)
+          << A->getSpelling() << ABI;
+    else if (ABI != DefaultAbi)
       D.Diag(diag::err_drv_unsupported_opt_for_target)
           << A->getSpelling() << Triple.getTriple();
   }

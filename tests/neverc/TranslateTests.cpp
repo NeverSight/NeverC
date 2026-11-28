@@ -339,6 +339,24 @@ TEST_F(TranslateTest, HelpDescribesTheBuiltInFrontend) {
   EXPECT_FALSE(Result.contains("--cpp-sdk")) << Result.out;
 }
 
+TEST_F(TranslateTest, RejectsTargetsWith32BitPointersBeforeSourceAnalysis) {
+  const auto Source = source();
+  const auto Output = tmpFile("unsupported.nc");
+  for (const auto *Target : {"i686-unknown-linux-gnu", "i686-pc-windows-msvc",
+                             "x86_64-linux-muslx32", "aarch64-linux-gnu_ilp32",
+                             "arm64_32-apple-watchos"}) {
+    for (const auto *Profile : {"cpp-core-v1", "cpp-core-v2"}) {
+      SCOPED_TRACE(Target);
+      SCOPED_TRACE(Profile);
+      const auto Result = translate(Source, {"--profile", Profile, "--target",
+                                             Target, "-o", Output.string()});
+      EXPECT_NE(Result.exitCode, 0);
+      EXPECT_TRUE(Result.contains("TR0204")) << Result.err;
+      EXPECT_FALSE(fs::exists(Output));
+    }
+  }
+}
+
 TEST_F(TranslateTest, CoreV2PinnedSdkDoesNotDetectHostMsvcVersion) {
   const auto Source = tmpFile("sdk-host-msvc-version.cpp");
   writeFile(Source, R"cpp(
@@ -358,10 +376,10 @@ int main() {
 }
 )cpp");
   for (const std::string &Target : {
-           "i686-pc-windows-msvc", "x86_64-pc-windows-msvc",
+           "x86_64-pc-windows-msvc",
            "aarch64-pc-windows-msvc", "x86_64-unknown-linux-gnu",
            "aarch64-unknown-linux-gnu", "arm64-apple-macosx15.0.0",
-           "x86_64-apple-macosx15.0.0", "i686-unknown-linux-gnu"}) {
+           "x86_64-apple-macosx15.0.0"}) {
     SCOPED_TRACE(Target);
     const auto Request = tmpFile("sdk-host-msvc-version-" + Target + "-request.json");
     const auto Response = tmpFile("sdk-host-msvc-version-" + Target + "-response.json");
@@ -393,11 +411,7 @@ int main() {
     EXPECT_TRUE(Layout->getString("triple") == Target);
     int64_t PointerBits = 0;
     ASSERT_TRUE(Layout->getInteger("pointer_bits", PointerBits));
-    EXPECT_EQ(PointerBits, Target.rfind("i686-", 0) == 0 ? 32 : 64);
-    // Both i686 ABIs retain their full private frontend checks. NeverC's
-    // independent C23 target model admits only the six 64-bit backends.
-    if (Target.rfind("i686-", 0) == 0)
-      continue;
+    EXPECT_EQ(PointerBits, 64);
     const auto Output = tmpFile("sdk-host-msvc-version-" + Target + ".nc");
     const auto Result = translate(Source, {"--profile", "cpp-core-v2",
                                            "--target", Target, "-o",
@@ -369560,161 +369574,6 @@ TEST_F(TranslateTest, CoreV2ScalarHashClosureFunctionsOnlyBorrowing) {
     EXPECT_TRUE(fs::is_regular_file(Executable));
   }
 }
-
-TEST_F(TranslateTest, CoreV2ScalarHashClosureRejectsSelected32BitByteSources) {
-  struct Case { const char *Name; const char *Source; };
-  const Case Cases[] = {
-    {"double-direct", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(h(value)!=0);}
-)cpp"},
-    {"double-invoke", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(h,value)!=0);}
-)cpp"},
-    {"double-apply", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(h,std::tie(value))!=0);}
-)cpp"},
-    {"double-wrapper", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(w(value)!=0);}
-)cpp"},
-    {"double-invoke-wrapper", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(w,value)!=0);}
-)cpp"},
-    {"double-apply-wrapper", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(w,std::tie(value))!=0);}
-)cpp"},
-    {"double-ignored", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=double;V value=V(1);std::hash<V>h;auto w=std::ref(h);h(value);return 0;}
-)cpp"},
-    {"long-long-direct", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(h(value)!=0);}
-)cpp"},
-    {"long-long-invoke", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(h,value)!=0);}
-)cpp"},
-    {"long-long-apply", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(h,std::tie(value))!=0);}
-)cpp"},
-    {"long-long-wrapper", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(w(value)!=0);}
-)cpp"},
-    {"long-long-invoke-wrapper", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::invoke(w,value)!=0);}
-)cpp"},
-    {"long-long-apply-wrapper", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);return int(std::apply(w,std::tie(value))!=0);}
-)cpp"},
-    {"long-long-ignored", R"cpp(#define memcpy user_word_copy
-#include <functional>
-#include <tuple>
-#include <utility>
-#include <cstddef>
-extern "C" void*user_word_copy(void*to,const void*,std::size_t n){auto*p=static_cast<unsigned char*>(to);for(std::size_t i=0;i<n;++i)p[i]=0;return to;}
-int main(){using V=long long;V value=V(1);std::hash<V>h;auto w=std::ref(h);h(value);return 0;}
-)cpp"},
-  };
-  for (const auto &Case : Cases) {
-    SCOPED_TRACE(Case.Name);
-    const auto Source = tmpFile(std::string("scalar-byte-source-") + Case.Name + ".cpp");
-    writeFile(Source, Case.Source);
-    for (const std::string &Target : {"i686-unknown-linux-gnu", "i686-pc-windows-msvc"}) {
-      SCOPED_TRACE(Target);
-      const auto Request = tmpFile(std::string(Case.Name) + Target + "-request.json");
-      const auto Response = tmpFile(std::string(Case.Name) + Target + "-response.json");
-      const auto CatalogHash = neverc::translate::approvedCppSdkCatalogSHA256();
-      const auto RootPath = Source.parent_path().string();
-      const auto SourcePath = Source.string();
-      llvm::json::Object SDK{{"distribution_id", neverc::translate::CppMathSDKID},
-                            {"catalog_sha256", CatalogHash}};
-      llvm::json::Object Input{{"protocol", 1}, {"profile", "cpp-core-v2"},
-          {"root", RootPath}, {"source", SourcePath},
-          {"target", Target}, {"arguments", llvm::json::Array{"-std=c++17"}},
-          {"sdk", std::move(SDK)}};
-      std::string Text;
-      llvm::raw_string_ostream Stream(Text);
-      Stream << llvm::json::Value(std::move(Input));
-      writeFile(Request, Text);
-      const auto Result = ncc({"__neverc_cpp_frontend", "--request", Request.string(),
-                               "--output", Response.string()});
-      ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-      ASSERT_TRUE(fs::is_regular_file(Response));
-      auto Parsed = llvm::json::parse(readFile(Response));
-      ASSERT_TRUE(static_cast<bool>(Parsed)) << llvm::toString(Parsed.takeError()).str().str();
-      const auto *Module = Parsed->getAsObject();
-      ASSERT_NE(Module, nullptr);
-      const auto *Diagnostics = Module->getArray("diagnostics");
-      ASSERT_NE(Diagnostics, nullptr);
-      EXPECT_FALSE(Diagnostics->empty());
-      EXPECT_NE(readFile(Response).find("TR0203"), std::string::npos);
-      EXPECT_EQ(readFile(Response).find("TR0101"), std::string::npos);
-    }
-  }
-}
-
 
 TEST_F(TranslateTest, CoreV2StringHashAdaptersValuesAndEffects) {
   const auto Output = tmpFile("string-hash-adapters-values.nc");

@@ -67,7 +67,7 @@ objects and operations still require direct lowering.
 The `<vector>` parsing closure adds the pinned public libc++ header and its
 `__bit_reference`, `__vector/pmr.h`, and `__vector/vector_bool.h` dependencies.
 Core v2's reduced transitive includes keep its 300-file libc++/resource closure
-identical and platform-free on all eight targets. `std::vector<int>` exposes
+identical and platform-free on all six targets. `std::vector<int>` exposes
 compile-time layout and `size_type` metadata. Arithmetic-element vector objects
 and the operations listed in the support matrix have authenticated direct
 lowerings; other vector behavior remains outside that boundary.
@@ -212,7 +212,7 @@ through authenticated arrays, pairs and tuples to the same scalar,
 heterogeneous arithmetic and qualification-compatible pointer leaf boundary;
 comparisons with `nullopt` work for every admitted element. The
 array-plus-tuple-plus-utility-plus-optional composite fixture has a 253-file
-platform-free union closure on all eight targets, with no runtime libc++ link.
+platform-free union closure on all six targets, with no runtime libc++ link.
 The `<iterator>` surface has a 171-file libc++/resource closure on every core-v2
 target. It exposes pointer `iterator_traits` metadata and directly lowered
 pointer, array-range and raw-pointer reverse-iterator operations while retaining
@@ -437,8 +437,7 @@ passing. Exact integral `std::hash` specializations from `bool` through
 authenticated one-byte carrier and lower to target `size_t` for temporary,
 local, global, copied and by-value objects. The wide specializations
 authenticate libc++'s exact `__scalar_hash` base and inherited call operator.
-They preserve the value bits on 64-bit targets and reproduce libc++'s Murmur2
-hash of the eight little-endian value bytes on 32-bit targets. They support
+They preserve the value bits. They support
 same-type copy and move assignment and call directly or through `std::invoke`.
 Receiver expressions are evaluated once before their arguments.
 The exact C++17 `nullptr_t` specialization returns its pinned libc++ constant
@@ -446,15 +445,13 @@ through the same object, assignment and invocation boundary. Exact `float` and
 `double` specializations authenticate the same `__scalar_hash` base plus the
 outer zero-normalizing call operator. Positive and negative zero hash to zero;
 other values hash their IEEE representation. `float` uses its 32-bit
-representation, while `double` preserves its 64-bit representation on 64-bit
-targets and uses the same eight-byte Murmur2 path on 32-bit targets. The primary
+representation, while `double` preserves its 64-bit representation. The primary
 `std::hash<E>` form for complete enums delegates through its exact
 authenticated `__enum_hash<E, true>` base to the corresponding underlying
-integer hash, including the 32-bit wide-value path. The exact pointer partial
+integer hash. The exact pointer partial
 specialization is admitted for non-volatile object pointers after authenticating
 its pointer/`size_t` union, pointer store and exact internal hash call. It
-reproduces libc++'s four-byte Murmur2 algorithm on 32-bit targets and ABI-v1
-eight-byte CityHash algorithm on 64-bit targets. `long double`, `void *`,
+reproduces libc++'s ABI-v1 eight-byte CityHash algorithm. `long double`, `void *`,
 volatile-object and function-pointer hash specializations remain outside this
 boundary.
 Exact object `std::reference_wrapper<T>` and

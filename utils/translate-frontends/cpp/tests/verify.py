@@ -266,7 +266,6 @@ def main():
     parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args()
     args.neverc = args.neverc.resolve()
-    is_64bit_target = args.target.startswith(("x86_64-", "aarch64-", "arm64-"))
     args.output_dir.mkdir(parents=True, exist_ok=False)
     repository = Path(__file__).resolve().parents[4]
     count = 0
@@ -280,7 +279,7 @@ def main():
         nonlocal count
         request_target = args.target if target is None else target
         retained_case = None
-        if is_64bit_target and request_target == 'x86_64-unknown-linux-gnu' and name in RETAINED_X86_64_CARRIERS:
+        if request_target == 'x86_64-unknown-linux-gnu' and name in RETAINED_X86_64_CARRIERS:
             source_sha, previous_code, shape, digest = RETAINED_X86_64_CARRIERS[name]
             assert profile == "cpp-core-v2" and code == previous_code
             assert hashlib.sha256(source.encode()).hexdigest() == source_sha
@@ -400,11 +399,13 @@ extern "C" int traits() {
         "arm64-apple-macosx15.0.0",
         "x86_64-unknown-linux-gnu",
         "aarch64-unknown-linux-gnu",
-        "i686-unknown-linux-gnu",
         "x86_64-pc-windows-msvc",
         "aarch64-pc-windows-msvc",
-        "i686-pc-windows-msvc",
     )
+    for target in ("i686-unknown-linux-gnu", "i686-pc-windows-msvc",
+                   "x86_64-unknown-linux-gnux32", "aarch64-unknown-linux-gnu_ilp32"):
+        check("unsupported-target-" + target, "int f(){return 1;}",
+              "TR0204", profile="cpp-core-v2", target=target)
     for target in sdk_targets:
         check("v2-type-traits-" + target, type_traits_source,
               profile="cpp-core-v2", target=target, sdk=True)
@@ -6639,7 +6640,7 @@ extern "C" int optional_operations(int value) {
             if [field["type"] for field in record["fields"]] == ["int", "bool"])
         assert target_optional_record["layout"]["field_offsets_bits"] == [0, 32], target_optional_record
         assert target_optional_record["layout"]["abi_align_bits"] == 32, target_optional_record
-        expected_optional_size = 96 if target == "i686-pc-windows-msvc" else 64
+        expected_optional_size = 64
         assert target_optional_record["layout"]["size_bits"] == expected_optional_size, target_optional_record
         assert not [node for node in walk(target_result["functions"])
                     if node.get("op") in ("call", "mapped_call")], target_result
@@ -6982,12 +6983,8 @@ extern "C" std::size_t functional_hash(int value, unsigned long wide,
             node.get("value") for node in walk(target_hash["functions"])
             if node.get("kind") == "literal" and node.get("type") == "uint"
         }
-        if target.startswith("i686-"):
-            assert {"8", "13", "15", "24", "1540483477"} <= murmur_literals, (
-                target, murmur_literals)
-        else:
-            assert "1540483477" not in murmur_literals, (
-                target, murmur_literals)
+        assert "1540483477" not in murmur_literals, (
+            target, murmur_literals)
     functional_pointer_hash_source = """\
 #include <functional>
 #include <cstddef>
@@ -7018,7 +7015,7 @@ extern "C" std::size_t functional_pointer_hash(int *pointer) {
             node for node in walk(pointer_hash["functions"])
             if node.get("kind") == "bit_cast"
         ]
-        result_type = "uint" if target.startswith("i686-") else "u64"
+        result_type = "u64"
         assert pointer_bit_casts, (target, pointer_hash)
         assert {(node["args"][0]["type"], node["type"])
                 for node in pointer_bit_casts} == {
@@ -7028,16 +7025,10 @@ extern "C" std::size_t functional_pointer_hash(int *pointer) {
             node.get("value") for node in walk(pointer_hash["functions"])
             if node.get("kind") == "literal"
         }
-        if target.startswith("i686-"):
-            assert {"4", "13", "15", "24", "1540483477"} <= pointer_literals, (
-                target, pointer_literals)
-            assert "11376068507788127593" not in pointer_literals, (
-                target, pointer_literals)
-        else:
-            assert {"8", "32", "47", "11376068507788127593"} <= pointer_literals, (
-                target, pointer_literals)
-            assert "1540483477" not in pointer_literals, (
-                target, pointer_literals)
+        assert {"8", "32", "47", "11376068507788127593"} <= pointer_literals, (
+            target, pointer_literals)
+        assert "1540483477" not in pointer_literals, (
+            target, pointer_literals)
     functional_function_pointer_hash_source = """\
 #include <functional>
 #include <cstddef>
@@ -7063,7 +7054,7 @@ extern "C" std::size_t functional_function_pointer_hash(Callback callback) {
         assert not calls, (target, calls)
         bit_casts = [node for node in walk(function_pointer_hash["functions"])
                      if node.get("kind") == "bit_cast"]
-        result_type = "uint" if target.startswith("i686-") else "u64"
+        result_type = "u64"
         assert len(bit_casts) == 4 and all(
             node["args"][0]["type"].startswith("fnptr:") and
             node["type"] == result_type for node in bit_casts
@@ -7113,7 +7104,7 @@ extern "C" int functional_reference(int &value, const int &constant) {
             if windows:
                 assert record["fields"][0] == {
                     "name": "nct_reference_wrapper_base_storage",
-                    "type": "u64" if pointer_bits == 64 else "usize",
+                    "type": "u64",
                 }, record
                 expected_layout = {
                     "size_bits": pointer_bits * 2,
@@ -8043,11 +8034,11 @@ extern "C" int functional_reference_invoke(Function function, int a, int b) {
         ("long-double", '#include <functional>\nint main(){return std::plus<long double>{}(1,2)==3;}',
          "TR0201"),
         ("hash-void-pointer", '#include <functional>\nint main(){return std::hash<void*>{}(nullptr);}',
-         None if is_64bit_target else "TR0203"),
+         None),
         ("hash-volatile-pointer", '#include <functional>\nint main(){volatile int n=0;return std::hash<volatile int*>{}(&n);}',
          "TR0201"),
         ("hash-function-pointer", '#include <functional>\nint f(){return 0;}int main(){return std::hash<int(*)()>{}(&f);}',
-         None if is_64bit_target else "TR0203"),
+         None),
         ("reference-wrapper-volatile", '#include <functional>\nint main(){volatile int v=0;std::reference_wrapper<volatile int> r(v);return r.get();}',
          "TR0201"),
         ("cref-temporary", '#include <functional>\nint main(){auto r=std::cref(3);return r.get();}',
@@ -8762,7 +8753,7 @@ int main() {
 
     def check_byte_allocator(data, sized):
         functions = {function["name"]: function for function in data["functions"]}
-        size_type = "u64" if data["target"]["pointer_bits"] == 64 else "uint"
+        size_type = "u64"
         signed = functions["signed_byte_count"]
         assert signed["c_export"] and signed["params"][0]["type"] == "int", signed
         signed_calls = [node for node in walk(signed["body"])
@@ -8877,7 +8868,7 @@ int main() {
     )
     assert len(byte_allocator_cases) == 9
     for name, source, code, construct in byte_allocator_cases:
-        if is_64bit_target and name in ("member-missing-new", "traits-missing-new"):
+        if name in ("member-missing-new", "traits-missing-new"):
             result = check("v2-memory-byte-allocator-default-" + name.removesuffix("-missing-new"),
                            source, profile="cpp-core-v2", sdk=True)
             assert result["native_heap"] is True, result
@@ -9166,7 +9157,7 @@ int main() {
 
     def check_narrow_allocator(data, sized):
         functions = {function["name"]: function for function in data["functions"]}
-        size_type = "u64" if data["target"]["pointer_bits"] == 64 else "uint"
+        size_type = "u64"
         probes = (("narrow_byte_count", "u8", "u8"),
                   ("narrow_short_traits_count", "u16", "u16"),
                   ("narrow_boolean_count", "bool", "bool"),
@@ -9242,85 +9233,85 @@ int main() {
     narrow_allocator_cases = (
         ('unsigned-char-member',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned char n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': None}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('unsigned-short-traits-hint',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned short n) { Allocator a; return Traits::allocate(a, n, nullptr); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': None}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('bool-member',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(bool n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': None}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('const-unsigned-char',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(const unsigned char n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': None}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('explicit-narrowing',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(int n) { Allocator a; return a.allocate(static_cast<unsigned char>(n)); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': None}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('side-effect-return',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nint calls; unsigned char count(unsigned char n) { ++calls; return n; }\nextern "C" int *probe(unsigned char n) { Allocator a; return Traits::allocate(a, count(n), nullptr); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': None}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('user-conversion-narrow-result',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nstruct Count { unsigned char n; operator unsigned char() const { return n; } };\nextern "C" int *probe(unsigned char n) { Allocator a; Count count{n}; return a.allocate(count); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': None}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('uint32-member',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(std::uint32_t n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('uint32-traits-hint',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(std::uint32_t n) { Allocator a; return Traits::allocate(a, n, nullptr); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('unsigned-long-member',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned long n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('unsigned-expression',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned int n) { Allocator a; return a.allocate(n + 1u); }\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('signed-char',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(signed char n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('signed-int',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(int n) { Allocator a; return Traits::allocate(a, n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('uint64',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(std::uint64_t n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('size-type',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(Size n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('promoted-byte',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned char n) { Allocator a; return a.allocate(+n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('explicit-size-cast',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned char n) { Allocator a; return a.allocate(static_cast<Size>(n)); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('widened-local',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned char n) { Allocator a; Size count = n; return a.allocate(count); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('enum-unsigned',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nenum Count : unsigned char { zero = 0, one = 1 };\nextern "C" int *probe(Count n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('enum-scoped',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nenum class Count : unsigned char { zero = 0, one = 1 };\nextern "C" int *probe(Count n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0202', 'arm64-apple-macosx15.0.0': 'TR0202', 'x86_64-unknown-linux-gnu': 'TR0202', 'aarch64-unknown-linux-gnu': 'TR0202', 'i686-unknown-linux-gnu': 'TR0202', 'x86_64-pc-windows-msvc': 'TR0202', 'aarch64-pc-windows-msvc': 'TR0202', 'i686-pc-windows-msvc': 'TR0202'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0202', 'arm64-apple-macosx15.0.0': 'TR0202', 'x86_64-unknown-linux-gnu': 'TR0202', 'aarch64-unknown-linux-gnu': 'TR0202', 'x86_64-pc-windows-msvc': 'TR0202', 'aarch64-pc-windows-msvc': 'TR0202'}),
         ('user-conversion-size-result',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nstruct Count { Size n; operator Size() const { return n; } };\nextern "C" int *probe(Size n) { Allocator a; Count count{n}; return a.allocate(count); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203', 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0203', 'arm64-apple-macosx15.0.0': 'TR0203', 'x86_64-unknown-linux-gnu': 'TR0203', 'aarch64-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': 'TR0203', 'aarch64-pc-windows-msvc': 'TR0203'}),
         ('volatile-byte',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(volatile unsigned char &n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0201', 'arm64-apple-macosx15.0.0': 'TR0201', 'x86_64-unknown-linux-gnu': 'TR0201', 'aarch64-unknown-linux-gnu': 'TR0201', 'i686-unknown-linux-gnu': 'TR0201', 'x86_64-pc-windows-msvc': 'TR0201', 'aarch64-pc-windows-msvc': 'TR0201', 'i686-pc-windows-msvc': 'TR0201'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0201', 'arm64-apple-macosx15.0.0': 'TR0201', 'x86_64-unknown-linux-gnu': 'TR0201', 'aarch64-unknown-linux-gnu': 'TR0201', 'x86_64-pc-windows-msvc': 'TR0201', 'aarch64-pc-windows-msvc': 'TR0201'}),
         ('hidden-unsupported',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned char n) { Allocator a; return a.allocate((sizeof(long double), n)); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0201', 'arm64-apple-macosx15.0.0': 'TR0201', 'x86_64-unknown-linux-gnu': 'TR0201', 'aarch64-unknown-linux-gnu': 'TR0201', 'i686-unknown-linux-gnu': 'TR0201', 'x86_64-pc-windows-msvc': 'TR0201', 'aarch64-pc-windows-msvc': 'TR0201', 'i686-pc-windows-msvc': 'TR0201'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0201', 'arm64-apple-macosx15.0.0': 'TR0201', 'x86_64-unknown-linux-gnu': 'TR0201', 'aarch64-unknown-linux-gnu': 'TR0201', 'x86_64-pc-windows-msvc': 'TR0201', 'aarch64-pc-windows-msvc': 'TR0201'}),
         ('hidden-unsupported-conversion',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nstruct Count { unsigned char n; operator unsigned char() const { long double hidden = 0; return n; } };\nextern "C" int *probe(unsigned char n) { Allocator a; Count count{n}; return a.allocate(count); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0201', 'arm64-apple-macosx15.0.0': 'TR0201', 'x86_64-unknown-linux-gnu': 'TR0201', 'aarch64-unknown-linux-gnu': 'TR0201', 'i686-unknown-linux-gnu': 'TR0201', 'x86_64-pc-windows-msvc': 'TR0201', 'aarch64-pc-windows-msvc': 'TR0201', 'i686-pc-windows-msvc': 'TR0201'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0201', 'arm64-apple-macosx15.0.0': 'TR0201', 'x86_64-unknown-linux-gnu': 'TR0201', 'aarch64-unknown-linux-gnu': 'TR0201', 'x86_64-pc-windows-msvc': 'TR0201', 'aarch64-pc-windows-msvc': 'TR0201'}),
         ('bitint-unsigned',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\n#include <cstdint>\nusing Allocator = std::allocator<int>;\nusing Traits = std::allocator_traits<Allocator>;\nextern "C" int *probe(unsigned _BitInt(8) n) { Allocator a; return a.allocate(n); }\n',
-         {'x86_64-apple-macosx15.0.0': 'TR0201', 'arm64-apple-macosx15.0.0': 'TR0201', 'x86_64-unknown-linux-gnu': 'TR0201', 'aarch64-unknown-linux-gnu': 'TR0201', 'i686-unknown-linux-gnu': 'TR0201', 'x86_64-pc-windows-msvc': 'TR0201', 'aarch64-pc-windows-msvc': 'TR0201', 'i686-pc-windows-msvc': 'TR0201'}),
+         {'x86_64-apple-macosx15.0.0': 'TR0201', 'arm64-apple-macosx15.0.0': 'TR0201', 'x86_64-unknown-linux-gnu': 'TR0201', 'aarch64-unknown-linux-gnu': 'TR0201', 'x86_64-pc-windows-msvc': 'TR0201', 'aarch64-pc-windows-msvc': 'TR0201'}),
         ('ushort-exact-max-size-product',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\nstruct Block {\n  unsigned char bytes[65536];\n  unsigned char tail;\n};\nstatic_assert(sizeof(Block) == 65537);\nstatic_assert(alignof(Block) == 1);\nextern "C" Block *probe(unsigned short count) {\n  std::allocator<Block> allocator;\n  return allocator.allocate(count);\n}\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': None}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
         ('ushort-exceeds-max-size-product',
          'using Size = decltype(sizeof(0));\nextern "C" void *malloc(Size);\nextern "C" void free(void *);\nvoid *operator new(Size size) {\n  void *p = malloc(size ? size : Size(1));\n  while (!p) p = malloc(size ? size : Size(1));\n  return p;\n}\nvoid operator delete(void *p) noexcept { free(p); }\n#include <memory>\nstruct Block {\n  unsigned char bytes[65536];\n  unsigned char tail;\n  unsigned char extra_tail;\n};\nstatic_assert(sizeof(Block) == 65538);\nstatic_assert(alignof(Block) == 1);\nextern "C" Block *probe(unsigned short count) {\n  std::allocator<Block> allocator;\n  return allocator.allocate(count);\n}\n',
-         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'i686-unknown-linux-gnu': 'TR0203', 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None, 'i686-pc-windows-msvc': 'TR0203'}),
+         {'x86_64-apple-macosx15.0.0': None, 'arm64-apple-macosx15.0.0': None, 'x86_64-unknown-linux-gnu': None, 'aarch64-unknown-linux-gnu': None, 'x86_64-pc-windows-msvc': None, 'aarch64-pc-windows-msvc': None}),
     )
     assert len(narrow_allocator_cases) == 27
     for name, source, expected_by_target in narrow_allocator_cases:
@@ -10348,7 +10339,7 @@ extern "C" MemorySourceRecord *memory_source_record_move_n(
          'namespace std{template<class I,class T>void uninitialized_fill(I,I,const T&);}int main(){int a[1];std::uninitialized_fill(a,a+1,1);}',
          "TR0203"),
     ):
-        if is_64bit_target and name in ("pointer-to-function", "allocator-call",
+        if name in ("pointer-to-function", "allocator-call",
                                         "allocator-deallocate-call"):
             result = check("v2-memory-" + name, source, profile="cpp-core-v2", sdk=True)
             nodes = list(walk(result["functions"]))
@@ -10420,7 +10411,7 @@ extern "C" int numeric_sequential() {
         ("callable-object-accumulate",
          '#include <numeric>\nstruct Add{int operator()(int a,int b)const{return a+b;}};int main(){int v[2]{1,2};return std::accumulate(v,v+2,0,Add{});}'),
     ):
-        supported = is_64bit_target and name in ("promoted-iota", "callable-object-accumulate")
+        supported = name in ("promoted-iota", "callable-object-accumulate")
         result = check("v2-numeric-sequential-" + name, source, None if supported else "TR0203",
                        profile="cpp-core-v2", sdk=True)
         if supported:
@@ -10511,7 +10502,7 @@ extern "C" int numeric_callbacks() {
         ("promoted-reduce",
          '#include <numeric>\nint main(){short a[2]{1,2};return std::reduce(a,a+2); }'),
     ):
-        supported = is_64bit_target and name == "promoted-reduce"
+        supported = name == "promoted-reduce"
         result = check("v2-numeric-cxx17-" + name, source, None if supported else "TR0203",
                        profile="cpp-core-v2", sdk=True)
         if supported:
@@ -12096,14 +12087,12 @@ extern "C" int algorithm_functional_bound_queries(
 }
 """
 
-    def assert_algorithm_functional_dependencies(data, legacy_count=435):
-        target_is_64bit = data["target"]["pointer_bits"] == 64
-        expected = 447 if target_is_64bit else legacy_count
-        assert len(data["sdk_dependencies"]) == expected, data
-        if target_is_64bit:
-            assert {"algorithm", "functional"} <= {
-                dep["path"] for dep in data["sdk_dependencies"] if dep["root"] == "libcxx"
-            }, data
+    def assert_algorithm_functional_dependencies(data):
+        assert data["target"]["pointer_bits"] == 64, data
+        assert len(data["sdk_dependencies"]) == 447, data
+        assert {"algorithm", "functional"} <= {
+            dep["path"] for dep in data["sdk_dependencies"] if dep["root"] == "libcxx"
+        }, data
 
     def assert_functional_bound_queries(data):
         assert_algorithm_functional_dependencies(data)
@@ -12519,11 +12508,10 @@ extern "C" int algorithm_list_minmax_comparator(
           profile="cpp-core-v2", sdk=True)
     manual_reference_pair = check("v2-algorithm-extrema-manual-reference-pair",
           '#include <utility>\nint main(){int a=1,b=2;std::pair<const int&,const int&> value(a,b);return value.first;}',
-          None if is_64bit_target else "TR0201", profile="cpp-core-v2", sdk=True)
-    if is_64bit_target:
-        fields = [item["fields"] for item in manual_reference_pair["records"]]
-        assert any([field["type"] for field in record] == ["cptr:int", "cptr:int"]
-                   for record in fields), manual_reference_pair
+          None, profile="cpp-core-v2", sdk=True)
+    fields = [item["fields"] for item in manual_reference_pair["records"]]
+    assert any([field["type"] for field in record] == ["cptr:int", "cptr:int"]
+               for record in fields), manual_reference_pair
 
     algorithm_comparator_extrema_source = """\
 #include <algorithm>
@@ -12598,12 +12586,11 @@ extern "C" int algorithm_functional_extrema(
           "TR0201", profile="cpp-core-v2", sdk=True)
     source_extrema = check("v2-algorithm-functional-extrema-user-object",
           '#include <algorithm>\nstruct Greater { bool operator()(int a,int b) const { return a>b; } };\nint main(){int a=1,b=2;return std::min(a,b,Greater{});}',
-          None if is_64bit_target else "TR0203", profile="cpp-core-v2", sdk=True)
-    if is_64bit_target:
-        local_functions = {function["name"] for function in source_extrema["functions"]
-                           if function["name"] != "main"}
-        assert any(node.get("op") == "call" and node["callee"] in local_functions
-                   for node in walk(source_extrema["functions"])), source_extrema
+          None, profile="cpp-core-v2", sdk=True)
+    local_functions = {function["name"] for function in source_extrema["functions"]
+                       if function["name"] != "main"}
+    assert any(node.get("op") == "call" and node["callee"] in local_functions
+               for node in walk(source_extrema["functions"])), source_extrema
 
     algorithm_heap_source = """\
 #include <algorithm>
@@ -13425,7 +13412,7 @@ int main() {
     def check_algorithm_composed_predicate_object(data, source):
         check_algorithm_predicate_object(data, source)
         main = next(function for function in data["functions"] if function["name"] == "main")
-        carrier = "i64" if data["target"]["pointer_bits"] == 64 else "int"
+        carrier = "i64"
         for line, text in enumerate(source.splitlines(), 1):
             if "auto count=" not in text:
                 continue
@@ -14987,7 +14974,7 @@ int main(){
         ('remove-helper-specialization', '#include <algorithm>\n#include <functional>\nnamespace std{template<>int*find_if<int*,logical_not<int>&>(int*p,int*,logical_not<int>&){return p;}}int*f(int*p){return std::remove_if(p,p+2,std::logical_not<int>{});}\n', 'TR0201', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_sdk_predicate_rejections:
-        supported = is_64bit_target and name == 'heterogeneous-typed'
+        supported = name == 'heterogeneous-typed'
         data = check("v2-algorithm-sdk-predicate-reject-" + name, source, None if supported else code, profile=profile, sdk=sdk)
         if supported:
             nodes = list(walk(data["functions"]))
@@ -15182,7 +15169,7 @@ int main() {
         ('other-partition-object', '#include <algorithm>\nstruct P{bool operator()(int n)const{return n<1;}};\nint*f(int*p){return std::partition(p,p+2,P{});}\n', 'TR0203', 'cpp-core-v2', True),
     ]
     for name, source, code, profile, sdk in algorithm_partition_point_rejections:
-        supported = is_64bit_target and name == 'sdk-predicate-mismatch'
+        supported = name == 'sdk-predicate-mismatch'
         data = check("v2-algorithm-partition-point-reject-" + name, source, None if supported else code, profile=profile, sdk=sdk)
         if supported:
             nodes = list(walk(data["functions"]))
@@ -15344,7 +15331,7 @@ int main(){
         data = check("v2-algorithm-for-each-sdk-object-" + target,
                      algorithm_for_each_sdk_object_source,
                      profile="cpp-core-v2", target=target, sdk=True)
-        assert_algorithm_functional_dependencies(data, legacy_count=354)
+        assert_algorithm_functional_dependencies(data)
         nodes = list(walk(data['functions']))
         assert not [node for node in nodes
                     if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
@@ -15648,7 +15635,7 @@ unsigned char*converted_bit_not(int*first,int*last,unsigned char*out){
         data = check("v2-algorithm-transform-unary-sdk-object-" + target,
                      algorithm_transform_unary_sdk_object_source,
                      profile="cpp-core-v2", target=target, sdk=True)
-        assert_algorithm_functional_dependencies(data, legacy_count=435)
+        assert_algorithm_functional_dependencies(data)
         assert len([f for f in data['functions'] if f['loc']['line'] in (3, 6, 9, 12, 15, 18, 21)]) == 7, data
         nodes = list(walk(data['functions']))
         assert not [node for node in nodes
@@ -15683,7 +15670,7 @@ int main(){
         data = check("v2-algorithm-transform-binary-sdk-object-" + target,
                      algorithm_transform_binary_sdk_object_source,
                      profile="cpp-core-v2", target=target, sdk=True)
-        assert_algorithm_functional_dependencies(data, legacy_count=435)
+        assert_algorithm_functional_dependencies(data)
         nodes = list(walk(data['functions']))
         assert not [node for node in nodes
                     if node.get('op') in ('call', 'mapped_call', 'indirect_call', 'member_pointer')], data
@@ -17098,13 +17085,12 @@ void assigned(Aggregate&a,const Aggregate&s){a=s;}
     for name, source in default_member_rejected.items():
         check("v2-default-member-reject-" + name, source, "TR0201", profile="cpp-core-v2")
     unused_member_initializer = check("v2-default-member-missing", "int missing();struct R{int n=missing();};void f(){R r{7};}",
-          None if is_64bit_target else "TR0203", profile="cpp-core-v2")
-    if is_64bit_target:
-        assert not any(node.get("op") in ("call", "mapped_call", "indirect_call")
-                       for node in walk(unused_member_initializer["functions"])), unused_member_initializer
+          None, profile="cpp-core-v2")
+    assert not any(node.get("op") in ("call", "mapped_call", "indirect_call")
+                   for node in walk(unused_member_initializer["functions"])), unused_member_initializer
     check("v2-default-member-evaluated-missing",
           "int missing();struct R{int n=missing();};int f(){R r{};return r.n;}",
-          "TR0203", profile="cpp-core-v2") if is_64bit_target else None
+          "TR0203", profile="cpp-core-v2")
     check("v1-default-member", "struct R{int n=1;};", "TR0201")
     rvalue_source = """struct R { int n;R*self;int set(int value)&&{n=value;return n;}
  int tag()&{return 1;}
@@ -17207,7 +17193,7 @@ int ordered(R&r,int&trace){return receiver(r,trace).set(argument(trace));}
         'function-reference': 'int f(){return 1;}using Fn=int();Fn&&g(){return static_cast<Fn&&>(f);}',
     }
     for name, source in rvalue_rejected.items():
-        check("v2-rvalue_rejected-" + name, source, None if is_64bit_target and name in ('function-reference',) else "TR0201", profile="cpp-core-v2")
+        check("v2-rvalue_rejected-" + name, source, None if name in ('function-reference',) else "TR0201", profile="cpp-core-v2")
     rvalue_invalid = {
         'direct-lvalue-binding': 'void f(){int n=1;int&&r=n;}',
         'lvalue-method-on-xvalue': 'struct R{int n;int get()&{return n;}};int f(R&r){return static_cast<R&&>(r).get();}',
@@ -17663,8 +17649,8 @@ Leaf&selectedAssignment(Leaf&a,Leaf&b){return a=static_cast<Leaf&&>(b);}
         'query-constructor': 'struct R{int n;R()noexcept;};bool f(){return noexcept(R());}',
     }
     for name, source in noexcept_missing.items():
-        noexcept_probe = check("v2-" + 'noexcept_missing' + "-" + name, source, None if is_64bit_target and name in ('query-call',) else "TR0203", profile="cpp-core-v2")
-        if is_64bit_target and name == "query-call":
+        noexcept_probe = check("v2-" + 'noexcept_missing' + "-" + name, source, None if name in ('query-call',) else "TR0203", profile="cpp-core-v2")
+        if name == "query-call":
             assert not any(node.get("op") in ("call", "mapped_call", "indirect_call")
                            for node in walk(noexcept_probe["functions"])), noexcept_probe
     check("v1-noexcept-spec", "int f()noexcept{return 1;}", "TR0201")
@@ -17823,7 +17809,7 @@ P explicitValue(P&a,P&b){return operator-=(a,b);}
         'virtual': 'struct R{int n;virtual int operator()()const{return n;}};',
     }
     for name, source in operator_rejected.items():
-        check("v2-" + 'operator_rejected' + "-" + name, source, None if is_64bit_target and name in ('member-pointer', 'free-pointer') else "TR0201", profile="cpp-core-v2")
+        check("v2-" + 'operator_rejected' + "-" + name, source, None if name in ('member-pointer', 'free-pointer') else "TR0201", profile="cpp-core-v2")
     operator_invalid = {
         'binary-arity': 'struct R{int n;int operator+(int,int){return n;}};',
         'prefix-postfix-type': 'struct R{int n;R&operator++(long){return *this;}};',
@@ -21694,7 +21680,7 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     }
     for name, source in array_allocation_positive.items():
         module = check("v2-array-allocation-"+name, source, profile="cpp-core-v2")
-        if is_64bit_target and name == "discarded-source":
+        if name == "discarded-source":
             # The discarded branch emits no allocation in f.
             assert module["memory_lifetimes"] and "array_cookie_abi" not in module, module
             # The source function is the only nullary function returning int.
@@ -21723,7 +21709,7 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
     }
     default_array_heap = {'missing-array-allocator': 'malloc', 'missing-array-deallocator': 'free'}
     for name, (source, diagnostic) in array_allocation_negative.items():
-        if is_64bit_target and name in default_array_heap:
+        if name in default_array_heap:
             module = check("v2-array-allocation-default-heap-" + name, source, profile="cpp-core-v2")
             check_default_heap_path(module, default_array_heap[name], array=True)
         else:
@@ -21797,7 +21783,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
                             'struct R{int value;R(int n=0):value(n){}~R(){}'
                             'static void*operator new[](Size)noexcept{return nullptr;}};')
     for target, bits, cookie in (
-        ("i686-pc-windows-msvc", 32, 4),
         ("x86_64-pc-windows-msvc", 64, 8),
         ("aarch64-pc-windows-msvc", 64, 8),
         ("x86_64-unknown-linux-gnu", 64, 8),
@@ -21825,19 +21810,11 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
             if signed:
                 assert signed_checks[0]["args"][0]["type"] == "i64"
             # Positive wide values are converted normally; only converted count
-            # participates in the byte-overflow comparison, even on 32-bit.
-            size_type = "uint" if bits == 32 else "u64"
+            # participates in the byte-overflow comparison.
+            size_type = "u64"
             bounds = [n for n in comparisons if n["operator"] in ("<=", ">=")]
             assert all(n["args"][0]["type"] == size_type for n in bounds)
 
-    truncated_bound_prefix = ('using Size=decltype(sizeof(0));unsigned char bytes[8]{};'
-                              'void*operator new[](Size){return bytes;}')
-    check("v2-array-negative-before-size-conversion", truncated_bound_prefix +
-          'int*f(){return new int[-4294967296LL]{};}', "TR0201",
-          profile="cpp-core-v2", target="i686-pc-windows-msvc")
-    check("v2-array-explicit-unsigned-bound", truncated_bound_prefix +
-          'int*f(){return new int[static_cast<Size>(-4294967296LL)]{};}',
-          profile="cpp-core-v2", target="i686-pc-windows-msvc")
     default_sized_delete_positive = {
         'scalar': 'void operator delete(void*)noexcept{}void f(int*p){delete p;}',
         'record': 'void operator delete(void*)noexcept{}struct R{int n;~R(){}};void f(R*p){delete p;}',
@@ -21909,7 +21886,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         ("aarch64-apple-macosx", "apple-arm64", 16),
         ("x86_64-pc-windows-msvc", "msvc", 0),
         ("aarch64-pc-windows-msvc", "msvc", 0),
-        ("i686-pc-windows-msvc", "msvc", 0),
         ("x86_64-w64-windows-gnu", "itanium", 8)):
         module = check("v2-default-sized-delete-cookie-"+target, default_delete_cookie,
                        profile="cpp-core-v2", target=target)
@@ -21947,7 +21923,6 @@ const int&mixed(bool b,int n){static const int&r=b?static_cast<int&&>(existing):
         ("aarch64-apple-macosx", "apple-arm64", 16, 8),
         ("x86_64-pc-windows-msvc", "msvc", 8, 0),
         ("aarch64-pc-windows-msvc", "msvc", 8, 0),
-        ("i686-pc-windows-msvc", "msvc", 4, 0),
         ("x86_64-w64-windows-gnu", "itanium", 8, 0)):
         module = check("v2-array-cookie-"+target, cookie_source, profile="cpp-core-v2", target=target)
         assert module["array_cookie_abi"] == abi
@@ -22196,8 +22171,7 @@ extern "C" void run(){D value;}
         assert relocated == empty_bases
     for triple in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
                    "x86_64-apple-macosx15.0.0", "arm64-apple-macosx15.0.0",
-                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
-                   "i686-pc-windows-msvc", "i686-w64-windows-gnu"):
+                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
         module = check("v2-empty-base-layout-" + triple, empty_base_positive["layout-protocol"],
                        profile="cpp-core-v2", target=triple)
         records = module["records"]
@@ -22296,8 +22270,7 @@ extern "C" void run(){D value;}
     for triple, width in (
             ("x86_64-unknown-linux-gnu", 64), ("aarch64-unknown-linux-gnu", 64),
             ("x86_64-apple-darwin", 64), ("aarch64-apple-darwin", 64),
-            ("x86_64-pc-windows-msvc", 64), ("aarch64-pc-windows-msvc", 64),
-            ("i686-pc-windows-msvc", 32), ("i686-w64-windows-gnu", 32)):
+            ("x86_64-pc-windows-msvc", 64), ("aarch64-pc-windows-msvc", 64)):
         queried = check("v2-array-query-width-" + triple, array_query_positive["size-width-protocol"],
                         profile="cpp-core-v2", target=triple)
         assert queried["target"]["pointer_bits"] == width
@@ -22312,7 +22285,7 @@ extern "C" void run(){D value;}
                             ("rank_forward", "2"), ("inner_forward", "3"),
                             ("outer_forward", "0"), ("bare_forward", "0")):
             function = functions[name]
-            carrier = "uint" if width == 32 else "u64"
+            carrier = "u64"
             assert function["result"] == carrier
             values = [node["value"] for node in function["body"] if node["op"] == "return"]
             assert len(values) == 1 and values[0]["type"] == carrier
@@ -22379,7 +22352,7 @@ extern "C" void run(){D value;}
     checked_source_queries = ('source-unmaterialized-decltype',)
     checked_query_results = {}
     for name, source in array_query_negative.items():
-        if is_64bit_target and (name in checked_source_queries or name in checked_query_results):
+        if (name in checked_source_queries or name in checked_query_results):
             module = check("v2-array_query_checked-" + name, source, profile="cpp-core-v2")
             assert not module.get("native_heap"), module
             check_unevaluated_array_rank(module)
@@ -22509,7 +22482,7 @@ extern "C" void run(){D value;}
     }
     checked_function_queries = ('record-result', 'record-parameter', 'runtime-function-reference')
     for name, source in bare_function_negative.items():
-        if is_64bit_target and name in checked_function_queries:
+        if name in checked_function_queries:
             module = check("v2-bare-function-checked-" + name, source, profile="cpp-core-v2")
             if name == "runtime-function-reference":
                 signature = "fnptr:1:3:int3:int"
@@ -22566,8 +22539,7 @@ extern "C" void run(){D value;}
     bare_function_identity_sizes = {'function_pointer_size'}
     for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
                    "x86_64-apple-macosx", "aarch64-apple-macosx",
-                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
-                   "i686-pc-windows-msvc", "i686-w64-windows-gnu"):
+                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
         identities = check("v2-bare-function-identities-" + target,
                            bare_function_identity_source, profile="cpp-core-v2", target=target)
         assert not identities["records"] and not identities["globals"]
@@ -22589,9 +22561,9 @@ extern "C" void run(){D value;}
                 assert function["result"] == "bool" and returned["type"] == "bool"
                 assert returned["value"] is expected[function["name"]]
             else:
-                size_type = "uint" if target.startswith("i686") else "u64"
+                size_type = "u64"
                 assert function["result"] == size_type and returned["type"] == size_type
-                assert returned["value"] == ("4" if target.startswith("i686") else "8")
+                assert returned["value"] == "8"
     bare_function_runtime_source = (repository / "tests/neverc/Inputs/translate/cpp/bare-function-metadata.cpp").read_text()
     bare_function_runtime = check("v2-bare-function-runtime", bare_function_runtime_source, profile="cpp-core-v2")
     assert {f["name"] for f in bare_function_runtime["functions"] if f["c_export"]} == \
@@ -22693,8 +22665,7 @@ extern "C" void run(){D value;}
     unary_identity_expected = {'add_lvalue': True, 'add_pointer': True, 'add_rvalue': True, 'decay': True, 'make_signed': True, 'make_unsigned': True, 'remove_all_extents': True, 'remove_const': True, 'remove_cv': True, 'remove_cvref': True, 'remove_extent': True, 'remove_pointer': True, 'remove_reference': True, 'remove_restrict': True, 'remove_volatile': True, 'underlying': True, 'erased_alias': True, 'nested_alias': True, 'forward': True, 'different': False}
     for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
                    "x86_64-apple-macosx", "aarch64-apple-macosx",
-                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
-                   "i686-pc-windows-msvc", "i686-w64-windows-gnu"):
+                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
         identities = check("v2-unary-transform-identities-" + target,
                            unary_identity_source, profile="cpp-core-v2", target=target)
         assert not identities["records"] and not identities["globals"]
@@ -22717,9 +22688,9 @@ extern "C" void run(){D value;}
                 assert function["result"] == "bool" and returned["type"] == "bool"
                 assert returned["value"] is expected[function["name"]]
             else:
-                size_type = "uint" if target.startswith("i686") else "u64"
+                size_type = "u64"
                 assert function["result"] == size_type and returned["type"] == size_type
-                width = "4" if target.startswith("i686") or ("windows" in target and function["name"] == "transformed_long_size") else "8"
+                width = "4" if ("windows" in target and function["name"] == "transformed_long_size") else "8"
                 assert returned["value"] == width
     unary_runtime_source = (repository / "tests/neverc/Inputs/translate/cpp/unary-type-transforms.cpp").read_text()
     unary_runtime = check("v2-unary-transform-runtime", unary_runtime_source, profile="cpp-core-v2")
@@ -22921,8 +22892,7 @@ extern "C" void run(){D value;}
         check("v2-builtin_type_positive-" + name, source, profile="cpp-core-v2")
     for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
                    "x86_64-apple-macosx", "aarch64-apple-macosx",
-                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
-                   "i686-pc-windows-msvc", "i686-w64-windows-gnu"):
+                   "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
         identities = check("v2-incomplete-identity-" + target,
                            builtin_type_positive["incomplete-identity-protocol"],
                            profile="cpp-core-v2", target=target)
@@ -23046,7 +23016,7 @@ extern "C" void run(){D value;}
     checked_source_queries = ('source-unmaterialized-decltype',)
     checked_query_results = {'function-record-value': True}
     for name, source in builtin_type_negative.items():
-        if is_64bit_target and (name in checked_source_queries or name in checked_query_results):
+        if (name in checked_source_queries or name in checked_query_results):
             module = check("v2-builtin_type_checked-" + name, source, profile="cpp-core-v2")
             assert not module.get("native_heap"), module
             if name in checked_query_results:
@@ -23127,7 +23097,7 @@ extern "C" void run(){D value;}
     for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
                    "x86_64-apple-macosx", "aarch64-apple-macosx",
                    "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
-                   "i686-pc-windows-msvc", "x86_64-w64-windows-gnu"):
+                   "x86_64-w64-windows-gnu"):
         module = check("v2-record-properties-"+target, properties_source,
                        profile="cpp-core-v2", target=target)
         expected = {"final_value": True, "literal_value": True, "unique_value": True,
@@ -24224,7 +24194,7 @@ extern "C" void run(){D value;}
     checked_source_queries = ('result-signature-incomplete-constructor', 'default-generated-written-child-constructor', 'default-generated-written-child-assignment', 'default-generated-unmaterialized-nested-noexcept', 'default-generated-unmaterialized-nested-trivial-false', 'defaulted-root-unmaterialized-constructor', 'defaulted-root-unmaterialized-template-constructor', 'defaulted-root-unmaterialized-trivial-false', 'defaulted-root-unmaterialized-assignment', 'defaulted-root-written-child-family', 'inline-defaulting-unmaterialized-constructor', 'inline-defaulting-written-subfamily', 'generated-source-trivial-written-subfamily', 'generated-source-unmaterialized-default', 'implicit-construct-written-field-constructor')
     checked_query_results = {'record-base-written-default': True, 'record-base-written-copy': True, 'record-field-written-copy': True, 'record-field-written-default': True, 'record-field-written-assignment': True, 'nothrow-defaulted-field-assignment': False}
     for name, source in operation_trait_negative.items():
-        if is_64bit_target and (name in checked_source_queries or name in checked_query_results):
+        if (name in checked_source_queries or name in checked_query_results):
             module = check("v2-operation_trait_checked-" + name, source, profile="cpp-core-v2")
             assert not module.get("native_heap"), module
             if name in checked_query_results:
@@ -24555,7 +24525,7 @@ extern "C" void run(){D value;}
     for target in ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
                    "x86_64-apple-macosx", "aarch64-apple-macosx",
                    "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
-                   "i686-pc-windows-msvc", "x86_64-w64-windows-gnu"):
+                   "x86_64-w64-windows-gnu"):
         module = check("v2-operation-trait-"+target, operation_trait_abi_source,
                        profile="cpp-core-v2", target=target)
         expected = operation_trait_expected.copy()
@@ -24742,13 +24712,12 @@ extern "C" void run(){D value;}
     for target, bits in (
             ("x86_64-unknown-linux-gnu", 64), ("aarch64-unknown-linux-gnu", 64),
             ("x86_64-apple-macosx", 64), ("aarch64-apple-macosx", 64),
-            ("x86_64-pc-windows-msvc", 64), ("aarch64-pc-windows-msvc", 64),
-            ("i686-pc-windows-msvc", 32), ("i686-w64-windows-gnu", 32)):
+            ("x86_64-pc-windows-msvc", 64), ("aarch64-pc-windows-msvc", 64)):
         data = check("v2-native-heap-size-" + target, native_heap_positive["calloc"],
                      target=target, profile="cpp-core-v2")
         calls = [n for n in walk(data) if n.get("op") == "native_heap_call"]
         assert len(calls) == 1 and calls[0]["operation"] == "calloc"
-        size_type = "uint" if bits == 32 else "u64"
+        size_type = "u64"
         assert [arg["type"] for arg in calls[0]["args"]] == [size_type, size_type]
         assert calls[0]["target"]["type"] == "ptr:void"
         data = check("v2-native-heap-realloc-size-" + target,
@@ -24848,7 +24817,7 @@ extern "C" void run(){D value;}
     }
     default_heap = {'discarded-void-new': 'malloc', 'discarded-new': None, 'template-new': 'malloc', 'default-argument-new': None, 'default-member-new': None, 'record-new': 'malloc', 'record-delete': 'free', 'array-new': 'malloc', 'array-delete': 'free', 'alias-array-new': 'malloc'}
     for name, (source, code) in allocation_negative.items():
-        if is_64bit_target and name in default_heap:
+        if name in default_heap:
             module = check("v2-allocation-native-" + name, source, profile="cpp-core-v2")
             check_default_heap_path(module, default_heap[name], array="array" in name)
         else:
@@ -25151,7 +25120,7 @@ extern "C" void run(){D value;}
         'unowned-reference': ('int&get();struct R{int&r;};R f(){return R{get()};}', 'TR0203'),
     }
     for name, (source, diagnostic) in reference_member_negative.items():
-        if is_64bit_target and name == "function-reference":
+        if name == "function-reference":
             module = check("v2-reference-member-function-reference", source, profile="cpp-core-v2")
             check_function_reference_field(module)
         else:

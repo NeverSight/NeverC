@@ -2513,15 +2513,14 @@ static std::optional<FunctionalOperationInfo> approvedEnumHashOperation(
 
 static bool scalarHashTrivialConstruction(
     const State &S, const SourceManager &SM, const ASTContext &Context,
-    const CXXConstructExpr *Construction, const CXXRecordDecl *Record,
-    bool ZeroInitialization) {
+    const CXXConstructExpr *Construction, const CXXRecordDecl *Record) {
   const auto *Constructor = Construction ? Construction->getConstructor() : nullptr;
   const auto *Prototype = Constructor
       ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
   if (!Construction || !Record || !Constructor || !Prototype ||
       Construction->getNumArgs() ||
       Construction->getConstructionKind() != CXXConstructionKind::Complete ||
-      Construction->requiresZeroInitialization() != ZeroInitialization ||
+      Construction->requiresZeroInitialization() ||
       !Context.hasSameType(Construction->getType(), Context.getRecordType(Record)) ||
       Constructor->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
       !Constructor->isDefaultConstructor() || Constructor->getNumParams() ||
@@ -2582,14 +2581,13 @@ static bool selectedScalarHashBody(const State &S, const SourceManager &SM,
   const auto &Arguments = Scalar->getTemplateArgs();
   const auto WordBits = Context.getTypeSize(Context.getSizeType());
   const auto ValueBits = Context.getTypeSize(ValueType);
-  if ((WordBits != 32 && WordBits != 64) || Arguments.size() != 2 ||
+  if (WordBits != 64 || Arguments.size() != 2 ||
       Arguments.get(0).getKind() != TemplateArgument::Type ||
       Arguments.get(1).getKind() != TemplateArgument::Integral ||
       !Context.hasSameType(Arguments.get(0).getAsType(), ValueType))
     return false;
   const auto Ratio = Arguments.get(1).getAsIntegral().getLimitedValue(3);
-  if (Ratio > 2 || Ratio != ValueBits / WordBits ||
-      (Ratio == 2 && ValueBits != 2 * WordBits))
+  if (Ratio > 1 || Ratio != ValueBits / WordBits)
     return false;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
   if (!Body || Body->size() != (Ratio == 0 ? 4u : 3u))
@@ -2622,7 +2620,7 @@ static bool selectedScalarHashBody(const State &S, const SourceManager &SM,
   if (Storage->hasInit() && !scalarHashTrivialConstruction(
           S, SM, Context,
           dyn_cast<CXXConstructExpr>(Storage->getInit()->IgnoreParenImpCasts()),
-          Union, false))
+          Union))
     return false;
   auto Field = Union->field_begin();
   const auto *ValueField = *Field++;
@@ -2633,38 +2631,15 @@ static bool selectedScalarHashBody(const State &S, const SourceManager &SM,
   const auto ExpectedAlign = std::max(Context.getTypeAlignInChars(ValueType),
                                     Context.getTypeAlignInChars(Context.getSizeType()));
   if (ValueField->isBitField() || WordsField->isBitField() ||
-      ValueField->getName() != "__t" || WordsField->getName() != (Ratio == 2 ? "__s" : "__a") ||
+      ValueField->getName() != "__t" || WordsField->getName() != "__a" ||
       !Context.hasSameType(ValueField->getType(), ValueType) ||
       Context.getASTRecordLayout(Union).getSize() != ExpectedSize ||
       Context.getASTRecordLayout(Union).getAlignment() != ExpectedAlign ||
       !stringHashOrigin(S, SM, ValueField, "__functional/hash.h") ||
       !stringHashOrigin(S, SM, WordsField, "__functional/hash.h"))
     return false;
-  if (Ratio == 2) {
-    const auto *Words = WordsField->getType()->getAsCXXRecordDecl();
-    Words = Words ? Words->getDefinition() : nullptr;
-    if (!Words || Words->isUnion() || !Words->isStandardLayout() ||
-        !Words->isTriviallyCopyable() || !Words->hasTrivialDestructor() ||
-        Words->getNumBases() ||
-        std::distance(Words->field_begin(), Words->field_end()) != 2 ||
-        Context.getASTRecordLayout(Words).getSize() != Size * 2 ||
-        Context.getASTRecordLayout(Words).getAlignment() !=
-            Context.getTypeAlignInChars(Context.getSizeType()) ||
-        !stringHashOrigin(S, SM, Words, "__functional/hash.h"))
-      return false;
-    unsigned Index = 0;
-    for (const auto *Word : Words->fields()) {
-      if (Word->isBitField() || Word->getName() != (Index++ == 0 ? "__a" : "__b") ||
-          !Context.hasSameType(Word->getType(), Context.getSizeType()) ||
-          !stringHashOrigin(S, SM, Word, "__functional/hash.h"))
-        return false;
-    }
-    const auto &Layout = Context.getASTRecordLayout(Words);
-    if (Layout.getFieldOffset(0) != 0 || Layout.getFieldOffset(1) != WordBits)
-      return false;
-  } else if (!Context.hasSameType(WordsField->getType(), Context.getSizeType())) {
+  if (!Context.hasSameType(WordsField->getType(), Context.getSizeType()))
     return false;
-  }
   auto Member = [&](const Expr *E, const FieldDecl *Expected) {
     const auto *Access = E ? dyn_cast<MemberExpr>(E->IgnoreParenImpCasts()) : nullptr;
     const auto *Base = Access && !Access->isArrow()
@@ -2694,51 +2669,7 @@ static bool selectedScalarHashBody(const State &S, const SourceManager &SM,
       return false;
     Result = Cleanup->getSubExpr();
   }
-  if (Ratio != 2)
-    return Member(Result, WordsField);
-  const auto *Call = dyn_cast_or_null<CXXOperatorCallExpr>(
-      Result ? Result->IgnoreParenImpCasts() : nullptr);
-  const auto *Address = Call && Call->getNumArgs() == 3
-      ? dyn_cast<UnaryOperator>(Call->getArg(1)->IgnoreParenImpCasts()) : nullptr;
-  const auto *Addressed = Address && Address->getOpcode() == UO_AddrOf
-      ? dyn_cast<DeclRefExpr>(Address->getSubExpr()->IgnoreParenImpCasts()) : nullptr;
-  const auto *Extent = Call && Call->getNumArgs() == 3
-      ? dyn_cast<UnaryExprOrTypeTraitExpr>(Call->getArg(2)->IgnoreParenImpCasts()) : nullptr;
-  const auto *Sized = Extent && Extent->getKind() == UETT_SizeOf && !Extent->isArgumentType()
-      ? dyn_cast<DeclRefExpr>(Extent->getArgumentExpr()->IgnoreParenImpCasts()) : nullptr;
-  const auto *HasherMethod = dyn_cast_or_null<CXXMethodDecl>(Call ? Call->getDirectCallee() : nullptr);
-  const auto *Hasher = HasherMethod ? HasherMethod->getParent() : nullptr;
-  const Expr *Receiver = Call && Call->getNumArgs() == 3 ? Call->getArg(0) : nullptr;
-  for (unsigned Depth = 0; Receiver && Depth != 16; ++Depth) {
-    if (const auto *Parentheses = dyn_cast<ParenExpr>(Receiver))
-      Receiver = Parentheses->getSubExpr();
-    else if (const auto *Cast = dyn_cast<ImplicitCastExpr>(Receiver);
-             Cast && Cast->getCastKind() == CK_NoOp)
-      Receiver = Cast->getSubExpr();
-    else if (const auto *Temporary = dyn_cast<MaterializeTemporaryExpr>(Receiver))
-      Receiver = Temporary->getSubExpr();
-    else
-      break;
-  }
-  const auto *Temporary = dyn_cast_or_null<CXXTemporaryObjectExpr>(Receiver);
-  return Call && Call->getOperator() == OO_Call && HasherMethod && Hasher &&
-         HasherMethod->getNumParams() == 2 && !HasherMethod->isStatic() &&
-         HasherMethod->isConst() && !HasherMethod->isVolatile() &&
-         !HasherMethod->isVariadic() &&
-         Hasher->getName() == "__murmur2_or_cityhash" &&
-         Hasher->isEmpty() && Hasher->field_empty() &&
-         !Hasher->hasUserDeclaredConstructor() && !Hasher->hasUserDeclaredDestructor() &&
-         scalarHashTrivialConstruction(S, SM, Context, Temporary, Hasher, true) &&
-         Context.hasSameUnqualifiedType(Call->getArg(0)->getType(), Context.getRecordType(Hasher)) &&
-         Context.hasSameType(HasherMethod->getParamDecl(0)->getType(),
-                             Context.getPointerType(Context.VoidTy.withConst())) &&
-         Context.hasSameType(HasherMethod->getParamDecl(1)->getType(), Context.getSizeType()) &&
-         Context.hasSameType(HasherMethod->getReturnType(), Context.getSizeType()) &&
-         Context.hasSameType(Call->getArg(1)->getType(), HasherMethod->getParamDecl(0)->getType()) &&
-         Context.hasSameType(Call->getArg(2)->getType(), Context.getSizeType()) &&
-         Addressed && Addressed->getDecl() == Storage && Sized && Sized->getDecl() == Storage &&
-         Context.hasSameType(Call->getType(), Context.getSizeType()) &&
-         selectedByteHashSource(S, SM, Call, Context);
+  return Member(Result, WordsField);
 }
 
 static std::optional<FunctionalOperationInfo> approvedFloatingHashOperation(
@@ -3339,8 +3270,7 @@ uniqueHashCallImpl(const State &S, const SourceManager &SM,
   if (!Runtime) return Object;
   if (Context.getTargetInfo().isBigEndian() || Context.getCharWidth() != 8 ||
       Context.getTypeSize(Context.UnsignedIntTy) != 32 ||
-      (Context.getTypeSize(Context.getSizeType()) != 32 &&
-       Context.getTypeSize(Context.getSizeType()) != 64)) return std::nullopt;
+      Context.getTypeSize(Context.getSizeType()) != 64) return std::nullopt;
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Method->getBody());
   const auto *Local = Body && Body->size() == 2
       ? dyn_cast<DeclStmt>(Body->body_front()) : nullptr;
@@ -3437,8 +3367,7 @@ stringHashCallImpl(const State &S, const SourceManager &SM,
   if (!Operator || !Method || !Reference || !Cast || !Object ||
       Context.getTargetInfo().isBigEndian() || Context.getCharWidth() != 8 ||
       Context.getTypeSize(Context.UnsignedIntTy) != 32 ||
-      (Context.getTypeSize(Context.getSizeType()) != 32 &&
-       Context.getTypeSize(Context.getSizeType()) != 64) ||
+      Context.getTypeSize(Context.getSizeType()) != 64 ||
       (RequireOwnedReference && !S.owns(SM, Reference->getExprLoc())) ||
       Operator->getOperator() != OO_Call ||
       Method->getOverloadedOperator() != OO_Call || Method->isStatic() ||
@@ -46784,7 +46713,7 @@ approvedUtilityStringRecord(const State &S, const SourceManager &SM,
     return std::nullopt;
   const auto &Layout = Context.getASTRecordLayout(String);
   const auto &RepLayout = Context.getASTRecordLayout(Rep);
-  if (PointerBits != WordBits || (WordBits != 32 && WordBits != 64) ||
+  if (PointerBits != WordBits || WordBits != 64 ||
       Layout.getFieldCount() != Fields.size() || Layout.getFieldOffset(0) != 0 ||
       Layout.getFieldOffset(AllocatorIndex) != 0 ||
       (!CompactMicrosoft && (Layout.getFieldOffset(1) != 0 || Layout.getFieldOffset(3) != 0)) ||

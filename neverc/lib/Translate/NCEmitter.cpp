@@ -479,9 +479,7 @@ class Emitter {
       line("#error \"translated startup requires native constructor support\"");
       line("#endif");
     }
-    const char *Arch = T.getArch() == llvm::Triple::aarch64  ? "__aarch64__"
-                       : T.getArch() == llvm::Triple::x86_64 ? "__x86_64__"
-                                                             : "__i386__";
+    const char *Arch = T.getArch() == llvm::Triple::aarch64 ? "__aarch64__" : "__x86_64__";
     line("#if !defined(" + std::string(Arch) + ")");
     line("#error \"translated source requires its recorded target "
          "architecture\"");
@@ -762,9 +760,6 @@ class Emitter {
     }
   }
   void nativeHeapRuntime() {
-    const llvm::Triple T(M.Target.Triple);
-    const auto CC = T.isOSWindows() && T.getArch() == llvm::Triple::x86
-                        ? std::string("__attribute__((cdecl)) ") : std::string();
     for (const auto &Name : NativeHeapSymbols) {
       const auto Result = Name == "free" ? "void " : "void *";
       const auto Parameters = Name == "free" ? "void *nct_emit_pointer"
@@ -775,12 +770,12 @@ class Emitter {
                              : Name == "realloc" ? "nct_emit_pointer, nct_emit_size"
                              : Name == "calloc" ? "nct_emit_count, nct_emit_size"
                                                 : "nct_emit_size";
-      line("extern " + std::string(Result) + CC + Name + "(" + Parameters + ");");
+      line("extern " + std::string(Result) + Name + "(" + Parameters + ");");
       if (Name == "realloc") {
-        line("static void *(" + CC + "*volatile nct_emit_native_realloc_pointer)"
+        line("static void *(*volatile nct_emit_native_realloc_pointer)"
              "(void *, __SIZE_TYPE__) = realloc;");
       }
-      line("static " + std::string(Result) + CC + "nct_emit_native_" + Name + "(" + Parameters + ") {");
+      line("static " + std::string(Result) + "nct_emit_native_" + Name + "(" + Parameters + ") {");
       line(std::string(Name == "free" ? "  " : "  return ") +
            (Name == "realloc" ? "nct_emit_native_realloc_pointer" : Name) +
            "(" + Arguments + ");");
@@ -791,21 +786,17 @@ class Emitter {
   void staticDestructionRuntime() {
     if (StaticDestructors.empty())
       return;
-    const llvm::Triple T(M.Target.Triple);
-    const auto CC = DestructionABI == StaticDestructionABI::CAtExit &&
-                            T.getArch() == llvm::Triple::x86
-                        ? std::string("__attribute__((cdecl)) ") : std::string();
     if (DestructionABI == StaticDestructionABI::CxaAtExit) {
       line("extern int __cxa_atexit(void (*)(void *), void *, void *);");
       line("extern unsigned char __dso_handle __attribute__((visibility(\"hidden\")));");
     } else
-      line("extern int " + CC + "atexit(void (" + CC + "*)(void));");
+      line("extern int atexit(void (*)(void));");
     for (const auto &G : M.Globals) {
       if (G.Destructor.empty())
         continue;
       const auto Parameter = DestructionABI == StaticDestructionABI::CxaAtExit
                                  ? "void *nct_emit_unused" : "void";
-      line("static void " + CC + StaticDestructors.at(G.Name) + "(" + Parameter + ") {");
+      line("static void " + StaticDestructors.at(G.Name) + "(" + Parameter + ") {");
       if (DestructionABI == StaticDestructionABI::CxaAtExit)
         line("  (void)nct_emit_unused;");
       line("  " + G.Destructor + "();");

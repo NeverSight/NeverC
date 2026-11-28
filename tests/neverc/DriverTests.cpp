@@ -805,14 +805,16 @@ TEST_F(DriverTest, RejectUnsupportedTargets) {
   }
 }
 
-TEST_F(DriverTest, RejectLegacyX86TargetsForEveryOutput) {
+TEST_F(DriverTest, Reject32BitTargetsForEveryOutput) {
   const auto Source = tmpFile("unsupported-x86.c");
   writeFile(Source, "int value;\n");
   for (const char *Triple :
        {"i386-unknown-linux-gnu", "i486-unknown-linux-gnu",
         "i586-unknown-linux-gnu", "i686-unknown-linux-gnu",
         "i386-pc-windows-msvc", "i686-pc-windows-gnu", "i386-apple-macosx10.13",
-        "i386-unknown-linux-code16", "x86_64-unknown-linux-gnux32"}) {
+        "i386-unknown-linux-code16", "x86_64-unknown-linux-gnux32",
+        "x86_64-unknown-linux-muslx32", "aarch64-unknown-linux-gnu_ilp32",
+        "arm64_32-apple-watchos"}) {
     for (const auto &Mode : std::vector<std::vector<std::string>>{
              {"-E"}, {"-fsyntax-only"}, {"-S", "-emit-llvm"}, {"-S"}, {"-c"}}) {
       SCOPED_TRACE(Triple);

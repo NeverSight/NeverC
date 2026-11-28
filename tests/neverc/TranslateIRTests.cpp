@@ -1443,9 +1443,10 @@ TEST(TranslateIR, StaticDestructionUsesExactMSVCEnvironmentAndCallingConvention)
   M.Target.Carriers->Carriers[PointerCarrierSlot] = {32, 32};
   C.ExpectedCarrierLayout = M.Target.Carriers;
   C.ExpectedPtrDiffBits = C.ExpectedUIntPtrBits = 32;
-  ASSERT_TRUE(emitNC(M, C, Output, D));
-  EXPECT_NE(Output.Text.find("extern int __attribute__((cdecl)) atexit(void (__attribute__((cdecl)) *)(void));"), std::string::npos);
-  EXPECT_NE(Output.Text.find("static void __attribute__((cdecl)) nct_emit_static_destructor_0(void)"), std::string::npos);
+  D.clear();
+  EXPECT_FALSE(emitNC(M, C, Output, D));
+  ASSERT_FALSE(D.empty());
+  EXPECT_EQ(D.front().Code, "TR0204");
 }
 
 TEST(TranslateIR, StartupRequiresARealInternalVoidFunctionInCoreV2) {
@@ -3513,8 +3514,7 @@ TEST(TranslateIR, MemoryLifetimesRequireExplicitTrueCoreV2Evidence) {
 }
 
 namespace {
-Module nativeHeapModule(NativeHeapOperation Operation = NativeHeapOperation::Malloc,
-                        unsigned Bits = 64) {
+Module nativeHeapModule(NativeHeapOperation Operation = NativeHeapOperation::Malloc) {
   auto M = module(true);
   M.NativeHeap = M.MemoryLifetimes = true;
   const auto Pointer = pointerType({TypeKind::Void, {}});
@@ -3529,12 +3529,12 @@ Module nativeHeapModule(NativeHeapOperation Operation = NativeHeapOperation::Mal
     I.Target = variable("nct_memory", Pointer);
     if (Operation == NativeHeapOperation::Realloc)
       I.Args = {pointerExpr(ExprKind::Null, Pointer),
-                literal("4", integerType(Bits, true))};
+                literal("4", integerType(64, true))};
     else {
-      I.Args = {literal("4", integerType(Bits, true))};
+      I.Args = {literal("4", integerType(64, true))};
     }
     if (Operation == NativeHeapOperation::Calloc)
-      I.Args.push_back(literal("8", integerType(Bits, true)));
+      I.Args.push_back(literal("8", integerType(64, true)));
   }
   M.Functions[0].Body.insert(M.Functions[0].Body.begin() + 1, std::move(I));
   return M;
@@ -3609,48 +3609,32 @@ TEST(TranslateIR, NativeHeapRequiresIndependentCapabilityAndExactOperands) {
 }
 
 TEST(TranslateIR, NativeHeapChecksPointerWidthAndWindowsCallingConvention) {
-  for (const auto &[Target, Bits] : std::vector<std::pair<std::string, unsigned>>{
-       {"x86_64-unknown-linux-gnu", 64}, {"aarch64-unknown-linux-gnu", 64},
-       {"x86_64-apple-macosx", 64}, {"aarch64-apple-macosx", 64},
-       {"x86_64-pc-windows-msvc", 64}, {"aarch64-pc-windows-msvc", 64},
-       {"x86_64-pc-windows-unknown", 64},
-       {"i686-pc-windows-msvc", 32}, {"i686-w64-windows-gnu", 32}}) {
+  for (const std::string Target : {
+           "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+           "x86_64-apple-macosx", "aarch64-apple-macosx",
+           "x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc",
+           "x86_64-pc-windows-unknown"}) {
     SCOPED_TRACE(Target);
-    auto M = nativeHeapModule(NativeHeapOperation::Calloc, Bits);
+    auto M = nativeHeapModule(NativeHeapOperation::Calloc);
     M.Target.Triple = Target;
-    M.Target.PointerBits = Bits;
-    M.Target.Carriers->Carriers[9] = {Bits, Bits};
     auto C = context(M);
-    C.ExpectedCarrierLayout->Carriers[9] = {Bits, Bits};
-    C.ExpectedPtrDiffBits = C.ExpectedUIntPtrBits = Bits;
     Diagnostics D;
     EmittedSource Out;
     ASSERT_TRUE(emitNC(M, C, Out, D));
-    EXPECT_EQ(Out.Text.find("__attribute__((cdecl)) calloc") != std::string::npos, Bits == 32);
-    EXPECT_EQ(Out.Text.find("__attribute__((cdecl)) nct_emit_native_calloc") != std::string::npos, Bits == 32);
+    EXPECT_NE(Out.Text.find("extern void *calloc("), std::string::npos);
     if (Target.find("windows") != std::string::npos)
       EXPECT_NE(Out.Text.find("recorded Windows ABI"), std::string::npos);
-    M.Functions[0].Body[1].Args[0] = literal("4", integerType(Bits == 32 ? 64 : 32, true));
-    D.clear();
+    M.Functions[0].Body[1].Args[0] = literal("4", integerType(32, true));
     EXPECT_FALSE(verifyModule(M, C, D));
 
-    M = nativeHeapModule(NativeHeapOperation::Realloc, Bits);
+    M = nativeHeapModule(NativeHeapOperation::Realloc);
     M.Target.Triple = Target;
-    M.Target.PointerBits = Bits;
-    M.Target.Carriers->Carriers[9] = {Bits, Bits};
     D.clear();
     ASSERT_TRUE(emitNC(M, C, Out, D));
-    EXPECT_EQ(Out.Text.find("__attribute__((cdecl)) realloc") != std::string::npos,
-              Bits == 32);
-    EXPECT_EQ(Out.Text.find("__attribute__((cdecl)) nct_emit_native_realloc") !=
-                  std::string::npos,
-              Bits == 32);
-    EXPECT_EQ(Out.Text.find("static void *(__attribute__((cdecl)) *volatile "
-                            "nct_emit_native_realloc_pointer)") != std::string::npos,
-              Bits == 32);
-    EXPECT_NE(Out.Text.find("nct_emit_native_realloc_pointer(nct_emit_pointer, "
-                            "nct_emit_size)"),
+    EXPECT_NE(Out.Text.find("static void *(*volatile nct_emit_native_realloc_pointer)"),
               std::string::npos);
+    EXPECT_NE(Out.Text.find("nct_emit_native_realloc_pointer(nct_emit_pointer, "
+                            "nct_emit_size)"), std::string::npos);
   }
   for (const std::string Target : {"x86_64-unknown-freebsd", "aarch64-linux-android",
                                   "x86_64-pc-windows-cygnus", "x86_64-pc-windows-itanium"}) {

@@ -144,23 +144,20 @@ passing. Exact integral `std::hash` specializations from `bool` through
 `unsigned long`, plus `long long` and `unsigned long long`, use that carrier
 and lower to target
 `size_t` for temporary, stored, copied and by-value objects. Wide values retain
-their bits on 64-bit targets and use libc++'s Murmur2 algorithm over eight
-little-endian bytes on 32-bit targets. They support same-type copy and move
+their bits. They support same-type copy and move
 assignment and call directly or through `std::invoke`; the receiver is
 evaluated once before its argument. The exact C++17 `nullptr_t` specialization
 returns its pinned libc++ constant through the same object, assignment and
 invocation boundary. Exact `float` and `double` specializations authenticate
 the same scalar base and the outer zero-normalizing call operator. Both signed
 zeros hash to zero; other values hash their IEEE representation. `float` uses
-its 32-bit representation, while `double` preserves its bits on 64-bit targets
-and uses the eight-byte Murmur2 path on 32-bit targets. Complete enum
+its 32-bit representation, while `double` preserves its 64-bit representation. Complete enum
 specializations authenticate the primary `hash` and `__enum_hash<E, true>`
 inheritance before delegating to the exact underlying integer hash. Exact non-volatile
 object-, void- or fixed-arity ordinary function-pointer `std::hash<T *>`
 specializations authenticate the pinned pointer
 partial specialization, its pointer/`size_t` union and its exact internal hash
-call. They reproduce libc++'s four-byte Murmur2 path on 32-bit targets and its
-ABI-v1 eight-byte CityHash path on 64-bit targets through the same object,
+call. They reproduce libc++'s ABI-v1 eight-byte CityHash path through the same object,
 assignment and invocation forms. Function pointers require the target's
 object-pointer size and alignment. `long double`, volatile-object,
 volatile-void and variadic function-pointer hashes remain outside this boundary.
@@ -257,7 +254,7 @@ hashes: 101 for the `<type_traits>` closure, nine for standalone `<cstdint>`,
 267 for `<memory>` and 346 for `<functional>`.
 The composite
 array-plus-tuple-plus-utility fixture consumes a 231-file union closure; adding
-`<optional>` produces a 253-file union closure on all eight targets.
+`<optional>` produces a 253-file union closure on all six targets.
 Numeric limits fold the documented
 zero-argument integer and IEEE floating queries to literals. Cstddef aliases,
 layout queries and direct `std::byte` operations lower to existing scalar IR.
@@ -1166,7 +1163,7 @@ Source-defined operators keep their existing precedence, including implicit size
 Exact pinned `std::make_from_tuple` accepts authenticated tuple, pair and array inputs and constructs admitted scalar or source-record results. The input is evaluated once; selected conversions, constructor templates, defaults and final return/field/array destinations retain their effects and C++17 copy elision. Helper argument/default temporaries end before the caller's tuple temporaries. Runtime operations require completed definitions; pure `decltype`/`noexcept` queries check both factory signatures and selected exception sources without runtime helpers. Reference inputs, reference results and direct reference fields require live origins; expired forwarding carriers, escaping temporaries, unknown or nested reference provenance, base-bearing result records, source replacements, private helper calls and standalone addresses remain rejected. NeverC's source language remains C23-only. [C++17](../docs/cpp-core-v2.md#make-from-tuple-result-construction).
 
 
-Exact pinned direct `std::hash<std::string_view>` and `std::hash<std::string>` calls hash the logical bytes of admitted char carriers. The source is evaluated once; complete 32-bit Murmur2 and 64-bit CityHash paths preserve the SDK ABI1 arithmetic, including narrow intermediate truncation. Selected public, inherited and helper declaration chains are authenticated. Pure `decltype`/`noexcept` queries preserve argument exception sources without algorithm runtime helpers. Private helper calls, standalone method addresses, source replacements remain outside this contract. [C++17](../docs/cpp-core-v2.md#string-and-string-view-hashing).
+Exact pinned direct `std::hash<std::string_view>` and `std::hash<std::string>` calls hash the logical bytes of admitted char carriers. The source is evaluated once. The 64-bit CityHash path preserves the SDK ABI1 arithmetic, including narrow intermediate truncation. Selected public, inherited and helper declaration chains are authenticated. Pure `decltype`/`noexcept` queries preserve argument exception sources without algorithm runtime helpers. Private helper calls, standalone method addresses, source replacements remain outside this contract. [C++17](../docs/cpp-core-v2.md#string-and-string-view-hashing).
 
 Exact direct `std::exchange` calls also accept admitted scalar or array `std::unique_ptr` owners with the pinned default deleter, replacing them with a same-type rvalue owner or `nullptr`. Arguments evaluate once before ownership moves; self exchange, returned and ignored owners, outer assignment aliases and extended result lifetimes preserve their cleanup. Pure signature queries create no ownership or heap helpers. Selected SDK declaration, constructor, assignment, helper and exception-trait sources remain checked; custom or converting owners and standalone function addresses remain excluded.
 

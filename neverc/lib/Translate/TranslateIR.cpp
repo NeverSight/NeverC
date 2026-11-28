@@ -1,4 +1,5 @@
 #include "TranslateIR.h"
+#include "Cpp/Target.h"
 #include "JSON.h"
 #include "TranslateIRInternal.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -1915,16 +1916,11 @@ public:
     if (M.Target.Triple.empty() || Context.TargetTriple.empty() ||
         T != Requested || M.Target.IntBits != 32 ||
         M.Target.IntBits != Context.IntBits ||
-        (M.Target.PointerBits != 32 && M.Target.PointerBits != 64) ||
+        M.Target.PointerBits != 64 ||
         M.Target.PointerBits != Context.PointerBits ||
         M.Target.LittleEndian != Context.LittleEndian ||
         !M.Target.LittleEndian ||
-        M.Target.PointerBits != (T.isArch64Bit() ? 64u : 32u) ||
-        (T.getArch() != llvm::Triple::aarch64 &&
-         T.getArch() != llvm::Triple::x86_64 &&
-         T.getArch() != llvm::Triple::x86) ||
-        (!T.isMacOSX() && !(T.isOSLinux() && !T.isAndroid()) &&
-         !T.isOSWindows()))
+        !isCppTranslationTarget(T))
       return fail(D, "TR0204", Anchor, "target data model",
                   "Frontend and requested native target/data model disagree or "
                   "are unsupported.");

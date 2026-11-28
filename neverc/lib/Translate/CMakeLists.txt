@@ -42,6 +42,7 @@ add_neverc_library(nevercTranslate
 # this component's source content without embedding developer checkout paths.
 file(SHA256 "${_cpp_sdk_catalog}" _translate_fingerprints)
 file(GLOB_RECURSE _translate_headers CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
+list(APPEND _translate_headers "${CMAKE_CURRENT_SOURCE_DIR}/../../include/neverc/Foundation/Target/NativeTargetABI.h")
 foreach(_source IN LISTS NEVERC_TRANSLATE_SOURCES _translate_headers)
   if(NOT IS_ABSOLUTE "${_source}")
     set(_source "${CMAKE_CURRENT_SOURCE_DIR}/${_source}")

@@ -1,4 +1,5 @@
 #include "CompilationContext.h"
+#include "Target.h"
 #include "../ArtifactPlatform.h"
 #include "../ArtifactWriter.h"
 
@@ -392,8 +393,7 @@ class ContextParser {
         continue;
       }
       if (Arg == "-m32" || Arg == "-m64") {
-        if ((Arg == "-m32" && Target.getArch() != Triple::x86) ||
-            (Arg == "-m64" && !Target.isArch64Bit()))
+        if (Arg == "-m32")
           return error(
               "TR0204", Arg,
               "source pointer width disagrees with the requested target");
@@ -532,9 +532,9 @@ bool parseProjectContext(const ProjectContextOptions &Options,
   Parsed.TargetTriple = Triple::normalize(Options.TargetTriple.empty()
                                               ? sys::getDefaultTargetTriple()
                                               : Options.TargetTriple);
-  if (Triple(Parsed.TargetTriple).getArch() == Triple::UnknownArch)
+  if (!isCppTranslationTarget(Triple(Parsed.TargetTriple)))
     return fail(Errors, "TR0204", Options.Database, "target",
-                "unknown requested target architecture",
+                "unsupported translation target or pointer ABI",
                 "Select a supported target triple.");
   std::vector<Entry> Entries;
   if (!parseEntries(Bytes, Parsed.Database.AbsolutePath, Entries, Errors))

@@ -3,6 +3,7 @@
 #include "Cpp/CompilationContext.h"
 #include "Cpp/CppSdk.h"
 #include "Cpp/LibraryMappings.h"
+#include "Cpp/Target.h"
 #include "Diagnostics.h"
 #include "FrontendProcess.h"
 #include "JSON.h"
@@ -724,7 +725,13 @@ int runTranslate(int Argc, const char **Argv, const char *ExecutablePath) {
   Context.TargetTriple = Triple::normalize(
       I.Target.empty() ? sys::getDefaultTargetTriple() : I.Target);
   Triple T(Context.TargetTriple);
-  Context.PointerBits = T.isArch64Bit() ? 64 : 32;
+  if (!isCppTranslationTarget(T)) {
+    fail(D, "TR0204", I.Source, "target data model",
+         "C++ translation requires x86_64 or AArch64 with 64-bit pointers on macOS, Linux or Windows.",
+         "Select a supported 64-bit target triple.");
+    return failed();
+  }
+  Context.PointerBits = 64;
   Context.LittleEndian = T.isLittleEndian();
   if (I.Profile == "cpp-core-v2" &&
       !expectedCarrierLayout(Context, D, I.Source))

@@ -1,4 +1,5 @@
 #include "Frontend.h"
+#include "../Target.h"
 #include "FrontendEntry.h"
 #include "BuildID.h"
 #include "clang/AST/Attr.h"
@@ -34271,6 +34272,11 @@ static bool request(State &S, llvm::StringRef Path) {
     S.ConfigurationID = Configuration->str();
   }
   llvm::Triple T(S.Target);
+  if (!neverc::translate::isCppTranslationTarget(T)) {
+    S.diagnose("TR0204", "target", "Unsupported C++ target or pointer ABI.",
+               "Use x86_64 or AArch64 with 64-bit pointers on macOS, Linux or Windows.");
+    return false;
+  }
   if (S.math()) {
     const auto *SDK = O->getObject("sdk");
     llvm::VersionTuple Deployment;
@@ -34288,17 +34294,6 @@ static bool request(State &S, llvm::StringRef Path) {
     if (!SDK || !S.configureSDK(*SDK))
       return false;
   } else if (HeaderSDK && !S.configureSDK(*O->getObject("sdk"))) {
-    return false;
-  }
-  if ((T.getArch() != llvm::Triple::aarch64 &&
-       T.getArch() != llvm::Triple::x86_64 &&
-       T.getArch() != llvm::Triple::x86) ||
-      (!T.isMacOSX() && !(T.isOSLinux() && !T.isAndroid()) &&
-       !T.isOSWindows())) {
-    S.diagnose(
-        "TR0204", "target",
-        "Target architecture/OS is outside the core data-model contract.",
-        "Use the current NeverC native target.");
     return false;
   }
   if (!options(S, *Args)) {

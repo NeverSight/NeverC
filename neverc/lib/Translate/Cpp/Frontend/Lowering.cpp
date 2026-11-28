@@ -4992,168 +4992,56 @@ class FunctionLowering {
               llvm::APSInt(llvm::APInt(Width, Value), /*isUnsigned=*/true),
               Type, L);
         };
-        if (Bits == 32) {
-          auto U32 = [&](uint64_t Value) {
-            return Literal(Value, 32, ResultType);
-          };
-          auto Word = snapshot(json::Object(Integer), L);
-          assign(Word,
-                 binary("*", json::Object(Word), U32(0x5bd1e995),
-                        ResultType, L),
-                 L);
-          assign(Word,
-                 binary("^", json::Object(Word),
-                        binary(">>", json::Object(Word), U32(24), ResultType,
-                               L),
-                        ResultType, L),
-                 L);
-          assign(Word,
-                 binary("*", json::Object(Word), U32(0x5bd1e995),
-                        ResultType, L),
-                 L);
-          auto Hash = snapshot(
-              binary("*", U32(4), U32(0x5bd1e995), ResultType, L), L);
-          assign(Hash,
-                 binary("^", json::Object(Hash), std::move(Word), ResultType,
-                        L),
-                 L);
-          assign(Hash,
-                 binary("^", json::Object(Hash),
-                        binary(">>", json::Object(Hash), U32(13), ResultType,
-                               L),
-                        ResultType, L),
-                 L);
-          assign(Hash,
-                 binary("*", json::Object(Hash), U32(0x5bd1e995),
-                        ResultType, L),
-                 L);
-          assign(Hash,
-                 binary("^", json::Object(Hash),
-                        binary(">>", json::Object(Hash), U32(15), ResultType,
-                               L),
-                        ResultType, L),
-                 L);
-          return snapshot(std::move(Hash), L);
-        }
-        if (Bits == 64) {
-          auto U32 = [&](uint64_t Value) {
-            return Literal(Value, 32, "uint");
-          };
-          auto U64 = [&](uint64_t Value) {
-            return Literal(Value, 64, ResultType);
-          };
-          auto Low = snapshot(cast(json::Object(Integer), "uint", L), L);
-          auto High = snapshot(
-              cast(binary(">>", json::Object(Integer), U64(32), ResultType,
-                          L),
-                   "uint", L),
-              L);
-          auto First = snapshot(
-              binary("+", U64(8),
-                     cast(binary("<<", json::Object(Low), U32(3), "uint", L),
-                          ResultType, L),
-                     ResultType, L),
-              L);
-          auto Second = snapshot(cast(std::move(High), ResultType, L), L);
-          auto MixedFirst = snapshot(
-              binary("*",
-                     binary("^", json::Object(First), json::Object(Second),
-                            ResultType, L),
-                     U64(0x9ddfea08eb382d69ULL), ResultType, L),
-              L);
-          assign(MixedFirst,
-                 binary("^", json::Object(MixedFirst),
-                        binary(">>", json::Object(MixedFirst), U64(47),
-                               ResultType, L),
-                        ResultType, L),
-                 L);
-          auto MixedSecond = snapshot(
-              binary("*",
-                     binary("^", json::Object(Second),
-                            json::Object(MixedFirst), ResultType, L),
-                     U64(0x9ddfea08eb382d69ULL), ResultType, L),
-              L);
-          assign(MixedSecond,
-                 binary("^", json::Object(MixedSecond),
-                        binary(">>", json::Object(MixedSecond), U64(47),
-                               ResultType, L),
-                        ResultType, L),
-                 L);
-          assign(MixedSecond,
-                 binary("*", json::Object(MixedSecond),
-                        U64(0x9ddfea08eb382d69ULL), ResultType, L),
-                 L);
-          return snapshot(std::move(MixedSecond), L);
-        }
-        reject(L, "functional pointer hash",
-               "The checked pointer hash requires a 32-bit or 64-bit size_t.");
-      }
-      auto Murmur64To32 = [&](Expression Wide) {
-        auto Unsigned = type(A.Context.UnsignedLongLongTy, L);
+        if (Bits != 64)
+          reject(L, "functional pointer hash", "Pointer hashing requires 64-bit size_t.");
         auto U32 = [&](uint64_t Value) {
-          return A.literal(
-              llvm::APSInt(llvm::APInt(32, Value), /*isUnsigned=*/true),
-              "uint", L);
+          return Literal(Value, 32, "uint");
         };
-        auto Low = snapshot(cast(json::Object(Wide), "uint", L), L);
+        auto U64 = [&](uint64_t Value) {
+          return Literal(Value, 64, ResultType);
+        };
+        auto Low = snapshot(cast(json::Object(Integer), "uint", L), L);
         auto High = snapshot(
-            cast(binary(">>", json::Object(Wide),
-                        A.literal(llvm::APSInt(llvm::APInt(64, 32), true),
-                                  Unsigned, L),
-                        Unsigned, L),
+            cast(binary(">>", json::Object(Integer), U64(32), ResultType,
+                        L),
                  "uint", L),
             L);
-        auto Mix = [&](Expression Word) {
-          auto Value = snapshot(std::move(Word), L);
-          assign(Value,
-                 binary("*", json::Object(Value), U32(0x5bd1e995),
-                        "uint", L),
-                 L);
-          assign(Value,
-                 binary("^", json::Object(Value),
-                        binary(">>", json::Object(Value), U32(24), "uint",
-                               L),
-                        "uint", L),
-                 L);
-          assign(Value,
-                 binary("*", json::Object(Value), U32(0x5bd1e995),
-                        "uint", L),
-                 L);
-          return Value;
-        };
-        auto Hash = snapshot(U32(8), L);
-        for (auto Word : {std::move(Low), std::move(High)}) {
-          auto Mixed = Mix(std::move(Word));
-          assign(Hash,
-                 binary("*", json::Object(Hash), U32(0x5bd1e995),
-                        "uint", L),
-                 L);
-          assign(Hash,
-                 binary("^", json::Object(Hash), std::move(Mixed), "uint",
-                        L),
-                 L);
-        }
-        assign(Hash,
-               binary("^", json::Object(Hash),
-                      binary(">>", json::Object(Hash), U32(13), "uint", L),
-                      "uint", L),
+        auto First = snapshot(
+            binary("+", U64(8),
+                   cast(binary("<<", json::Object(Low), U32(3), "uint", L),
+                        ResultType, L),
+                   ResultType, L),
+            L);
+        auto Second = snapshot(cast(std::move(High), ResultType, L), L);
+        auto MixedFirst = snapshot(
+            binary("*",
+                   binary("^", json::Object(First), json::Object(Second),
+                          ResultType, L),
+                   U64(0x9ddfea08eb382d69ULL), ResultType, L),
+            L);
+        assign(MixedFirst,
+               binary("^", json::Object(MixedFirst),
+                      binary(">>", json::Object(MixedFirst), U64(47),
+                             ResultType, L),
+                      ResultType, L),
                L);
-        assign(Hash,
-               binary("*", json::Object(Hash), U32(0x5bd1e995), "uint", L),
+        auto MixedSecond = snapshot(
+            binary("*",
+                   binary("^", json::Object(Second),
+                          json::Object(MixedFirst), ResultType, L),
+                   U64(0x9ddfea08eb382d69ULL), ResultType, L),
+            L);
+        assign(MixedSecond,
+               binary("^", json::Object(MixedSecond),
+                      binary(">>", json::Object(MixedSecond), U64(47),
+                             ResultType, L),
+                      ResultType, L),
                L);
-        assign(Hash,
-               binary("^", json::Object(Hash),
-                      binary(">>", json::Object(Hash), U32(15), "uint", L),
-                      "uint", L),
+        assign(MixedSecond,
+               binary("*", json::Object(MixedSecond),
+                      U64(0x9ddfea08eb382d69ULL), ResultType, L),
                L);
-        return snapshot(cast(std::move(Hash), ResultType, L), L);
-      };
-      if ((Info.LeftType->isSpecificBuiltinType(BuiltinType::LongLong) ||
-           Info.LeftType->isSpecificBuiltinType(BuiltinType::ULongLong)) &&
-          A.Context.getTypeSize(Info.ResultType) == 32) {
-        auto Unsigned = type(A.Context.UnsignedLongLongTy, L);
-        return Murmur64To32(
-            snapshot(cast(std::move(Left), Unsigned, L), L));
+        return snapshot(std::move(MixedSecond), L);
       }
       if (Info.LeftType->isSpecificBuiltinType(BuiltinType::Float) ||
           Info.LeftType->isSpecificBuiltinType(BuiltinType::Double)) {
@@ -5172,10 +5060,7 @@ class FunctionLowering {
         const auto BitType = Double ? "u64" : "uint";
         auto Representation =
             snapshot(bitCast(json::Object(Value), BitType, L), L);
-        if (Double && A.Context.getTypeSize(Info.ResultType) == 32)
-          assign(Result, Murmur64To32(std::move(Representation)), L);
-        else
-          assign(Result, cast(std::move(Representation), ResultType, L), L);
+        assign(Result, cast(std::move(Representation), ResultType, L), L);
         jump(End, L);
         label(End, L);
         return Result;
@@ -5261,39 +5146,6 @@ class FunctionLowering {
                     const Expression &Y) {
       return binary(Name, json::Object(X), json::Object(Y), "bool", L);
     };
-    if (A.Context.getTypeSize(A.Context.getSizeType()) == 32) {
-      auto H = Save(json::Object(Count));
-      auto Remaining = Save(json::Object(Count));
-      auto Offset = Save(W(0));
-      const auto Head = labelName(), Body = labelName(), Tail = labelName();
-      jump(Head, L);
-      label(Head, L);
-      branch(Test(">=", Remaining, W(4)), Body, Tail, L);
-      label(Body, L);
-      auto K = Fetch(Offset, 32);
-      assign(K, Mul(K, W(0x5bd1e995)), L);
-      assign(K, Xor(K, Shr(K, 24)), L);
-      assign(K, Mul(K, W(0x5bd1e995)), L);
-      assign(H, Xor(Mul(H, W(0x5bd1e995)), K), L);
-      assign(Offset, Add(Offset, W(4)), L);
-      assign(Remaining, Sub(Remaining, W(4)), L);
-      jump(Head, L);
-      label(Tail, L);
-      for (unsigned N : {3u, 2u, 1u}) {
-        const auto Present = labelName(), Next = labelName();
-        branch(Test(">=", Remaining, W(N)), Present, Next, L);
-        label(Present, L);
-        assign(H, Xor(H, Op("<<", Byte(Add(Offset, W(N - 1))),
-                                  W((N - 1) * 8))), L);
-        if (N == 1)
-          assign(H, Mul(H, W(0x5bd1e995)), L);
-        jump(Next, L);
-        label(Next, L);
-      }
-      assign(H, Xor(H, Shr(H, 13)), L);
-      assign(H, Mul(H, W(0x5bd1e995)), L);
-      return Save(Xor(H, Shr(H, 15)));
-    }
     auto K0 = W(0xc3a5c85c97cb3127ULL);
     auto K1 = W(0xb492b66fbe98f273ULL);
     auto K2 = W(0x9ae16a3b2f90404fULL);

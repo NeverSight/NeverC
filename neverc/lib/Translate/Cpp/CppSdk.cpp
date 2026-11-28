@@ -1,4 +1,5 @@
 #include "CppSdk.h"
+#include "Target.h"
 #include "../JSON.h"
 #include "BuiltinCppSdkData.h"
 #include "llvm/Support/Path.h"
@@ -120,8 +121,7 @@ std::string approvedCppSdkCatalogSHA256() { return digest(Catalog); }
 bool validateCppMathTarget(llvm::StringRef Target, Diagnostics &D) {
   llvm::Triple T(llvm::Triple::normalize(Target));
   llvm::VersionTuple Deployment;
-  if ((T.getArch() != llvm::Triple::x86_64 &&
-       T.getArch() != llvm::Triple::aarch64) ||
+  if (!hasNative64BitABI(T) ||
       T.getVendor() != llvm::Triple::Apple || !T.isMacOSX() ||
       !T.isLittleEndian() || !T.getEnvironmentName().empty() ||
       !T.getMacOSXVersion(Deployment) || Deployment.getMajor() != 15 ||
@@ -139,6 +139,8 @@ bool validateCppMathTarget(llvm::StringRef Target, Diagnostics &D) {
 static bool loadBuiltinCppSdkImpl(llvm::StringRef Target, bool Math,
                                   CppSdkContext &Result, Diagnostics &D) {
   Result = {};
+  if (!isCppTranslationTarget(llvm::Triple(llvm::Triple::normalize(Target))))
+    return error(D, "<target>", "Unsupported C++ target or pointer ABI.", "TR0204");
   if (Math && !validateCppMathTarget(Target, D))
     return false;
   CppSdkContext Parsed;
@@ -181,6 +183,8 @@ static bool verifyCppSdkDependenciesImpl(
     return error(D, "<sdk>",
                  "SDK context was not approved by this implementation",
                  "TR0103");
+  if (!isCppTranslationTarget(llvm::Triple(llvm::Triple::normalize(C.TargetTriple))))
+    return error(D, "<target>", "Unsupported C++ target or pointer ABI.", "TR0204");
   if (Math && !validateCppMathTarget(C.TargetTriple, D))
     return false;
   // Reconstruct immutable authority instead of trusting caller-owned lists.

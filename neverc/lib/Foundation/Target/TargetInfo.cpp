@@ -1,4 +1,5 @@
 #include "neverc/Foundation/Target/TargetInfo.h"
+#include "neverc/Foundation/Target/NativeTargetABI.h"
 #include "Target/AArch64.h"
 #include "Target/OSTargets.h"
 #include "Target/Targets.h"
@@ -1005,6 +1006,8 @@ void defineCPUMacros(MacroBuilder &Builder, llvm::StringRef CPUName,
 
 std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
                                            const TargetOptions &Opts) {
+  if (!hasNative64BitABI(Triple))
+    return nullptr;
   llvm::Triple::OSType os = Triple.getOS();
 
   switch (Triple.getArch()) {

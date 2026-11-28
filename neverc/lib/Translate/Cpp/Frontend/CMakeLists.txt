@@ -145,15 +145,16 @@ if(APPLE)
     DIRECTORY "${LLVM_MAIN_SRC_DIR}/lib/Support" APPEND PROPERTY COMPILE_OPTIONS
     -include "${CMAKE_CURRENT_SOURCE_DIR}/NoCrashReporter.h")
 endif()
+set(_native_abi "${NEVERC_CPP_REPOSITORY_ROOT}/neverc/include/neverc/Foundation/Target/NativeTargetABI.h")
 set(_builtin_sdk "${NEVERC_CPP_REPOSITORY_ROOT}/neverc/lib/Translate/Cpp/SDK")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp RandomSDK.cpp Frontend.h
+  Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp RandomSDK.cpp Frontend.h ../Target.h "${_native_abi}"
   SetupGuidSymbols.py RewriteSetupCoffSymbols.py IsolateMathCoffSymbols.py BundleArchive.cmake
   MsvcRuntimeSymbols.py
   AuditArchive.py CoffWeakAliases.py HostCoffSymbols.py VerifyArchiveMembers.py
   "${_builtin_sdk}/catalog.json" "${_builtin_sdk}/embed.py")
 set(_identity "builtin:llvm20.1.8:6898f963c8e938981e6c4a302e83ec5beb4630147c7311183cf61069af16333d")
-foreach(_input Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp RandomSDK.cpp Frontend.h
+foreach(_input ../Target.h Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp RandomSDK.cpp Frontend.h
     CMakeLists.txt IsolateSymbols.py NoCrashReporter.h BuildID.h.in
     SetupGuidSymbols.py RewriteSetupCoffSymbols.py IsolateMathCoffSymbols.py BundleArchive.cmake
     MsvcRuntimeSymbols.py
@@ -161,10 +162,11 @@ foreach(_input Frontend.cpp Lowering.cpp Project.cpp MathSDK.cpp RandomSDK.cpp F
   file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/${_input}" _hash)
   string(APPEND _identity ":${_hash}")
 endforeach()
+file(SHA256 "${_native_abi}" _native_abi_hash)
 file(SHA256 "${_builtin_sdk}/catalog.json" _builtin_catalog_hash)
 file(SHA256 "${_builtin_sdk}/embed.py" _builtin_generator_hash)
 string(SHA256 NEVERC_CPP_BUILD_ID
-  "${_identity}:${_builtin_catalog_hash}:${_builtin_generator_hash}")
+  "${_identity}:${_builtin_catalog_hash}:${_builtin_generator_hash}:${_native_abi_hash}")
 configure_file(BuildID.h.in BuildID.h @ONLY)
 file(GLOB_RECURSE _builtin_headers CONFIGURE_DEPENDS
   "${_builtin_sdk}/libcxx/*" "${_builtin_sdk}/resource/*"
@@ -182,6 +184,7 @@ add_library(nevercCppFrontendBridge STATIC
 set_target_properties(nevercCppFrontendBridge PROPERTIES
   CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_include_directories(nevercCppFrontendBridge PRIVATE
+  "${NEVERC_CPP_REPOSITORY_ROOT}/neverc/include"
   "${CMAKE_CURRENT_BINARY_DIR}" "${LLVM_MAIN_SRC_DIR}/../clang/include"
   "${LLVM_BINARY_DIR}/tools/clang/include"
   "${LLVM_MAIN_SRC_DIR}/include" "${LLVM_BINARY_DIR}/include")
