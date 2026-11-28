@@ -1,0 +1,113 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-plain-default-ctor-earlier-scalar-member",
+      "formal_test_name": "TranslateTest.CoreV2ListPlainDefaultCtorEarlierScalarMemberRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "ba366e583993966aeb6b30bccdf5992c1a2faceb221cb38188b1c95c3cf1282f",
+      "original_case_source_sha256": "ba366e583993966aeb6b30bccdf5992c1a2faceb221cb38188b1c95c3cf1282f",
+      "gtest_body_sha256": "eb1fe42c276c39079c3062c2d91be09d89640d2fa555e4643840ff1504c8c60a"
+    },
+    {
+      "name": "forward-list-plain-default-ctor-nested-field-defaults",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListPlainDefaultCtorNestedFieldDefaultsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1c7a6d77fc624de67e01560b7396b3ed261a231f5bdacc617cb38c5d9a717882",
+      "original_case_source_sha256": "1c7a6d77fc624de67e01560b7396b3ed261a231f5bdacc617cb38c5d9a717882",
+      "gtest_body_sha256": "ea7b4fd6deeb6cc5ec1dfcaf3d68b4508dcdd1ae1bb1088eaca5dc9d7330aa31"
+    },
+    {
+      "name": "forward-list-plain-default-ctor-out-of-line-fill",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListPlainDefaultCtorOutOfLineFillRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "402509e65947a4024d0f30399c5f5ad0f5b1576fc91628b67f3ed36b8a117610",
+      "original_case_source_sha256": "402509e65947a4024d0f30399c5f5ad0f5b1576fc91628b67f3ed36b8a117610",
+      "gtest_body_sha256": "08051164b809dfbdf6966b40eeac1bf837592cf394685cea91a767856de18af8"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-plain-default-ctor-body-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListPlainDefaultCtorBodyGuardRejected",
+      "expected": "reject",
+      "source_sha256": "8439095f93eaef42592d95104098789110b6dc72eaaff903fc2bd0d92bb4aea9",
+      "original_case_source_sha256": "8439095f93eaef42592d95104098789110b6dc72eaaff903fc2bd0d92bb4aea9",
+      "gtest_body_sha256": "da570c0de411f76b2530af52d40125af3e2e43505319a456bfc572fbc35061ff"
+    },
+    {
+      "name": "forward-list-plain-default-ctor-initializer-call-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListPlainDefaultCtorInitializerCallGuardRejected",
+      "expected": "reject",
+      "source_sha256": "63f4e1ca3fd40c2fa233d85f49282d8b40f8ee59b448e39663ae9cc794e6e2e6",
+      "original_case_source_sha256": "63f4e1ca3fd40c2fa233d85f49282d8b40f8ee59b448e39663ae9cc794e6e2e6",
+      "gtest_body_sha256": "fcb370eba89f39e5f9770dc8ab9c9c9a301ffe3823e1fd9af74b9a0d6d5e3774"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-plain-default-ctor-earlier-scalar-member",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry {\n  int key, derived;\n  Entry() : key(4), derived(key * 3 + 1) {}\n};\nint main() {\n  std::list<Entry> rows(2);\n  auto& first = rows.emplace_front();\n  if (rows.size() != 3 || first.key != 4 || first.derived != 13) return 1;\n  rows.resize(4);\n  return rows.back().derived != 13;\n}\n",
+      "source_sha256": "ba366e583993966aeb6b30bccdf5992c1a2faceb221cb38188b1c95c3cf1282f"
+    },
+    {
+      "name": "forward-list-plain-default-ctor-nested-field-defaults",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nstruct Leaf {\n  int key = 7;\n  int mirror = key + 3;\n  Leaf() {}\n};\nstruct Entry { Leaf values[2]; };\nint main() {\n  std::forward_list<Entry> rows;\n  auto& current = rows.emplace_front();\n  if (current.values[0].key != 7 || current.values[1].mirror != 10) return 1;\n  rows.resize(2);\n  auto after = rows.begin();\n  ++after;\n  return after->values[1].mirror != 10;\n}\n",
+      "source_sha256": "1c7a6d77fc624de67e01560b7396b3ed261a231f5bdacc617cb38c5d9a717882"
+    },
+    {
+      "name": "forward-list-plain-default-ctor-out-of-line-fill",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nstruct Entry {\n  int value;\n  Entry();\n};\nEntry::Entry() : value(7) {}\nint main() {\n  Entry seed;\n  seed.value = 9;\n  std::forward_list<Entry> rows(2, seed);\n  if (rows.front().value != 9) return 1;\n  rows.emplace_front();\n  return rows.front().value != 7;\n}\n",
+      "source_sha256": "402509e65947a4024d0f30399c5f5ad0f5b1576fc91628b67f3ed36b8a117610"
+    },
+    {
+      "name": "list-plain-default-ctor-body-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nstruct Entry {\n  int value;\n  Entry() : value(7) { ++value; }\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 8;\n}\n",
+      "source_sha256": "8439095f93eaef42592d95104098789110b6dc72eaaff903fc2bd0d92bb4aea9"
+    },
+    {
+      "name": "forward-list-plain-default-ctor-initializer-call-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <forward_list>\nint value() { return 7; }\nstruct Entry {\n  int field;\n  Entry() : field(value()) {}\n};\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().field != 7;\n}\n",
+      "source_sha256": "63f4e1ca3fd40c2fa233d85f49282d8b40f8ee59b448e39663ae9cc794e6e2e6"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListPlainDefaultCtorEarlierScalarMemberRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListPlainDefaultCtorNestedFieldDefaultsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListPlainDefaultCtorOutOfLineFillRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListPlainDefaultCtorBodyGuardRejected",
+    "TranslateTest.CoreV2ForwardListPlainDefaultCtorInitializerCallGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "1500f4d271744cfdc5b9e3e94c1e6bfaf9ee248a70abe478b56c250e35157d5f",
+  "maintained_original_sha256": "6befca72e2c45ed3cbef0c71c97ed30010da073297f46aa9202d3befdf129ad4",
+  "previous_registered_source_sha256": "2e9247fdd6af526c7ccf9565f768717b1f1a269bd5a6b17d872709d7cadd9b09",
+  "previous_maintained_original_sha256": "12c5b7d34894b9eb4f3c67b19601a989bc4bacd83dfa6b3d5750d4b52b65da75",
+  "restorer_sha256": "f66b69561778cbd9b305ff924441340dbebf24dda722403a7755e8701bb7b195",
+  "extractor_sha256": "acbffac015bbc528f28735d08fde977279c19ba4eb12183ff781d5108889f44d",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9558,
+  "current_python_registry_tests": 374,
+  "native_reference_selected_executions": 6,
+  "planned_generated_c23_executions": 6,
+  "source_proof_sha256": "e6a25fc13f63f1e80c5781c43c6576745ca9375375261f42c3e0610732ecf4c1",
+  "native_reference_proofs": {
+    "linked-list-scalar-constructor-defaults": "c1e1340a3b56df170e1b5ca83c75be1674b821010851a10e6fce2222fda973ad"
+  },
+  "native_reference_authentication_sha256": "e5f15eb0405196f603d8ab8e8608c9e83cd6838a79274af83c074900f3d37e02"
+}

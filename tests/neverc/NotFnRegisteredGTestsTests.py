@@ -43,6 +43,26 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        current = cls.adapter.restore_original_gtests(cls.registered, suffix)
+        assert current + suffix == cls.registered
+        assert cls.adapter.hashlib.sha256(current).hexdigest() == '8e853c05697faec8f0b357f9d2ac23d57a4d09872dab52b4bdc26d55c8db9b03'
+        cls.registered = cls.adapter.restore_rebased_stl_registry_history(cls.registered)
+        cls.list_two_argument_emplacement_registered = cls.registered
+        cls.list_two_argument_emplacement_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_two_argument_emplacement_original = cls.adapter.restore_original_gtests(cls.list_two_argument_emplacement_registered,
+                                                                        cls.list_two_argument_emplacement_suffix)
+        cls.registered = cls.adapter.restore_list_two_argument_emplacement_history(cls.list_two_argument_emplacement_registered)
+        cls.list_scalar_constructor_defaults_registered = cls.registered
+        cls.list_scalar_constructor_defaults_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_scalar_constructor_defaults_original = cls.adapter.restore_original_gtests(cls.list_scalar_constructor_defaults_registered,
+                                                                        cls.list_scalar_constructor_defaults_suffix)
+        cls.registered = cls.adapter.restore_list_scalar_constructor_defaults_history(cls.list_scalar_constructor_defaults_registered)
+        cls.list_explicit_default_constructors_registered = cls.registered
+        cls.list_explicit_default_constructors_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_explicit_default_constructors_original = cls.adapter.restore_original_gtests(cls.list_explicit_default_constructors_registered,
+                                                                        cls.list_explicit_default_constructors_suffix)
+        cls.registered = cls.adapter.restore_list_explicit_default_constructors_history(cls.list_explicit_default_constructors_registered)
         cls.list_record_nested_defaults_registered = cls.registered
         cls.list_record_nested_defaults_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_record_nested_defaults_original = cls.adapter.restore_original_gtests(cls.list_record_nested_defaults_registered,
@@ -4694,6 +4714,60 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_record_nested_defaults_history(self.list_record_nested_defaults_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_record_nested_defaults_registered, self.list_record_nested_defaults_suffix + b' ')
+
+
+    def test_list_explicit_default_constructors_retains_published_bodies(self):
+        self.assertEqual(self.list_explicit_default_constructors_original + self.list_explicit_default_constructors_suffix, self.list_explicit_default_constructors_registered)
+        self.assertEqual(self.adapter.restore_list_explicit_default_constructors_history(self.list_explicit_default_constructors_original),
+                         self.list_record_nested_defaults_original)
+        output, evidence = self.extractor.extract(self.list_explicit_default_constructors_original, ['TranslateTest.CoreV2ListDirectRecordDefaultConstructorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListNestedUserDefaultConstructorRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListUserDefaultConstructorFillCopyRunAtBothOptimizations', 'TranslateTest.CoreV2ListUserDefaultConstructorDestructionRunAtBothOptimizations', 'TranslateTest.CoreV2ListUserDefaultConstructorParameterGuardRejected', 'TranslateTest.CoreV2ForwardListUserDefaultConstructorMoveGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9553)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-direct-record-default-constructor', output)
+        self.assertIn(b'forward-list-user-default-constructor-move-guard', output)
+
+    def test_list_explicit_default_constructors_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_explicit_default_constructors_history(self.list_explicit_default_constructors_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_explicit_default_constructors_registered, self.list_explicit_default_constructors_suffix + b' ')
+
+
+    def test_list_scalar_constructor_defaults_retains_published_bodies(self):
+        self.assertEqual(self.list_scalar_constructor_defaults_original + self.list_scalar_constructor_defaults_suffix, self.list_scalar_constructor_defaults_registered)
+        self.assertEqual(self.adapter.restore_list_scalar_constructor_defaults_history(self.list_scalar_constructor_defaults_original),
+                         self.list_explicit_default_constructors_original)
+        output, evidence = self.extractor.extract(self.list_scalar_constructor_defaults_original, ['TranslateTest.CoreV2ListPlainDefaultCtorEarlierScalarMemberRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPlainDefaultCtorNestedFieldDefaultsRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListPlainDefaultCtorOutOfLineFillRunAtBothOptimizations', 'TranslateTest.CoreV2ListPlainDefaultCtorBodyGuardRejected', 'TranslateTest.CoreV2ForwardListPlainDefaultCtorInitializerCallGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9558)
+        self.assertEqual(evidence['selected_count'], 5)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-plain-default-ctor-earlier-scalar-member', output)
+        self.assertIn(b'forward-list-plain-default-ctor-initializer-call-guard', output)
+
+    def test_list_scalar_constructor_defaults_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_scalar_constructor_defaults_history(self.list_scalar_constructor_defaults_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_scalar_constructor_defaults_registered, self.list_scalar_constructor_defaults_suffix + b' ')
+
+
+    def test_list_two_argument_emplacement_retains_published_bodies(self):
+        self.assertEqual(self.list_two_argument_emplacement_original + self.list_two_argument_emplacement_suffix, self.list_two_argument_emplacement_registered)
+        self.assertEqual(self.adapter.restore_list_two_argument_emplacement_history(self.list_two_argument_emplacement_original),
+                         self.list_scalar_constructor_defaults_original)
+        output, evidence = self.extractor.extract(self.list_two_argument_emplacement_original, ['TranslateTest.CoreV2ListTwoScalarEmplaceBackRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListTwoScalarEmplaceAfterRunAtBothOptimizations', 'TranslateTest.CoreV2ListTwoScalarEmplacePositionOverloadRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListTwoScalarEmplaceWithDestructionRunAtBothOptimizations', 'TranslateTest.CoreV2ListTwoScalarEmplaceReferenceParameterGuardRejected', 'TranslateTest.CoreV2ForwardListTwoEmplaceConversionGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9564)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-two-scalar-emplace-back', output)
+        self.assertIn(b'forward-list-two-emplace-conversion-guard', output)
+
+    def test_list_two_argument_emplacement_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_two_argument_emplacement_history(self.list_two_argument_emplacement_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_two_argument_emplacement_registered, self.list_two_argument_emplacement_suffix + b' ')
 
 
 if __name__ == '__main__':
