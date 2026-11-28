@@ -115,9 +115,11 @@ def main():
         'published_to_dev': False, 'goal_complete': False}
 
     def save():
-        (out / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
+        staged = out / 'results.part'
+        staged.write_text(json.dumps(report, indent=2) + '\n')
+        staged.replace(out / 'results.json')
 
-    def run(argv, label, timeout=60, allowed_failure=False):
+    def run(argv, label, timeout=60, allowed_failure=False, checkpoint=True):
         argv = list(map(str, argv))
         log = out / (label + '.log')
         log.parent.mkdir(parents=True, exist_ok=True)
@@ -138,7 +140,8 @@ def main():
         row = {'command': argv, 'cwd': str(root), 'returncode': code, 'timeout_seconds': timeout,
             'elapsed_seconds': time.monotonic() - started, 'log': str(log.relative_to(out)), 'log_sha256': sha(log)}
         report['commands'].append(row)
-        save()
+        if checkpoint:
+            save()
         print(label, code, flush=True)
         assert allowed_failure or code == 0, (label, code)
         return code, log
@@ -170,17 +173,13 @@ def main():
         assert plan['fixture_group'] == 'bind-call-arguments-clean456' and plan['preparation_only'] is False
         assert plan['execution_binding_required'] is True and plan['source_trace_included'] is False
         assert plan['private_bind_admission_implemented'] is True and plan['bind_lowering_implemented'] is True
-        assert plan['required_requests'] == 750 and len(plan['cases']) == 125
+        assert plan['required_requests'] == 10032 and len(plan['cases']) == 1672
         assert plan['target_abis'] == ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu', 'x86_64-apple-darwin', 'arm64-apple-darwin', 'x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'] and len(set(plan['target_abis'])) == 6
         assert re.fullmatch('[0-9a-f]{40}', plan['source_repair_commit'])
         assert plan['clean_source_basis'] == plan['source_repair_commit']
-        if plan.get('source_syntax_validation_pending', False):
-            assert plan['post_merge_validation'] is True
-            assert plan['actual_same_source_six_report_sha256'] is None
-            assert plan['actual_same_source_six_proof_sha256'] is None
-        else:
-            for field in ['actual_same_source_six_report_sha256', 'actual_same_source_six_proof_sha256']:
-                assert re.fullmatch('[0-9a-f]{64}', plan[field])
+        assert plan['new_sdk_observation_only'] is True
+        assert plan['requires_fresh_source_compilation'] is True
+        assert plan['old_sdk_syntax_or_execution_proofs_reused'] is False
         report['plan'] = plan
         report['revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
         report['source_sha256'] = {name: sha(root / name) for name in plan['candidate_source_paths']}
@@ -188,17 +187,21 @@ def main():
         assert len(inputs) == 19
         current = {name: sha(root / PREFIX / name) for name in inputs}
         changed = sorted(name for name in current if current[name] != inputs[name])
-        assert changed == plan['allowed_bridge_source_changes'] == ['Frontend.cpp', 'Frontend.h', 'Lowering.cpp', 'MathSDK.cpp']
+        assert changed == plan['allowed_bridge_source_changes'] == ['CMakeLists.txt', 'CoffWeakAliases.py', 'Frontend.cpp', 'Frontend.h', 'Lowering.cpp', 'MathSDK.cpp', 'MsvcRuntimeSymbols.py', 'RandomSDK.cpp', 'SetupGuidSymbols.py']
         assert current == plan['current_private_input_sha256']
         report['exact_private_input_sha256'] = current
         sdk = root / 'neverc/lib/Translate/Cpp/SDK'
-        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == '1497f7d37860d32d9e53798fbcdc0fe473a4c4e66ac05fa81a45910adfb1d167'
+        assert sha(sdk / 'catalog.json') == plan['sdk_catalog_sha256'] == 'b4a7b597150882cd93285481cc060d2eab6949b5c8d50b7ce234579cc814bd77'
         catalog = json.loads((sdk / 'catalog.json').read_text())
         records = catalog['headers'] + catalog['metadata']
-        assert len(records) == 665
+        assert len(records) == 687
         for row in records:
             assert sha(sdk / row['root'] / row['path']) == row['sha256']
-        report['sdk_files_verified'] = 665
+        report['sdk_files_verified'] = 687
+        sdk_inputs = {p.relative_to(sdk).as_posix(): sha(p)
+                      for p in sdk.rglob('*') if p.is_file()}
+        assert sdk_inputs == plan['sdk_input_sha256'] and len(sdk_inputs) == 695
+        report['exact_sdk_input_sha256'] = sdk_inputs
         producer_run = api('actions/runs/' + str(plan['producer_run_id']))
         producer_job = api('actions/jobs/' + str(plan['producer_actual_job']))
         assert producer_run['head_sha'] == producer_job['head_sha'] == plan['producer_commit']
@@ -248,10 +251,15 @@ def main():
         assert sha(version_log) == producer_data['host_compiler_version_log_sha256']
         cmake = (root / PREFIX / 'CMakeLists.txt').read_text()
         ordered = re.search(r'foreach\(_input (.*?)\)\n  file\(SHA256', cmake, re.S).group(1).split()
-        assert set(ordered) == set(inputs)
+        assert ordered[0] == '../Target.h' and set(ordered[1:]) == set(inputs)
+        targets = {name: sha(root / name) for name in ('neverc/lib/Translate/Cpp/Target.h', 'neverc/include/neverc/Foundation/Target/NativeTargetABI.h')}
+        assert targets == plan['verified_target_header_sha256']
+        report['verified_target_header_sha256'] = targets
         identity = 'builtin:llvm20.1.8:' + producer_data['llvm_source_archive_sha256']
-        identity += ''.join(':' + current[name] for name in ordered)
+        identity += ':' + targets['neverc/lib/Translate/Cpp/Target.h']
+        identity += ''.join(':' + current[name] for name in ordered[1:])
         identity += ':' + plan['sdk_catalog_sha256'] + ':' + sha(sdk / 'embed.py')
+        identity += ':' + targets['neverc/include/neverc/Foundation/Target/NativeTargetABI.h']
         build_id = 'cpp-frontend-1-' + hashlib.sha256(identity.encode()).hexdigest()
         assert build_id != prior['actual_frontend_version'].split()[-1]
         include = private / 'tools/neverc_cpp'
@@ -259,7 +267,22 @@ def main():
         header = (root / PREFIX / 'BuildID.h.in').read_bytes().replace(
             b'@NEVERC_CPP_BUILD_ID@', build_id.removeprefix('cpp-frontend-1-').encode())
         (include / 'BuildID.h').write_bytes(header)
-        shutil.copyfile(generated / 'BuiltinCppSdkData.h', include / 'BuiltinCppSdkData.h')
+        # Preserve the authenticated old producer header as seed evidence.
+        # The new SDK must be embedded before any bridge source is compiled.
+        run(['python3', '-I', '-B', sdk / 'embed.py',
+             '--catalog', sdk / 'catalog.json', '--root', sdk,
+             '--output', include / 'BuiltinCppSdkData.h'], 'prepare/current-sdk-embedding', 180)
+        embedding = include / 'BuiltinCppSdkData.h'
+        assert embedding.is_file()
+        assert sha(embedding) != sha(generated / 'BuiltinCppSdkData.h')
+        assert ('CatalogSHA256[] = "' + plan['sdk_catalog_sha256'] + '"') in embedding.read_text()
+        report['current_sdk_embedding'] = {
+            'catalog_sha256': sha(sdk / 'catalog.json'), 'generator_sha256': sha(sdk / 'embed.py'),
+            'previous_producer_header_sha256': sha(generated / 'BuiltinCppSdkData.h'),
+            'new_header_sha256': sha(embedding), 'distribution_id': catalog['distribution_id'],
+            'generated_in_actions': True}
+        save()
+        assert sha(include / 'BuiltinCppSdkData.h') == plan['expected_embedding_sha256']
         report['new_build_id'] = build_id
         report['new_build_id_header_sha256'] = sha(include / 'BuildID.h')
         report['original_bridge_compile_commands'] = prior['actual_private_bridge_compile_commands']
@@ -276,6 +299,9 @@ def main():
             # directory; all flags and include paths are byte-for-byte retained.
             absolute = [str(private / item) if index and argv[index - 1] in ['-o', '-MF'] else item
                         for index, item in enumerate(argv)]
+            include_flag = '-I' + str(root / 'neverc/include')
+            assert all(item != include_flag for item in absolute)
+            absolute.insert(1, include_flag)
             run(absolute, 'compile/' + name, 900)
             assert output.is_file()
             replacements.append(output)
@@ -340,7 +366,7 @@ def main():
                     'source': str(source), 'target': target, 'arguments': ['-std=c++17'],
                     'sdk': {'distribution_id': catalog['distribution_id'], 'catalog_sha256': plan['sdk_catalog_sha256']}}) + '\n')
                 code, log = run([executable, '__neverc_cpp_frontend', '--request', request, '--output', response],
-                    'execute/' + target + '/' + name, allowed_failure=True)
+                    'execute/' + target + '/' + name, allowed_failure=True, checkpoint=False)
                 result = json.loads(response.read_text()) if response.exists() else None
                 valid_response = bool(result and result.get('protocol') == 1 and result.get('profile') == 'cpp-core-v2'
                     and result.get('frontend', {}).get('build') == build_id)
@@ -372,12 +398,14 @@ def main():
                     'returncode': code, 'source_sha256': sha(source), 'response_sha256': sha(response) if response.exists() else None,
                     'diagnostics': diagnostics, 'expectation_satisfied': satisfied,
                     'execution_log_sha256': sha(log)})
-                save()
+                if len(report['requests']) % 32 == 0:
+                    save()
         report['invocation_inventory'] = [{'path': str(path.relative_to(out)), 'sha256': sha(path), 'bytes': path.stat().st_size}
             for path in sorted((out / 'invocations').rglob('*')) if path.is_file()]
-        assert len(report['requests']) == 750 and len(report['invocation_inventory']) == 3750
+        assert len(report['requests']) == 10032 and len(report['invocation_inventory']) == 50160
+        assert len(report['commands']) == plan['required_command_count'] == 10050
         passed = all(row['expectation_satisfied'] for row in report['requests'])
-        report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='original125_case_six64bit_regression750',
+        report.update(completed=True, evidence_authenticated=True, passed=passed, not_fn_private_support_complete=False, scope='r19_variant_and_any_value_categories10032', diagnostic_only=True, support_evidence=False,
                       focused_request_contract_passed=passed,
                       failure=None if passed else 'Actual request expectations failed; retain every original response for diagnosis.')
         save()
