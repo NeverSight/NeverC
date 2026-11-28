@@ -1,5 +1,13 @@
 # NeverC Progress
 
+## Current snapshot — 2026-11-28T01:00:21Z
+
+- Reviewed [cdaef0a0 to 585c62d7](https://github.com/NeverSight/NeverC/compare/cdaef0a0dc7afbd435d1a8b28322ce3879dbb6e2...585c62d7e14f281b686a6ef40a5f8c10a5900e53): eight commits ahead and 132 changed paths in the comparison. Sampled C++ translator `Lowering.cpp`, scalar-comparison validation, and test registration/history diffs for extended linked-list record comparisons. The by-value algorithm callback path requires a matching trivially copyable record and makes a separate caller-owned copy; the expression validator accepts boolean compositions only when the leaves pass field checks. Registry history checks pin the expected original count and select seven named cases. No new confirmed defect or product fix. This was not an all-path compiler audit.
+- Activity: ten open ordinary issues, zero open PRs, both unchanged. No ordinary issue openings/closures or product PR openings, merges, or unmerged closures since 2026-11-27T00:56:31Z in the sampled search. [#39](https://github.com/NeverSight/NeverC/pull/39) was a progress-only PR and was excluded. Translator changes arrived via dev integration commits. No product PR review was pending.
+- CI: No workflow was listed for exact dev `585c62d7` at this snapshot. The three positive and four rejection test cases are source inventory, not test results. No project build, test, benchmark, repository script execution, or CI dispatch was performed by this static task.
+- Suggested priorities: (1) In an authorized execution pass, run the exact seven registered comparisons at both supported optimization levels; verify positive comparator order and rejection of unsupported cases. (2) Check callback argument lifetime and separation across native targets with positive and diagnostic controls. (3) Verify registry extraction and history restoration against the exact source and retained test names before expanding coverage.
+
+
 ## Current snapshot — 2026-11-27T00:56:31Z
 
 - Reviewed [690e1dac to cdaef0a0](https://github.com/NeverSight/NeverC/compare/690e1dac312d2f3902127db562b1aae56c9edd26...cdaef0a0dc7afbd435d1a8b28322ce3879dbb6e2): 12 commits ahead; 126 changed paths in the comparison. Selected review covered `MathSDK.cpp`, the linked-list character, enum and object-pointer fixture diffs, and the registered-GTest extraction/history mapping. Fixed enums require an admitted underlying size/alignment. Object pointers require a 64-bit aligned supported object pointer and a scalar pointee; pointer-valued forward-list inputs require an exact type match. The registry distinguishes the fixture-source digests and expected registration counts. This is a sampled review, not a whole-repository audit. No additional defect was established in the reviewed dev code; no product fixes were submitted in this pass.
@@ -1720,3 +1728,8 @@ Bounded static review of unordered multiset modifier lowering and documented sup
 ## 2026-11-27 — static review
 
 - 2026-11-27T00:56:31Z: Reviewed character, enum, and object-pointer list typing and registry history; 10 open issues, no open PRs. Next: exact-profile translation and registry checks. No product source change or active verification in this snapshot.
+
+
+## 2026-11-28 — static review
+
+- 2026-11-28T01:00:21Z: Reviewed linked-list record-comparator lowering and registration history; ten open issues and no open PRs. Exact-profile callback and registry checks remain recommended. No code change or execution in this static review.
