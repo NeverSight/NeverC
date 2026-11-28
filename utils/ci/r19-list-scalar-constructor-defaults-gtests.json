@@ -23,26 +23,25 @@
       "source_sha256": "402509e65947a4024d0f30399c5f5ad0f5b1576fc91628b67f3ed36b8a117610",
       "original_case_source_sha256": "402509e65947a4024d0f30399c5f5ad0f5b1576fc91628b67f3ed36b8a117610",
       "gtest_body_sha256": "08051164b809dfbdf6966b40eeac1bf837592cf394685cea91a767856de18af8"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "list-plain-default-ctor-body-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListPlainDefaultCtorBodyGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ListPlainDefaultConstructorRunsCheckedBody",
+      "expected": "accept",
       "source_sha256": "8439095f93eaef42592d95104098789110b6dc72eaaff903fc2bd0d92bb4aea9",
       "original_case_source_sha256": "8439095f93eaef42592d95104098789110b6dc72eaaff903fc2bd0d92bb4aea9",
-      "gtest_body_sha256": "da570c0de411f76b2530af52d40125af3e2e43505319a456bfc572fbc35061ff"
+      "gtest_body_sha256": "a52c315fc3eae3e689b89f61e8185e384a9d91e66d8c7f7d1a20ee8134c72d13"
     },
     {
       "name": "forward-list-plain-default-ctor-initializer-call-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListPlainDefaultCtorInitializerCallGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListPlainDefaultConstructorCallsConstantReturn",
+      "expected": "accept",
       "source_sha256": "63f4e1ca3fd40c2fa233d85f49282d8b40f8ee59b448e39663ae9cc794e6e2e6",
       "original_case_source_sha256": "63f4e1ca3fd40c2fa233d85f49282d8b40f8ee59b448e39663ae9cc794e6e2e6",
-      "gtest_body_sha256": "fcb370eba89f39e5f9770dc8ab9c9c9a301ffe3823e1fd9af74b9a0d6d5e3774"
+      "gtest_body_sha256": "26b52bef1a5fdfbc8bd1ae23c148d8b9581fd32d85c70133cf8d5ef373f524d7"
     }
   ],
+  "negative_cases": [],
   "source_cases": [
     {
       "name": "list-plain-default-ctor-earlier-scalar-member",
@@ -71,16 +70,16 @@
     {
       "name": "list-plain-default-ctor-body-guard",
       "section": "list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source": "#include <list>\nstruct Entry {\n  int value;\n  Entry() : value(7) { ++value; }\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 8;\n}\n",
       "source_sha256": "8439095f93eaef42592d95104098789110b6dc72eaaff903fc2bd0d92bb4aea9"
     },
     {
       "name": "forward-list-plain-default-ctor-initializer-call-guard",
       "section": "forward_list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source": "#include <forward_list>\nint value() { return 7; }\nstruct Entry {\n  int field;\n  Entry() : field(value()) {}\n};\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().field != 7;\n}\n",
       "source_sha256": "63f4e1ca3fd40c2fa233d85f49282d8b40f8ee59b448e39663ae9cc794e6e2e6"
     }
@@ -89,10 +88,10 @@
     "TranslateTest.CoreV2ListPlainDefaultCtorEarlierScalarMemberRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListPlainDefaultCtorNestedFieldDefaultsRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListPlainDefaultCtorOutOfLineFillRunAtBothOptimizations",
-    "TranslateTest.CoreV2ListPlainDefaultCtorBodyGuardRejected",
-    "TranslateTest.CoreV2ForwardListPlainDefaultCtorInitializerCallGuardRejected"
+    "TranslateTest.CoreV2ListPlainDefaultConstructorRunsCheckedBody",
+    "TranslateTest.CoreV2ForwardListPlainDefaultConstructorCallsConstantReturn"
   ],
-  "source_proof_gate_pending": false,
+  "source_proof_gate_pending": true,
   "full_stl_complete": false,
   "registered_source_sha256": "1500f4d271744cfdc5b9e3e94c1e6bfaf9ee248a70abe478b56c250e35157d5f",
   "maintained_original_sha256": "6befca72e2c45ed3cbef0c71c97ed30010da073297f46aa9202d3befdf129ad4",
@@ -103,8 +102,8 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9558,
   "current_python_registry_tests": 374,
-  "native_reference_selected_executions": 6,
-  "planned_generated_c23_executions": 6,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "source_proof_sha256": "e6a25fc13f63f1e80c5781c43c6576745ca9375375261f42c3e0610732ecf4c1",
   "native_reference_proofs": {
     "linked-list-scalar-constructor-defaults": "c1e1340a3b56df170e1b5ca83c75be1674b821010851a10e6fce2222fda973ad"

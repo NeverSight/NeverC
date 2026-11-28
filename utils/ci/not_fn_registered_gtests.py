@@ -4440,6 +4440,26 @@ def restore_scalar_emplacement_pack_history(source, additions):
     return restored
 
 
+R19_CLOSED_CONSTRUCTOR_REGISTERED_SHA256 = '3b4728113e5b5ccccbe3733dcf76051e428628b3e5eb8c09649f30d467194990'
+R19_CLOSED_CONSTRUCTOR_MAINTAINED_SHA256 = '0b265e59344d365432f9d2c2774360f97d0e93b7919d78b1e7031b06d116c9d0'
+
+
+def restore_closed_constructor_history(source, additions):
+    """Recover the previous linked-list registry for its historical audit."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    assert sha(source) == R19_CLOSED_CONSTRUCTOR_REGISTERED_SHA256 and source.endswith(additions)
+    assert sha(additions) == 'b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb'
+    stop = len(source) - len(additions)
+    start = stop - 4064
+    assert sha(source[start:stop]) == 'ed3e30542ce8b82c9ec2f8afa19e0028c27644c1700a335a9fd1bacf612c76c8'
+    restored = source[:start] + source[stop:]
+    for active, archived in [(b'TEST_F(TranslateTest, CoreV2ListPlainDefaultConstructorRunsCheckedBody) {\n  const auto Source = tmpFile("list-plain-default-ctor-body-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int value;\n  Entry() : value(7) { ++value; }\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 8;\n}\n)r19containers");\n  const auto Output = tmpFile("list-plain-default-ctor-body-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-plain-default-ctor-body-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListPlainDefaultCtorBodyGuardRejected) {\n  const auto Source = tmpFile("list-plain-default-ctor-body-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int value;\n  Entry() : value(7) { ++value; }\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 8;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}'), (b'TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultConstructorCallsConstantReturn) {\n  const auto Source = tmpFile("forward-list-plain-default-ctor-initializer-call-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint value() { return 7; }\nstruct Entry {\n  int field;\n  Entry() : field(value()) {}\n};\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().field != 7;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-plain-default-ctor-initializer-call-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-plain-default-ctor-initializer-call-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultCtorInitializerCallGuardRejected) {\n  const auto Source = tmpFile("forward-list-plain-default-ctor-initializer-call-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint value() { return 7; }\nstruct Entry {\n  int field;\n  Entry() : field(value()) {}\n};\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().field != 7;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}')]:
+        assert restored.count(active) == 1
+        restored = restored.replace(active, archived, 1)
+    assert sha(restored) == 'ec321586a69914a722a3033b6a4d043fcff5a2b35a48360deb62027b5b03eaf4'
+    return restored
+
+
 def restore_original_gtests(source, additions):
     """Reject changed, missing, repeated or mismatched registered additions."""
     digest = lambda data: hashlib.sha256(data).hexdigest()
@@ -4482,6 +4502,13 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
+    if source_digest == R19_CLOSED_CONSTRUCTOR_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_CLOSED_CONSTRUCTOR_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        maintained = source[:-len(additions)]
+        assert digest(maintained) == R19_CLOSED_CONSTRUCTOR_MAINTAINED_SHA256
+        return maintained
     if source_digest == R19_SCALAR_PACK_MAINTAINED_SHA256:
         return source
     if source_digest == R19_SCALAR_PACK_REGISTERED_SHA256:

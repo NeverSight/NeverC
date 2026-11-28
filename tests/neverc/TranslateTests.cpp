@@ -418747,7 +418747,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListPlainDefaultCtorBodyGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListPlainDefaultConstructorRunsCheckedBody) {
   const auto Source = tmpFile("list-plain-default-ctor-body-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 struct Entry {
@@ -418759,13 +418759,20 @@ int main() {
   return rows.front().value != 8;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-plain-default-ctor-body-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-plain-default-ctor-body-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
-TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultCtorInitializerCallGuardRejected) {
+TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultConstructorCallsConstantReturn) {
   const auto Source = tmpFile("forward-list-plain-default-ctor-initializer-call-guard.cpp");
   writeFile(Source, R"r19containers(#include <forward_list>
 int value() { return 7; }
@@ -418778,10 +418785,17 @@ int main() {
   return rows.front().field != 7;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("forward-list-plain-default-ctor-initializer-call-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-plain-default-ctor-initializer-call-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ListTwoScalarEmplaceBackRunAtBothOptimizations) {
@@ -419058,6 +419072,114 @@ struct Entry {
 int main() {
   std::list<Entry> rows;
   return rows.emplace_back(Input{}, 3).value != 10;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultCtorFieldWritesRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-plain-default-ctor-field-writes.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry {
+  int first;
+  int second;
+  Entry() : first(2), second(6) {
+    first = second + 1;
+    second *= first;
+    --first;
+  }
+};
+int main() {
+  std::forward_list<Entry> rows(1);
+  auto first = rows.begin();
+  rows.resize(2);
+  auto second = first;
+  ++second;
+  auto after = rows.emplace_after(second);
+  return first->first != 6 || second->second != 42 || after->second != 42;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-plain-default-ctor-field-writes.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-plain-default-ctor-field-writes" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListPlainDefaultCtorConstantCallsRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-plain-default-ctor-constant-calls.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int fixed_value(int ignored) { return 13; }
+int bias() { return 4; }
+struct Entry {
+  double fraction;
+  int value;
+  Entry() : fraction(4.5), value(fixed_value(bias())) {
+    value += 5;
+    fraction--;
+  }
+};
+int main() {
+  std::list<Entry> rows;
+  auto& first = rows.emplace_back();
+  rows.resize(2);
+  return &first != &rows.front() || first.value != 18 || rows.back().fraction != 3.5;
+}
+)r19containers");
+  const auto Output = tmpFile("list-plain-default-ctor-constant-calls.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-plain-default-ctor-constant-calls" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListPlainDefaultCtorIndirectBodyCallRejected) {
+  const auto Source = tmpFile("list-plain-default-ctor-indirect-body-call.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+void bump(int& n) { ++n; }
+void (*hook)(int&) = &bump;
+struct Entry {
+  int value;
+  Entry() : value(5) { hook(value); }
+};
+int main() {
+  std::list<Entry> rows(1);
+  return rows.front().value != 6;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListPlainDefaultCtorNonconstantInitializerCallRejected) {
+  const auto Source = tmpFile("forward-list-plain-default-ctor-nonconstant-initializer-call.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int calls;
+int next_value() { return ++calls; }
+struct Entry {
+  int value;
+  Entry() : value(next_value()) {}
+};
+int main() {
+  std::forward_list<Entry> rows(2);
+  return rows.front().value != 1 || calls != 2;
 }
 )r19containers");
   auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});

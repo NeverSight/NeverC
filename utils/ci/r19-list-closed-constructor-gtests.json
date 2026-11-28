@@ -1,0 +1,86 @@
+{
+  "positive_cases": [
+    {
+      "name": "forward-list-plain-default-ctor-field-writes",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListPlainDefaultCtorFieldWritesRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "cb000df0020b627a7d78760d1bcc217567a10d346ac048275fdabc55a068114f",
+      "original_case_source_sha256": "cb000df0020b627a7d78760d1bcc217567a10d346ac048275fdabc55a068114f",
+      "gtest_body_sha256": "11ed700f73b9ff4e28cb9bb036376f4c1a8571f39bc5409cc87248ae2df33a8c"
+    },
+    {
+      "name": "list-plain-default-ctor-constant-calls",
+      "formal_test_name": "TranslateTest.CoreV2ListPlainDefaultCtorConstantCallsRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "54cb728748b565f8034312026c0c9318394f102293e67185d9ebd002365180fb",
+      "original_case_source_sha256": "54cb728748b565f8034312026c0c9318394f102293e67185d9ebd002365180fb",
+      "gtest_body_sha256": "a486f67f87ae0c5c0663971eda5f93ed9c1266a3d129f4b561f4f7ce842ef5d8"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-plain-default-ctor-indirect-body-call",
+      "formal_test_name": "TranslateTest.CoreV2ListPlainDefaultCtorIndirectBodyCallRejected",
+      "expected": "reject",
+      "source_sha256": "55d5b4cff98bc097c7152495f693ffdc54481d318809bb6b499004d01d9ed0fa",
+      "original_case_source_sha256": "55d5b4cff98bc097c7152495f693ffdc54481d318809bb6b499004d01d9ed0fa",
+      "gtest_body_sha256": "01586a217324bf490171a64e64521688a5d6da4e171c40f198856b7625e9bdb6"
+    },
+    {
+      "name": "forward-list-plain-default-ctor-nonconstant-initializer-call",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListPlainDefaultCtorNonconstantInitializerCallRejected",
+      "expected": "reject",
+      "source_sha256": "091a09a9f7efb69f4b4776395f6861031e42a5e63ba05a09b7becc97d9d815e6",
+      "original_case_source_sha256": "091a09a9f7efb69f4b4776395f6861031e42a5e63ba05a09b7becc97d9d815e6",
+      "gtest_body_sha256": "b7ea3749c47b1031a13b3d502e9160ac3ec377e2d98cf622bb09e1cbbe87019e"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "forward-list-plain-default-ctor-field-writes",
+      "section": "forward_list",
+      "source": "#include <forward_list>\nstruct Entry {\n  int first;\n  int second;\n  Entry() : first(2), second(6) {\n    first = second + 1;\n    second *= first;\n    --first;\n  }\n};\nint main() {\n  std::forward_list<Entry> rows(1);\n  auto first = rows.begin();\n  rows.resize(2);\n  auto second = first;\n  ++second;\n  auto after = rows.emplace_after(second);\n  return first->first != 6 || second->second != 42 || after->second != 42;\n}\n",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source_sha256": "cb000df0020b627a7d78760d1bcc217567a10d346ac048275fdabc55a068114f"
+    },
+    {
+      "name": "list-plain-default-ctor-constant-calls",
+      "section": "list",
+      "source": "#include <list>\nint fixed_value(int ignored) { return 13; }\nint bias() { return 4; }\nstruct Entry {\n  double fraction;\n  int value;\n  Entry() : fraction(4.5), value(fixed_value(bias())) {\n    value += 5;\n    fraction--;\n  }\n};\nint main() {\n  std::list<Entry> rows;\n  auto& first = rows.emplace_back();\n  rows.resize(2);\n  return &first != &rows.front() || first.value != 18 || rows.back().fraction != 3.5;\n}\n",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source_sha256": "54cb728748b565f8034312026c0c9318394f102293e67185d9ebd002365180fb"
+    },
+    {
+      "name": "list-plain-default-ctor-indirect-body-call",
+      "section": "list",
+      "source": "#include <list>\nvoid bump(int& n) { ++n; }\nvoid (*hook)(int&) = &bump;\nstruct Entry {\n  int value;\n  Entry() : value(5) { hook(value); }\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 6;\n}\n",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source_sha256": "55d5b4cff98bc097c7152495f693ffdc54481d318809bb6b499004d01d9ed0fa"
+    },
+    {
+      "name": "forward-list-plain-default-ctor-nonconstant-initializer-call",
+      "section": "forward_list",
+      "source": "#include <forward_list>\nint calls;\nint next_value() { return ++calls; }\nstruct Entry {\n  int value;\n  Entry() : value(next_value()) {}\n};\nint main() {\n  std::forward_list<Entry> rows(2);\n  return rows.front().value != 1 || calls != 2;\n}\n",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source_sha256": "091a09a9f7efb69f4b4776395f6861031e42a5e63ba05a09b7becc97d9d815e6"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ForwardListPlainDefaultCtorFieldWritesRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListPlainDefaultCtorConstantCallsRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListPlainDefaultCtorIndirectBodyCallRejected",
+    "TranslateTest.CoreV2ForwardListPlainDefaultCtorNonconstantInitializerCallRejected"
+  ],
+  "source_proof_gate_pending": true,
+  "current_registry_count": 9572,
+  "current_python_registry_tests": 380,
+  "registered_source_sha256": "3b4728113e5b5ccccbe3733dcf76051e428628b3e5eb8c09649f30d467194990",
+  "maintained_original_sha256": "0b265e59344d365432f9d2c2774360f97d0e93b7919d78b1e7031b06d116c9d0",
+  "previous_registered_source_sha256": "ec321586a69914a722a3033b6a4d043fcff5a2b35a48360deb62027b5b03eaf4",
+  "restorer_sha256": "89aca51b9d0ac33a31236cc8c7e982b1fb941e818b2b160eb6a6336826bc063d",
+  "extractor_sha256": "c89ff1360bf21c6c88ef9712d90eb44e1b4f515e7fce7bc79558e0e15fd09a9c"
+}

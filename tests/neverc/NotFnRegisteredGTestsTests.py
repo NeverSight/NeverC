@@ -43,6 +43,12 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.closed_constructor_registered = cls.registered
+        cls.closed_constructor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.closed_constructor_active = cls.adapter.restore_original_gtests(cls.registered, cls.closed_constructor_suffix)
+        cls.closed_constructor_predecessor = cls.adapter.restore_closed_constructor_history(
+            cls.registered, cls.closed_constructor_suffix)
+        cls.registered = cls.closed_constructor_predecessor
         cls.scalar_pack_registered = cls.registered
         cls.scalar_pack_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.scalar_pack_active = cls.adapter.restore_original_gtests(cls.registered, cls.scalar_pack_suffix)
@@ -4788,6 +4794,20 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         _, report = extractor.extract(self.scalar_pack_active, selected)
         self.assertEqual(report['selected_count'], 6)
         self.assertEqual(report['original_test_names'], 9568)
+
+
+    def test_closed_constructor_registry_preserves_previous_fixture_source(self):
+        self.assertEqual(self.closed_constructor_active + self.closed_constructor_suffix, self.closed_constructor_registered)
+        self.assertEqual(self.adapter.restore_closed_constructor_history(
+            self.closed_constructor_registered, self.closed_constructor_suffix),
+            self.closed_constructor_predecessor)
+
+    def test_closed_constructor_registry_selects_six_checked_programs(self):
+        selected = ['TranslateTest.CoreV2ForwardListPlainDefaultCtorFieldWritesRunAtBothOptimizations', 'TranslateTest.CoreV2ListPlainDefaultCtorConstantCallsRunAtBothOptimizations', 'TranslateTest.CoreV2ListPlainDefaultCtorIndirectBodyCallRejected', 'TranslateTest.CoreV2ForwardListPlainDefaultCtorNonconstantInitializerCallRejected', 'TranslateTest.CoreV2ListPlainDefaultConstructorRunsCheckedBody', 'TranslateTest.CoreV2ForwardListPlainDefaultConstructorCallsConstantReturn']
+        extractor = module('extract_closed_constructor_tests', 'utils/ci/extract_cpp_gtests.py')
+        _, report = extractor.extract(self.closed_constructor_active, selected)
+        self.assertEqual(report['selected_count'], 6)
+        self.assertEqual(report['original_test_names'], 9572)
 
 
 if __name__ == '__main__':
