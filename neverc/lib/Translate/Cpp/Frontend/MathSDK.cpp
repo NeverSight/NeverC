@@ -48914,7 +48914,8 @@ static bool utilityMemoryTrivialValue(const State &S, const SourceManager &SM,
 }
 
 static const CXXConstructorDecl *
-selectUtilityMemoryDefaultConstructor(const CXXRecordDecl *Record) {
+selectUtilityMemoryDefaultConstructor(const CXXRecordDecl *Record,
+                                      bool AllowDefaultArguments = false) {
   const CXXConstructorDecl *Constructor = nullptr;
   for (const auto *Candidate : Record->ctors()) {
     if (!Candidate->isDefaultConstructor())
@@ -48928,7 +48929,7 @@ selectUtilityMemoryDefaultConstructor(const CXXRecordDecl *Record) {
       Constructor ? Constructor->getType()->getAs<FunctionProtoType>()
                   : nullptr;
   if (!Constructor || Constructor->isInvalidDecl() ||
-      Constructor->isDeleted() || Constructor->getNumParams() ||
+      Constructor->isDeleted() || (!AllowDefaultArguments && Constructor->getNumParams()) ||
       !supportedConstructor(Constructor) || !Prototype ||
       isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()))
     return nullptr;
@@ -54291,15 +54292,19 @@ const FieldDecl *linkedListThisField(const Expr *Value, const TagDecl *Owner) {
   return Field;
 }
 
+bool linkedListConstantExpression(const Expr *Value, const ASTContext &Context) {
+  Expr::EvalResult Result;
+  return Value && Value->EvaluateAsRValue(Result, Context) &&
+         !Result.HasSideEffects && !Result.HasUndefinedBehavior;
+}
+
 bool linkedListConstantReturn(const FunctionDecl *Function) {
   const auto *Definition = Function->getDefinition();
   const auto *Body = dyn_cast_or_null<CompoundStmt>(Definition ? Definition->getBody() : nullptr);
   const auto *Return = Body && Body->size() == 1
       ? dyn_cast<ReturnStmt>(*Body->body_begin()) : nullptr;
   const auto *Value = Return ? Return->getRetValue() : nullptr;
-  Expr::EvalResult Result;
-  return Value && Value->EvaluateAsRValue(Result, Function->getASTContext()) &&
-         !Result.HasSideEffects && !Result.HasUndefinedBehavior;
+  return linkedListConstantExpression(Value, Function->getASTContext());
 }
 
 bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
@@ -54439,7 +54444,7 @@ bool linkedListScalarDefaultConstructor(const CXXConstructorDecl *Constructor,
 
 const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
     const CXXRecordDecl *Record, const LinkedListRecordSource *Source) {
-  const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record);
+  const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record, /*AllowDefaultArguments=*/true);
   if (!Constructor || !Constructor->isUserProvided() || Constructor->getAccess() != AS_public ||
       !Record->hasTrivialCopyConstructor() || !Record->hasTrivialCopyAssignment() ||
       Record->hasNonTrivialMoveConstructor() || Record->hasNonTrivialMoveAssignment())
@@ -54451,6 +54456,16 @@ const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
       })))
     return nullptr;
   const auto *Default = cast<CXXConstructorDecl>(Definition);
+  const auto &Context = Record->getASTContext();
+  for (unsigned I = 0; I < Default->getNumParams(); ++I) {
+    const auto *Parameter = Default->getParamDecl(I);
+    const auto *Init = defaultArgumentInitializer(Parameter, Context);
+    if (!Parameter->getType()->isArithmeticType() || Parameter->getType().isVolatileQualified() ||
+        !Init || Init != defaultArgumentInitializer(Constructor->getParamDecl(I), Context) ||
+        (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())) ||
+        !linkedListConstantExpression(Init, Context))
+      return nullptr;
+  }
   if (!Constructor->getType()->getAs<FunctionProtoType>()->isNothrow() &&
       !linkedListScalarDefaultConstructor(Default, Source))
     return nullptr;
@@ -54584,13 +54599,31 @@ bool linkedListRecordElementMember(const State &S, const SourceManager &SM,
   if (!Record || Record->getCanonicalDecl() != Method->getParent()->getCanonicalDecl())
     return false;
   if (UserDefault) {
-    const auto *Selected = selectUtilityMemoryDefaultConstructor(Record);
+    const auto *Selected = linkedListCheckedUserDefaultConstructor(Record, &Source);
     return !Record->isAggregate() && Selected &&
            Selected->getCanonicalDecl() == Constructor->getCanonicalDecl();
   }
   if (Method->isTrivial()) return true;
   return Destructor ? linkedListCheckedRecordDestructor(Record, &Source, !Record->isAggregate())
                     : linkedListCheckedMemberDefaults(Record, &Source);
+}
+
+bool linkedListSelectedDefaultArguments(const State &S, const SourceManager &SM,
+    const CXXConstructExpr *Construction, QualType Element, const ASTContext &Context) {
+  const auto *Constructor = Construction->getConstructor();
+  const LinkedListRecordSource Source{S, SM};
+  const auto *Record = definedRecord(Element);
+  const auto *Selected = Record ? linkedListCheckedUserDefaultConstructor(Record, &Source) : nullptr;
+  if (!Selected || Constructor->getCanonicalDecl() != Selected->getCanonicalDecl() ||
+      Construction->getConstructionKind() != CXXConstructionKind::Complete ||
+      !utilityConstructorTrailingDefaults(S, SM, Construction, Constructor, 0, Context))
+    return false;
+  for (unsigned I = 0; I < Construction->getNumArgs(); ++I) {
+    const auto *Argument = cast<CXXDefaultArgExpr>(Construction->getArg(I));
+    if (selectedDefaultArgument(Argument, Context) != defaultArgumentInitializer(Selected->getParamDecl(I), Context))
+      return false;
+  }
+  return true;
 }
 
 bool forwardListLeaves(const State &S, const SourceManager &SM,
@@ -55914,6 +55947,11 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
           if (!Statement(C->getArg(I), Depth + 1)) return false;
         return true;
       }
+      const auto Element = Owner.Value->getType();
+      if (Element->isRecordType() && C->getConstructor()->getNumParams() &&
+          C->getConstructor()->isDefaultConstructor() &&
+          Context.hasSameUnqualifiedType(C->getType(), Element))
+        return linkedListSelectedDefaultArguments(S, SM, C, Element, Context);
       if (!forwardListOrderForwardingMove(S, SM, C, Root, OrderMethod, Context) &&
           !Function(C->getConstructor(), Depth + 1)) return false;
     }
@@ -57988,6 +58026,11 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
           if (!Statement(C->getArg(I), Depth + 1)) return false;
         return true;
       }
+      const auto Element = Owner.Value->getType();
+      if (Element->isRecordType() && C->getConstructor()->getNumParams() &&
+          C->getConstructor()->isDefaultConstructor() &&
+          Context.hasSameUnqualifiedType(C->getType(), Element))
+        return linkedListSelectedDefaultArguments(S, SM, C, Element, Context);
       if (!listForwardedOrderCopy(C, Root, OrderMethod, Context) &&
           !Function(C->getConstructor(), Depth + 1)) return false;
     }

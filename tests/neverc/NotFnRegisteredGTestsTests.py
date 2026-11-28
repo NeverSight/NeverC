@@ -43,6 +43,12 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.default_constructor_arguments_registered = cls.registered
+        cls.default_constructor_arguments_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.default_constructor_arguments_active = cls.adapter.restore_original_gtests(cls.registered, cls.default_constructor_arguments_suffix)
+        cls.default_constructor_arguments_predecessor = cls.adapter.restore_default_constructor_arguments_history(
+            cls.registered, cls.default_constructor_arguments_suffix)
+        cls.registered = cls.default_constructor_arguments_predecessor
         cls.closed_constructor_registered = cls.registered
         cls.closed_constructor_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.closed_constructor_active = cls.adapter.restore_original_gtests(cls.registered, cls.closed_constructor_suffix)
@@ -4808,6 +4814,20 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         _, report = extractor.extract(self.closed_constructor_active, selected)
         self.assertEqual(report['selected_count'], 6)
         self.assertEqual(report['original_test_names'], 9572)
+
+
+    def test_default_constructor_arguments_registry_preserves_previous_fixture_source(self):
+        self.assertEqual(self.default_constructor_arguments_active + self.default_constructor_arguments_suffix, self.default_constructor_arguments_registered)
+        self.assertEqual(self.adapter.restore_default_constructor_arguments_history(
+            self.default_constructor_arguments_registered, self.default_constructor_arguments_suffix),
+            self.default_constructor_arguments_predecessor)
+
+    def test_default_constructor_arguments_registry_selects_six_checked_programs(self):
+        selected = ['TranslateTest.CoreV2ListTwoDefaultConstructorParametersResizeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultConstructorParameterEmplaceRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListNestedDefaultConstructorParametersRunAtBothOptimizations', 'TranslateTest.CoreV2ListDefaultConstructorReferenceParameterGuardRejected', 'TranslateTest.CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected', 'TranslateTest.CoreV2ListDefaultConstructionUsesSelectedConstantArgument']
+        extractor = module('extract_default_constructor_arguments_tests', 'utils/ci/extract_cpp_gtests.py')
+        _, report = extractor.extract(self.default_constructor_arguments_active, selected)
+        self.assertEqual(report['selected_count'], 6)
+        self.assertEqual(report['original_test_names'], 9577)
 
 
 if __name__ == '__main__':

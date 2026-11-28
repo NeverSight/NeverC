@@ -1,0 +1,103 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-two-default-constructor-parameters-resize",
+      "formal_test_name": "TranslateTest.CoreV2ListTwoDefaultConstructorParametersResizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4376477020729824246624ff05db9189f61f883d4ea4ee3ef194ac5759e2d4c9",
+      "original_case_source_sha256": "4376477020729824246624ff05db9189f61f883d4ea4ee3ef194ac5759e2d4c9",
+      "gtest_body_sha256": "d0652f75af96bedac7e4dda8f1ac678bd7e84d8de7d03359d4f1aacee95aa8c7"
+    },
+    {
+      "name": "forward-list-default-constructor-parameter-emplace",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultConstructorParameterEmplaceRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "1d3eba1657c8601a9cdc115236e72fc6221a9268adfb3f88965f1f9dee00e221",
+      "original_case_source_sha256": "1d3eba1657c8601a9cdc115236e72fc6221a9268adfb3f88965f1f9dee00e221",
+      "gtest_body_sha256": "d3f801b879be6d31bff4685fcfed7a33f2642219c8426cfe7a8389718c513fce"
+    },
+    {
+      "name": "forward-list-nested-default-constructor-parameters",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListNestedDefaultConstructorParametersRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "599d1dbf965c025e1d7db91f30948727cb6c377a8365d99ea04988b5eae36e11",
+      "original_case_source_sha256": "599d1dbf965c025e1d7db91f30948727cb6c377a8365d99ea04988b5eae36e11",
+      "gtest_body_sha256": "434d39f666a6af47d7b41967ca6c61205dcd61e437e0706c9b239f0a7e2bc812"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-default-constructor-reference-parameter-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListDefaultConstructorReferenceParameterGuardRejected",
+      "expected": "reject",
+      "source_sha256": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3",
+      "original_case_source_sha256": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3",
+      "gtest_body_sha256": "7d04e28a3903db4b911f3dfcdc2f2c03882463a556d7d4a1c58f105c6b7465c6"
+    },
+    {
+      "name": "forward-list-default-constructor-side-effect-parameter-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected",
+      "expected": "reject",
+      "source_sha256": "f00fe848f172c28f7694e93f8d5e677893d9ab2d006ecff57e3e40d658ec4c1d",
+      "original_case_source_sha256": "f00fe848f172c28f7694e93f8d5e677893d9ab2d006ecff57e3e40d658ec4c1d",
+      "gtest_body_sha256": "989916aa66bd8cd316774a5860a84eabde416124197678f0d8bc4cddf69fcaec"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-two-default-constructor-parameters-resize",
+      "section": "list",
+      "source": "#include <list>\nstruct Entry {\n  int value;\n  Entry(short first = 5, int second = 3 * 7) noexcept : value(first + second) {}\n};\nint main() {\n  std::list<Entry> rows(2);\n  auto& before = rows.front();\n  rows.resize(3);\n  auto& added = rows.emplace_front();\n  return rows.size() != 4 || &added != &rows.front() || before.value != 26 || rows.back().value != 26;\n}\n",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source_sha256": "4376477020729824246624ff05db9189f61f883d4ea4ee3ef194ac5759e2d4c9"
+    },
+    {
+      "name": "forward-list-default-constructor-parameter-emplace",
+      "section": "forward_list",
+      "source": "#include <forward_list>\nstruct Entry {\n  unsigned value;\n  explicit Entry(unsigned initial = 3) noexcept : value(initial) {}\n};\nint main() {\n  std::forward_list<Entry> rows;\n  auto first = rows.emplace_after(rows.before_begin());\n  rows.resize(3);\n  auto second = first;\n  ++second;\n  return &*first != &rows.front() || first->value != 3 || second->value != 3;\n}\n",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source_sha256": "1d3eba1657c8601a9cdc115236e72fc6221a9268adfb3f88965f1f9dee00e221"
+    },
+    {
+      "name": "forward-list-nested-default-constructor-parameters",
+      "section": "forward_list",
+      "source": "#include <forward_list>\nstruct Item {\n  int id;\n  Item(int initial = 7) noexcept : id(initial) {}\n};\nstruct Row {\n  Item items[2];\n  int count = 2;\n};\nint main() {\n  std::forward_list<Row> rows(1);\n  auto first = rows.begin();\n  rows.resize(2);\n  auto second = first;\n  ++second;\n  return first->items[0].id != 7 || second->items[1].id != 7 || second->count != 2;\n}\n",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source_sha256": "599d1dbf965c025e1d7db91f30948727cb6c377a8365d99ea04988b5eae36e11"
+    },
+    {
+      "name": "list-default-constructor-reference-parameter-guard",
+      "section": "list",
+      "source": "#include <list>\nint initial = 4;\nstruct Entry {\n  int value;\n  Entry(const int& number = initial) noexcept : value(number) {}\n};\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 4;\n}\n",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source_sha256": "d2357979dbb5a54cfe063c11ef9daabb99b126c8998d338382f3db40156df1e3"
+    },
+    {
+      "name": "forward-list-default-constructor-side-effect-parameter-guard",
+      "section": "forward_list",
+      "source": "#include <forward_list>\nint calls;\nint initial() { return ++calls; }\nstruct Entry {\n  int value;\n  Entry(int number = initial()) noexcept : value(number) {}\n};\nint main() {\n  std::forward_list<Entry> rows(2);\n  return rows.front().value != 1 || calls != 2;\n}\n",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source_sha256": "f00fe848f172c28f7694e93f8d5e677893d9ab2d006ecff57e3e40d658ec4c1d"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListTwoDefaultConstructorParametersResizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListDefaultConstructorParameterEmplaceRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListNestedDefaultConstructorParametersRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListDefaultConstructorReferenceParameterGuardRejected",
+    "TranslateTest.CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected"
+  ],
+  "source_proof_gate_pending": true,
+  "current_registry_count": 9577,
+  "current_python_registry_tests": 382,
+  "registered_source_sha256": "bf4b6ad9510a3d056b5e37a79568ea863da4d5591a9665322d3e765467304f93",
+  "maintained_original_sha256": "19a9deb5a34722dd92c51d3226f50107fb1c0aae78de5ce855074c0a46bc4aca",
+  "previous_registered_source_sha256": "3b4728113e5b5ccccbe3733dcf76051e428628b3e5eb8c09649f30d467194990",
+  "restorer_sha256": "a2efc724b75b4c9f3009da0bfbcd583f5b6a247051381d330dc74a4120c1a8c0",
+  "extractor_sha256": "3b9b9d329ba69c75bb1980244cd46d7c6870c457012844274eeb3fe924f37a3d"
+}

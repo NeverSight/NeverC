@@ -418622,7 +418622,7 @@ int main() {
   }
 }
 
-TEST_F(TranslateTest, CoreV2ListUserDefaultConstructorParameterGuardRejected) {
+TEST_F(TranslateTest, CoreV2ListDefaultConstructionUsesSelectedConstantArgument) {
   const auto Source = tmpFile("list-user-default-constructor-parameter-guard.cpp");
   writeFile(Source, R"r19containers(#include <list>
 struct Entry { int value; explicit Entry(int n = 7) noexcept : value(n) {} };
@@ -418631,10 +418631,17 @@ int main() {
   return rows.front().value != 7;
 }
 )r19containers");
-  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
-  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
-  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
-              Result.err.find("TR0203") != std::string::npos) << Result.err;
+  const auto Output = tmpFile("list-user-default-constructor-parameter-guard.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-user-default-constructor-parameter-guard" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
 }
 
 TEST_F(TranslateTest, CoreV2ForwardListUserDefaultConstructorMoveGuardRejected) {
@@ -419176,6 +419183,135 @@ int next_value() { return ++calls; }
 struct Entry {
   int value;
   Entry() : value(next_value()) {}
+};
+int main() {
+  std::forward_list<Entry> rows(2);
+  return rows.front().value != 1 || calls != 2;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ListTwoDefaultConstructorParametersResizeRunAtBothOptimizations) {
+  const auto Source = tmpFile("list-two-default-constructor-parameters-resize.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+struct Entry {
+  int value;
+  Entry(short first = 5, int second = 3 * 7) noexcept : value(first + second) {}
+};
+int main() {
+  std::list<Entry> rows(2);
+  auto& before = rows.front();
+  rows.resize(3);
+  auto& added = rows.emplace_front();
+  return rows.size() != 4 || &added != &rows.front() || before.value != 26 || rows.back().value != 26;
+}
+)r19containers");
+  const auto Output = tmpFile("list-two-default-constructor-parameters-resize.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("list-two-default-constructor-parameters-resize" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDefaultConstructorParameterEmplaceRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-default-constructor-parameter-emplace.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Entry {
+  unsigned value;
+  explicit Entry(unsigned initial = 3) noexcept : value(initial) {}
+};
+int main() {
+  std::forward_list<Entry> rows;
+  auto first = rows.emplace_after(rows.before_begin());
+  rows.resize(3);
+  auto second = first;
+  ++second;
+  return &*first != &rows.front() || first->value != 3 || second->value != 3;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-default-constructor-parameter-emplace.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-default-constructor-parameter-emplace" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListNestedDefaultConstructorParametersRunAtBothOptimizations) {
+  const auto Source = tmpFile("forward-list-nested-default-constructor-parameters.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+struct Item {
+  int id;
+  Item(int initial = 7) noexcept : id(initial) {}
+};
+struct Row {
+  Item items[2];
+  int count = 2;
+};
+int main() {
+  std::forward_list<Row> rows(1);
+  auto first = rows.begin();
+  rows.resize(2);
+  auto second = first;
+  ++second;
+  return first->items[0].id != 7 || second->items[1].id != 7 || second->count != 2;
+}
+)r19containers");
+  const auto Output = tmpFile("forward-list-nested-default-constructor-parameters.nc");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});
+  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;
+  for (const std::string &Optimization : {"-O0", "-O2"}) {
+    SCOPED_TRACE(Optimization);
+    const auto Executable = tmpFile("forward-list-nested-default-constructor-parameters" + Optimization);
+    auto Compile = compileGenerated(Output, Executable, Optimization);
+    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;
+    auto Run = exec(Executable.string(), {});
+    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;
+  }
+}
+
+TEST_F(TranslateTest, CoreV2ListDefaultConstructorReferenceParameterGuardRejected) {
+  const auto Source = tmpFile("list-default-constructor-reference-parameter-guard.cpp");
+  writeFile(Source, R"r19containers(#include <list>
+int initial = 4;
+struct Entry {
+  int value;
+  Entry(const int& number = initial) noexcept : value(number) {}
+};
+int main() {
+  std::list<Entry> rows(1);
+  return rows.front().value != 4;
+}
+)r19containers");
+  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});
+  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;
+  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||
+              Result.err.find("TR0203") != std::string::npos) << Result.err;
+}
+
+TEST_F(TranslateTest, CoreV2ForwardListDefaultConstructorSideEffectParameterGuardRejected) {
+  const auto Source = tmpFile("forward-list-default-constructor-side-effect-parameter-guard.cpp");
+  writeFile(Source, R"r19containers(#include <forward_list>
+int calls;
+int initial() { return ++calls; }
+struct Entry {
+  int value;
+  Entry(int number = initial()) noexcept : value(number) {}
 };
 int main() {
   std::forward_list<Entry> rows(2);

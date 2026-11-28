@@ -31,17 +31,17 @@
       "source_sha256": "a1061deecb3acdd1ebf18fbd6b6c9f187f4911abd8d5db529c515c3e0aa07859",
       "original_case_source_sha256": "a1061deecb3acdd1ebf18fbd6b6c9f187f4911abd8d5db529c515c3e0aa07859",
       "gtest_body_sha256": "3e374a5f399cb1c26d37379dbd8b4714dca4c08965c4cf1b0d7d3cc6d7db6522"
+    },
+    {
+      "name": "list-user-default-constructor-parameter-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListDefaultConstructionUsesSelectedConstantArgument",
+      "expected": "accept",
+      "source_sha256": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f",
+      "original_case_source_sha256": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f",
+      "gtest_body_sha256": "1c0022a2d248bba22430c58959d9be271812739841d4fdf7234d5d2d38594356"
     }
   ],
   "negative_cases": [
-    {
-      "name": "list-user-default-constructor-parameter-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListUserDefaultConstructorParameterGuardRejected",
-      "expected": "reject",
-      "source_sha256": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f",
-      "original_case_source_sha256": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f",
-      "gtest_body_sha256": "9ff27e0c833bb6f16706c693ed433ea5fda60a045d29f6b937c287cd445afb72"
-    },
     {
       "name": "forward-list-user-default-constructor-move-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListUserDefaultConstructorMoveGuardRejected",
@@ -87,8 +87,8 @@
     {
       "name": "list-user-default-constructor-parameter-guard",
       "section": "list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source": "#include <list>\nstruct Entry { int value; explicit Entry(int n = 7) noexcept : value(n) {} };\nint main() {\n  std::list<Entry> rows(1);\n  return rows.front().value != 7;\n}\n",
       "source_sha256": "2583119d67c6b09b22866fb4e3b013ce252d33818333e0e233c2494b4c96fd0f"
     },
@@ -106,10 +106,10 @@
     "TranslateTest.CoreV2ForwardListNestedUserDefaultConstructorRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListUserDefaultConstructorFillCopyRunAtBothOptimizations",
     "TranslateTest.CoreV2ListUserDefaultConstructorDestructionRunAtBothOptimizations",
-    "TranslateTest.CoreV2ListUserDefaultConstructorParameterGuardRejected",
+    "TranslateTest.CoreV2ListDefaultConstructionUsesSelectedConstantArgument",
     "TranslateTest.CoreV2ForwardListUserDefaultConstructorMoveGuardRejected"
   ],
-  "source_proof_gate_pending": false,
+  "source_proof_gate_pending": true,
   "full_stl_complete": false,
   "registered_source_sha256": "2e9247fdd6af526c7ccf9565f768717b1f1a269bd5a6b17d872709d7cadd9b09",
   "maintained_original_sha256": "12c5b7d34894b9eb4f3c67b19601a989bc4bacd83dfa6b3d5750d4b52b65da75",
@@ -120,8 +120,8 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9553,
   "current_python_registry_tests": 372,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 10,
+  "planned_generated_c23_executions": 10,
   "source_proof_sha256": "a214583e112764166d929c3ae15e254ca2853e94bc2675dccecc633713c0695a",
   "native_reference_proofs": {
     "linked-list-explicit-default-constructors": "33a8ef3d8b2435eb65f145234d0d16285846cd45cb49e76e4ffd261db6ec874d"
