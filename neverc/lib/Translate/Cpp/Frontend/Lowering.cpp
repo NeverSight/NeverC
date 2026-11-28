@@ -27395,6 +27395,12 @@ class FunctionLowering {
       }
       return;
     }
+    if (!Record->isAggregate()) {
+      const auto *Constructor =
+          approvedUtilityMemoryDefaultConstructor(A.S, A.Sources, T, A.Context);
+      constructMemoryDefault(std::move(Place), T, Constructor, false, L);
+      return;
+    }
     auto SavedThis = ThisPointer;
     ThisPointer = address(Place, Element, L);
     auto RestoreThis = llvm::make_scope_exit([&] { ThisPointer = std::move(SavedThis); });
@@ -27408,8 +27414,11 @@ class FunctionLowering {
   }
 
   void initializeLinkedListValue(Expression Place, QualType Element, SourceLocation L) {
-    // SDK value-initializes each element in allocated storage, in field order.
-    initializeZero(Place, Element, L);
+    const auto *Record = Element->getAsCXXRecordDecl();
+    Record = Record ? Record->getDefinition() : nullptr;
+    // Value-initialization skips zero-initialization for a user-provided constructor.
+    if (!Record || Record->isAggregate())
+      initializeZero(Place, Element, L);
     initializeLinkedListDefaults(std::move(Place), Element, L);
   }
 
