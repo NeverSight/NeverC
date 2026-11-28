@@ -3840,9 +3840,6 @@ R19_LIST_RECORD_EXTENDED_COMPARISONS_ADDITIONS_SIZE = 7008
 def restore_list_record_extended_comparisons_history(source):
     """Remove the exact combined layout fixture batch from the registry."""
     sha = lambda data: hashlib.sha256(data).hexdigest()
-    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
-        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
-        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     digest = sha(source)
     assert digest in {R19_LIST_RECORD_EXTENDED_COMPARISONS_REGISTERED_SHA256, R19_LIST_RECORD_EXTENDED_COMPARISONS_MAINTAINED_SHA256}
     stop = R19_LIST_RECORD_EXTENDED_COMPARISONS_MAINTAINED_SIZE
@@ -3865,6 +3862,169 @@ def restore_list_record_extended_comparisons_history(source):
     restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ListSortUsesRecordValueParameters) {\n  const auto Source = tmpFile("list-record-by-value-field-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Item { int rank; };\nbool less(Item left, Item right) { return left.rank < right.rank; }\nint main() {\n  std::list<Item> values{{7}, {2}};\n  values.sort(&less);\n  return values.front().rank != 2;\n}\n)r19containers");\n  const auto Output = tmpFile("list-record-by-value-field-comparator-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-record-by-value-field-comparator-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListRecordByValueFieldComparatorGuardRejected) {\n  const auto Source = tmpFile("list-record-by-value-field-comparator-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Item { int rank; };\nbool less(Item left, Item right) { return left.rank < right.rank; }\nint main() {\n  std::list<Item> values{{7}, {2}};\n  values.sort(&less);\n  return values.front().rank != 2;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
     prior = (R19_LIST_RECORD_EXTENDED_COMPARISONS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_RECORD_EXTENDED_COMPARISONS_REGISTERED_SHA256
              else R19_LIST_RECORD_EXTENDED_COMPARISONS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_RECORD_DESTRUCTION_REGISTERED_SHA256 = 'aa479d2506b9de87ce7acc05ea2d5efad3e2787a5f53b22e2f3fd7b16264f51b'
+R19_LIST_RECORD_DESTRUCTION_MAINTAINED_SHA256 = '3f9ab6d7f9d3cdd3db426fd301f83c0e62db1eacb20f9fcf368c380175d3f666'
+R19_LIST_RECORD_DESTRUCTION_PREVIOUS_REGISTERED_SHA256 = '38ae70fc059a80239e6ee4ba5acc2b995ada276f21511388369e353548b63b47'
+R19_LIST_RECORD_DESTRUCTION_PREVIOUS_MAINTAINED_SHA256 = '41e9dcd5aaacc8b11a432a6650633dfdeed44eb62a27bdb952db2cbf22478646'
+R19_LIST_RECORD_DESTRUCTION_ADDITIONS_SHA256 = '7ffede0d9cdbe9761dca5bd43713a26139a9b4322de6ceb33009208f86019e9f'
+R19_LIST_RECORD_DESTRUCTION_MAINTAINED_SIZE = 21338244
+R19_LIST_RECORD_DESTRUCTION_ADDITIONS_SIZE = 4275
+
+
+def restore_list_record_destruction_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_RECORD_DESTRUCTION_REGISTERED_SHA256, R19_LIST_RECORD_DESTRUCTION_MAINTAINED_SHA256}
+    stop = R19_LIST_RECORD_DESTRUCTION_MAINTAINED_SIZE
+    start = stop - R19_LIST_RECORD_DESTRUCTION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_RECORD_DESTRUCTION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ListRunsNestedStoredRecordDestructors) {\n  const auto Source = tmpFile("list-nested-nontrivial-record-destruction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Inner { int value; ~Inner() { value = 0; } };\nstruct Element { int id; Inner value; };\nint main() {\n  std::list<Element> values;\n  values.emplace_back().value.value = 5;\n  return values.back().value.value != 5;\n}\n)r19containers");\n  const auto Output = tmpFile("list-nested-nontrivial-record-destruction-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-nested-nontrivial-record-destruction-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ListRunsNestedStoredRecordDestructors) {\n  const auto Source = tmpFile("list-nested-nontrivial-record-destruction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Inner { int value; ~Inner() { value = 0; } };\nstruct Element { int id; Inner value; };\nint main() {\n  std::list<Element> values;\n  values.emplace_back().value.value = 5;\n  return values.back().value.value != 5;\n}\n)r19containers");\n  const auto Output = tmpFile("list-nested-nontrivial-record-destruction-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-nested-nontrivial-record-destruction-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListNestedNontrivialRecordDestructionGuardRejected) {\n  const auto Source = tmpFile("list-nested-nontrivial-record-destruction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Inner { int value; ~Inner() { value = 0; } };\nstruct Element { int id; Inner value; };\nint main() {\n  std::list<Element> values;\n  values.emplace_back().value.value = 5;\n  return values.back().value.value != 5;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ListRunsStoredRecordDestructors) {\n  const auto Source = tmpFile("list-nontrivial-record-destruction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int code;\n  ~Entry() { code = 0; }\n};\nint main() {\n  std::list<Entry> values;\n  values.emplace_back().code = 9;\n  return values.back().code != 9;\n}\n)r19containers");\n  const auto Output = tmpFile("list-nontrivial-record-destruction-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-nontrivial-record-destruction-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ListRunsStoredRecordDestructors) {\n  const auto Source = tmpFile("list-nontrivial-record-destruction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int code;\n  ~Entry() { code = 0; }\n};\nint main() {\n  std::list<Entry> values;\n  values.emplace_back().code = 9;\n  return values.back().code != 9;\n}\n)r19containers");\n  const auto Output = tmpFile("list-nontrivial-record-destruction-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-nontrivial-record-destruction-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListNontrivialRecordDestructionGuardRejected) {\n  const auto Source = tmpFile("list-nontrivial-record-destruction-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int code;\n  ~Entry() { code = 0; }\n};\nint main() {\n  std::list<Entry> values;\n  values.emplace_back().code = 9;\n  return values.back().code != 9;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_LIST_RECORD_DESTRUCTION_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_RECORD_DESTRUCTION_REGISTERED_SHA256
+             else R19_LIST_RECORD_DESTRUCTION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_REGISTERED_SHA256 = 'f4fb25bd4bf11a6d3093e2e630ba11751dcbba3bc9537a04bfe0c41e2488a23c'
+R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_MAINTAINED_SHA256 = 'd095a2df7f786c8db110b7b67c0dcd974f3b533cd7ef4c8638e11b21cd61b560'
+R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_PREVIOUS_REGISTERED_SHA256 = 'aa479d2506b9de87ce7acc05ea2d5efad3e2787a5f53b22e2f3fd7b16264f51b'
+R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_PREVIOUS_MAINTAINED_SHA256 = '3f9ab6d7f9d3cdd3db426fd301f83c0e62db1eacb20f9fcf368c380175d3f666'
+R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_ADDITIONS_SHA256 = '7cd76abb8bffef22ad0bfc2854d9d4e3c4c1c945f797da9379d2c46cb89b852c'
+R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_MAINTAINED_SIZE = 21348350
+R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_ADDITIONS_SIZE = 8951
+
+
+def restore_list_record_defaults_and_integral_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_REGISTERED_SHA256, R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_MAINTAINED_SHA256}
+    stop = R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_MAINTAINED_SIZE
+    start = stop - R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ListNormalizesIntegralRecordRemoval) {\n  const auto Source = tmpFile("list-record-integer-member-removal-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int key;\n  int operator==(const Entry& rhs) const { return key == rhs.key; }\n};\nint main() {\n  std::list<Entry> values{{2}, {3}};\n  values.remove(Entry{2});\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("list-record-integer-member-removal-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-record-integer-member-removal-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ListNormalizesIntegralRecordRemoval) {\n  const auto Source = tmpFile("list-record-integer-member-removal-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int key;\n  int operator==(const Entry& rhs) const { return key == rhs.key; }\n};\nint main() {\n  std::list<Entry> values{{2}, {3}};\n  values.remove(Entry{2});\n  return values.size() != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("list-record-integer-member-removal-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-record-integer-member-removal-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListRecordIntegerMemberRemovalGuardRejected) {\n  const auto Source = tmpFile("list-record-integer-member-removal-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int key;\n  int operator==(const Entry& rhs) const { return key == rhs.key; }\n};\nint main() {\n  std::list<Entry> values{{2}, {3}};\n  values.remove(Entry{2});\n  return values.size() != 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ForwardListNormalizesIntegralRecordEquality) {\n  const auto Source = tmpFile("forward-list-record-integer-member-owner-equality-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nstruct Entry {\n  int key;\n  int operator==(const Entry& other) const { return key == other.key; }\n};\nint main() { return std::forward_list<Entry>{{2}} == std::forward_list<Entry>{{3}}; }\n)r19containers");\n  const auto Output = tmpFile("forward-list-record-integer-member-owner-equality-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-record-integer-member-owner-equality-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ForwardListNormalizesIntegralRecordEquality) {\n  const auto Source = tmpFile("forward-list-record-integer-member-owner-equality-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nstruct Entry {\n  int key;\n  int operator==(const Entry& other) const { return key == other.key; }\n};\nint main() { return std::forward_list<Entry>{{2}} == std::forward_list<Entry>{{3}}; }\n)r19containers");\n  const auto Output = tmpFile("forward-list-record-integer-member-owner-equality-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-record-integer-member-owner-equality-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ForwardListRecordIntegerMemberOwnerEqualityGuardRejected) {\n  const auto Source = tmpFile("forward-list-record-integer-member-owner-equality-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nstruct Entry {\n  int key;\n  int operator==(const Entry& other) const { return key == other.key; }\n};\nint main() { return std::forward_list<Entry>{{2}} == std::forward_list<Entry>{{3}}; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ForwardListEvaluatesEarlierRecordMemberDefaults) {\n  const auto Source = tmpFile("forward-list-record-member-dependent-default-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nstruct Entry { int key; int count = key + 1; };\nint main() { std::forward_list<Entry> values(1); return values.front().count != 1; }\n)r19containers");\n  const auto Output = tmpFile("forward-list-record-member-dependent-default-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-record-member-dependent-default-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ForwardListEvaluatesEarlierRecordMemberDefaults) {\n  const auto Source = tmpFile("forward-list-record-member-dependent-default-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nstruct Entry { int key; int count = key + 1; };\nint main() { std::forward_list<Entry> values(1); return values.front().count != 1; }\n)r19containers");\n  const auto Output = tmpFile("forward-list-record-member-dependent-default-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-record-member-dependent-default-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ForwardListRecordMemberDependentDefaultGuardRejected) {\n  const auto Source = tmpFile("forward-list-record-member-dependent-default-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nstruct Entry { int key; int count = key + 1; };\nint main() { std::forward_list<Entry> values(1); return values.front().count != 1; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_REGISTERED_SHA256
+             else R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_REGISTERED_SHA256 = '3aecdea35dad904e24623feba96982628a19092f1fccbd7827f932b1e22f33a1'
+R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_MAINTAINED_SHA256 = 'c3b3b9d6c41a726b6d0f5d6d1eba0e6b868895188bb168887e4ac56e2e07bf39'
+R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_PREVIOUS_REGISTERED_SHA256 = 'f4fb25bd4bf11a6d3093e2e630ba11751dcbba3bc9537a04bfe0c41e2488a23c'
+R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_PREVIOUS_MAINTAINED_SHA256 = 'd095a2df7f786c8db110b7b67c0dcd974f3b533cd7ef4c8638e11b21cd61b560'
+R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_ADDITIONS_SHA256 = '741220059147547a5149ef979eef5cb95e3e84f991a757914b9d85037883c78c'
+R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_MAINTAINED_SIZE = 21353921
+R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_ADDITIONS_SIZE = 5211
+
+
+def restore_list_record_direct_default_calls_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_REGISTERED_SHA256, R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_MAINTAINED_SHA256}
+    stop = R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_MAINTAINED_SIZE
+    start = stop - R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ListRunsDirectMemberDefaultCalls) {\n  const auto Source = tmpFile("list-record-effectful-default-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nint counter = 0;\nint next() { return ++counter; }\nstruct Entry { int value = next(); };\nint main() { std::list<Entry> values(2); return values.back().value != 2; }\n)r19containers");\n  const auto Output = tmpFile("list-record-effectful-default-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-record-effectful-default-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ListRunsDirectMemberDefaultCalls) {\n  const auto Source = tmpFile("list-record-effectful-default-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nint counter = 0;\nint next() { return ++counter; }\nstruct Entry { int value = next(); };\nint main() { std::list<Entry> values(2); return values.back().value != 2; }\n)r19containers");\n  const auto Output = tmpFile("list-record-effectful-default-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-record-effectful-default-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListRecordEffectfulDefaultGuardRejected) {\n  const auto Source = tmpFile("list-record-effectful-default-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nint counter = 0;\nint next() { return ++counter; }\nstruct Entry { int value = next(); };\nint main() { std::list<Entry> values(2); return values.back().value != 2; }\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_REGISTERED_SHA256
+             else R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_RECORD_LIFETIME_AND_FLOATING_REGISTERED_SHA256 = '0b29b3c9caa29b262f4c21e102d5646824e206a0890c51e8f77f444254e2c2ff'
+R19_LIST_RECORD_LIFETIME_AND_FLOATING_MAINTAINED_SHA256 = '9b5512ee9560abf9d3dcddded029e0b1450c1da7ef40741ddf36b5557d8c6ab4'
+R19_LIST_RECORD_LIFETIME_AND_FLOATING_PREVIOUS_REGISTERED_SHA256 = '3aecdea35dad904e24623feba96982628a19092f1fccbd7827f932b1e22f33a1'
+R19_LIST_RECORD_LIFETIME_AND_FLOATING_PREVIOUS_MAINTAINED_SHA256 = 'c3b3b9d6c41a726b6d0f5d6d1eba0e6b868895188bb168887e4ac56e2e07bf39'
+R19_LIST_RECORD_LIFETIME_AND_FLOATING_ADDITIONS_SHA256 = '16c24881013c1c9d3d3f9845c26f4753b1e07214ccdb9f8b1131594f5342513e'
+R19_LIST_RECORD_LIFETIME_AND_FLOATING_MAINTAINED_SIZE = 21366259
+R19_LIST_RECORD_LIFETIME_AND_FLOATING_ADDITIONS_SIZE = 11964
+
+
+def restore_list_record_lifetime_and_floating_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_RECORD_LIFETIME_AND_FLOATING_REGISTERED_SHA256, R19_LIST_RECORD_LIFETIME_AND_FLOATING_MAINTAINED_SHA256}
+    stop = R19_LIST_RECORD_LIFETIME_AND_FLOATING_MAINTAINED_SIZE
+    start = stop - R19_LIST_RECORD_LIFETIME_AND_FLOATING_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_RECORD_LIFETIME_AND_FLOATING_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ListNormalizesFloatingRecordEquality) {\n  const auto Source = tmpFile("list-record-floating-comparison-result-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int key;\n  double operator==(const Entry& other) const { return key == other.key; }\n};\nint main() {\n  const std::list<Entry> first{{2}};\n  const std::list<Entry> second{{3}};\n  return first == second;\n}\n)r19containers");\n  const auto Output = tmpFile("list-record-floating-comparison-result-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-record-floating-comparison-result-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ListNormalizesFloatingRecordEquality) {\n  const auto Source = tmpFile("list-record-floating-comparison-result-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int key;\n  double operator==(const Entry& other) const { return key == other.key; }\n};\nint main() {\n  const std::list<Entry> first{{2}};\n  const std::list<Entry> second{{3}};\n  return first == second;\n}\n)r19containers");\n  const auto Output = tmpFile("list-record-floating-comparison-result-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("list-record-floating-comparison-result-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ListRecordFloatingComparisonResultGuardRejected) {\n  const auto Source = tmpFile("list-record-floating-comparison-result-guard.cpp");\n  writeFile(Source, R"r19containers(#include <list>\nstruct Entry {\n  int key;\n  double operator==(const Entry& other) const { return key == other.key; }\n};\nint main() {\n  const std::list<Entry> first{{2}};\n  const std::list<Entry> second{{3}};\n  return first == second;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_LIST_RECORD_LIFETIME_AND_FLOATING_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_RECORD_LIFETIME_AND_FLOATING_REGISTERED_SHA256
+             else R19_LIST_RECORD_LIFETIME_AND_FLOATING_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_DEFAULT_NODE_INITIALIZATION_REGISTERED_SHA256 = '7a2bdf2980bf0a682418f7f2223983f99745615d36b18223d036a1c087f5fe22'
+R19_LIST_DEFAULT_NODE_INITIALIZATION_MAINTAINED_SHA256 = 'e55c001a50d465a80ca24202f4561ee48de8bf564954262a02f0c9d9f0ab5345'
+R19_LIST_DEFAULT_NODE_INITIALIZATION_PREVIOUS_REGISTERED_SHA256 = '0b29b3c9caa29b262f4c21e102d5646824e206a0890c51e8f77f444254e2c2ff'
+R19_LIST_DEFAULT_NODE_INITIALIZATION_PREVIOUS_MAINTAINED_SHA256 = '9b5512ee9560abf9d3dcddded029e0b1450c1da7ef40741ddf36b5557d8c6ab4'
+R19_LIST_DEFAULT_NODE_INITIALIZATION_ADDITIONS_SHA256 = '80ec543e676af55650187f61c17d139e8ed2292a63f410e447c058d8e8f4ba2c'
+R19_LIST_DEFAULT_NODE_INITIALIZATION_MAINTAINED_SIZE = 21373480
+R19_LIST_DEFAULT_NODE_INITIALIZATION_ADDITIONS_SIZE = 7221
+
+
+def restore_list_default_node_initialization_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    digest = sha(source)
+    assert digest in {R19_LIST_DEFAULT_NODE_INITIALIZATION_REGISTERED_SHA256, R19_LIST_DEFAULT_NODE_INITIALIZATION_MAINTAINED_SHA256}
+    stop = R19_LIST_DEFAULT_NODE_INITIALIZATION_MAINTAINED_SIZE
+    start = stop - R19_LIST_DEFAULT_NODE_INITIALIZATION_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_DEFAULT_NODE_INITIALIZATION_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    prior = (R19_LIST_DEFAULT_NODE_INITIALIZATION_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_DEFAULT_NODE_INITIALIZATION_REGISTERED_SHA256
+             else R19_LIST_DEFAULT_NODE_INITIALIZATION_PREVIOUS_MAINTAINED_SHA256)
+    assert sha(restored) == prior
+    return restored
+
+
+R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_REGISTERED_SHA256 = '272b0e6a1e87efce458692940bd83393711e84a5c8ff7a55deb78c47d7e3106d'
+R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_MAINTAINED_SHA256 = '7967742b23fb7fba325570fa421b7167167dd8178ac93807de53bc4c5ed2fa09'
+R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_PREVIOUS_REGISTERED_SHA256 = '7a2bdf2980bf0a682418f7f2223983f99745615d36b18223d036a1c087f5fe22'
+R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_PREVIOUS_MAINTAINED_SHA256 = 'e55c001a50d465a80ca24202f4561ee48de8bf564954262a02f0c9d9f0ab5345'
+R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_ADDITIONS_SHA256 = 'ce55d3d9688212cbfa18e1c452fe26ec441be5ab7de63c91f364d6e64700aa08'
+R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_MAINTAINED_SIZE = 21379558
+R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_ADDITIONS_SIZE = 5691
+
+
+def restore_list_record_scalar_default_calls_history(source):
+    """Remove the exact combined layout fixture batch from the registry."""
+    sha = lambda data: hashlib.sha256(data).hexdigest()
+    if b'CoreV2BitsetWideTemporaryCopyOfSingleUseObject' in source:
+        assert source.count(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+        source = source.replace(b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryCopyOfSingleUseObject) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  const auto Output = tmpFile("bitset-wide-temporary-guard-copy-construction.nc");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("bitset-wide-temporary-guard-copy-construction" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2BitsetWideTemporaryGuardCopyConstructionRejected) {\n  const auto Source = tmpFile("bitset-wide-temporary-guard-copy-construction.cpp");\n  writeFile(Source, R"r19bitwidechar(#include <bitset>\nint main(){std::bitset<129> b(33);return std::bitset<129>{b}.to_ullong()!=33;}\n)r19bitwidechar");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    digest = sha(source)
+    assert digest in {R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_REGISTERED_SHA256, R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_MAINTAINED_SHA256}
+    stop = R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_MAINTAINED_SIZE
+    start = stop - R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_ADDITIONS_SIZE
+    assert sha(source[start:stop]) == R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_ADDITIONS_SHA256
+    restored = source[:start] + source[stop:]
+    assert restored.count(b'TEST_F(TranslateTest, CoreV2ForwardListRunsDirectCallsWithDefaultArgument) {\n  const auto Source = tmpFile("forward-list-record-default-call-argument-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint next(int count = 1) { return count; }\nstruct Entry { int id = next(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().id != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-record-default-call-argument-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-record-default-call-argument-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}') == 1
+    restored = restored.replace(b'TEST_F(TranslateTest, CoreV2ForwardListRunsDirectCallsWithDefaultArgument) {\n  const auto Source = tmpFile("forward-list-record-default-call-argument-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint next(int count = 1) { return count; }\nstruct Entry { int id = next(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().id != 1;\n}\n)r19containers");\n  const auto Output = tmpFile("forward-list-record-default-call-argument-guard.nc");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "-o", Output.string()});\n  ASSERT_EQ(Result.exitCode, 0) << Result.out << Result.err;\n  for (const std::string &Optimization : {"-O0", "-O2"}) {\n    SCOPED_TRACE(Optimization);\n    const auto Executable = tmpFile("forward-list-record-default-call-argument-guard" + Optimization);\n    auto Compile = compileGenerated(Output, Executable, Optimization);\n    ASSERT_EQ(Compile.exitCode, 0) << Compile.out << Compile.err;\n    auto Run = exec(Executable.string(), {});\n    EXPECT_EQ(Run.exitCode, 0) << Run.out << Run.err;\n  }\n}', b'TEST_F(TranslateTest, CoreV2ForwardListRecordDefaultCallArgumentGuardRejected) {\n  const auto Source = tmpFile("forward-list-record-default-call-argument-guard.cpp");\n  writeFile(Source, R"r19containers(#include <forward_list>\nint next(int count = 1) { return count; }\nstruct Entry { int id = next(); };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().id != 1;\n}\n)r19containers");\n  auto Result = translate(Source, {"--profile", "cpp-core-v2", "--check"});\n  ASSERT_NE(Result.exitCode, 0) << Result.out << Result.err;\n  EXPECT_TRUE(Result.err.find("TR0201") != std::string::npos ||\n              Result.err.find("TR0203") != std::string::npos) << Result.err;\n}', 1)
+    prior = (R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_PREVIOUS_REGISTERED_SHA256 if digest == R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_REGISTERED_SHA256
+             else R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_PREVIOUS_MAINTAINED_SHA256)
     assert sha(restored) == prior
     return restored
 
@@ -3911,12 +4071,12 @@ def restore_original_gtests(source, additions):
     if digest(source) == ORIGINAL_SOURCE_SHA256:
         return source
     source_digest = digest(source)
-    if source_digest == '8b77a544bd90719455486c72351a7f087f1c0376d9da385515f5871e90986b97':
+    if source_digest == 'd67d1a9ebfc8b388a6c0c838d767e1fa0fb5a668ebc02659407d1058b5f50b9b':
         return source
-    if source_digest == 'a90b42427c5dd5f3e860f22e6e93ca402dd0d0ad523eb6ac5e462d8a7adec2b8':
+    if source_digest == '231fae82892f478ce48574a1dbe1e2ad97f7255f0bbb902b702e39fa350fba6d':
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         current = source[:-len(additions)]
-        assert digest(current) == '8b77a544bd90719455486c72351a7f087f1c0376d9da385515f5871e90986b97'
+        assert digest(current) == 'd67d1a9ebfc8b388a6c0c838d767e1fa0fb5a668ebc02659407d1058b5f50b9b'
         return current
     if source_digest == R19_VARIANT_SCALAR_MAINTAINED_SHA256:
         return source
@@ -4750,6 +4910,48 @@ def restore_original_gtests(source, additions):
         assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
         original = source[:-len(additions)]
         assert digest(original) == R19_LIST_RECORD_EXTENDED_COMPARISONS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_RECORD_DESTRUCTION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_RECORD_DESTRUCTION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_RECORD_DESTRUCTION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_RECORD_DEFAULTS_AND_INTEGRAL_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_RECORD_DIRECT_DEFAULT_CALLS_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_RECORD_LIFETIME_AND_FLOATING_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_RECORD_LIFETIME_AND_FLOATING_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_RECORD_LIFETIME_AND_FLOATING_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_DEFAULT_NODE_INITIALIZATION_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_DEFAULT_NODE_INITIALIZATION_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_DEFAULT_NODE_INITIALIZATION_MAINTAINED_SHA256
+        return original
+    if source_digest == R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_MAINTAINED_SHA256:
+        return source
+    if source_digest == R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_REGISTERED_SHA256:
+        assert suffix_digest == BIND109_GOLDEN_SUFFIX_SHA256 and source.endswith(additions)
+        original = source[:-len(additions)]
+        assert digest(original) == R19_LIST_RECORD_SCALAR_DEFAULT_CALLS_MAINTAINED_SHA256
         return original
     if source_digest == R19_VARIANT_METADATA_LAYOUT_MAINTAINED_SHA256:
         return source

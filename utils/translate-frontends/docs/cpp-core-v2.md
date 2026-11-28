@@ -18783,3 +18783,13 @@ The translation adapter checks short-circuit field comparisons for linked-list
 records. Named comparators that take a trivially copyable record by value
 receive a separate caller-owned copy for each argument. Stable sort and
 merge preserve the identity of the original nodes.
+
+## Checked linked-list record initialization and destruction
+
+Default-allocator `std::list` and `std::forward_list` construct each new node in
+its own storage. Count construction, resize growth and no-argument emplacement
+apply the checked member initializers in field order. An initializer can read
+an earlier field and call a source-owned function with scalar value parameters.
+Explicit fill copies the supplied value. Node removal and container cleanup run
+the checked record destructor. Checked comparison results convert to bool where
+required by the selected linked-list operation.

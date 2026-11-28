@@ -27156,7 +27156,7 @@ class FunctionLowering {
     return quantity(A.Context.getTypeSizeInChars(A.Context.getRecordType(Node)).getQuantity(),
                     type(A.Context.getSizeType(), L), L);
   }
-  Expression forwardListCreateNode(Expression ValueReference, Expression Next,
+  Expression forwardListCreateNode(std::optional<Expression> ValueReference, Expression Next,
       const UtilityForwardListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
         linkedListNodeSize(Info.Record, L), L), "ptr:void", L), L);
@@ -27164,8 +27164,12 @@ class FunctionLowering {
     // The SDK constructs the element after allocation, so an aliased reference
     // observes any source-defined allocation callback before this load.
     const auto Element = Info.Value->getType();
-    assign(forwardListValue(Node, Element, L),
-           forwardListInputValue(std::move(ValueReference), InputElement, Element, L), L);
+    auto Target = forwardListValue(Node, Element, L);
+    if (ValueReference)
+      assign(std::move(Target),
+             forwardListInputValue(std::move(*ValueReference), InputElement, Element, L), L);
+    else
+      initializeLinkedListValue(std::move(Target), Element, L);
     return Node;
   }
   struct ForwardListInput {
@@ -27252,6 +27256,8 @@ class FunctionLowering {
   }
   void forwardListReleaseNode(Expression Node, const UtilityForwardListNodeRecord &Info,
                               SourceLocation L) {
+    const auto Element = Info.Value->getType();
+    destroy(forwardListValue(Node, Element, L), Element, L);
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
         linkedListNodeSize(Info.Record, L), L);
   }
@@ -27323,7 +27329,8 @@ class FunctionLowering {
     releaseForwardListChain(Output, A.zero(A.Context.VoidPtrTy, L), Info, L);
     jump(Done, L); label(Done, L);
   }
-  void resizeForwardListStorage(Expression Place, Expression Count, Expression ValueReference,
+  void resizeForwardListStorage(Expression Place, Expression Count,
+                                std::optional<Expression> ValueReference,
                                 const UtilityForwardListNodeRecord &Info, SourceLocation L) {
     auto Remaining = snapshot(cast(std::move(Count), "u64", L), L);
     auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
@@ -27375,10 +27382,14 @@ class FunctionLowering {
     return Following;
   }
   void initializeLinkedListValue(Expression Place, QualType Element, SourceLocation L) {
+    // SDK value-initializes each element in allocated storage, in field order.
     initializeZero(Place, Element, L);
     const auto *Record = Element->getAsCXXRecordDecl();
     Record = Record ? Record->getDefinition() : nullptr;
     if (!Record || Record->isTrivial()) return;
+    auto SavedThis = ThisPointer;
+    ThisPointer = address(Place, Element, L);
+    auto RestoreThis = llvm::make_scope_exit([&] { ThisPointer = std::move(SavedThis); });
     for (const auto *Field : Record->fields())
       if (const auto *Init = Field->getInClassInitializer())
         initialize(fieldStorage(Place, Field, L), Init, L);
@@ -27796,14 +27807,9 @@ class FunctionLowering {
     }
     if (Operation == UtilityForwardListOperation::Resize ||
         Operation == UtilityForwardListOperation::ResizeFill) {
-      Expression ValueReference;
-      if (Operation == UtilityForwardListOperation::ResizeFill) {
+      std::optional<Expression> ValueReference;
+      if (Operation == UtilityForwardListOperation::ResizeFill)
         ValueReference = Operands[1];
-      } else {
-        auto Value = temporary(type(Element, L), L);
-        initializeLinkedListValue(Value, Element, L);
-        ValueReference = address(Value, Element, L);
-      }
       resizeForwardListStorage(Place, Operands[0], std::move(ValueReference), Owner->Node, L);
       return Expression{};
     }
@@ -27918,13 +27924,9 @@ class FunctionLowering {
           ? forwardListNext(snapshot(forwardListMember(dereference(Operands[0], L), true, L), L), L)
           : forwardListMember(Place, false, L);
       const unsigned PositionArgs = EmplaceAfter ? 1 : 0;
-      Expression ValueReference;
+      std::optional<Expression> ValueReference;
       QualType InputElement;
-      if (Operands.size() == PositionArgs) {
-        auto Value = temporary(type(Element, L), L);
-        initializeLinkedListValue(Value, Element, L);
-        ValueReference = address(Value, Element, L);
-      } else {
+      if (Operands.size() != PositionArgs) {
         ValueReference = Operands[PositionArgs];
         InputElement = Method->getParamDecl(PositionArgs)->getType()
                            ->getPointeeType().getUnqualifiedType();
@@ -29156,19 +29158,27 @@ class FunctionLowering {
     assign(listIteratorMember(Result, L), std::move(Node), L);
     return Result;
   }
-  Expression listCreateNode(Expression ValueReference, const UtilityListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
+  Expression listCreateNode(std::optional<Expression> ValueReference,
+      const UtilityListNodeRecord &Info, SourceLocation L, QualType InputElement = {}) {
     auto Node = snapshot(cast(unorderedHeapAllocate(A.Context.getRecordType(Info.Record),
         linkedListNodeSize(Info.Record, L), L), "ptr:void", L), L);
     initializeZero(listLink(Node, true, L), A.Context.VoidPtrTy, L);
     initializeZero(listLink(Node, false, L), A.Context.VoidPtrTy, L);
     const auto Element = Info.Value->getType();
-    auto Value = dereference(std::move(ValueReference), L);
+    auto Target = listValue(Node, Element, false, L);
+    if (!ValueReference) {
+      initializeLinkedListValue(std::move(Target), Element, L);
+      return Node;
+    }
+    auto Value = dereference(std::move(*ValueReference), L);
     if (!InputElement.isNull() && !A.Context.hasSameType(InputElement, Element))
       Value = cast(std::move(Value), type(Element, L), L);
-    assign(listValue(Node, Element, false, L), std::move(Value), L);
+    assign(std::move(Target), std::move(Value), L);
     return Node;
   }
   void listReleaseNode(Expression Node, const UtilityListNodeRecord &Info, SourceLocation L) {
+    const auto Element = Info.Value->getType();
+    destroy(listValue(Node, Element, false, L), Element, L);
     unorderedHeapRelease(std::move(Node), A.Context.getRecordType(Info.Record),
         linkedListNodeSize(Info.Record, L), L);
   }
@@ -29240,14 +29250,8 @@ class FunctionLowering {
     label(CheckGrow, L);
     branch(binary(">", SizeRequested, CurrentSize, "bool", L), Grow, Done, L);
     label(Grow, L);
-    if (!Fill) {
-      const auto Element = Info.Value->getType();
-      auto Zero = temporary(type(Element, L), L);
-      initializeLinkedListValue(Zero, Element, L);
-      Fill = address(Zero, Element, L);
-    }
     auto Added = snapshot(binary("-", SizeRequested, CurrentSize, Size, L), L);
-    auto Input = listRepeatedInput(Added, *Fill, L);
+    auto Input = listRepeatedInput(Added, std::move(Fill), L);
     listInsertInputStorage(Place, snapshot(listSentinel(Place, L), L), Input, Info, L);
     jump(Done, L); label(Done, L);
   }
@@ -29602,6 +29606,7 @@ class FunctionLowering {
     Expression End;
     QualType PointerElement;
     std::optional<Expression> Remaining = std::nullopt;
+    bool DefaultInitialize = false;
   };
 
   ListAssignmentInput listAssignmentInput(Expression First, Expression Last,
@@ -29614,10 +29619,13 @@ class FunctionLowering {
     return {std::move(Current), std::move(End), PointerElement};
   }
 
-  ListAssignmentInput listRepeatedInput(Expression Count, Expression Value, SourceLocation L) {
+  ListAssignmentInput listRepeatedInput(Expression Count, std::optional<Expression> Value,
+      SourceLocation L) {
     auto Remaining = temporary(type(A.Context.getSizeType(), L), L);
     assign(Remaining, std::move(Count), L);
-    return {std::move(Value), {}, {}, std::move(Remaining)};
+    if (Value)
+      return {std::move(*Value), {}, {}, std::move(Remaining)};
+    return {{}, {}, {}, std::move(Remaining), true};
   }
 
   Expression listInputHasNext(const ListAssignmentInput &Input, SourceLocation L) {
@@ -29692,8 +29700,8 @@ class FunctionLowering {
     label(Done, L);
   }
 
-  void listConstructCountStorage(Expression Place, Expression Count, Expression Value,
-      const UtilityListNodeRecord &Info, SourceLocation L) {
+  void listConstructCountStorage(Expression Place, Expression Count,
+      std::optional<Expression> Value, const UtilityListNodeRecord &Info, SourceLocation L) {
     const auto Size = type(A.Context.getSizeType(), L);
     auto Remaining = temporary(Size, L);
     assign(Remaining, std::move(Count), L);
@@ -29720,8 +29728,10 @@ class FunctionLowering {
     const auto Commit = labelName(), Done = labelName();
     branch(listInputHasNext(Input, L), Make, Done, L);
     label(Make, L);
-    auto Node = listCreateNode(listAssignmentReference(Input, Info.Value->getType(), L),
-                               Info, L, Input.PointerElement);
+    std::optional<Expression> Reference;
+    if (!Input.DefaultInitialize)
+      Reference = listAssignmentReference(Input, Info.Value->getType(), L);
+    auto Node = listCreateNode(std::move(Reference), Info, L, Input.PointerElement);
     assign(listLink(Node, true, L), Tail, L);
     branch(cast(Tail, "bool", L), Link, First, L);
     label(Link, L);
@@ -30027,13 +30037,9 @@ class FunctionLowering {
       std::optional<Expression> Position;
       if (Emplace) Position = snapshot(listIteratorMember(dereference(Operands[0], L), L), L);
       const unsigned Offset = Emplace ? 1 : 0;
-      Expression Argument;
+      std::optional<Expression> Argument;
       QualType InputElement;
-      if (Operands.size() == Offset) {
-        auto Zero = temporary(type(Element, L), L);
-        initializeLinkedListValue(Zero, Element, L);
-        Argument = address(Zero, Element, L);
-      } else {
+      if (Operands.size() != Offset) {
         Argument = Operands[Offset];
         InputElement = Method->getParamDecl(Offset)->getType()->getPointeeType().getUnqualifiedType();
       }
@@ -39004,16 +39010,17 @@ class FunctionLowering {
                    L));
     }
     chargeCall(Args, L);
-    auto Compared = temporary("bool", L);
+    const FunctionDecl *Comparison = MemberComparison ? MemberComparison : FreeComparison;
+    const auto ResultType = type(Comparison->getReturnType(), L);
+    auto Compared = temporary(ResultType, L);
     Body.push_back(json::Object{
         {"op", "call"},
-        {"callee", A.name(MemberComparison ? static_cast<const FunctionDecl *>(
-                                                 MemberComparison)
-                                           : FreeComparison)},
+        {"callee", A.name(Comparison)},
         {"args", std::move(Args)},
         {"target", json::Object(Compared)},
         {"loc", A.loc(L)}});
-    return Compared;
+    if (ResultType == "bool") return Compared;
+    return cast(std::move(Compared), "bool", L);
   }
 
   Expression stringShortSize(Expression Word, bool AlternateLayout,
@@ -42522,9 +42529,7 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
       }
       initializeZero(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L);
       if (*Kind == UtilityForwardListConstruction::Count) {
-        auto Zero = temporary(type(Element, L), L);
-        initializeLinkedListValue(Zero, Element, L);
-        resizeForwardListStorage(Place, Operands[0], address(Zero, Element, L), Owner->Node, L);
+        resizeForwardListStorage(Place, Operands[0], std::nullopt, Owner->Node, L);
         return;
       }
       if (*Kind == UtilityForwardListConstruction::FillCount) {
@@ -42671,13 +42676,10 @@ if (const auto Piecewise = approvedUtilityPairPiecewiseConstruction(
         return;
       }
       if (*Kind == UtilityListConstruction::Count || *Kind == UtilityListConstruction::CountFill) {
-        if (*Kind == UtilityListConstruction::CountFill) {
-          listConstructCountStorage(Place, Operands[0], Operands[1], Owner->Node, L);
-        } else {
-          auto Zero = temporary(type(Element, L), L);
-          initializeLinkedListValue(Zero, Element, L);
-          listConstructCountStorage(Place, Operands[0], address(Zero, Element, L), Owner->Node, L);
-        }
+        std::optional<Expression> Value;
+        if (*Kind == UtilityListConstruction::CountFill)
+          Value = Operands[1];
+        listConstructCountStorage(Place, Operands[0], std::move(Value), Owner->Node, L);
         return;
       }
       if (*Kind != UtilityListConstruction::InitializerList) return;

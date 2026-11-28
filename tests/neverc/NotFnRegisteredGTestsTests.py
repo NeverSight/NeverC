@@ -43,6 +43,36 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.list_record_scalar_default_calls_registered = cls.registered
+        cls.list_record_scalar_default_calls_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_scalar_default_calls_original = cls.adapter.restore_original_gtests(cls.list_record_scalar_default_calls_registered,
+                                                                        cls.list_record_scalar_default_calls_suffix)
+        cls.registered = cls.adapter.restore_list_record_scalar_default_calls_history(cls.list_record_scalar_default_calls_registered)
+        cls.list_default_node_initialization_registered = cls.registered
+        cls.list_default_node_initialization_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_default_node_initialization_original = cls.adapter.restore_original_gtests(cls.list_default_node_initialization_registered,
+                                                                        cls.list_default_node_initialization_suffix)
+        cls.registered = cls.adapter.restore_list_default_node_initialization_history(cls.list_default_node_initialization_registered)
+        cls.list_record_lifetime_and_floating_registered = cls.registered
+        cls.list_record_lifetime_and_floating_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_lifetime_and_floating_original = cls.adapter.restore_original_gtests(cls.list_record_lifetime_and_floating_registered,
+                                                                        cls.list_record_lifetime_and_floating_suffix)
+        cls.registered = cls.adapter.restore_list_record_lifetime_and_floating_history(cls.list_record_lifetime_and_floating_registered)
+        cls.list_record_direct_default_calls_registered = cls.registered
+        cls.list_record_direct_default_calls_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_direct_default_calls_original = cls.adapter.restore_original_gtests(cls.list_record_direct_default_calls_registered,
+                                                                        cls.list_record_direct_default_calls_suffix)
+        cls.registered = cls.adapter.restore_list_record_direct_default_calls_history(cls.list_record_direct_default_calls_registered)
+        cls.list_record_defaults_and_integral_registered = cls.registered
+        cls.list_record_defaults_and_integral_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_defaults_and_integral_original = cls.adapter.restore_original_gtests(cls.list_record_defaults_and_integral_registered,
+                                                                        cls.list_record_defaults_and_integral_suffix)
+        cls.registered = cls.adapter.restore_list_record_defaults_and_integral_history(cls.list_record_defaults_and_integral_registered)
+        cls.list_record_destruction_registered = cls.registered
+        cls.list_record_destruction_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.list_record_destruction_original = cls.adapter.restore_original_gtests(cls.list_record_destruction_registered,
+                                                                        cls.list_record_destruction_suffix)
+        cls.registered = cls.adapter.restore_list_record_destruction_history(cls.list_record_destruction_registered)
         cls.list_record_extended_comparisons_registered = cls.registered
         cls.list_record_extended_comparisons_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         cls.list_record_extended_comparisons_original = cls.adapter.restore_original_gtests(cls.list_record_extended_comparisons_registered,
@@ -4510,6 +4540,114 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_record_extended_comparisons_history(self.list_record_extended_comparisons_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_record_extended_comparisons_registered, self.list_record_extended_comparisons_suffix + b' ')
+
+
+    def test_list_record_destruction_retains_published_bodies(self):
+        self.assertEqual(self.list_record_destruction_original + self.list_record_destruction_suffix, self.list_record_destruction_registered)
+        self.assertEqual(self.adapter.restore_list_record_destruction_history(self.list_record_destruction_original),
+                         self.list_record_extended_comparisons_original)
+        output, evidence = self.extractor.extract(self.list_record_destruction_original, ['TranslateTest.CoreV2ListRecordDestructorAfterSpliceAndEraseRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordNestedDestructionOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordPotentiallyThrowingDestructorGuardRejected', 'TranslateTest.CoreV2ForwardListRecordDestructorWithCustomCopyGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9501)
+        self.assertEqual(evidence['selected_count'], 4)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-destructor-after-splice-and-erase', output)
+        self.assertIn(b'forward-list-record-destructor-with-custom-copy-guard', output)
+
+    def test_list_record_destruction_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_destruction_history(self.list_record_destruction_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_destruction_registered, self.list_record_destruction_suffix + b' ')
+
+
+    def test_list_record_defaults_and_integral_retains_published_bodies(self):
+        self.assertEqual(self.list_record_defaults_and_integral_original + self.list_record_defaults_and_integral_suffix, self.list_record_defaults_and_integral_registered)
+        self.assertEqual(self.adapter.restore_list_record_defaults_and_integral_history(self.list_record_defaults_and_integral_original),
+                         self.list_record_destruction_original)
+        output, evidence = self.extractor.extract(self.list_record_defaults_and_integral_original, ['TranslateTest.CoreV2ListRecordDependentDefaultResizeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordDependentDefaultEmplacementRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordDependentDefaultAggregateInputRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordIntegralDefaultSortResultRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordIntegralUniqueResultRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordMutatingDefaultGuardRejected', 'TranslateTest.CoreV2ForwardListRecordLaterFieldDefaultGuardRejected', 'TranslateTest.CoreV2ListRecordFloatingComparisonResultGuardRejected', 'TranslateTest.CoreV2ListRecordEffectfulIntegralComparisonResultGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9510)
+        self.assertEqual(evidence['selected_count'], 9)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-dependent-default-resize', output)
+        self.assertIn(b'list-record-floating-comparison-result-guard', output)
+
+    def test_list_record_defaults_and_integral_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_defaults_and_integral_history(self.list_record_defaults_and_integral_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_defaults_and_integral_registered, self.list_record_defaults_and_integral_suffix + b' ')
+
+
+    def test_list_record_direct_default_calls_retains_published_bodies(self):
+        self.assertEqual(self.list_record_direct_default_calls_original + self.list_record_direct_default_calls_suffix, self.list_record_direct_default_calls_registered)
+        self.assertEqual(self.adapter.restore_list_record_direct_default_calls_history(self.list_record_direct_default_calls_original),
+                         self.list_record_defaults_and_integral_original)
+        output, evidence = self.extractor.extract(self.list_record_direct_default_calls_original, ['TranslateTest.CoreV2ListRecordDefaultCallResizeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordDefaultCallEmplacementRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordDefaultCallAggregateSuppressionRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordIndirectDefaultCallGuardRejected', 'TranslateTest.CoreV2ForwardListRecordDefaultCallArgumentGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9515)
+        self.assertEqual(evidence['selected_count'], 5)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-default-call-resize', output)
+        self.assertIn(b'list-record-indirect-default-call-guard', output)
+
+    def test_list_record_direct_default_calls_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_direct_default_calls_history(self.list_record_direct_default_calls_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_direct_default_calls_registered, self.list_record_direct_default_calls_suffix + b' ')
+
+
+    def test_list_record_lifetime_and_floating_retains_published_bodies(self):
+        self.assertEqual(self.list_record_lifetime_and_floating_original + self.list_record_lifetime_and_floating_suffix, self.list_record_lifetime_and_floating_registered)
+        self.assertEqual(self.adapter.restore_list_record_lifetime_and_floating_history(self.list_record_lifetime_and_floating_original),
+                         self.list_record_direct_default_calls_original)
+        output, evidence = self.extractor.extract(self.list_record_lifetime_and_floating_original, ['TranslateTest.CoreV2ListRecordDependentDefaultAndDestructionRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordDefaultCallAndDestructionRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordDefaultEmplacementSpliceAndDestructionRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordDefaultAndNestedDestructionOrderRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordFloatDefaultSortRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordDoubleDefaultUniqueRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordDoubleRemovalResultRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordDefaultWithThrowingDestructorGuardRejected', 'TranslateTest.CoreV2ForwardListNestedRecordDefaultAndDestructionGuardRejected', 'TranslateTest.CoreV2ListRecordLongDoubleComparisonResultGuardRejected', 'TranslateTest.CoreV2ListRecordEffectfulFloatComparisonResultGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9526)
+        self.assertEqual(evidence['selected_count'], 11)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-dependent-default-and-destruction', output)
+        self.assertIn(b'list-record-long-double-comparison-result-guard', output)
+
+    def test_list_record_lifetime_and_floating_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_lifetime_and_floating_history(self.list_record_lifetime_and_floating_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_lifetime_and_floating_registered, self.list_record_lifetime_and_floating_suffix + b' ')
+
+
+    def test_list_default_node_initialization_retains_published_bodies(self):
+        self.assertEqual(self.list_default_node_initialization_original + self.list_default_node_initialization_suffix, self.list_default_node_initialization_registered)
+        self.assertEqual(self.adapter.restore_list_default_node_initialization_history(self.list_default_node_initialization_original),
+                         self.list_record_lifetime_and_floating_original)
+        output, evidence = self.extractor.extract(self.list_default_node_initialization_original, ['TranslateTest.CoreV2ListDefaultConstructionCountAndResizeRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultConstructionCountAndResizeRunAtBothOptimizations', 'TranslateTest.CoreV2ListDefaultEmplacementAndExplicitFillRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListDefaultEmplacementAndExplicitFillRunAtBothOptimizations', 'TranslateTest.CoreV2ListNodeDefaultIndirectCallGuardRejected', 'TranslateTest.CoreV2ForwardListNodeDefaultWritingMemberGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9532)
+        self.assertEqual(evidence['selected_count'], 6)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-default-construction-count-and-resize', output)
+        self.assertIn(b'forward-list-node-default-writing-member-guard', output)
+
+    def test_list_default_node_initialization_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_default_node_initialization_history(self.list_default_node_initialization_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_default_node_initialization_registered, self.list_default_node_initialization_suffix + b' ')
+
+
+    def test_list_record_scalar_default_calls_retains_published_bodies(self):
+        self.assertEqual(self.list_record_scalar_default_calls_original + self.list_record_scalar_default_calls_suffix, self.list_record_scalar_default_calls_registered)
+        self.assertEqual(self.adapter.restore_list_record_scalar_default_calls_history(self.list_record_scalar_default_calls_original),
+                         self.list_default_node_initialization_original)
+        output, evidence = self.extractor.extract(self.list_record_scalar_default_calls_original, ['TranslateTest.CoreV2ListRecordDefaultCallScalarEarlierFieldRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListRecordDefaultCallNestedScalarRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordDefaultCallFloatingScalarRunAtBothOptimizations', 'TranslateTest.CoreV2ListRecordDefaultCallReferenceArgumentGuardRejected', 'TranslateTest.CoreV2ForwardListRecordDefaultCallNonliteralDefaultGuardRejected'])
+        self.assertEqual(evidence['original_test_names'], 9537)
+        self.assertEqual(evidence['selected_count'], 5)
+        self.assertTrue(evidence['all_non_test_source_retained'])
+        self.assertIn(b'list-record-default-call-scalar-earlier-field', output)
+        self.assertIn(b'forward-list-record-default-call-nonliteral-default-guard', output)
+
+    def test_list_record_scalar_default_calls_rejects_an_edited_source_or_suffix(self):
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_list_record_scalar_default_calls_history(self.list_record_scalar_default_calls_registered + b' ')
+        with self.assertRaises(AssertionError):
+            self.adapter.restore_original_gtests(self.list_record_scalar_default_calls_registered, self.list_record_scalar_default_calls_suffix + b' ')
 
 
 if __name__ == '__main__':

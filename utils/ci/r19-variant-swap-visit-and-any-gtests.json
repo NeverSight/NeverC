@@ -299,5 +299,5 @@
     "variant-trivial-swap-replay": "05e9985fdbb71cd096abddf95179d114fe15ef71c369bdf4562fef402c6fcfbb"
   },
   "native_reference_authentication_sha256": "64c284ff75a3643e5301312476f11d77a7143576828d1802b2642b58e9ce415c",
-  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
 }

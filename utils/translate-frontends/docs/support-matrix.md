@@ -1249,3 +1249,10 @@ The combined compiler passes 9,630 source requests across six 64-bit targets
 and 1709 formal tests on Linux x86-64. All 1204 generated C23 programs
 match native C++ at O0 and O2. The original 750 source requests pass with
 the same compiler source.
+
+## R19 Checked linked-list record initialization and destruction
+
+The cumulative suite covers 9,870 source requests across six 64-bit targets.
+The original 750-request regression also passes. On Linux x86-64, all
+1,749 formal tests pass and 1,236 generated C23 programs match native C++ at
+both O0 and O2.

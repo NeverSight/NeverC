@@ -68,7 +68,19 @@ def body_end(source, opening):
 def extract(source, selected_names):
     pattern = re.compile(rb'(?m)^TEST_F\(\s*(\w+)\s*,\s*(\w+)\s*\)\s*\{')
     matches = list(pattern.finditer(source))
-    if sha(source) in {'41e9dcd5aaacc8b11a432a6650633dfdeed44eb62a27bdb952db2cbf22478646', '8b77a544bd90719455486c72351a7f087f1c0376d9da385515f5871e90986b97'}:
+    if sha(source) in {'7967742b23fb7fba325570fa421b7167167dd8178ac93807de53bc4c5ed2fa09', 'd67d1a9ebfc8b388a6c0c838d767e1fa0fb5a668ebc02659407d1058b5f50b9b'}:
+        expected_count = 9537
+    elif sha(source) == 'e55c001a50d465a80ca24202f4561ee48de8bf564954262a02f0c9d9f0ab5345':
+        expected_count = 9532
+    elif sha(source) == '9b5512ee9560abf9d3dcddded029e0b1450c1da7ef40741ddf36b5557d8c6ab4':
+        expected_count = 9526
+    elif sha(source) == 'c3b3b9d6c41a726b6d0f5d6d1eba0e6b868895188bb168887e4ac56e2e07bf39':
+        expected_count = 9515
+    elif sha(source) == 'd095a2df7f786c8db110b7b67c0dcd974f3b533cd7ef4c8638e11b21cd61b560':
+        expected_count = 9510
+    elif sha(source) == '3f9ab6d7f9d3cdd3db426fd301f83c0e62db1eacb20f9fcf368c380175d3f666':
+        expected_count = 9501
+    elif sha(source) == '41e9dcd5aaacc8b11a432a6650633dfdeed44eb62a27bdb952db2cbf22478646':
         expected_count = 9497
     elif sha(source) == 'c05a526d1aa2118f7439b6f0842358d4a9e1d4044e7487dd28a0377722228004':
         expected_count = 9490

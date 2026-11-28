@@ -127,17 +127,25 @@
       "source_sha256": "9ee98e971bee91db9e14428b5d13b578901fcc9d30a371e9dd757bca43ebecdf",
       "original_case_source_sha256": "9ee98e971bee91db9e14428b5d13b578901fcc9d30a371e9dd757bca43ebecdf",
       "gtest_body_sha256": "c8e3bb180370d3ab9486223bed759c8a8878705fa403a19b9de84da0fc9c07f1"
+    },
+    {
+      "name": "list-nontrivial-record-destruction-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRunsStoredRecordDestructors",
+      "expected": "accept",
+      "source_sha256": "a097628a699da3052973ae30c204073c5e892d64676dbd5a8fcdfd0628056179",
+      "original_case_source_sha256": "a097628a699da3052973ae30c204073c5e892d64676dbd5a8fcdfd0628056179",
+      "gtest_body_sha256": "8ff4497a2e9e4cb92b96f382d4450789b7192657b713bffe2cf973d37cff38cc"
+    },
+    {
+      "name": "list-nested-nontrivial-record-destruction-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRunsNestedStoredRecordDestructors",
+      "expected": "accept",
+      "source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
+      "original_case_source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
+      "gtest_body_sha256": "a0573a69033dfb5df9e30b80e98189d4683ba91874c5686b24d4e8da7133d641"
     }
   ],
   "negative_cases": [
-    {
-      "name": "list-nontrivial-record-destruction-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListNontrivialRecordDestructionGuardRejected",
-      "expected": "reject",
-      "source_sha256": "a097628a699da3052973ae30c204073c5e892d64676dbd5a8fcdfd0628056179",
-      "original_case_source_sha256": "a097628a699da3052973ae30c204073c5e892d64676dbd5a8fcdfd0628056179",
-      "gtest_body_sha256": "4493496fc014b1e37abaf430a9b63e2a38e350e4892fb18afac271f40bd3234c"
-    },
     {
       "name": "forward-list-overaligned-record-guard",
       "formal_test_name": "TranslateTest.CoreV2ForwardListOveralignedRecordGuardRejected",
@@ -185,14 +193,6 @@
       "source_sha256": "315368c9142826815e944d5f27a5586372416e3cd3c7055f7443f5be97d02ce3",
       "original_case_source_sha256": "315368c9142826815e944d5f27a5586372416e3cd3c7055f7443f5be97d02ce3",
       "gtest_body_sha256": "638ccd571ed7ec0a575cace56abbb8ea8e9e0ab9f7dd4b01b9af5fa3eb399ebd"
-    },
-    {
-      "name": "list-nested-nontrivial-record-destruction-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListNestedNontrivialRecordDestructionGuardRejected",
-      "expected": "reject",
-      "source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
-      "original_case_source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
-      "gtest_body_sha256": "b69f878eb7a2d0a839b1240364f05041d147505ea5a1acb0d836b23ac34cb119"
     },
     {
       "name": "forward-list-nested-packed-record-layout-guard",
@@ -366,11 +366,19 @@
     },
     {
       "name": "list-nontrivial-record-destruction-guard",
-      "expected": "reject",
+      "expected": "accept",
       "source": "#include <list>\nstruct Entry {\n  int code;\n  ~Entry() { code = 0; }\n};\nint main() {\n  std::list<Entry> values;\n  values.emplace_back().code = 9;\n  return values.back().code != 9;\n}\n",
       "source_sha256": "a097628a699da3052973ae30c204073c5e892d64676dbd5a8fcdfd0628056179",
       "public_header": "list",
-      "kind": "source-body-guard"
+      "kind": "cpp17-operation"
+    },
+    {
+      "name": "list-nested-nontrivial-record-destruction-guard",
+      "expected": "accept",
+      "source": "#include <list>\nstruct Inner { int value; ~Inner() { value = 0; } };\nstruct Element { int id; Inner value; };\nint main() {\n  std::list<Element> values;\n  values.emplace_back().value.value = 5;\n  return values.back().value.value != 5;\n}\n",
+      "source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
+      "public_header": "list",
+      "kind": "cpp17-operation"
     },
     {
       "name": "forward-list-overaligned-record-guard",
@@ -417,14 +425,6 @@
       "expected": "reject",
       "source": "#include <list>\nstruct Entry { int key; long double value; };\nint main() {\n  std::list<Entry> values{{9, 1.25L}};\n  return values.front().value != 1.25L;\n}\n",
       "source_sha256": "315368c9142826815e944d5f27a5586372416e3cd3c7055f7443f5be97d02ce3",
-      "public_header": "list",
-      "kind": "source-body-guard"
-    },
-    {
-      "name": "list-nested-nontrivial-record-destruction-guard",
-      "expected": "reject",
-      "source": "#include <list>\nstruct Inner { int value; ~Inner() { value = 0; } };\nstruct Element { int id; Inner value; };\nint main() {\n  std::list<Element> values;\n  values.emplace_back().value.value = 5;\n  return values.back().value.value != 5;\n}\n",
-      "source_sha256": "4ce0c664ac2c35b38f4b631bafe0cb5e21ed70f1b693d8f10d6bbade7906b8f0",
       "public_header": "list",
       "kind": "source-body-guard"
     },
@@ -486,14 +486,14 @@
     "TranslateTest.CoreV2ForwardListRecordNestedAndMultidimensionalArraysRunAtBothOptimizations",
     "TranslateTest.CoreV2ListRecordArrayRangeAndSpliceRunAtBothOptimizations",
     "TranslateTest.CoreV2ListSortUsesSelectedRecordOperator",
-    "TranslateTest.CoreV2ListNontrivialRecordDestructionGuardRejected",
+    "TranslateTest.CoreV2ListRunsStoredRecordDestructors",
+    "TranslateTest.CoreV2ListRunsNestedStoredRecordDestructors",
     "TranslateTest.CoreV2ForwardListOveralignedRecordGuardRejected",
     "TranslateTest.CoreV2ForwardListWiderRecordBitFieldGuardRejected",
     "TranslateTest.CoreV2ListWiderRecordAlignmentGuardRejected",
     "TranslateTest.CoreV2ListRecordVolatileFloatingFieldGuardRejected",
     "TranslateTest.CoreV2ForwardListRecordFunctionPointerFieldGuardRejected",
     "TranslateTest.CoreV2ListRecordLongDoubleFieldGuardRejected",
-    "TranslateTest.CoreV2ListNestedNontrivialRecordDestructionGuardRejected",
     "TranslateTest.CoreV2ForwardListNestedPackedRecordLayoutGuardRejected",
     "TranslateTest.CoreV2ListNestedTrivialUnionRecordGuardRejected",
     "TranslateTest.CoreV2ListRecordArrayOfFunctionPointersGuardRejected",
@@ -511,17 +511,18 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9439,
   "current_python_registry_tests": 344,
-  "native_reference_selected_executions": 40,
-  "planned_generated_c23_executions": 40,
+  "native_reference_selected_executions": 44,
+  "planned_generated_c23_executions": 44,
   "native_reference_proofs": {
     "linked-list-array-record-fields": "4fad62c844f43408f4203f782f21a3df1fafe34ae092f77a35911bc5180983f5",
     "linked-list-default-record-order": "55f1f9f1e973e1ed7c4284c84bec462f5b4d31276b37ffcdd40669861c1ad079",
     "linked-list-mixed-record-fields": "b67a71227382c6187070e3aae5c7f898d6bb7fdf647307470b500df4888fbf77",
     "linked-list-nested-records": "88c546bdbd26c0ade796e4f8e8969803fa47e388b21af7f08a90d5d89cb07a35",
+    "linked-list-record-destruction-repaired": "5c1a6a797b170b83832352153cd945cdf11470a94969f28f1904fd9a15b4dd95",
     "linked-list-record-node-sizes": "f637f8ef1c7fd7d51c9a0bee716a139f822fe7634ab83d48e6e4ead206b80b82",
     "linked-list-record-promotions": "ad059a3c0892eda944459139f8e5bb5cb81a021742f52a4f8e41de6f437d2327",
     "linked-list-trivial-records": "edf1f3c9008b2db90aa95a4a097a00441e0a19496801b86832f69ccf3ae136de"
   },
-  "native_reference_authentication_sha256": "cf394b109b99290332dc0058eb583f13e84591609966eda180f15f58a859dd21",
-  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+  "native_reference_authentication_sha256": "39d54c67f6809f654c05176bb11edee2f36ecd349a38523ddde406208a475889",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
 }

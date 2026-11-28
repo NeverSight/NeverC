@@ -1,0 +1,183 @@
+{
+  "positive_cases": [
+    {
+      "name": "list-record-dependent-default-resize",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordDependentDefaultResizeRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "b6f5ac08c8bf6391a0b278722a19d81b6c9a4f0aa5bfc323877f10f0ff291d1a",
+      "original_case_source_sha256": "b6f5ac08c8bf6391a0b278722a19d81b6c9a4f0aa5bfc323877f10f0ff291d1a",
+      "gtest_body_sha256": "6a84a110fad5ad589227c3503192dbdc90ce1535aa45bdda5d0d5edadb602ff9"
+    },
+    {
+      "name": "forward-list-record-dependent-default-emplacement",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordDependentDefaultEmplacementRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "8cc6a55afba391abde5ab22f96dafcd95dd76a9c696ed98c010a901df5109ca1",
+      "original_case_source_sha256": "8cc6a55afba391abde5ab22f96dafcd95dd76a9c696ed98c010a901df5109ca1",
+      "gtest_body_sha256": "b42978035bb3706fcc45e8503dec51f61b95417efbc86bcecf92e3bce6e6a5b6"
+    },
+    {
+      "name": "list-record-dependent-default-aggregate-input",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordDependentDefaultAggregateInputRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "c9c260df41c6085da4840cf7f196251bc31a0f6aebe11d214222cb3648a06292",
+      "original_case_source_sha256": "c9c260df41c6085da4840cf7f196251bc31a0f6aebe11d214222cb3648a06292",
+      "gtest_body_sha256": "3824f1aa191b954bd3b6b977a6b3e9c65c5550a29b4de3d4fff045db4db60b1e"
+    },
+    {
+      "name": "list-record-integral-default-sort-result",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordIntegralDefaultSortResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "4e93ab4c9318dc20be5b691b071a77370e9ea57e84cffed4e1bef1c81e807315",
+      "original_case_source_sha256": "4e93ab4c9318dc20be5b691b071a77370e9ea57e84cffed4e1bef1c81e807315",
+      "gtest_body_sha256": "3cdea9549d757c3ea1b95df97dc0f91b458d6ad72f012eaf40f309a5fa2e6864"
+    },
+    {
+      "name": "forward-list-record-integral-unique-result",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordIntegralUniqueResultRunAtBothOptimizations",
+      "expected": "accept",
+      "source_sha256": "d940341ff997b402f12ea13f7700065a7bc3d4a45e90701b381371b3531108c4",
+      "original_case_source_sha256": "d940341ff997b402f12ea13f7700065a7bc3d4a45e90701b381371b3531108c4",
+      "gtest_body_sha256": "7ed07ae8165933c3250ba38dfa296ce0c248cc9c67f59eed6da222d7db54795b"
+    },
+    {
+      "name": "list-record-floating-comparison-result-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListNormalizesFloatingRecordEquality",
+      "expected": "accept",
+      "source_sha256": "780a8d5744b414c7d6740611c4c2a46298929103dd47e064f53ff67d7809f049",
+      "original_case_source_sha256": "780a8d5744b414c7d6740611c4c2a46298929103dd47e064f53ff67d7809f049",
+      "gtest_body_sha256": "a530fcda4d5f87a4d6410536b95b5f5f18dc9ee90392b64f9052597abee5eb62"
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "list-record-mutating-default-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordMutatingDefaultGuardRejected",
+      "expected": "reject",
+      "source_sha256": "49ef8aa8c69f7b05d54cbf2fcc4cf313cfb55654b491880086f1e192e281d6e3",
+      "original_case_source_sha256": "49ef8aa8c69f7b05d54cbf2fcc4cf313cfb55654b491880086f1e192e281d6e3",
+      "gtest_body_sha256": "29550802a67841ef08a4077096e9e14f38260243bad3d3c9fa9943aaeff777f6"
+    },
+    {
+      "name": "forward-list-record-later-field-default-guard",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordLaterFieldDefaultGuardRejected",
+      "expected": "reject",
+      "source_sha256": "9d5ce04dc434afb790af4f82cfd5a25d4dde5a0da06d3b8623fc174a89d49299",
+      "original_case_source_sha256": "9d5ce04dc434afb790af4f82cfd5a25d4dde5a0da06d3b8623fc174a89d49299",
+      "gtest_body_sha256": "19a2836a331a72a2958a671e0c7718bc6c0c51436361e1a20afd3707627ea1f5"
+    },
+    {
+      "name": "list-record-effectful-integral-comparison-result-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRecordEffectfulIntegralComparisonResultGuardRejected",
+      "expected": "reject",
+      "source_sha256": "beb86854f1a975f14769ada460db400e3b3f9c31c034c3a912b36a5a939884b3",
+      "original_case_source_sha256": "beb86854f1a975f14769ada460db400e3b3f9c31c034c3a912b36a5a939884b3",
+      "gtest_body_sha256": "e326ec39426ed1d2e2d32d0cc9f83c542b34fc887d61336d8da52febf0f2c389"
+    }
+  ],
+  "source_cases": [
+    {
+      "name": "list-record-dependent-default-resize",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry { int seed = 3; int total = seed * 2; int delta = total - 1; };\nint main() {\n  std::list<Entry> rows(1);\n  auto retained = rows.begin();\n  retained->seed = 10;\n  rows.resize(3);\n  if (retained != rows.begin() || retained->seed != 10 || retained->delta != 5) return 1;\n  return rows.back().seed != 3 || rows.back().total != 6 || rows.back().delta != 5;\n}\n",
+      "source_sha256": "b6f5ac08c8bf6391a0b278722a19d81b6c9a4f0aa5bfc323877f10f0ff291d1a"
+    },
+    {
+      "name": "forward-list-record-dependent-default-emplacement",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nstruct Entry { int key = -2; int tag = -key; bool selected = key < 0 && tag == 2; };\nint main() {\n  std::forward_list<Entry> rows;\n  auto it = rows.emplace_after(rows.before_begin());\n  if (!it->selected || it->tag != 2) return 1;\n  rows.emplace_front().key = 8;\n  return rows.front().key != 8 || rows.front().tag != 2 || !rows.front().selected;\n}\n",
+      "source_sha256": "8cc6a55afba391abde5ab22f96dafcd95dd76a9c696ed98c010a901df5109ca1"
+    },
+    {
+      "name": "list-record-dependent-default-aggregate-input",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry { int first = 3; int second = first + 4; };\nint main() {\n  Entry source[]{{9}, {}};\n  std::list<Entry> rows(source, source + 2);\n  return rows.front().second != 13 || rows.back().second != 7;\n}\n",
+      "source_sha256": "c9c260df41c6085da4840cf7f196251bc31a0f6aebe11d214222cb3648a06292"
+    },
+    {
+      "name": "list-record-integral-default-sort-result",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry {\n  int key;\n  int id;\n  long operator<(const Entry& other) const { return key < other.key; }\n};\nint main() {\n  std::list<Entry> values{{3, 4}, {1, 2}, {1, 7}};\n  auto last = values.begin();\n  values.sort();\n  auto it = values.begin();\n  if (it->id != 2 || (++it)->id != 7) return 1;\n  return ++it != last || it->id != 4;\n}\n",
+      "source_sha256": "4e93ab4c9318dc20be5b691b071a77370e9ea57e84cffed4e1bef1c81e807315"
+    },
+    {
+      "name": "forward-list-record-integral-unique-result",
+      "section": "forward_list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <forward_list>\nstruct Entry {\n  int key;\n  int id;\n  unsigned char operator==(const Entry& other) const { return key == other.key; }\n};\nint main() {\n  std::forward_list<Entry> values{{2, 5}, {2, 6}, {3, 7}, {3, 8}};\n  values.unique();\n  auto it = values.begin();\n  if (it->id != 5 || (++it)->id != 7) return 1;\n  return ++it != values.end();\n}\n",
+      "source_sha256": "d940341ff997b402f12ea13f7700065a7bc3d4a45e90701b381371b3531108c4"
+    },
+    {
+      "name": "list-record-floating-comparison-result-guard",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nstruct Entry {\n  int key;\n  double operator==(const Entry& other) const { return key == other.key; }\n};\nint main() {\n  const std::list<Entry> first{{2}};\n  const std::list<Entry> second{{3}};\n  return first == second;\n}\n",
+      "source_sha256": "780a8d5744b414c7d6740611c4c2a46298929103dd47e064f53ff67d7809f049"
+    },
+    {
+      "name": "list-record-mutating-default-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nstruct Entry { int first = 4; int second = ++first; };\nint main() {\n  std::list<Entry> rows(2);\n  return rows.front().first != 5 || rows.back().second != 5;\n}\n",
+      "source_sha256": "49ef8aa8c69f7b05d54cbf2fcc4cf313cfb55654b491880086f1e192e281d6e3"
+    },
+    {
+      "name": "forward-list-record-later-field-default-guard",
+      "section": "forward_list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <forward_list>\nstruct Entry { int second = first + 2; int first = 4; };\nint main() {\n  std::forward_list<Entry> rows(1);\n  return rows.front().first != 4;\n}\n",
+      "source_sha256": "9d5ce04dc434afb790af4f82cfd5a25d4dde5a0da06d3b8623fc174a89d49299"
+    },
+    {
+      "name": "list-record-effectful-integral-comparison-result-guard",
+      "section": "list",
+      "expected": "reject",
+      "kind": "cpp17-negative",
+      "source": "#include <list>\nint comparisons;\nstruct Entry {\n  int key;\n  int operator<(const Entry& other) const { return ++comparisons && key < other.key; }\n};\nint main() {\n  std::list<Entry> values{{3}, {1}};\n  values.sort();\n  return values.front().key != 1;\n}\n",
+      "source_sha256": "beb86854f1a975f14769ada460db400e3b3f9c31c034c3a912b36a5a939884b3"
+    }
+  ],
+  "new_gtest_names": [
+    "TranslateTest.CoreV2ListRecordDependentDefaultResizeRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordDependentDefaultEmplacementRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordDependentDefaultAggregateInputRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListRecordIntegralDefaultSortResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2ForwardListRecordIntegralUniqueResultRunAtBothOptimizations",
+    "TranslateTest.CoreV2ListNormalizesFloatingRecordEquality",
+    "TranslateTest.CoreV2ListRecordMutatingDefaultGuardRejected",
+    "TranslateTest.CoreV2ForwardListRecordLaterFieldDefaultGuardRejected",
+    "TranslateTest.CoreV2ListRecordEffectfulIntegralComparisonResultGuardRejected"
+  ],
+  "source_proof_gate_pending": false,
+  "full_stl_complete": false,
+  "registered_source_sha256": "f4fb25bd4bf11a6d3093e2e630ba11751dcbba3bc9537a04bfe0c41e2488a23c",
+  "maintained_original_sha256": "d095a2df7f786c8db110b7b67c0dcd974f3b533cd7ef4c8638e11b21cd61b560",
+  "previous_registered_source_sha256": "aa479d2506b9de87ce7acc05ea2d5efad3e2787a5f53b22e2f3fd7b16264f51b",
+  "previous_maintained_original_sha256": "3f9ab6d7f9d3cdd3db426fd301f83c0e62db1eacb20f9fcf368c380175d3f666",
+  "restorer_sha256": "2b7c1c47bff60f736dd7e1ce792271e3a36a1335d0dfac08119bd592efee1218",
+  "extractor_sha256": "0c6d72d101a9d947d3a47662a326476d758696c147ac5e9e9ea2ef6f7115b335",
+  "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
+  "current_registry_count": 9510,
+  "current_python_registry_tests": 358,
+  "native_reference_selected_executions": 18,
+  "planned_generated_c23_executions": 18,
+  "native_reference_proofs": {
+    "linked-list-record-computed-defaults": "14d1a7155b9aab66bed4e22622fb1b77c7a445ba70fe1de6aa38859bb49fd0ce",
+    "linked-list-record-floating-comparison-results": "5918ecb84256970ae76bac27f576d6c834cf54535b7381ae05868a39350e2169",
+    "linked-list-record-integral-comparison-results": "f1b3343a36e2f758d67d2861a230a77b5059de4370e7704e145e0f95af851176"
+  },
+  "native_reference_authentication_sha256": "58be10a28de1e12a14b528ce77bf96ddfd928fc97992b8a47299ac6968113493",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
+}

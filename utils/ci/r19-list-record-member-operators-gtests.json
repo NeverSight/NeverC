@@ -64,26 +64,25 @@
       "source_sha256": "298026cf52b6a4ea86f2bd619a0143e83212c7b8a79c0742db993258591e36ed",
       "original_case_source_sha256": "298026cf52b6a4ea86f2bd619a0143e83212c7b8a79c0742db993258591e36ed",
       "gtest_body_sha256": "d6c145f8a329331d9a41fdc97b8e722b8045b977e394dcc2d1a9d3a5e4dc491c"
-    }
-  ],
-  "negative_cases": [
+    },
     {
       "name": "forward-list-record-integer-member-owner-equality-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordIntegerMemberOwnerEqualityGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListNormalizesIntegralRecordEquality",
+      "expected": "accept",
       "source_sha256": "e66efd2552e83ab84ecaa5fcfd5cba2450648aea7ee2bb9ec8549763c499e58d",
       "original_case_source_sha256": "e66efd2552e83ab84ecaa5fcfd5cba2450648aea7ee2bb9ec8549763c499e58d",
-      "gtest_body_sha256": "8348c8beb5cc0fb571b870cbab5e4e89915ea1198fa6a04b3d96c6d418555c70"
+      "gtest_body_sha256": "20e2bb9c6d04e64d02bc5205e72e9ed18b15e0a6f209af07c93bcdaff47dc0b4"
     },
     {
       "name": "list-record-integer-member-removal-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListRecordIntegerMemberRemovalGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ListNormalizesIntegralRecordRemoval",
+      "expected": "accept",
       "source_sha256": "69279e25240d486eb66250bb60befaed512638623c81d02e4255cc23fc345764",
       "original_case_source_sha256": "69279e25240d486eb66250bb60befaed512638623c81d02e4255cc23fc345764",
-      "gtest_body_sha256": "956479bf9114ae9c62e3cb1c2cae234476c03a94e37608d656174fafeedd42a0"
+      "gtest_body_sha256": "68acb9c0c842c1f41fab5332ad1e6ff5b4b681e022d2cf612a09971213d1decd"
     }
   ],
+  "negative_cases": [],
   "source_cases": [
     {
       "name": "list-record-member-owner-order",
@@ -152,16 +151,16 @@
     {
       "name": "forward-list-record-integer-member-owner-equality-guard",
       "section": "forward_list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source": "#include <forward_list>\nstruct Entry {\n  int key;\n  int operator==(const Entry& other) const { return key == other.key; }\n};\nint main() { return std::forward_list<Entry>{{2}} == std::forward_list<Entry>{{3}}; }\n",
       "source_sha256": "e66efd2552e83ab84ecaa5fcfd5cba2450648aea7ee2bb9ec8549763c499e58d"
     },
     {
       "name": "list-record-integer-member-removal-guard",
       "section": "list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source": "#include <list>\nstruct Entry {\n  int key;\n  int operator==(const Entry& rhs) const { return key == rhs.key; }\n};\nint main() {\n  std::list<Entry> values{{2}, {3}};\n  values.remove(Entry{2});\n  return values.size() != 1;\n}\n",
       "source_sha256": "69279e25240d486eb66250bb60befaed512638623c81d02e4255cc23fc345764"
     }
@@ -175,8 +174,8 @@
     "TranslateTest.CoreV2ForwardListRecordMemberRemoveAndUniqueRunAtBothOptimizations",
     "TranslateTest.CoreV2ListOwnersUseCompoundRecordMemberOrder",
     "TranslateTest.CoreV2ForwardListSortUsesCompoundRecordMemberOrder",
-    "TranslateTest.CoreV2ForwardListRecordIntegerMemberOwnerEqualityGuardRejected",
-    "TranslateTest.CoreV2ListRecordIntegerMemberRemovalGuardRejected"
+    "TranslateTest.CoreV2ForwardListNormalizesIntegralRecordEquality",
+    "TranslateTest.CoreV2ListNormalizesIntegralRecordRemoval"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -189,14 +188,15 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9490,
   "current_python_registry_tests": 352,
-  "native_reference_selected_executions": 22,
-  "planned_generated_c23_executions": 22,
+  "native_reference_selected_executions": 26,
+  "planned_generated_c23_executions": 26,
   "native_reference_proofs": {
     "linked-list-record-compound-member-replay": "14b6ece41b0f95cd4e777605e18fc14d1ccc2787e73385573fa96435c0ef0c6c",
+    "linked-list-record-integral-comparison-results": "f1b3343a36e2f758d67d2861a230a77b5059de4370e7704e145e0f95af851176",
     "linked-list-record-member-default-algorithms": "0ce8d3a6a0e1f6a2b101d3304bb9145383ddf35a37261c065b35c9d79d9d1bfc",
     "linked-list-record-member-owner-operators": "b5e95a6b95facfef2f4a13e0a152c6ea75aa33f91f6f9654b53a4083fd254fba",
     "linked-list-record-member-unique-replay": "0019dfbf40b212d8622269f153eff277897ab822606f030d6352d4206e76aa81"
   },
-  "native_reference_authentication_sha256": "35031821ccb1b0d2e9c4ee78290dd57f4eab428a99cef7a70178f5e090d7d80f",
-  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+  "native_reference_authentication_sha256": "112637f619a080f676d427a819ec73169ee8fa7567ea035a88f7b6cff6076554",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
 }

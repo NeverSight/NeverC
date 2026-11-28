@@ -54236,31 +54236,126 @@ struct LinkedListRecordSource {
   const SourceManager &Sources;
 };
 
-bool linkedListTrivialRecordField(
+bool linkedListRecordField(
     QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
     unsigned Depth, unsigned &RemainingFields);
 
-bool linkedListLiteralMemberDefaults(const CXXRecordDecl *Record,
+bool linkedListDefaultCall(const CallExpr *Call, const LinkedListRecordSource *Source) {
+  const auto *Callee = dyn_cast<DeclRefExpr>(Call->getCallee()->IgnoreParenImpCasts());
+  const auto *Function = Call->getDirectCallee();
+  if (!Function || !Callee || Callee->getDecl() != Function || Function->getKind() != Decl::Function ||
+      Function->isInvalidDecl() || Function->isImplicit() || Function->isDeleted() ||
+      Function->getBuiltinID() || Function->isVariadic() ||
+      Function->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
+      Call->getNumArgs() != Function->getNumParams() || !Call->getType()->isArithmeticType())
+    return false;
+  if (!Function->getDefinition() ||
+      !llvm::all_of(Function->parameters(), [](const ParmVarDecl *Parameter) {
+        return Parameter->getType()->isArithmeticType();
+      }))
+    return false;
+  // Ordinary expression validation and lowering inspect and emit the call.
+  // Here the SDK proof can only use a source-owned scalar result.
+  return !Source || llvm::all_of(Function->redecls(), [&](const FunctionDecl *D) {
+    return Source->Program.owns(Source->Sources, D->getLocation());
+  });
+}
+
+bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
+                                 const LinkedListRecordSource *Source) {
+  llvm::SmallVector<const Expr *, 8> Pending{Init};
+  const auto *Owner = Field->getParent()->getCanonicalDecl();
+  while (!Pending.empty()) {
+    const auto *Value = Pending.pop_back_val()->IgnoreParenImpCasts();
+    if (isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral,
+            CXXNullPtrLiteralExpr>(Value))
+      continue;
+    if (const auto *Reference = dyn_cast<DeclRefExpr>(Value);
+        Reference && isa<EnumConstantDecl>(Reference->getDecl()))
+      continue;
+    if (const auto *Member = dyn_cast<MemberExpr>(Value)) {
+      const auto *Earlier = dyn_cast<FieldDecl>(Member->getMemberDecl());
+      if (!Earlier || Earlier->getParent()->getCanonicalDecl() != Owner ||
+          Earlier->getFieldIndex() >= Field->getFieldIndex() ||
+          !isa<CXXThisExpr>(Member->getBase()->IgnoreParenImpCasts()))
+        return false;
+      continue;
+    }
+    if (const auto *Call = dyn_cast<CallExpr>(Value)) {
+      if (!linkedListDefaultCall(Call, Source)) return false;
+      for (const auto *Argument : Call->arguments()) {
+        const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument);
+        if (!Default) {
+          Pending.push_back(Argument);
+          continue;
+        }
+        // A selected literal needs no recursive parameter-initializer traversal.
+        const auto *Init = selectedDefaultArgument(Default, Field->getASTContext());
+        if (!Init || (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())) ||
+            !isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral>(
+                Init->IgnoreParenImpCasts()))
+          return false;
+      }
+      continue;
+    }
+    if (const auto *Unary = dyn_cast<UnaryOperator>(Value)) {
+      if (Unary->getOpcode() != UO_Plus && Unary->getOpcode() != UO_Minus &&
+          Unary->getOpcode() != UO_LNot)
+        return false;
+      Pending.push_back(Unary->getSubExpr());
+      continue;
+    }
+    const auto *Binary = dyn_cast<BinaryOperator>(Value);
+    if (!Binary || (!Binary->isComparisonOp() && Binary->getOpcode() != BO_Add &&
+        Binary->getOpcode() != BO_Sub && Binary->getOpcode() != BO_Mul &&
+        Binary->getOpcode() != BO_LAnd && Binary->getOpcode() != BO_LOr))
+      return false;
+    Pending.push_back(Binary->getLHS());
+    Pending.push_back(Binary->getRHS());
+  }
+  return true;
+}
+
+bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
     const LinkedListRecordSource *Source) {
-  if (!Record->isTriviallyCopyable() || !Record->hasTrivialDestructor()) return false;
+  const bool CopiesTrivially = Record->hasTrivialDestructor()
+      ? Record->isTriviallyCopyable()
+      : Record->hasTrivialCopyConstructor() && Record->hasTrivialCopyAssignment();
+  if (!CopiesTrivially) return false;
   bool HasDefault = false;
   for (const auto *Field : Record->fields()) {
     if (!Field->hasInClassInitializer()) continue;
     const auto *Init = Field->getInClassInitializer();
     if (!Init || (Source && !Source->Program.owns(Source->Sources, Init->getExprLoc())))
       return false;
-    const auto *Value = Init->IgnoreParenImpCasts();
-    const auto *Reference = dyn_cast<DeclRefExpr>(Value);
-    if (!isa<IntegerLiteral, FloatingLiteral, CXXBoolLiteralExpr, CharacterLiteral,
-             CXXNullPtrLiteralExpr>(Value) &&
-        !(Reference && isa<EnumConstantDecl>(Reference->getDecl())))
-      return false;
+    if (!linkedListDefaultExpression(Init, Field, Source)) return false;
     HasDefault = true;
   }
   return HasDefault;
 }
 
-const CXXRecordDecl *linkedListTrivialRecordLayout(
+bool linkedListCheckedRecordDestructor(const CXXRecordDecl *Record,
+    const LinkedListRecordSource *Source) {
+  if (Record->hasTrivialDestructor() || !Record->hasTrivialCopyConstructor() ||
+      !Record->hasTrivialCopyAssignment()) return false;
+  if (!Record->hasTrivialDefaultConstructor() && !linkedListCheckedMemberDefaults(Record, Source))
+    return false;
+  const auto *Destructor = Record->getDestructor();
+  if (!Destructor || Destructor->isDeleted() || Destructor->isInvalidDecl() ||
+      Destructor->isVirtual()) return false;
+  if (Destructor->isImplicit()) return true;
+
+  const auto *Definition = Destructor->getDefinition();
+  const auto *Type = Definition ? Definition->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Type || isUnresolvedExceptionSpec(Type->getExceptionSpecType()) || !Type->isNothrow())
+    return false;
+  if (Source)
+    for (const auto *Declaration : Definition->redecls())
+      if (!Source->Program.owns(Source->Sources, Declaration->getLocation())) return false;
+  return true;
+}
+
+const CXXRecordDecl *linkedListRecordLayout(
     QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
     unsigned Depth, unsigned &RemainingFields) {
   if (Type.isNull() || Type.hasLocalQualifiers() || Depth == 16) return nullptr;
@@ -54270,8 +54365,14 @@ const CXXRecordDecl *linkedListTrivialRecordLayout(
       Record->isUnion() || Record->getNumBases() || !Record->isStandardLayout() ||
       !Record->isAggregate() || Record->field_empty())
     return nullptr;
-  if (!Record->isTrivial() && (Depth || !linkedListLiteralMemberDefaults(Record, Source)))
-    return nullptr;
+  if (!Record->isTrivial()) {
+    // The node initializer evaluates defaults of the stored record itself.
+    if (Depth && !Record->hasTrivialDefaultConstructor()) return nullptr;
+    const bool Checked = Record->hasTrivialDestructor()
+        ? !Depth && linkedListCheckedMemberDefaults(Record, Source)
+        : linkedListCheckedRecordDestructor(Record, Source);
+    if (!Checked) return nullptr;
+  }
   if (Source && !Source->Program.owns(Source->Sources, Record->getLocation()))
     return nullptr;
   const auto &Layout = Context.getASTRecordLayout(Record);
@@ -54284,7 +54385,7 @@ const CXXRecordDecl *linkedListTrivialRecordLayout(
     const auto FieldType = Field->getType();
     if (Field->isBitField() || Field->hasAttrs() || FieldType.hasLocalQualifiers())
       return nullptr;
-    if (!linkedListTrivialRecordField(FieldType, Context, Source, Depth + 1, RemainingFields))
+    if (!linkedListRecordField(FieldType, Context, Source, Depth + 1, RemainingFields))
       return nullptr;
     const uint64_t Size = Context.getTypeSize(FieldType);
     const uint64_t Align = Context.getTypeAlign(FieldType);
@@ -54298,7 +54399,7 @@ const CXXRecordDecl *linkedListTrivialRecordLayout(
   return Record;
 }
 
-bool linkedListTrivialRecordField(
+bool linkedListRecordField(
     QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source,
     unsigned Depth, unsigned &RemainingFields) {
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
@@ -54307,7 +54408,7 @@ bool linkedListTrivialRecordField(
     if (Depth == 16 || !Count || Count > RemainingFields) return false;
     const auto Element = Array->getElementType();
     unsigned ElementFields = RemainingFields;
-    if (!linkedListTrivialRecordField(Element, Context, Source, Depth + 1, ElementFields))
+    if (!linkedListRecordField(Element, Context, Source, Depth + 1, ElementFields))
       return false;
     const uint64_t Fields = Count * (RemainingFields - ElementFields + 1);
     if (Fields > RemainingFields) return false;
@@ -54322,30 +54423,42 @@ bool linkedListTrivialRecordField(
     return (Size == 8 || Size == 16 || Size == 32 || Size == 64) &&
            Size == Context.getTypeAlign(Type);
   }
-  return linkedListTrivialRecordLayout(Type, Context, Source, Depth, RemainingFields);
+  return linkedListRecordLayout(Type, Context, Source, Depth, RemainingFields);
 }
 
-const CXXRecordDecl *linkedListTrivialRecordElement(
+const CXXRecordDecl *linkedListRecordElement(
     QualType Type, const ASTContext &Context, const LinkedListRecordSource *Source = nullptr) {
   unsigned RemainingFields = 4096;
-  return linkedListTrivialRecordLayout(Type, Context, Source, 0, RemainingFields);
+  return linkedListRecordLayout(Type, Context, Source, 0, RemainingFields);
 }
 
-bool linkedListTrivialElementMember(const State &S, const SourceManager &SM,
+bool linkedListNodeValueUnion(const CXXRecordDecl *Node, const CXXRecordDecl *Parent,
+    const CXXRecordDecl *Storage, const FieldDecl *Value) {
+  if (Node->getCanonicalDecl() != Parent->getCanonicalDecl() ||
+      !Storage->isUnion() || !Storage->isAnonymousStructOrUnion()) return false;
+  const auto First = Storage->field_begin();
+  return First != Storage->field_end() && *First == Value && std::next(First) == Storage->field_end();
+}
+
+bool linkedListRecordElementMember(const State &S, const SourceManager &SM,
                                     const ASTContext &Context, QualType Element,
                                     const FunctionDecl *Function) {
   const auto *Method = dyn_cast<CXXMethodDecl>(Function);
-  if (!Method || !Method->isImplicit() || Method->isDeleted()) return false;
+  if (!Method || Method->isDeleted()) return false;
   const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
-  if (!(Constructor || isa<CXXDestructorDecl>(Method) ||
-        Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()))
+  const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
+  if (!(Constructor || Destructor || Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) ||
+      (!Method->isImplicit() && !Destructor))
     return false;
-  if (!Method->isTrivial() && !(Constructor && Constructor->isDefaultConstructor()))
+  if (!Method->isTrivial() && !Destructor && !(Constructor && Constructor->isDefaultConstructor()))
     return false;
   const LinkedListRecordSource Source{S, SM};
-  const auto *Record = linkedListTrivialRecordElement(Element, Context, &Source);
-  return Record && Record->getCanonicalDecl() == Method->getParent()->getCanonicalDecl() &&
-      (Method->isTrivial() || linkedListLiteralMemberDefaults(Record, &Source));
+  const auto *Record = linkedListRecordElement(Element, Context, &Source);
+  if (!Record || Record->getCanonicalDecl() != Method->getParent()->getCanonicalDecl())
+    return false;
+  if (Method->isTrivial()) return true;
+  return Destructor ? linkedListCheckedRecordDestructor(Record, &Source)
+                    : linkedListCheckedMemberDefaults(Record, &Source);
 }
 
 bool forwardListLeaves(const State &S, const SourceManager &SM,
@@ -54370,7 +54483,7 @@ bool forwardListLeaves(const State &S, const SourceManager &SM,
     const auto Position = Offset + Layout.getFieldOffset(Index++);
     if (F->getName() == "__value_") {
       const LinkedListRecordSource Source{S, SM};
-      if (linkedListTrivialRecordElement(F->getType(), Context, &Source)) {
+      if (linkedListRecordElement(F->getType(), Context, &Source)) {
         if (Leaves.size() == 8) return false;
         Leaves.push_back({F, Position});
         continue;
@@ -54404,7 +54517,7 @@ bool linkedListWideCharacterElement(QualType Type, const ASTContext &Context) {
 bool forwardListElementType(QualType Type, const ASTContext &Context) {
   if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context) ||
       linkedListFixedEnumElement(Type, Context) || linkedListObjectPointerElement(Type, Context) ||
-      linkedListTrivialRecordElement(Type, Context))
+      linkedListRecordElement(Type, Context))
     return true;
   if (Context.hasSameType(Type, Context.BoolTy) ||
       Context.hasSameType(Type, Context.CharTy) ||
@@ -54973,14 +55086,20 @@ const CXXMethodDecl *linkedListRecordMemberOperator(
   const auto *Selected = Call->getDirectCallee();
   const auto *Method = Selected ? dyn_cast_or_null<CXXMethodDecl>(Selected->getDefinition()) : nullptr;
   const auto *Record = Element->getAsCXXRecordDecl();
-  if (!Method || !Record || Method->isInvalidDecl() || Method->getBuiltinID() ||
+  if (!Method || !Record || Method->isInvalidDecl() || Method->getBuiltinID())
+    return nullptr;
+  const QualType Result = Method->getReturnType();
+  const bool SupportedResult =
+      (Result->isBuiltinType() && Result->isIntegerType() && Context.getTypeSize(Result) <= 64) ||
+      Context.hasSameType(Result.getUnqualifiedType(), Context.FloatTy) ||
+      Context.hasSameType(Result.getUnqualifiedType(), Context.DoubleTy);
+  if (!SupportedResult ||
       Method->getOverloadedOperator() != Call->getOperator() ||
       !Method->isConst() || Method->isVolatile() ||
       Method->isStatic() || Method->isVirtual() || Method->isDeleted() ||
       Method->getRefQualifier() == RQ_RValue || !S.owns(SM, Method->getLocation()) ||
       Method->getTemplatedKind() != FunctionDecl::TK_NonTemplate ||
       Method->getParent()->getCanonicalDecl() != Record->getCanonicalDecl() ||
-      !Context.hasSameType(Method->getReturnType(), Context.BoolTy) ||
       Method->getNumParams() != 1 || Method->getParamDecl(0)->hasDefaultArg() ||
       !Context.hasSameType(Method->getParamDecl(0)->getType(),
                            Context.getLValueReferenceType(Element.withConst())))
@@ -55560,7 +55679,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
     // Its exact overload and source-definition checks remain mandatory.
     if (forwardListHeapBoundary(F, Context)) return true;
     if (forwardListBuiltinLibraryCast(S, SM, F, Context)) return true;
-    if (linkedListTrivialElementMember(S, SM, Context, Owner.Value->getType(), F)) return true;
+    if (linkedListRecordElementMember(S, SM, Context, Owner.Value->getType(), F)) return true;
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();
@@ -55605,8 +55724,10 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
       }
       for (const auto *Field : Parent->fields()) {
         const auto *Record = forwardListRecordType(Field->getType());
-        if (Record && !Record->hasTrivialDestructor() &&
-            !Function(Record->getDestructor(), Depth + 1)) return false;
+        if (!Record || Record->hasTrivialDestructor()) continue;
+        // The SDK destroys the active element through the allocator before destroying the node.
+        if (linkedListNodeValueUnion(Owner.Record, Parent, Record, Owner.Value)) continue;
+        if (!Function(Record->getDestructor(), Depth + 1)) return false;
       }
     }
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))
@@ -56682,7 +56803,7 @@ bool listLeaves(const State &S, const SourceManager &SM,
     const auto Position = Offset + Layout.getFieldOffset(Index++);
     if (F->getName() == "__value_") {
       const LinkedListRecordSource Source{S, SM};
-      if (linkedListTrivialRecordElement(F->getType(), Context, &Source)) {
+      if (linkedListRecordElement(F->getType(), Context, &Source)) {
         if (Leaves.size() == 8) return false;
         Leaves.push_back({F, Position});
         continue;
@@ -56705,7 +56826,7 @@ bool listLeaves(const State &S, const SourceManager &SM,
 bool listElementType(QualType Type, const ASTContext &Context) {
   if (linkedListFloatingElement(Type, Context) || linkedListWideCharacterElement(Type, Context) ||
       linkedListFixedEnumElement(Type, Context) || linkedListObjectPointerElement(Type, Context) ||
-      linkedListTrivialRecordElement(Type, Context))
+      linkedListRecordElement(Type, Context))
     return true;
   if (Type.isNull() || Type.hasLocalQualifiers()) return false;
   if (Context.hasSameType(Type, Context.BoolTy))
@@ -57607,7 +57728,7 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
     // Its exact overload and source-definition checks remain mandatory.
     if (listHeapBoundary(F, Context)) return true;
     if (listBuiltinLibraryCast(S, SM, F, Context)) return true;
-    if (linkedListTrivialElementMember(S, SM, Context, Owner.Value->getType(), F)) return true;
+    if (linkedListRecordElementMember(S, SM, Context, Owner.Value->getType(), F)) return true;
     if (F->getBuiltinID()) {
       if (!F->getIdentifier() || F->hasBody()) return false;
       const auto Name = F->getName();
@@ -57652,8 +57773,10 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
       }
       for (const auto *Field : Parent->fields()) {
         const auto *Record = listRecordType(Field->getType());
-        if (Record && !Record->hasTrivialDestructor() &&
-            !Function(Record->getDestructor(), Depth + 1)) return false;
+        if (!Record || Record->hasTrivialDestructor()) continue;
+        // The SDK destroys the active element through the allocator before destroying the node.
+        if (linkedListNodeValueUnion(Owner.Record, Parent, Record, Owner.Value)) continue;
+        if (!Function(Record->getDestructor(), Depth + 1)) return false;
       }
     }
     if (const auto *C = dyn_cast<CXXConstructorDecl>(F))

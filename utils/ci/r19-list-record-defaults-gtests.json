@@ -31,26 +31,25 @@
       "source_sha256": "38e974d642139629ee2723dba7fbc3ee81bbc03285337ea2fc7a8bba32df4017",
       "original_case_source_sha256": "38e974d642139629ee2723dba7fbc3ee81bbc03285337ea2fc7a8bba32df4017",
       "gtest_body_sha256": "e4b551408d59517720f10b137ddea8bc83ca40b2015850d476e3a3adad56bbd3"
-    }
-  ],
-  "negative_cases": [
-    {
-      "name": "list-record-effectful-default-guard",
-      "formal_test_name": "TranslateTest.CoreV2ListRecordEffectfulDefaultGuardRejected",
-      "expected": "reject",
-      "source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded",
-      "original_case_source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded",
-      "gtest_body_sha256": "15cd0270bf0c7de6decf70258bd46da4bb96343983c18291b89182bd2d0265be"
     },
     {
       "name": "forward-list-record-member-dependent-default-guard",
-      "formal_test_name": "TranslateTest.CoreV2ForwardListRecordMemberDependentDefaultGuardRejected",
-      "expected": "reject",
+      "formal_test_name": "TranslateTest.CoreV2ForwardListEvaluatesEarlierRecordMemberDefaults",
+      "expected": "accept",
       "source_sha256": "169b0a200429488bfd09b541fc6ff972431bb7fe9350fbb7b956393286330b34",
       "original_case_source_sha256": "169b0a200429488bfd09b541fc6ff972431bb7fe9350fbb7b956393286330b34",
-      "gtest_body_sha256": "f2b49724bf02b46a3aace1cea40269db0bd21e2ba243483a761fd4c1fbc43a96"
+      "gtest_body_sha256": "e10242f1b53e406cab34b01db433595cdc14de52219c39aad517340d3b0d1c9d"
+    },
+    {
+      "name": "list-record-effectful-default-guard",
+      "formal_test_name": "TranslateTest.CoreV2ListRunsDirectMemberDefaultCalls",
+      "expected": "accept",
+      "source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded",
+      "original_case_source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded",
+      "gtest_body_sha256": "db2c02bf0a85b3ee78a76a106360d87dcd80fbaec57dedb63f0d76780e794dd6"
     }
   ],
+  "negative_cases": [],
   "source_cases": [
     {
       "name": "list-record-literal-default-insertion",
@@ -85,20 +84,20 @@
       "source_sha256": "38e974d642139629ee2723dba7fbc3ee81bbc03285337ea2fc7a8bba32df4017"
     },
     {
-      "name": "list-record-effectful-default-guard",
-      "section": "list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
-      "source": "#include <list>\nint counter = 0;\nint next() { return ++counter; }\nstruct Entry { int value = next(); };\nint main() { std::list<Entry> values(2); return values.back().value != 2; }\n",
-      "source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded"
-    },
-    {
       "name": "forward-list-record-member-dependent-default-guard",
       "section": "forward_list",
-      "expected": "reject",
-      "kind": "cpp17-negative",
+      "expected": "accept",
+      "kind": "cpp17-operation",
       "source": "#include <forward_list>\nstruct Entry { int key; int count = key + 1; };\nint main() { std::forward_list<Entry> values(1); return values.front().count != 1; }\n",
       "source_sha256": "169b0a200429488bfd09b541fc6ff972431bb7fe9350fbb7b956393286330b34"
+    },
+    {
+      "name": "list-record-effectful-default-guard",
+      "section": "list",
+      "expected": "accept",
+      "kind": "cpp17-operation",
+      "source": "#include <list>\nint counter = 0;\nint next() { return ++counter; }\nstruct Entry { int value = next(); };\nint main() { std::list<Entry> values(2); return values.back().value != 2; }\n",
+      "source_sha256": "d9a91691e40fb9de7ed6993a88e8f27290f651ac36c901c445397d1b11fa2ded"
     }
   ],
   "new_gtest_names": [
@@ -106,8 +105,8 @@
     "TranslateTest.CoreV2ForwardListRecordLiteralDefaultInsertionRunAtBothOptimizations",
     "TranslateTest.CoreV2ListRecordLiteralDefaultCopyRunAtBothOptimizations",
     "TranslateTest.CoreV2ForwardListRecordLiteralDefaultCopyRunAtBothOptimizations",
-    "TranslateTest.CoreV2ListRecordEffectfulDefaultGuardRejected",
-    "TranslateTest.CoreV2ForwardListRecordMemberDependentDefaultGuardRejected"
+    "TranslateTest.CoreV2ForwardListEvaluatesEarlierRecordMemberDefaults",
+    "TranslateTest.CoreV2ListRunsDirectMemberDefaultCalls"
   ],
   "source_proof_gate_pending": false,
   "full_stl_complete": false,
@@ -120,11 +119,13 @@
   "original109_suffix_sha256": "b93a872a3221693dacc805153c4bc126edf4651e5eaf696295726872b376bcfb",
   "current_registry_count": 9480,
   "current_python_registry_tests": 350,
-  "native_reference_selected_executions": 8,
-  "planned_generated_c23_executions": 8,
+  "native_reference_selected_executions": 12,
+  "planned_generated_c23_executions": 12,
   "native_reference_proofs": {
+    "linked-list-record-computed-defaults": "14d1a7155b9aab66bed4e22622fb1b77c7a445ba70fe1de6aa38859bb49fd0ce",
+    "linked-list-record-default-calls": "ad1a22d6c42672bc0ff98992f4423f4e38b9732f3ef326c98c9246defbf645b5",
     "linked-list-record-literal-defaults": "a1e99eedd4c2a78ea9b22f9ce1826e2f9ee666f8cdbe41ddc283c87819cfc8ae"
   },
-  "native_reference_authentication_sha256": "0c0b52cc5b01a63c98348e750314f9768cfd5661456ffdf533d8c5a18bc3f46a",
-  "source_proof_sha256": "cdb78c4cb1d6c45d00e2402a5357456ee8698e377a2c24f50bc5f595648c5179"
+  "native_reference_authentication_sha256": "fb6b4be833199d4ffbe67913119179a84d32d0e42bc1eb6de563ac26cd1b0bd1",
+  "source_proof_sha256": "7e19ba50221110cf9bc08916e648234e177938019e8fd504d71693511b40c47c"
 }
