@@ -27211,7 +27211,8 @@ class FunctionLowering {
   }
   void resizeForwardListStorage(Expression Place, Expression Count,
                                 std::optional<Expression> ValueReference,
-                                const UtilityForwardListNodeRecord &Info, SourceLocation L) {
+                                const UtilityForwardListNodeRecord &Info, SourceLocation L,
+                                const CXXConstructExpr *Construction = nullptr) {
     auto Remaining = snapshot(cast(std::move(Count), "u64", L), L);
     auto Link = snapshot(address(forwardListMember(Place, false, L), A.Context.VoidPtrTy, L), L);
     auto Current = snapshot(dereference(Link, L), L);
@@ -27234,7 +27235,9 @@ class FunctionLowering {
     jump(Done, L); label(GrowCheck, L);
     branch(cast(Remaining, "bool", L), Grow, Done, L);
     label(Grow, L);
-    auto Node = forwardListCreateNode(ValueReference, A.zero(A.Context.VoidPtrTy, L), Info, L);
+    const auto Inputs = Construction ? llvm::ArrayRef<Expression>(*ValueReference) : llvm::ArrayRef<Expression>{};
+    auto Node = forwardListCreateNode(Construction ? std::nullopt : ValueReference,
+        A.zero(A.Context.VoidPtrTy, L), Info, L, {}, Construction, Inputs);
     // The SDK resize loop appends each node before the next allocation.
     assign(dereference(Link, L), Node, L);
     assign(Link, address(forwardListNext(Node, L), A.Context.VoidPtrTy, L), L);
@@ -27720,7 +27723,8 @@ class FunctionLowering {
       std::optional<Expression> ValueReference;
       if (Operation == UtilityForwardListOperation::ResizeFill)
         ValueReference = Operands[1];
-      resizeForwardListStorage(Place, Operands[0], std::move(ValueReference), Owner->Node, L);
+      resizeForwardListStorage(Place, Operands[0], std::move(ValueReference), Owner->Node, L,
+                               Proof->EmplacedRecordConstruction);
       return Expression{};
     }
     if (Operation == UtilityForwardListOperation::RemoveValue || Operation == UtilityForwardListOperation::RemoveIf) {
@@ -29150,7 +29154,7 @@ class FunctionLowering {
   }
 
   void listResizeValueStorage(Expression Place, Expression SizeRequested, std::optional<Expression> Fill,
-      const UtilityListNodeRecord &Info, SourceLocation L) {
+      const UtilityListNodeRecord &Info, SourceLocation L, const CXXConstructExpr *Construction = nullptr) {
     const auto Size = type(A.Context.getSizeType(), L);
     auto CurrentSize = snapshot(listMember(Place, "nct_list_size", L), L);
     const auto Shrink = labelName(), CheckGrow = labelName(), Grow = labelName(), Done = labelName();
@@ -29174,7 +29178,7 @@ class FunctionLowering {
     label(Grow, L);
     auto Added = snapshot(binary("-", SizeRequested, CurrentSize, Size, L), L);
     auto Input = listRepeatedInput(Added, std::move(Fill), L);
-    listInsertInputStorage(Place, snapshot(listSentinel(Place, L), L), Input, Info, L);
+    listInsertInputStorage(Place, snapshot(listSentinel(Place, L), L), Input, Info, L, Construction);
     jump(Done, L); label(Done, L);
   }
 
@@ -29640,7 +29644,7 @@ class FunctionLowering {
   }
 
   Expression listInsertInputStorage(Expression Place, Expression Position, const ListAssignmentInput &Input,
-      const UtilityListNodeRecord &Info, SourceLocation L) {
+      const UtilityListNodeRecord &Info, SourceLocation L, const CXXConstructExpr *Construction = nullptr) {
     const auto Size = type(A.Context.getSizeType(), L);
     auto Count = temporary(Size, L), Result = temporary("ptr:void", L), Tail = temporary("ptr:void", L);
     assign(Count, quantity(0, Size, L), L);
@@ -29653,7 +29657,9 @@ class FunctionLowering {
     std::optional<Expression> Reference;
     if (!Input.DefaultInitialize)
       Reference = listAssignmentReference(Input, Info.Value->getType(), L);
-    auto Node = listCreateNode(std::move(Reference), Info, L, Input.PointerElement);
+    const auto Inputs = Construction ? llvm::ArrayRef<Expression>(*Reference) : llvm::ArrayRef<Expression>{};
+    auto Node = listCreateNode(Construction ? std::nullopt : std::move(Reference),
+        Info, L, Input.PointerElement, Construction, Inputs);
     assign(listLink(Node, true, L), Tail, L);
     branch(cast(Tail, "bool", L), Link, First, L);
     label(Link, L);
@@ -30022,7 +30028,8 @@ class FunctionLowering {
     if (Operation == UtilityListOperation::Resize || Operation == UtilityListOperation::ResizeFill) {
       std::optional<Expression> Fill;
       if (Operation == UtilityListOperation::ResizeFill) Fill = Operands[1];
-      listResizeValueStorage(Place, Operands[0], std::move(Fill), Owner->Node, L);
+      listResizeValueStorage(Place, Operands[0], std::move(Fill), Owner->Node, L,
+                             Proof->EmplacedRecordConstruction);
       return Expression{};
     }
     if (Operation == UtilityListOperation::EraseRange) {

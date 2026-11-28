@@ -56906,13 +56906,16 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       *Operation == UtilityForwardListOperation::EmplaceFront;
   const bool Insert = *Operation == UtilityForwardListOperation::InsertAfter ||
       *Operation == UtilityForwardListOperation::PushFront;
+  const bool ResizeFill = *Operation == UtilityForwardListOperation::ResizeFill;
   LinkedListEmplacement Emplacement{
-      *Operation == UtilityForwardListOperation::EmplaceAfter ||
+      ResizeFill || *Operation == UtilityForwardListOperation::EmplaceAfter ||
       *Operation == UtilityForwardListOperation::InsertAfter ? 1u : 0u};
   const auto Element = Node->Value->getType();
-  const bool ForwardedRecord = (Emplace || Insert) &&
-      (linkedListMovesElement(Method, Emplacement.Offset, Element, Context) ||
-       linkedListCopiesElement(Method, Emplacement.Offset, Element, Context));
+  const bool MovesRecord = (Emplace || Insert) &&
+      linkedListMovesElement(Method, Emplacement.Offset, Element, Context);
+  const bool CopiesRecord = (Emplace || Insert || ResizeFill) &&
+      linkedListCopiesElement(Method, Emplacement.Offset, Element, Context);
+  const bool ForwardedRecord = MovesRecord || CopiesRecord;
   const bool EmplaceRecord = ForwardedRecord || (Emplace && Element->isRecordType() &&
       Method->getNumParams() > Emplacement.Offset &&
       llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
@@ -58311,13 +58314,16 @@ std::optional<UtilityListCall> approvedUtilityListCall(
   const bool Insert = *Operation == UtilityListOperation::Insert ||
       *Operation == UtilityListOperation::PushFront ||
       *Operation == UtilityListOperation::PushBack;
+  const bool ResizeFill = *Operation == UtilityListOperation::ResizeFill;
   LinkedListEmplacement Emplacement{
-      *Operation == UtilityListOperation::Emplace ||
+      ResizeFill || *Operation == UtilityListOperation::Emplace ||
       *Operation == UtilityListOperation::Insert ? 1u : 0u};
   const auto Element = Node->Value->getType();
-  const bool ForwardedRecord = (Emplace || Insert) &&
-      (linkedListMovesElement(Method, Emplacement.Offset, Element, Context) ||
-       linkedListCopiesElement(Method, Emplacement.Offset, Element, Context));
+  const bool MovesRecord = (Emplace || Insert) &&
+      linkedListMovesElement(Method, Emplacement.Offset, Element, Context);
+  const bool CopiesRecord = (Emplace || Insert || ResizeFill) &&
+      linkedListCopiesElement(Method, Emplacement.Offset, Element, Context);
+  const bool ForwardedRecord = MovesRecord || CopiesRecord;
   const bool EmplaceRecord = ForwardedRecord || (Emplace && Element->isRecordType() &&
       Method->getNumParams() > Emplacement.Offset &&
       llvm::all_of(Method->parameters().drop_front(Emplacement.Offset), [&](const ParmVarDecl *P) {
