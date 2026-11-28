@@ -48913,14 +48913,8 @@ static bool utilityMemoryTrivialValue(const State &S, const SourceManager &SM,
          Record->isTrivial() && Record->hasTrivialDestructor();
 }
 
-const CXXConstructorDecl *
-approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
-                                        QualType Element,
-                                        const ASTContext &Context) {
-  const auto *Record = definedRecord(Element.getUnqualifiedType());
-  if (!Record || Record->isUnion() || Record->isDependentContext() ||
-      !S.owns(SM, Record->getLocation()))
-    return nullptr;
+static const CXXConstructorDecl *
+selectUtilityMemoryDefaultConstructor(const CXXRecordDecl *Record) {
   const CXXConstructorDecl *Constructor = nullptr;
   for (const auto *Candidate : Record->ctors()) {
     if (!Candidate->isDefaultConstructor())
@@ -48936,7 +48930,22 @@ approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
   if (!Constructor || Constructor->isInvalidDecl() ||
       Constructor->isDeleted() || Constructor->getNumParams() ||
       !supportedConstructor(Constructor) || !Prototype ||
-      !Prototype->isNothrow() || !S.owns(SM, Constructor->getLocation()))
+      isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()))
+    return nullptr;
+  return Constructor;
+}
+
+const CXXConstructorDecl *
+approvedUtilityMemoryDefaultConstructor(const State &S, const SourceManager &SM,
+                                        QualType Element,
+                                        const ASTContext &Context) {
+  const auto *Record = definedRecord(Element.getUnqualifiedType());
+  if (!Record || Record->isUnion() || Record->isDependentContext() ||
+      !S.owns(SM, Record->getLocation()))
+    return nullptr;
+  const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record);
+  if (!Constructor || !Constructor->getType()->getAs<FunctionProtoType>()->isNothrow() ||
+      !S.owns(SM, Constructor->getLocation()))
     return nullptr;
   if (Constructor->isTrivial())
     return Constructor;
@@ -54160,6 +54169,50 @@ bool linkedListObjectPointerElement(QualType Type, const ASTContext &Context) {
          Context.getTypeSize(Type) == 64 && Context.getTypeAlign(Type) == 64;
 }
 
+bool linkedListScalarEmplaceInput(QualType T, const ASTContext &Context) {
+  const auto Input = T.getNonReferenceType();
+  return !Input.isVolatileQualified() && Input->isArithmeticType() &&
+         utilityScalar(Context, Input.getUnqualifiedType());
+}
+
+struct LinkedListEmplacement {
+  unsigned Offset;
+  const CXXConstructExpr *Expression = nullptr;
+  const CXXConstructorDecl *Constructor = nullptr;
+};
+
+bool bindLinkedListEmplacement(const State &S, const SourceManager &SM, const FunctionDecl *Root,
+    const CXXNewExpr *Allocation, QualType Element, const ASTContext &Context, LinkedListEmplacement &Selection) {
+  if (Selection.Expression || !Context.hasSameType(Allocation->getAllocatedType(), Element)) return false;
+  const auto *Expression = Allocation->getConstructExpr();
+  const auto *Constructor = Expression ? Expression->getConstructor() : nullptr;
+  const auto *Prototype = Constructor ? Constructor->getType()->getAs<FunctionProtoType>() : nullptr;
+  if (!Constructor || !Constructor->isUserProvided() || Constructor->isCopyOrMoveConstructor() ||
+      Constructor->isDeleted() || Constructor->isInvalidDecl() || Constructor->getAccess() != AS_public ||
+      Constructor->getNumParams() != 2 || !ordinaryConstructor(Constructor) || !Prototype ||
+      isUnresolvedExceptionSpec(Prototype->getExceptionSpecType()) || !Prototype->isNothrow() ||
+      Expression->getNumArgs() != 2 || Expression->getConstructionKind() != CXXConstructionKind::Complete ||
+      Constructor->getParent()->getCanonicalDecl() != Element->getAsCXXRecordDecl()->getCanonicalDecl())
+    return false;
+  const FunctionDecl *Definition = nullptr;
+  if (!Constructor->hasBody(Definition) || !Definition ||
+      !llvm::all_of(Constructor->redecls(), [&](const FunctionDecl *D) { return S.owns(SM, D->getLocation()); }))
+    return false;
+  for (unsigned I = 0; I < 2; ++I) {
+    const auto Forwarded = Root->getParamDecl(Selection.Offset + I)->getType();
+    const auto T = Constructor->getParamDecl(I)->getType();
+    const auto *Arg = Expression->getArg(I)->IgnoreParenImpCasts();
+    if (!Forwarded->isReferenceType() || !linkedListScalarEmplaceInput(Forwarded, Context) ||
+        !T->isArithmeticType() || T.hasLocalQualifiers() ||
+        !Context.hasSameUnqualifiedType(T, Forwarded->getPointeeType()) ||
+        !Context.hasSameUnqualifiedType(T, Arg->getType()) || isa<CXXDefaultArgExpr>(Arg))
+      return false;
+  }
+  Selection.Expression = Expression;
+  Selection.Constructor = cast<CXXConstructorDecl>(Definition);
+  return true;
+}
+
 struct LinkedListRecordSource {
   const State &Program;
   const SourceManager &Sources;
@@ -54191,7 +54244,7 @@ bool linkedListDefaultCall(const CallExpr *Call, const LinkedListRecordSource *S
 }
 
 bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
-                                 const LinkedListRecordSource *Source) {
+                                 const LinkedListRecordSource *Source, bool AllowCalls = true) {
   llvm::SmallVector<const Expr *, 8> Pending{Init};
   // Separate calls can select the same parameter initializer.
   llvm::DenseSet<const Expr *> Checked;
@@ -54214,7 +54267,7 @@ bool linkedListDefaultExpression(const Expr *Init, const FieldDecl *Field,
       continue;
     }
     if (const auto *Call = dyn_cast<CallExpr>(Value)) {
-      if (!linkedListDefaultCall(Call, Source)) return false;
+      if (!AllowCalls || !linkedListDefaultCall(Call, Source)) return false;
       for (const auto *Argument : Call->arguments()) {
         const auto *Default = dyn_cast<CXXDefaultArgExpr>(Argument);
         if (!Default) {
@@ -54272,11 +54325,55 @@ bool linkedListCheckedMemberDefaults(const CXXRecordDecl *Record,
   return HasDefault;
 }
 
-bool linkedListCheckedRecordDestructor(const CXXRecordDecl *Record,
+bool linkedListScalarConstructorInitializers(const CXXConstructorDecl *Constructor,
     const LinkedListRecordSource *Source) {
+  const auto *Body = dyn_cast_or_null<CompoundStmt>(Constructor->getBody());
+  const auto *Record = Constructor->getParent();
+  if (!Body || !Body->body_empty() ||
+      Constructor->getNumCtorInitializers() !=
+          static_cast<unsigned>(std::distance(Record->field_begin(), Record->field_end())))
+    return false;
+  for (const auto *Init : Constructor->inits()) {
+    const auto *Field = Init->isMemberInitializer() ? Init->getMember() : nullptr;
+    if (!Field || !Field->getType()->isScalarType()) return false;
+    const auto *Value = Init->getInit();
+    if (const auto *Default = dyn_cast_or_null<CXXDefaultInitExpr>(Value)) {
+      if (Default->getField() != Field) return false;
+      Value = Default->getExpr();
+    }
+    if (!Value || (Source && !Source->Program.owns(Source->Sources, Value->getExprLoc())) ||
+        !linkedListDefaultExpression(Value, Field, Source, /*AllowCalls=*/false))
+      return false;
+  }
+  return true;
+}
+
+const CXXConstructorDecl *linkedListCheckedUserDefaultConstructor(
+    const CXXRecordDecl *Record, const LinkedListRecordSource *Source) {
+  const auto *Constructor = selectUtilityMemoryDefaultConstructor(Record);
+  if (!Constructor || !Constructor->isUserProvided() || Constructor->getAccess() != AS_public ||
+      !Record->hasTrivialCopyConstructor() || !Record->hasTrivialCopyAssignment() ||
+      Record->hasNonTrivialMoveConstructor() || Record->hasNonTrivialMoveAssignment())
+    return nullptr;
+  const FunctionDecl *Definition = nullptr;
+  if (!Constructor->hasBody(Definition) || !Definition ||
+      (Source && !llvm::all_of(Constructor->redecls(), [&](const FunctionDecl *D) {
+        return Source->Program.owns(Source->Sources, D->getLocation());
+      })))
+    return nullptr;
+  const auto *Default = cast<CXXConstructorDecl>(Definition);
+  if (!Constructor->getType()->getAs<FunctionProtoType>()->isNothrow() &&
+      !linkedListScalarConstructorInitializers(Default, Source))
+    return nullptr;
+  return Default;
+}
+
+bool linkedListCheckedRecordDestructor(const CXXRecordDecl *Record,
+    const LinkedListRecordSource *Source, bool CheckedUserDefault) {
   if (Record->hasTrivialDestructor() || !Record->hasTrivialCopyConstructor() ||
       !Record->hasTrivialCopyAssignment()) return false;
-  if (!Record->hasTrivialDefaultConstructor() && !linkedListCheckedMemberDefaults(Record, Source))
+  if (!CheckedUserDefault && !Record->hasTrivialDefaultConstructor() &&
+      !linkedListCheckedMemberDefaults(Record, Source))
     return false;
   const auto *Destructor = Record->getDestructor();
   if (!Destructor || Destructor->isDeleted() || Destructor->isInvalidDecl() ||
@@ -54301,12 +54398,15 @@ const CXXRecordDecl *linkedListRecordLayout(
   Record = Record ? Record->getDefinition() : nullptr;
   if (!Record || Record->isInvalidDecl() || Record->isDependentContext() ||
       Record->isUnion() || Record->getNumBases() || !Record->isStandardLayout() ||
-      !Record->isAggregate() || Record->field_empty())
+      Record->field_empty())
+    return nullptr;
+  const bool CheckedUserDefault = !Record->isAggregate();
+  if (CheckedUserDefault && !linkedListCheckedUserDefaultConstructor(Record, Source))
     return nullptr;
   if (!Record->isTrivial()) {
     const bool Checked = Record->hasTrivialDestructor()
-        ? linkedListCheckedMemberDefaults(Record, Source)
-        : linkedListCheckedRecordDestructor(Record, Source);
+        ? (CheckedUserDefault || linkedListCheckedMemberDefaults(Record, Source))
+        : linkedListCheckedRecordDestructor(Record, Source, CheckedUserDefault);
     if (!Checked) return nullptr;
   }
   if (Source && !Source->Program.owns(Source->Sources, Record->getLocation()))
@@ -54383,8 +54483,10 @@ bool linkedListRecordElementMember(const State &S, const SourceManager &SM,
   if (!Method || Method->isDeleted()) return false;
   const auto *Constructor = dyn_cast<CXXConstructorDecl>(Method);
   const auto *Destructor = dyn_cast<CXXDestructorDecl>(Method);
+  const bool UserDefault = Constructor && Constructor->isUserProvided() &&
+                           Constructor->isDefaultConstructor();
   if (!(Constructor || Destructor || Method->isCopyAssignmentOperator() || Method->isMoveAssignmentOperator()) ||
-      (!Method->isImplicit() && !Destructor))
+      (!Method->isImplicit() && !Destructor && !UserDefault))
     return false;
   if (!Method->isTrivial() && !Destructor && !(Constructor && Constructor->isDefaultConstructor()))
     return false;
@@ -54392,8 +54494,13 @@ bool linkedListRecordElementMember(const State &S, const SourceManager &SM,
   const auto *Record = linkedListRecordElement(Element, Context, &Source);
   if (!Record || Record->getCanonicalDecl() != Method->getParent()->getCanonicalDecl())
     return false;
+  if (UserDefault) {
+    const auto *Selected = selectUtilityMemoryDefaultConstructor(Record);
+    return !Record->isAggregate() && Selected &&
+           Selected->getCanonicalDecl() == Constructor->getCanonicalDecl();
+  }
   if (Method->isTrivial()) return true;
-  return Destructor ? linkedListCheckedRecordDestructor(Record, &Source)
+  return Destructor ? linkedListCheckedRecordDestructor(Record, &Source, !Record->isAggregate())
                     : linkedListCheckedMemberDefaults(Record, &Source);
 }
 
@@ -54508,6 +54615,14 @@ std::optional<UtilityForwardListNodeRecord> forwardListNode(
     return std::nullopt;
   return UtilityForwardListNodeRecord{R, Begin, Leaves[0].Field, Leaves[1].Field};
 }
+}
+
+const CXXConstructorDecl *approvedUtilityLinkedListDefaultConstructor(
+    const State &S, const SourceManager &SM, const CXXRecordDecl *Record) {
+  if (!Record || Record->isAggregate() || !S.owns(SM, Record->getLocation()))
+    return nullptr;
+  const LinkedListRecordSource Source{S, SM};
+  return linkedListCheckedUserDefaultConstructor(Record, &Source);
 }
 
 std::optional<UtilityForwardListRecord> approvedUtilityForwardListRecord(
@@ -54750,7 +54865,7 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
     return std::nullopt;
   const auto Pack = Arguments->get(0).pack_elements();
   const unsigned Offset = After ? 1 : 0;
-  if (Pack.size() > 1 || Method->getNumParams() != Offset + Pack.size())
+  if (Pack.size() > (Element->isRecordType() ? 2u : 1u) || Method->getNumParams() != Offset + Pack.size())
     return std::nullopt;
   if (After) {
     if (!forwardListIteratorType(S, SM, Method->getReturnType(), Owner.Node, false, Context) ||
@@ -54759,7 +54874,16 @@ std::optional<UtilityForwardListOperation> forwardListEmplaceSignature(
   } else if (!Context.hasSameType(Method->getReturnType(), Context.getLValueReferenceType(Element))) {
     return std::nullopt;
   }
-  if (!Pack.empty()) {
+  if (Pack.size() == 2) {
+    for (unsigned I = 0; I < 2; ++I) {
+      if (Pack[I].getKind() != TemplateArgument::Type) return std::nullopt;
+      const auto T = Pack[I].getAsType();
+      if (!linkedListScalarEmplaceInput(T, Context) || Method->getParamDecl(Offset + I)->hasDefaultArg())
+        return std::nullopt;
+      const auto Forwarded = T->isLValueReferenceType() ? T : Context.getRValueReferenceType(T.getNonReferenceType());
+      if (!Context.hasSameType(Method->getParamDecl(Offset + I)->getType(), Forwarded)) return std::nullopt;
+    }
+  } else if (!Pack.empty()) {
     if (Pack[0].getKind() != TemplateArgument::Type) return std::nullopt;
     const auto Type = Pack[0].getAsType();
     const auto Input = Type.getNonReferenceType().getUnqualifiedType();
@@ -55598,7 +55722,8 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
                          bool DirectOrder = false, bool DirectFilter = false,
                          const CXXMethodDecl *OrderMethod = nullptr,
                          const FunctionDecl **DefaultRecordComparison = nullptr,
-                         OverloadedOperatorKind DefaultOperator = OO_Less) {
+                         OverloadedOperatorKind DefaultOperator = OO_Less,
+                         LinkedListEmplacement *Emplacement = nullptr) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -55699,7 +55824,7 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
           !(DirectFilter && forwardListSDKFilterCall(Call, Root, Owner.Value->getType(), Context)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if (!forwardListOrderForwardingMove(S, SM, C, Root, OrderMethod, Context) &&
+      if ((!Emplacement || C != Emplacement->Expression) && !forwardListOrderForwardingMove(S, SM, C, Root, OrderMethod, Context) &&
           !Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
@@ -55707,6 +55832,9 @@ bool forwardListSourceGraph(const State &S, const SourceManager &SM,
           N->getNumPlacementArgs() != 1 ||
           !Function(N->getOperatorNew(), Depth + 1)) return false;
       if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+      if (Emplacement && Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
+          !bindLinkedListEmplacement(S, SM, Root, N, Owner.Value->getType(), Context, *Emplacement))
+        return false;
     }
     for (const auto *Child : Node->children())
       if (!Statement(Child, Depth + 1)) return false;
@@ -56526,10 +56654,15 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       (*Operation == UtilityForwardListOperation::RemoveValue || *Operation == UtilityForwardListOperation::Unique);
   const FunctionDecl *DefaultRecordComparison = nullptr;
   const auto DefaultOperator = RecordEquality ? OO_EqualEqual : OO_Less;
+  LinkedListEmplacement Emplacement{*Operation == UtilityForwardListOperation::EmplaceAfter ? 1u : 0u};
+  const bool EmplaceRecord = (*Operation == UtilityForwardListOperation::EmplaceAfter ||
+       *Operation == UtilityForwardListOperation::EmplaceFront) &&
+      Method->getNumParams() == Emplacement.Offset + 2;
   if (!forwardListSourceGraph(S, SM, Method, Context, *Node, SourceOrder, DirectFilter,
                               ObjectOrder ? ObjectOrder->Method : nullptr,
                               (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
-                              DefaultOperator) ||
+                              DefaultOperator, EmplaceRecord ? &Emplacement : nullptr) ||
+      (EmplaceRecord && !Emplacement.Constructor) ||
       ((RecordOrder || RecordEquality) && !DefaultRecordComparison)) return std::nullopt;
   if (*Operation == UtilityForwardListOperation::GetAllocator && !forwardListGetAllocatorBody(S, SM, Method, *Node, Context))
     return std::nullopt;
@@ -56587,7 +56720,8 @@ std::optional<UtilityForwardListCall> approvedUtilityForwardListCall(
       ? Receiver->getType()->getPointeeType() : Receiver->getType();
   if (ObjectType.isVolatileQualified() ||
       !Context.hasSameUnqualifiedType(ObjectType, Context.getRecordType(Method->getParent()))) return std::nullopt;
-  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum, OrderDirection, DefaultRecordComparison};
+  return UtilityForwardListCall{*Operation, Receiver, Function, Offset, Maximum, OrderDirection, DefaultRecordComparison,
+                             Emplacement.Constructor};
 }
 
 
@@ -57111,7 +57245,7 @@ std::optional<UtilityListOperation> listEmplacementSignature(
       Arguments->get(0).getKind() != TemplateArgument::Pack) return std::nullopt;
   const auto Pack = Arguments->get(0).pack_elements();
   const unsigned Offset = AtPosition ? 1 : 0;
-  if (Pack.size() > 1 || M->getNumParams() != Offset + Pack.size()) return std::nullopt;
+  if (Pack.size() > (Element->isRecordType() ? 2u : 1u) || M->getNumParams() != Offset + Pack.size()) return std::nullopt;
   if (AtPosition) {
     if (M->getParamDecl(0)->hasDefaultArg() ||
         !listIteratorType(S, SM, M->getParamDecl(0)->getType(), Owner.Node, true, Context) ||
@@ -57119,7 +57253,16 @@ std::optional<UtilityListOperation> listEmplacementSignature(
   } else if (!Context.hasSameType(M->getReturnType(), Context.getLValueReferenceType(Element))) {
     return std::nullopt;
   }
-  if (!Pack.empty()) {
+  if (Pack.size() == 2) {
+    for (unsigned I = 0; I < 2; ++I) {
+      if (Pack[I].getKind() != TemplateArgument::Type) return std::nullopt;
+      const auto T = Pack[I].getAsType();
+      if (!linkedListScalarEmplaceInput(T, Context) || M->getParamDecl(Offset + I)->hasDefaultArg())
+        return std::nullopt;
+      const auto Forwarded = T->isLValueReferenceType() ? T : Context.getRValueReferenceType(T.getNonReferenceType());
+      if (!Context.hasSameType(M->getParamDecl(Offset + I)->getType(), Forwarded)) return std::nullopt;
+    }
+  } else if (!Pack.empty()) {
     if (Pack[0].getKind() != TemplateArgument::Type || M->getParamDecl(Offset)->hasDefaultArg())
       return std::nullopt;
     const auto Type = Pack[0].getAsType();
@@ -57647,7 +57790,8 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
                          const UtilityListNodeRecord &Owner, unsigned PredicateCount = 0, QualType Compare = {},
                          const CXXMethodDecl *OrderMethod = nullptr,
                          const FunctionDecl **DefaultRecordComparison = nullptr,
-                         OverloadedOperatorKind DefaultOperator = OO_Less) {
+                         OverloadedOperatorKind DefaultOperator = OO_Less,
+                         LinkedListEmplacement *Emplacement = nullptr) {
   std::set<const FunctionDecl *> Seen;
   unsigned Nodes = 0;
   std::function<bool(const FunctionDecl *, unsigned)> Function;
@@ -57749,7 +57893,7 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
                                                       Compare, Owner.Value->getType(), Context, OrderMethod)) &&
           !Function(Call->getDirectCallee(), Depth + 1)) return false;
     if (const auto *C = dyn_cast<CXXConstructExpr>(Node))
-      if (!listForwardedOrderCopy(C, Root, OrderMethod, Context) &&
+      if ((!Emplacement || C != Emplacement->Expression) && !listForwardedOrderCopy(C, Root, OrderMethod, Context) &&
           !Function(C->getConstructor(), Depth + 1)) return false;
     if (const auto *N = dyn_cast<CXXNewExpr>(Node)) {
       if (N->isArray() || (!Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
@@ -57757,6 +57901,9 @@ bool listSourceGraph(const State &S, const SourceManager &SM,
           N->getNumPlacementArgs() != 1 ||
           !Function(N->getOperatorNew(), Depth + 1)) return false;
       if (N->getOperatorDelete() && !Function(N->getOperatorDelete(), Depth + 1)) return false;
+      if (Emplacement && Context.hasSameType(N->getAllocatedType(), Owner.Value->getType()) &&
+          !bindLinkedListEmplacement(S, SM, Root, N, Owner.Value->getType(), Context, *Emplacement))
+        return false;
     }
     for (const auto *Child : Node->children())
       if (!Statement(Child, Depth + 1)) return false;
@@ -57891,10 +58038,16 @@ std::optional<UtilityListCall> approvedUtilityListCall(
       (*Operation == UtilityListOperation::Remove || *Operation == UtilityListOperation::Unique);
   const FunctionDecl *DefaultRecordComparison = nullptr;
   const auto DefaultOperator = RecordEquality ? OO_EqualEqual : OO_Less;
+  LinkedListEmplacement Emplacement{*Operation == UtilityListOperation::Emplace ? 1u : 0u};
+  const bool EmplaceRecord = (*Operation == UtilityListOperation::Emplace ||
+       *Operation == UtilityListOperation::EmplaceFront ||
+       *Operation == UtilityListOperation::EmplaceBack) &&
+      Method->getNumParams() == Emplacement.Offset + 2;
   if ((Predicates && !listPredicateBody(Method)) ||
       !listSourceGraph(S, SM, Method, Context, *Node, Predicates, Compare, OrderMethod,
                         (RecordOrder || RecordEquality) ? &DefaultRecordComparison : nullptr,
-                        DefaultOperator) ||
+                        DefaultOperator, EmplaceRecord ? &Emplacement : nullptr) ||
+      (EmplaceRecord && !Emplacement.Constructor) ||
       ((RecordOrder || RecordEquality) && !DefaultRecordComparison)) return std::nullopt;
   const Expr *Receiver = nullptr;
   unsigned Offset = 0;
@@ -57918,7 +58071,8 @@ std::optional<UtilityListCall> approvedUtilityListCall(
     Maximum = containerNodeMaximum(S, SM, Method, Context, "list", "__list_node");
     if (!Maximum) return std::nullopt;
   }
-  return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum, Descending, DefaultRecordComparison};
+  return UtilityListCall{*Operation, Receiver, Function, Offset, Maximum, Descending, DefaultRecordComparison,
+                             Emplacement.Constructor};
 }
 
 
