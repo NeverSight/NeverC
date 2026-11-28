@@ -1277,3 +1277,10 @@ The current compiler passes all 10,032 cumulative source requests and
 750 original requests across six 64-bit targets. On Linux x86-64 the
 full selected suite passes 1,776 tests and 1,256 generated C23 programs
 match the native C++ results at each of O0 and O2.
+
+## R19 Scalar forwarding in linked-list nodes
+
+The cumulative and original regressions passed 10,056 and 750 source
+checks across six 64-bit targets. On Linux x86-64 all 1,780 formal
+tests passed, and 1,261 generated C23 programs matched their native
+C++ references at each of O0 and O2.

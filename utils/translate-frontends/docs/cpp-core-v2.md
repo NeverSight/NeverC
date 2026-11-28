@@ -18811,3 +18811,11 @@ admitted when its body is empty and its checked scalar initializers
 contain no calls. The emplacement overloads can forward two arithmetic
 arguments of the constructor's exact parameter types into a checked
 noexcept constructor on the allocated node.
+
+## Scalar argument forwarding in linked-list emplacement
+
+Checked list and forward_list emplacement preserves scalar reference
+bindings and the conversions selected by a source-owned noexcept
+constructor. Selected trailing scalar defaults are evaluated for each
+new node after allocation. The constructor initializes the stored
+record directly.

@@ -38,29 +38,23 @@ def restore_previous_maintenance(source, manifest, extractor):
     return source
 
 
-class RegistryArchiveTests(unittest.TestCase):
-    def test_checks_the_current_and_archived_sources_before_replaying_history(self):
-        adapter = module('registry_archive', 'utils/ci/not_fn_registered_gtests.py')
-        current = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
-        with mock.patch.object(adapter, '_read_stl_registry_base', return_value=b'wrong archive') as read:
-            with self.assertRaises(AssertionError):
-                adapter.restore_rebased_stl_registry_history(current + b' ')
-            read.assert_not_called()
-            with self.assertRaises(AssertionError):
-                adapter.restore_rebased_stl_registry_history(current)
-            read.assert_called_once_with()
-
-
 class RegisteredNotFnGTestsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.adapter = module('registered_not_fn', 'utils/ci/not_fn_registered_gtests.py')
         cls.extractor = module('original_cpp_gtests', 'utils/ci/extract_cpp_gtests.py')
         cls.registered = (ROOT / 'tests/neverc/TranslateTests.cpp').read_bytes()
+        cls.scalar_pack_registered = cls.registered
+        cls.scalar_pack_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
+        cls.scalar_pack_active = cls.adapter.restore_original_gtests(cls.registered, cls.scalar_pack_suffix)
+        cls.scalar_pack_predecessor = cls.adapter.restore_scalar_emplacement_pack_history(
+            cls.registered, cls.scalar_pack_suffix)
+        cls.registered = cls.scalar_pack_predecessor
         suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
         current = cls.adapter.restore_original_gtests(cls.registered, suffix)
         assert current + suffix == cls.registered
         assert cls.adapter.hashlib.sha256(current).hexdigest() == '8e853c05697faec8f0b357f9d2ac23d57a4d09872dab52b4bdc26d55c8db9b03'
+        cls.rebased_registered = cls.registered
         cls.registered = cls.adapter.restore_rebased_stl_registry_history(cls.registered)
         cls.list_two_argument_emplacement_registered = cls.registered
         cls.list_two_argument_emplacement_suffix = (ROOT / 'utils/ci/stl-one-hundred-nine-formal-additions.cpp').read_bytes()
@@ -4782,6 +4776,32 @@ class RegisteredNotFnGTestsTests(unittest.TestCase):
             self.adapter.restore_list_two_argument_emplacement_history(self.list_two_argument_emplacement_registered + b' ')
         with self.assertRaises(AssertionError):
             self.adapter.restore_original_gtests(self.list_two_argument_emplacement_registered, self.list_two_argument_emplacement_suffix + b' ')
+
+
+    def test_scalar_pack_registry_preserves_previous_fixture_source(self):
+        self.assertEqual(self.scalar_pack_active + self.scalar_pack_suffix, self.scalar_pack_registered)
+        self.assertEqual(self.adapter.restore_scalar_emplacement_pack_history(
+            self.scalar_pack_registered, self.scalar_pack_suffix),
+            self.scalar_pack_predecessor)
+
+    def test_scalar_pack_registry_selects_six_checked_programs(self):
+        selected = ['TranslateTest.CoreV2ListOneScalarEmplaceExplicitRunAtBothOptimizations', 'TranslateTest.CoreV2ForwardListScalarEmplaceThreeValuesAndDefaultRunAtBothOptimizations', 'TranslateTest.CoreV2ListScalarEmplaceReferenceAliasRunAtBothOptimizations', 'TranslateTest.CoreV2ListEmplaceUserScalarConversionGuardRejected', 'TranslateTest.CoreV2ListEmplacePreservesSelectedReferenceParameters', 'TranslateTest.CoreV2ForwardListEmplaceConvertsSelectedScalarParameters']
+        extractor = module('extract_scalar_pack_tests', 'utils/ci/extract_cpp_gtests.py')
+        _, report = extractor.extract(self.scalar_pack_active, selected)
+        self.assertEqual(report['selected_count'], 6)
+        self.assertEqual(report['original_test_names'], 9568)
+
+
+    def test_checks_the_current_and_archived_sources_before_replaying_history(self):
+        adapter = module('registry_archive', 'utils/ci/not_fn_registered_gtests.py')
+        current = self.rebased_registered
+        with mock.patch.object(adapter, '_read_stl_registry_base', return_value=b'wrong archive') as read:
+            with self.assertRaises(AssertionError):
+                adapter.restore_rebased_stl_registry_history(current + b' ')
+            read.assert_not_called()
+            with self.assertRaises(AssertionError):
+                adapter.restore_rebased_stl_registry_history(current)
+            read.assert_called_once_with()
 
 
 if __name__ == '__main__':
